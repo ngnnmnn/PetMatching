@@ -1,8 +1,7 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// =============================================================
+// PetMatching - Prisma Schema
+// Database: PostgreSQL
+// =============================================================
 
 generator client {
   provider = "prisma-client"
@@ -12,4 +11,396 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// =============================================================
+// ENUM DEFINITIONS
+// =============================================================
+
+enum Species {
+  DOG
+  CAT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+/// Hình thức phối giống:
+/// CASH         - Thu tiền mặt (có breedingFee)
+/// SHARE_LITTER - Chia con non (chủ cái lấy X con trong lứa)
+/// NEGOTIATE    - Thoả thuận sau khi liên hệ
+enum BreedingOption {
+  CASH
+  SHARE_LITTER
+  NEGOTIATE
+}
+
+/// Trạng thái của một Like (swipe):
+/// PENDING  - Đã like, chờ đối phương like lại
+/// MATCHED  - Hai bên đã like nhau → tạo Match
+/// REJECTED - Đã bỏ qua (swipe trái)
+enum LikeStatus {
+  PENDING
+  MATCHED
+  REJECTED
+}
+
+/// Trạng thái của một Match:
+/// ACTIVE    - Đang hoạt động, hai bên có thể chat
+/// COMPLETED - Đã phối giống thành công
+/// CANCELLED - Một trong hai huỷ
+enum MatchStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+/// Vai trò người dùng trên hệ thống
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+// =============================================================
+// DOCUMENT VERIFICATION ENUMS
+// =============================================================
+
+/// Loại giấy tờ cần duyệt:
+/// VACCINE_RECORD - Sổ tiêm phòng / phiếu tiêm vaccine
+/// PEDIGREE_CERT  - Giấy chứng nhận phả hệ (VKA / TICA / VNCA)
+/// HEALTH_CHECK   - Giấy kiểm tra sức khoẻ tổng quát từ thú y
+enum DocumentType {
+  VACCINE_RECORD
+  PEDIGREE_CERT
+  HEALTH_CHECK
+}
+
+/// Trạng thái duyệt giấy tờ:
+/// PENDING  - Vừa nộp, chờ moderator xem xét
+/// REVIEWING - Moderator đang xem xét
+/// APPROVED - Đã được duyệt, hợp lệ
+/// REJECTED - Bị từ chối, kèm lý do
+enum DocumentStatus {
+  PENDING
+  REVIEWING
+  APPROVED
+  REJECTED
+}
+
+/// Trạng thái badge xác minh hiển thị trên swipe card:
+/// NONE     - Chưa nộp giấy tờ nào (chỉ tự khai báo)
+/// PENDING  - Đã nộp giấy tờ, đang chờ moderator duyệt
+/// VERIFIED - Ít nhất một giấy tờ được duyệt thành công
+enum VerificationBadge {
+  NONE
+  PENDING
+  VERIFIED
+}
+
+// =============================================================
+// USER - Người dùng / Chủ thú cưng
+// =============================================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  /// Mật khẩu đã được hash (bcrypt)
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  phone        String?
+  role         UserRole @default(USER)
+  /// Xác thực email
+  isVerified   Boolean  @default(false)
+  /// Refresh token lưu trong DB (backup cho Redis)
+  refreshToken String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  pets      Pet[]
+  sentLikes Like[]    @relation("LikeSender")
+  messages  Message[]
+
+  @@map("users")
+}
+
+// =============================================================
+// PET - Hồ sơ thú cưng
+// =============================================================
+
+model Pet {
+  id   String  @id @default(cuid())
+  name String
+  slug String? @unique // URL-friendly name: "mochi-corgi-123"
+
+  // --- Thông tin cơ bản ---
+  species   Species
+  breed     String
+  gender    Gender
+  /// Ngày sinh - dùng để tính tuổi và kiểm tra điều kiện phối giống
+  birthday  DateTime
+  weight    Float // kg
+  colorDesc String? // Mô tả màu sắc lông
+
+  // --- Sức khoẻ & Giấy tờ ---
+
+  // --- [TỰ KHAI BÁO bởi chủ pet] ---
+  // Cho phép user dùng hệ thống ngay, hiển thị "Tự khai" trên profile
+  /// Chủ tự khai báo đã tiêm vaccine (chưa có bằng chứng)
+  isVaccinated Boolean @default(false)
+  /// Chủ tự khai báo có giấy phả hệ (chưa có bằng chứng)
+  hasPedigree    Boolean @default(false)
+  pedigreeNumber String? // VKA-2023-001 / TICA-2022-045
+
+  // --- [ĐÃ XÁC MINH bởi moderator] ---
+  // Chỉ set true khi PetDocument tương ứng được APPROVED
+  /// Đã xác minh vaccine qua giấy tờ thực tế
+  vaccineVerified  Boolean @default(false)
+  /// Đã xác minh giấy phả hệ qua giấy tờ thực tế
+  pedigreeVerified Boolean @default(false)
+
+  /// Badge tổng hợp hiển thị trên card - được cập nhật bởi DocumentService:
+  /// - NONE     → chưa upload giấy tờ nào
+  /// - PENDING  → có giấy tờ đang chờ duyệt
+  /// - VERIFIED → ít nhất một giấy tờ được duyệt
+  verificationBadge VerificationBadge @default(NONE)
+
+  // --- Hình ảnh ---
+  avatarUrl String?
+  /// Mảng URL ảnh (Cloudinary), tối đa 6 ảnh
+  gallery   String[]
+
+  // --- Mô tả ---
+  personality String? // Tính cách, đặc điểm
+
+  // --- Phối giống ---
+  breedingOption   BreedingOption @default(NEGOTIATE)
+  /// Giá phối giống (VNĐ) - chỉ có khi breedingOption = CASH
+  breedingFee      Float?
+  /// Số con chia sẻ - chỉ có khi breedingOption = SHARE_LITTER
+  shareLitterCount Int?
+  /// Ngày phối giống gần nhất - dùng để tính chu kỳ
+  lastBreedingAt   DateTime?
+  /// Tổng số lần phối giống thành công
+  totalBreedings   Int            @default(0)
+
+  // --- Vị trí ---
+  location  String // Tỉnh/Thành phố hiển thị
+  /// Toạ độ cho Redis GEOSEARCH (tìm gần vị trí người dùng)
+  latitude  Float?
+  longitude Float?
+
+  // --- Trạng thái ---
+  isActive  Boolean  @default(true) // false = đã tạm ngừng tìm kiếm
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId String
+
+  /// Những pet mà pet này đã swipe (gửi)
+  sentLikes     Like[] @relation("LikeFromPet")
+  /// Những like mà pet này nhận được
+  receivedLikes Like[] @relation("LikeToPet")
+
+  /// Matches mà pet này tham gia (vai trò pet1)
+  matchesAsPet1 Match[] @relation("MatchPet1")
+  /// Matches mà pet này tham gia (vai trò pet2)
+  matchesAsPet2 Match[] @relation("MatchPet2")
+
+  /// Các giấy tờ đã nộp để duyệt
+  documents PetDocument[]
+
+  @@index([species, gender, isActive])
+  @@index([ownerId])
+  @@index([breed])
+  @@index([location])
+  @@map("pets")
+}
+
+// =============================================================
+// LIKE - Hành động swipe (thích / bỏ qua)
+// =============================================================
+
+model Like {
+  id String @id @default(cuid())
+
+  // Người thực hiện like
+  fromUser   User   @relation("LikeSender", fields: [fromUserId], references: [id])
+  fromUserId String
+
+  // Pet của người thực hiện like
+  fromPet   Pet    @relation("LikeFromPet", fields: [fromPetId], references: [id])
+  fromPetId String
+
+  // Pet được like (đối phương)
+  toPet   Pet    @relation("LikeToPet", fields: [toPetId], references: [id])
+  toPetId String
+
+  status    LikeStatus @default(PENDING)
+  createdAt DateTime   @default(now())
+
+  /// Mỗi cặp (fromPet → toPet) chỉ có một like duy nhất
+  @@unique([fromPetId, toPetId])
+  @@index([fromUserId])
+  @@index([toPetId, status])
+  @@map("likes")
+}
+
+// =============================================================
+// MATCH - Hai bên đã like nhau thành công
+// =============================================================
+
+model Match {
+  id String @id @default(cuid())
+
+  // Hai pet đã match với nhau
+  pet1   Pet    @relation("MatchPet1", fields: [pet1Id], references: [id])
+  pet1Id String
+
+  pet2   Pet    @relation("MatchPet2", fields: [pet2Id], references: [id])
+  pet2Id String
+
+  /// Điểm tương thích 0-100 (tính bởi matching engine)
+  compatibilityScore Int @default(0)
+
+  /// Lý do match (JSON): ["same_breed", "both_pedigree", "breed_compatible", "near_location"]
+  matchReasons Json?
+
+  status MatchStatus @default(ACTIVE)
+
+  /// Ghi chú kết quả sau khi phối giống xong (COMPLETED)
+  breedingNote String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  // Relations
+  messages Message[]
+
+  /// Mỗi cặp pet chỉ có một match (đảm bảo pet1Id < pet2Id khi insert)
+  @@unique([pet1Id, pet2Id])
+  @@index([pet1Id, status])
+  @@index([pet2Id, status])
+  @@map("matches")
+}
+
+// =============================================================
+// MESSAGE - Tin nhắn trong cuộc trò chuyện sau khi match
+// =============================================================
+
+model Message {
+  id      String @id @default(cuid())
+  content String
+
+  // Cuộc trò chuyện thuộc Match nào
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  matchId String
+
+  // Người gửi
+  sender   User   @relation(fields: [senderId], references: [id])
+  senderId String
+
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([matchId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+// =============================================================
+// BREED_RULE - Luật tương thích giống lai tạo
+// Dùng bởi matching engine để tính điểm compatibility
+// =============================================================
+
+model BreedRule {
+  id String @id @default(cuid())
+
+  species Species // DOG hoặc CAT
+
+  /// Giống A
+  breedA String
+  /// Giống B
+  breedB String
+
+  /// true  = tương thích tốt (cross-breed compatible, +20 điểm)
+  /// false = không khuyến nghị (genetic risk, -10 điểm)
+  isCompatible Boolean @default(true)
+
+  /// Tên giống con dự kiến nếu lai (vd: "Corgi Gold", "F1 Hybrid")
+  offspringName String?
+
+  /// Ghi chú cảnh báo nếu có rủi ro di truyền
+  warningNote String?
+
+  @@unique([breedA, breedB, species])
+  @@map("breed_rules")
+}
+
+// =============================================================
+// PET_DOCUMENT - Giấy tờ nộp để duyệt
+// =============================================================
+
+model PetDocument {
+  id    String @id @default(cuid())
+
+  // Giấy tờ thuộc pet nào
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+  petId String
+
+  /// Loại giấy tờ
+  type DocumentType
+
+  /// Tiêu đề / tên giấy tờ do user nhập (vd: "Sổ tiêm phòng 2024")
+  title String?
+
+  /// Mảng URL ảnh giấy tờ (Cloudinary) - có thể upload nhiều trang
+  imageUrls String[]
+
+  /// Mô tả thêm từ chủ pet (vd: số phiếu, ngày cấp)
+  userNote String?
+
+  status DocumentStatus @default(PENDING)
+
+  // --- Thông tin duyệt (điền khi moderator xử lý) ---
+  /// ID của moderator/admin đã duyệt
+  reviewerId   String?
+  /// Tên moderator (denormalized để hiển thị nhanh)
+  reviewerName String?
+  /// Ghi chú của moderator (bắt buộc khi REJECTED)
+  reviewNote   String?
+  /// Thời điểm moderator xử lý
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([petId, type])
+  @@index([status, type]) // moderator query: lấy tất cả PENDING theo loại
+  @@map("pet_documents")
+}
+
+// =============================================================
+// PET_REPORT - Báo cáo hồ sơ vi phạm
+// =============================================================
+
+model PetReport {
+  id     String  @id @default(cuid())
+  petId  String // pet bị báo cáo
+  userId String // người báo cáo
+  reason String // lý do
+  detail String?
+
+  isResolved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@map("pet_reports")
 }
