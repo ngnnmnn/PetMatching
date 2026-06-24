@@ -4,14 +4,16 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/axios';
+import { RegisterData } from '@/types';
 
 export default function RegisterForm() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    username: '',
+  const [formData, setFormData] = useState<RegisterData & { confirmPassword: string }>({
+    email: '',
     password: '',
     confirmPassword: '',
-    displayName: ''
+    name: '',
+    phone: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,22 +34,19 @@ export default function RegisterForm() {
       return;
     }
 
-    if (formData.password.length < 3) {
-      setError('Mật khẩu phải có ít nhất 3 ký tự!');
+    if (formData.password.length < 6) {
+      setError('Mật khẩu phải có ít nhất 6 ký tự!');
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await api.post('/register', {
-        username: formData.username,
-        password: formData.password,
-        displayName: formData.displayName || formData.username
-      });
+      const { confirmPassword, ...registerData } = formData;
+      const response = await api.post('/auth/register', registerData);
       
       if (response.data.success) {
-        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('accessToken', response.data.accessToken);
         localStorage.setItem('user', JSON.stringify(response.data.user));
         router.push('/home');
       }
@@ -68,30 +67,45 @@ export default function RegisterForm() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-gray-700 font-medium mb-2">
-              Tên đăng nhập
+              Email
             </label>
             <input
-              type="text"
-              name="username"
-              value={formData.username}
+              type="email"
+              name="email"
+              value={formData.email}
               onChange={handleChange}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
-              placeholder="Nhập tên đăng nhập"
+              placeholder="Nhập email"
               required
             />
           </div>
           
           <div>
             <label className="block text-gray-700 font-medium mb-2">
-              Tên hiển thị (tùy chọn)
+              Tên hiển thị
             </label>
             <input
               type="text"
-              name="displayName"
-              value={formData.displayName}
+              name="name"
+              value={formData.name}
               onChange={handleChange}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
               placeholder="Nhập tên hiển thị"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-700 font-medium mb-2">
+              Số điện thoại (tùy chọn)
+            </label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+              placeholder="Nhập số điện thoại"
             />
           </div>
           
@@ -105,9 +119,9 @@ export default function RegisterForm() {
               value={formData.password}
               onChange={handleChange}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
-              placeholder="Nhập mật khẩu (ít nhất 3 ký tự)"
+              placeholder="Nhập mật khẩu (ít nhất 6 ký tự)"
               required
-              minLength={3}
+              minLength={6}
             />
           </div>
           

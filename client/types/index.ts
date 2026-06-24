@@ -1,20 +1,29 @@
 export interface User {
-  id: number;
-  username: string;
+  id: string;
+  email: string;
+  name: string;
   role: string;
-  displayName: string;
+  avatarUrl?: string;
+  phone?: string;
+  isVerified: boolean;
 }
 
-export interface LoginResponse {
+export interface AuthResponse {
   success: boolean;
   message: string;
-  token: string;
+  accessToken: string;
   user: User;
 }
 
-export interface RegisterResponse {
-  success: boolean;
-  message: string;
-  token: string;
-  user: User;
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface RegisterData {
+  email: string;
+  password: string;
+  name: string;
+  phone?: string;
+  avatarUrl?: string;
 }
