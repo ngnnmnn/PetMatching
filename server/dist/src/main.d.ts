@@ -1,1 +1,1 @@
-export {};
+import './load-env';
