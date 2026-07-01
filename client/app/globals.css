@@ -4,6 +4,14 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --primary-color: #E45D1C;
+  --bg-page: #FAF9F5;
+  --bg-card: #FFFFFF;
+  --border-color: #EAEAEA;
+  --bg-input: #F8F8F8;
+  --bg-demo-box: #FFF6F0;
+  --text-main: #1A1A1A;
+  --text-muted: #757575;
   --background: oklch(0.98 0.005 80);
   --foreground: oklch(0.25 0.02 50);
   --card: oklch(1 0 0);
