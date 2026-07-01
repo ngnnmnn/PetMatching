@@ -1,4 +1,15 @@
-import { Controller, Post, Body, Get, Headers, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -17,6 +28,45 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
+  }
+
+  @Get('google')
+  async googleAuth(@Res() res: Response) {
+    return res.redirect(this.authService.getGoogleAuthUrl());
+  }
+
+  @Get('google/callback')
+  async googleCallback(
+    @Query('code') code: string,
+    @Query('error') error: string,
+    @Res() res: Response,
+  ) {
+    const clientUrl =
+      process.env.CLIENT_URL ||
+      process.env.FRONTEND_URL ||
+      'http://localhost:3000';
+
+    if (error) {
+      return res.redirect(
+        `${clientUrl}/auth/google/callback?error=${encodeURIComponent(error)}`,
+      );
+    }
+
+    try {
+      const authResult = await this.authService.googleLogin(code);
+      const params = new URLSearchParams({ token: authResult.accessToken });
+
+      return res.redirect(
+        `${clientUrl}/auth/google/callback?${params.toString()}`,
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Đăng nhập Google thất bại';
+
+      return res.redirect(
+        `${clientUrl}/auth/google/callback?error=${encodeURIComponent(message)}`,
+      );
+    }
   }
 
   @Get('verify')

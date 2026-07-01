@@ -1,12 +1,13 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { PrismaService } from '../../common/prisma/prisma.service';
 
 type User = {
   id: string;
   email: string;
-  passwordHash: string;
+  passwordHash: string | null;
   name: string;
   phone?: string | null;
   avatarUrl?: string | null;
@@ -32,9 +33,13 @@ export class UsersService {
     });
   }
 
-  async validateUser(email: string, password: string): Promise<Omit<User, 'passwordHash'> | null> {
+  async validateUser(
+    email: string,
+    password: string,
+  ): Promise<Omit<User, 'passwordHash'> | null> {
     const user = await this.findByEmail(email);
     if (!user) return null;
+    if (!user.passwordHash) return null;
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) return null;
@@ -67,6 +72,48 @@ export class UsersService {
         avatarUrl: data.avatarUrl,
         role: data.role ?? UserRole.USER,
       },
+    });
+
+    const { passwordHash, ...result } = user;
+    return result;
+  }
+
+  async createGoogleUser(data: {
+    email: string;
+    name: string;
+    avatarUrl?: string;
+  }): Promise<Omit<User, 'passwordHash'>> {
+    const existingUser = await this.findByEmail(data.email);
+    if (existingUser) {
+      throw new ConflictException('Email đã được đăng ký!');
+    }
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: data.email,
+        passwordHash: await bcrypt.hash(randomUUID(), 10),
+        name: data.name,
+        avatarUrl: data.avatarUrl,
+        isVerified: true,
+        role: UserRole.USER,
+      },
+    });
+
+    const { passwordHash, ...result } = user;
+    return result;
+  }
+
+  async updateGoogleProfile(
+    userId: string,
+    data: {
+      name?: string;
+      avatarUrl?: string;
+      isVerified?: boolean;
+    },
+  ): Promise<Omit<User, 'passwordHash'>> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data,
     });
 
     const { passwordHash, ...result } = user;
