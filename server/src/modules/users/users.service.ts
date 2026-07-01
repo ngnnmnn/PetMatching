@@ -71,6 +71,7 @@ export class UsersService {
         phone: data.phone,
         avatarUrl: data.avatarUrl,
         role: data.role ?? UserRole.USER,
+        isVerified: false,
       },
     });
 
@@ -125,6 +126,16 @@ export class UsersService {
       where: { id: userId },
       data: { refreshToken },
     });
+  }
+
+  async markEmailVerified(userId: string): Promise<Omit<User, 'passwordHash'>> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: true },
+    });
+
+    const { passwordHash, ...result } = user;
+    return result;
   }
 
   async getAllUsers() {

@@ -62,7 +62,7 @@ export default function AuthShell({ children }: AuthShellProps) {
         <div className="w-full max-w-[460px]">
           <div className="mb-5 flex flex-col items-center gap-4 text-center">
             <Link
-              href="/login"
+              href="/"
               className="text-sm font-semibold text-[var(--text-muted)] transition duration-200 ease-in-out hover:text-[var(--primary-color)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
             >
               ← Quay lại trang chủ

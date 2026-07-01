@@ -106,8 +106,9 @@ enum VerificationBadge {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
+  googleId     String?  @unique
   /// Mật khẩu đã được hash (bcrypt)
-  passwordHash String
+  passwordHash String?
   name         String
   avatarUrl    String?
   phone        String?
@@ -131,6 +132,20 @@ model User {
 // =============================================================
 // PET - Hồ sơ thú cưng
 // =============================================================
+
+model EmailOtp {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  lastSentAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@map("email_otps")
+}
 
 model Pet {
   id   String  @id @default(cuid())
