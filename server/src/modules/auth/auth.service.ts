@@ -5,9 +5,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomInt } from 'crypto';
+import * as bcrypt from 'bcrypt';
+import { MailService } from '../../common/mail/mail.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendOtpDto } from './dto/resend-otp.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 type AuthUser = {
   id: string;
@@ -33,9 +39,15 @@ type GoogleUserInfo = {
 
 @Injectable()
 export class AuthService {
+  private readonly otpExpiryMs = 5 * 60 * 1000;
+  private readonly resendCooldownMs = 30 * 1000;
+  private readonly maxOtpAttempts = 5;
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    private prisma: PrismaService,
+    private mailService: MailService,
   ) {}
 
   private buildAuthResponse(user: AuthUser, message: string) {
@@ -72,11 +84,17 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng!');
     }
 
+    if (!user.isVerified) {
+      throw new UnauthorizedException(
+        'Vui lòng xác thực email trước khi đăng nhập.',
+      );
+    }
+
     return this.buildAuthResponse(user, 'Đăng nhập thành công!');
   }
 
   async register(registerDto: RegisterDto) {
-    const user = await this.usersService.createUser({
+    await this.usersService.createUser({
       email: registerDto.email,
       password: registerDto.password,
       name: registerDto.name,
@@ -84,7 +102,149 @@ export class AuthService {
       avatarUrl: registerDto.avatarUrl,
     });
 
-    return this.buildAuthResponse(user, 'Đăng ký thành công!');
+    await this.createAndSendOtp(registerDto.email);
+
+    return {
+      success: true,
+      message:
+        'Đăng ký thành công. Vui lòng kiểm tra email để lấy mã OTP.',
+      requiresVerification: true,
+      email: registerDto.email,
+    };
+  }
+
+  async verifyEmail(verifyEmailDto: VerifyEmailDto) {
+    const email = verifyEmailDto.email;
+    const latestOtp = await this.prisma.emailOtp.findFirst({
+      where: { email },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!latestOtp) {
+      throw new BadRequestException(
+        'Không tìm thấy mã OTP. Vui lòng gửi lại mã.',
+      );
+    }
+
+    if (latestOtp.usedAt) {
+      throw new BadRequestException('Mã OTP đã được sử dụng.');
+    }
+
+    if (latestOtp.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('Mã OTP đã hết hạn.');
+    }
+
+    if (latestOtp.attempts >= this.maxOtpAttempts) {
+      throw new BadRequestException(
+        'Bạn đã nhập sai quá 5 lần. Vui lòng gửi lại mã mới.',
+      );
+    }
+
+    const isOtpValid = await bcrypt.compare(
+      verifyEmailDto.otp,
+      latestOtp.codeHash,
+    );
+
+    if (!isOtpValid) {
+      const attempts = latestOtp.attempts + 1;
+      await this.prisma.emailOtp.update({
+        where: { id: latestOtp.id },
+        data: { attempts },
+      });
+
+      const remainingAttempts = Math.max(this.maxOtpAttempts - attempts, 0);
+      throw new BadRequestException(
+        `Mã OTP không đúng. Bạn còn ${remainingAttempts} lần thử.`,
+      );
+    }
+
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Email chưa được đăng ký.');
+    }
+
+    const verifiedUser = await this.prisma.$transaction(async (tx) => {
+      await tx.emailOtp.update({
+        where: { id: latestOtp.id },
+        data: { usedAt: new Date() },
+      });
+
+      const updatedUser = await tx.user.update({
+        where: { id: user.id },
+        data: { isVerified: true },
+      });
+
+      const { passwordHash, ...result } = updatedUser;
+      return result;
+    });
+
+    return this.buildAuthResponse(
+      verifiedUser,
+      'Xác thực email thành công!',
+    );
+  }
+
+  async resendOtp(resendOtpDto: ResendOtpDto) {
+    const user = await this.usersService.findByEmail(resendOtpDto.email);
+    if (!user) {
+      throw new BadRequestException('Email chưa được đăng ký.');
+    }
+
+    if (user.isVerified) {
+      throw new BadRequestException('Email đã được xác thực.');
+    }
+
+    const latestOtp = await this.prisma.emailOtp.findFirst({
+      where: { email: resendOtpDto.email },
+      orderBy: { lastSentAt: 'desc' },
+    });
+
+    if (latestOtp) {
+      const elapsedMs = Date.now() - latestOtp.lastSentAt.getTime();
+      if (elapsedMs < this.resendCooldownMs) {
+        const waitSeconds = Math.ceil(
+          (this.resendCooldownMs - elapsedMs) / 1000,
+        );
+        throw new BadRequestException(
+          `Vui lòng chờ ${waitSeconds} giây trước khi gửi lại mã.`,
+        );
+      }
+    }
+
+    await this.createAndSendOtp(resendOtpDto.email);
+
+    return {
+      success: true,
+      message: 'Mã OTP mới đã được gửi đến email của bạn.',
+    };
+  }
+
+  private generateOtp() {
+    return randomInt(0, 1_000_000).toString().padStart(6, '0');
+  }
+
+  private async createAndSendOtp(email: string) {
+    const otp = this.generateOtp();
+    const codeHash = await bcrypt.hash(otp, 10);
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.emailOtp.updateMany({
+        where: { email, usedAt: null },
+        data: { usedAt: now },
+      });
+
+      await tx.emailOtp.create({
+        data: {
+          email,
+          codeHash,
+          expiresAt: new Date(now.getTime() + this.otpExpiryMs),
+          lastSentAt: now,
+        },
+      });
+    });
+
+    await this.mailService.sendOtpEmail(email, otp);
   }
 
   getGoogleAuthUrl() {
@@ -155,7 +315,9 @@ export class AuthService {
 
     const googleUser = (await userInfoResponse.json()) as GoogleUserInfo;
     if (!userInfoResponse.ok || !googleUser.email) {
-      throw new BadGatewayException('Không thể lấy thông tin tài khoản Google');
+      throw new BadGatewayException(
+        'Không thể lấy thông tin tài khoản Google',
+      );
     }
 
     if (googleUser.email_verified === false) {

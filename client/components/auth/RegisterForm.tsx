@@ -51,12 +51,22 @@ export default function RegisterForm() {
       const response = await api.post('/auth/register', registerData);
 
       if (response.data.success) {
-        localStorage.setItem('accessToken', response.data.accessToken);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        router.push('/home');
+        router.push(`/verify-email?email=${encodeURIComponent(response.data.email || registerData.email)}`);
+        return;
       }
+
+      setError(response.data.message || 'Không thể tạo tài khoản. Vui lòng thử lại.');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Đăng ký thất bại!');
+      const message = err.response?.data?.message;
+      if (Array.isArray(message)) {
+        setError(message.join(' '));
+      } else if (message) {
+        setError(message);
+      } else if (err.request) {
+        setError('Không kết nối được tới server. Vui lòng kiểm tra backend đang chạy ở port 5000.');
+      } else {
+        setError('Đăng ký thất bại. Vui lòng thử lại.');
+      }
     } finally {
       setLoading(false);
     }

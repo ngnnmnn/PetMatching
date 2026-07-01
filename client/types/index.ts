@@ -11,8 +11,10 @@ export interface User {
 export interface AuthResponse {
   success: boolean;
   message: string;
-  accessToken: string;
-  user: User;
+  accessToken?: string;
+  user?: User;
+  requiresVerification?: boolean;
+  email?: string;
 }
 
 export interface LoginCredentials {
