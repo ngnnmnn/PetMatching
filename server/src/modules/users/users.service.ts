@@ -13,6 +13,8 @@ type User = {
   avatarUrl?: string | null;
   role: string;
   isVerified?: boolean;
+  failedOtpAttempts?: number;
+  lockedUntil?: Date | null;
   createdAt: Date;
   refreshToken?: string | null;
 };
