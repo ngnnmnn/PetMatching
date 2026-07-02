@@ -42,6 +42,7 @@ export class AuthService {
   private readonly otpExpiryMs = 5 * 60 * 1000;
   private readonly resendCooldownMs = 30 * 1000;
   private readonly maxOtpAttempts = 5;
+  private readonly otpLockDurationMs = 15 * 60 * 1000;
 
   constructor(
     private usersService: UsersService,
@@ -74,6 +75,59 @@ export class AuthService {
     };
   }
 
+  private getOtpLockMessage(lockedUntil: Date, now = new Date()) {
+    const remainingMs = Math.max(lockedUntil.getTime() - now.getTime(), 0);
+    const remainingMinutes = Math.floor(remainingMs / 60_000);
+    const remainingSeconds = Math.ceil((remainingMs % 60_000) / 1000);
+
+    if (remainingMinutes > 0) {
+      return `Tài khoản đang bị khóa do nhập sai OTP quá nhiều lần. Vui lòng thử lại sau ${remainingMinutes} phút ${remainingSeconds} giây.`;
+    }
+
+    return `Tài khoản đang bị khóa do nhập sai OTP quá nhiều lần. Vui lòng thử lại sau ${remainingSeconds} giây.`;
+  }
+
+  private async ensureOtpAccountNotLocked(user: {
+    id: string;
+    failedOtpAttempts?: number | null;
+    lockedUntil?: Date | null;
+  }) {
+    if (!user.lockedUntil) {
+      return user.failedOtpAttempts ?? 0;
+    }
+
+    const now = new Date();
+    if (user.lockedUntil.getTime() > now.getTime()) {
+      throw new BadRequestException(
+        this.getOtpLockMessage(user.lockedUntil, now),
+      );
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedOtpAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+
+    return 0;
+  }
+
+  private async lockOtpAccount(userId: string) {
+    const lockedUntil = new Date(Date.now() + this.otpLockDurationMs);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        failedOtpAttempts: this.maxOtpAttempts,
+        lockedUntil,
+      },
+    });
+
+    return lockedUntil;
+  }
+
   async login(loginDto: LoginDto) {
     const user = await this.usersService.validateUser(
       loginDto.email,
@@ -85,9 +139,14 @@ export class AuthService {
     }
 
     if (!user.isVerified) {
-      throw new UnauthorizedException(
-        'Vui lòng xác thực email trước khi đăng nhập.',
-      );
+      await this.ensureOtpAccountNotLocked(user);
+      await this.createAndSendOtp(user.email);
+
+      throw new UnauthorizedException({
+        message: 'Vui lòng xác thực email trước khi đăng nhập.',
+        requiresVerification: true,
+        email: user.email,
+      });
     }
 
     return this.buildAuthResponse(user, 'Đăng nhập thành công!');
@@ -115,6 +174,14 @@ export class AuthService {
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const email = verifyEmailDto.email;
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Email chưa được đăng ký.');
+    }
+
+    const currentFailedOtpAttempts =
+      await this.ensureOtpAccountNotLocked(user);
+
     const latestOtp = await this.prisma.emailOtp.findFirst({
       where: { email },
       orderBy: { createdAt: 'desc' },
@@ -126,6 +193,16 @@ export class AuthService {
       );
     }
 
+    if (
+      currentFailedOtpAttempts < this.maxOtpAttempts &&
+      latestOtp.attempts >= this.maxOtpAttempts
+    ) {
+      await this.lockOtpAccount(user.id);
+      throw new BadRequestException(
+        'Bạn đã nhập sai OTP 5 lần liên tiếp. Tài khoản đã bị khóa trong 15 phút.',
+      );
+    }
+
     if (latestOtp.usedAt) {
       throw new BadRequestException('Mã OTP đã được sử dụng.');
     }
@@ -134,33 +211,45 @@ export class AuthService {
       throw new BadRequestException('Mã OTP đã hết hạn.');
     }
 
-    if (latestOtp.attempts >= this.maxOtpAttempts) {
-      throw new BadRequestException(
-        'Bạn đã nhập sai quá 5 lần. Vui lòng gửi lại mã mới.',
-      );
-    }
-
     const isOtpValid = await bcrypt.compare(
       verifyEmailDto.otp,
       latestOtp.codeHash,
     );
 
     if (!isOtpValid) {
-      const attempts = latestOtp.attempts + 1;
-      await this.prisma.emailOtp.update({
-        where: { id: latestOtp.id },
-        data: { attempts },
-      });
+      const failedOtpAttempts = currentFailedOtpAttempts + 1;
+      const isLocked = failedOtpAttempts >= this.maxOtpAttempts;
+      const lockedUntil = isLocked
+        ? new Date(Date.now() + this.otpLockDurationMs)
+        : null;
 
-      const remainingAttempts = Math.max(this.maxOtpAttempts - attempts, 0);
+      await this.prisma.$transaction([
+        this.prisma.emailOtp.update({
+          where: { id: latestOtp.id },
+          data: { attempts: latestOtp.attempts + 1 },
+        }),
+        this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedOtpAttempts,
+            lockedUntil,
+          },
+        }),
+      ]);
+
+      if (isLocked && lockedUntil) {
+        throw new BadRequestException(
+          'Bạn đã nhập sai OTP 5 lần liên tiếp. Tài khoản đã bị khóa trong 15 phút.',
+        );
+      }
+
+      const remainingAttempts = Math.max(
+        this.maxOtpAttempts - failedOtpAttempts,
+        0,
+      );
       throw new BadRequestException(
         `Mã OTP không đúng. Bạn còn ${remainingAttempts} lần thử.`,
       );
-    }
-
-    const user = await this.usersService.findByEmail(email);
-    if (!user) {
-      throw new BadRequestException('Email chưa được đăng ký.');
     }
 
     const verifiedUser = await this.prisma.$transaction(async (tx) => {
@@ -171,7 +260,11 @@ export class AuthService {
 
       const updatedUser = await tx.user.update({
         where: { id: user.id },
-        data: { isVerified: true },
+        data: {
+          isVerified: true,
+          failedOtpAttempts: 0,
+          lockedUntil: null,
+        },
       });
 
       const { passwordHash, ...result } = updatedUser;
@@ -194,12 +287,24 @@ export class AuthService {
       throw new BadRequestException('Email đã được xác thực.');
     }
 
+    await this.ensureOtpAccountNotLocked(user);
+
     const latestOtp = await this.prisma.emailOtp.findFirst({
       where: { email: resendOtpDto.email },
       orderBy: { lastSentAt: 'desc' },
     });
 
     if (latestOtp) {
+      if (
+        (user.failedOtpAttempts ?? 0) < this.maxOtpAttempts &&
+        latestOtp.attempts >= this.maxOtpAttempts
+      ) {
+        await this.lockOtpAccount(user.id);
+        throw new BadRequestException(
+          'Bạn đã nhập sai OTP 5 lần liên tiếp. Tài khoản đã bị khóa trong 15 phút.',
+        );
+      }
+
       const elapsedMs = Date.now() - latestOtp.lastSentAt.getTime();
       if (elapsedMs < this.resendCooldownMs) {
         const waitSeconds = Math.ceil(

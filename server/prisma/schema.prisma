@@ -115,6 +115,10 @@ model User {
   role         UserRole @default(USER)
   /// Xác thực email
   isVerified   Boolean  @default(false)
+  /// Số lần nhập sai OTP liên tiếp
+  failedOtpAttempts Int      @default(0) @map("failed_otp_attempts")
+  /// Thời điểm hết hạn khóa do nhập sai OTP
+  lockedUntil       DateTime? @map("locked_until")
   /// Refresh token lưu trong DB (backup cho Redis)
   refreshToken String?
 

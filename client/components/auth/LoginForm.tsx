@@ -40,20 +40,17 @@ export default function LoginForm() {
         router.push('/home');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Đăng nhập thất bại!');
+      const data = err.response?.data;
+
+      if (data?.requiresVerification && data?.email) {
+        router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
+        return;
+      }
+
+      setError(data?.message || 'Đăng nhập thất bại!');
     } finally {
       setLoading(false);
     }
-  };
-
-  const quickLogin = (email: string, password: string) => {
-    setFormData({ email, password });
-    setTimeout(() => {
-      const form = document.getElementById('login-form') as HTMLFormElement;
-      if (form) {
-        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-      }
-    }, 100);
   };
 
   return (
@@ -136,25 +133,6 @@ export default function LoginForm() {
           Đăng nhập bằng Google
         </a>
 
-        <div className="mt-5 rounded-xl bg-[var(--bg-demo-box)] px-4 py-3 text-left text-sm text-[var(--text-muted)]">
-          <p className="mb-2 font-bold text-[var(--text-main)]">Tài khoản demo</p>
-          <div className="space-y-1.5">
-            <button
-              type="button"
-              onClick={() => quickLogin('admin@petmatching.com', 'admin123')}
-              className="block w-full rounded-lg px-2 py-1 text-left transition duration-200 ease-in-out hover:bg-white/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
-            >
-              <span className="font-bold text-[var(--text-main)]">Admin:</span> admin@petmatching.com / admin123
-            </button>
-            <button
-              type="button"
-              onClick={() => quickLogin('user1@petmatching.com', 'user123')}
-              className="block w-full rounded-lg px-2 py-1 text-left transition duration-200 ease-in-out hover:bg-white/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
-            >
-              <span className="font-bold text-[var(--text-main)]">User:</span> user1@petmatching.com / user123
-            </button>
-          </div>
-        </div>
       </div>
 
       <p className="mt-6 text-center text-sm font-medium text-[var(--text-muted)]">

@@ -16,7 +16,6 @@ export default function RegisterForm() {
     password: '',
     confirmPassword: '',
     name: '',
-    phone: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -107,20 +106,6 @@ export default function RegisterForm() {
               className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] px-4 py-3 text-[15px] text-[var(--text-main)] transition duration-200 ease-in-out placeholder:text-[#B0B0B0] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[rgba(228,93,28,0.14)]"
               placeholder="Nhập tên hiển thị"
               required
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">
-              Số điện thoại <span className="font-semibold text-[var(--text-muted)]">(tùy chọn)</span>
-            </label>
-            <input
-              type="tel"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] px-4 py-3 text-[15px] text-[var(--text-main)] transition duration-200 ease-in-out placeholder:text-[#B0B0B0] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[rgba(228,93,28,0.14)]"
-              placeholder="Nhập số điện thoại"
             />
           </div>
 
