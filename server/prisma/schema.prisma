@@ -104,23 +104,23 @@ enum VerificationBadge {
 // =============================================================
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  googleId     String?  @unique
+  id                String    @id @default(cuid())
+  email             String    @unique
+  googleId          String?   @unique
   /// Mật khẩu đã được hash (bcrypt)
-  passwordHash String?
-  name         String
-  avatarUrl    String?
-  phone        String?
-  role         UserRole @default(USER)
+  passwordHash      String?
+  name              String
+  avatarUrl         String?
+  phone             String?
+  role              UserRole  @default(USER)
   /// Xác thực email
-  isVerified   Boolean  @default(false)
+  isVerified        Boolean   @default(false)
   /// Số lần nhập sai OTP liên tiếp
-  failedOtpAttempts Int      @default(0) @map("failed_otp_attempts")
+  failedOtpAttempts Int       @default(0) @map("failed_otp_attempts")
   /// Thời điểm hết hạn khóa do nhập sai OTP
   lockedUntil       DateTime? @map("locked_until")
   /// Refresh token lưu trong DB (backup cho Redis)
-  refreshToken String?
+  refreshToken      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -170,7 +170,7 @@ model Pet {
   // --- [TỰ KHAI BÁO bởi chủ pet] ---
   // Cho phép user dùng hệ thống ngay, hiển thị "Tự khai" trên profile
   /// Chủ tự khai báo đã tiêm vaccine (chưa có bằng chứng)
-  isVaccinated Boolean @default(false)
+  isVaccinated   Boolean @default(false)
   /// Chủ tự khai báo có giấy phả hệ (chưa có bằng chứng)
   hasPedigree    Boolean @default(false)
   pedigreeNumber String? // VKA-2023-001 / TICA-2022-045
@@ -368,7 +368,7 @@ model BreedRule {
 // =============================================================
 
 model PetDocument {
-  id    String @id @default(cuid())
+  id String @id @default(cuid())
 
   // Giấy tờ thuộc pet nào
   pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
@@ -421,4 +421,46 @@ model PetReport {
   createdAt  DateTime @default(now())
 
   @@map("pet_reports")
+}
+
+// =============================================================
+// PRODUCT - San pham trong cua hang thu cung
+// =============================================================
+
+enum ProductCategory {
+  DOG_FOOD
+  CAT_FOOD
+  TOY
+  ACCESSORY
+  GROOMING
+  CAGE_BED
+  LEASH_COLLAR
+  MEDICAL
+}
+
+model Product {
+  id            String          @id @default(cuid())
+  name          String
+  slug          String?         @unique
+  category      ProductCategory
+  targetSpecies String          @default("ALL")
+  description   String?
+  imageUrl      String?
+  images        String[]
+  originalPrice Float
+  salePrice     Float?
+  brand         String?
+  unit          String?
+  rating        Float           @default(0)
+  reviewCount   Int             @default(0)
+  stock         Int?
+  isActive      Boolean         @default(true)
+  isFeatured    Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([category, isActive])
+  @@index([isFeatured, isActive])
+  @@index([targetSpecies, isActive])
+  @@map("products")
 }
