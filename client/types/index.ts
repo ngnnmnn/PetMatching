@@ -29,3 +29,45 @@ export interface RegisterData {
   phone?: string;
   avatarUrl?: string;
 }
+
+export type ProductCategory =
+  | 'DOG_FOOD'
+  | 'CAT_FOOD'
+  | 'TOY'
+  | 'ACCESSORY'
+  | 'GROOMING'
+  | 'CAGE_BED'
+  | 'LEASH_COLLAR'
+  | 'MEDICAL';
+
+export interface Product {
+  id: string;
+  name: string;
+  slug?: string;
+  category: ProductCategory;
+  targetSpecies: 'DOG' | 'CAT' | 'ALL';
+  description?: string;
+  imageUrl?: string;
+  images: string[];
+  originalPrice: number;
+  salePrice?: number | null;
+  brand?: string;
+  unit?: string;
+  rating: number;
+  reviewCount: number;
+  stock?: number | null;
+  isActive: boolean;
+  isFeatured: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}

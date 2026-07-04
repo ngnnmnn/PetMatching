@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { dogBreeds, catBreeds, breedingOptions, provinces } from "@/lib/pet-data"
+import { dogBreeds, catBreeds, breedingOptions, provinces } from "@/lib/pet-options"
 
 interface PetProfileFormProps {
   onComplete?: () => void

@@ -12,14 +12,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
-import { Pet, samplePets, dogBreeds, catBreeds, provinces, calculateAge, formatPrice } from "@/lib/pet-data"
+import { Pet, demoPets, dogBreeds, catBreeds, provinces, calculateAge, formatPrice } from "@/lib/pet-options"
 
 interface PetDiscoveryProps {
   userPets?: Pet[]
   onMatch?: (pet: Pet) => void
 }
 
-export function PetDiscovery({ userPets = samplePets.slice(0, 2), onMatch }: PetDiscoveryProps) {
+export function PetDiscovery({ userPets = demoPets.slice(0, 2), onMatch }: PetDiscoveryProps) {
   const [selectedUserPet, setSelectedUserPet] = useState<Pet | null>(userPets[0] || null)
   const [filters, setFilters] = useState({
     species: "" as "dog" | "cat" | "",
@@ -40,7 +40,7 @@ export function PetDiscovery({ userPets = samplePets.slice(0, 2), onMatch }: Pet
   // Auto-set opposite gender filter when user selects their pet
   const oppositeGender = selectedUserPet?.gender === "male" ? "female" : "male"
 
-  const filteredPets = samplePets.filter((pet) => {
+  const filteredPets = demoPets.filter((pet) => {
     if (selectedUserPet && pet.gender !== oppositeGender) return false
     if (selectedUserPet && pet.species !== selectedUserPet.species) return false
     if (filters.breed && filters.breed !== "all" && pet.breed !== filters.breed) return false
