@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, LogOut, MessageCircle, Package, Scissors, User } from 'lucide-react';
+import { ChevronDown, LogOut, MessageCircle, Package, Scissors, ShieldCheck, User } from 'lucide-react';
 import { User as UserType } from '@/types';
 
 const MENU_ITEMS = [
@@ -69,6 +69,19 @@ export default function UserDropdown() {
           </div>
 
           <div className="py-1">
+            {user.role === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={() => {
+                  router.push('/admin');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-bold text-[#0F766E] transition hover:bg-[#E8F4F2]"
+              >
+                <ShieldCheck className="size-4" />
+                Admin console
+              </button>
+            )}
             {MENU_ITEMS.map((item) => (
               <button
                 key={item.label}

@@ -8,7 +8,10 @@ export default function RootPage() {
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
-    router.replace(token ? '/home' : '/login');
+    const storedUser = localStorage.getItem('user');
+    const user = storedUser ? JSON.parse(storedUser) as { role?: string } : null;
+
+    router.replace(token ? (user?.role === 'ADMIN' ? '/admin' : '/home') : '/login');
   }, [router]);
 
   return (
