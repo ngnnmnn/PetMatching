@@ -17,6 +17,65 @@ export interface AuthResponse {
   email?: string;
 }
 
+export interface Address {
+  id: string;
+  userId: string;
+  receiverName: string;
+  receiverPhone: string;
+  province: string;
+  district: string;
+  ward: string;
+  detail: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  quantity: number;
+  price: number;
+  product?: {
+    id: string;
+    name: string;
+    imageUrl?: string | null;
+  };
+}
+
+export interface Order {
+  id: string;
+  userId: string;
+  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  totalAmount: number;
+  shippingAddress: string;
+  items: OrderItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileResponse extends User {
+  addresses: Address[];
+  orders: Order[];
+  stats: {
+    pets: number;
+    orders: number;
+    totalSpent: number;
+  };
+}
+
+export interface UpdateProfileData {
+  name?: string;
+  phone?: string;
+  avatarUrl?: string;
+}
+
+export interface ChangePasswordData {
+  currentPassword: string;
+  newPassword: string;
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;
