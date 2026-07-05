@@ -18,6 +18,9 @@ type Pet = {
   avatarUrl?: string | null;
   gallery: string[];
   hasPedigree: boolean;
+  isVaccinated: boolean;
+  pedigreeVerified: boolean;
+  vaccineVerified: boolean;
   isAvailableForMatching: boolean;
   status: 'ACTIVE' | 'HIDDEN' | 'INACTIVE';
 };
@@ -107,7 +110,13 @@ export default function MyPetsPage() {
                   <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
                     <span>{pet.location}</span>
                     <span>{pet.weight} kg</span>
-                    {pet.hasPedigree && (
+                    {pet.vaccineVerified && (
+                      <span className="inline-flex items-center gap-1 text-primary">
+                        <BadgeCheck className="size-4" />
+                        Tiêm phòng
+                      </span>
+                    )}
+                    {pet.pedigreeVerified && (
                       <span className="inline-flex items-center gap-1 text-primary">
                         <BadgeCheck className="size-4" />
                         Phả hệ

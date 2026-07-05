@@ -75,6 +75,15 @@ enum UserRole {
   USER
   ADMIN
   MODERATOR
+  STORE_MANAGER
+  SPA_MANAGER
+  SPA_STAFF
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_MANAGER
 }
 
 enum OrderStatus {
@@ -109,6 +118,49 @@ enum DocumentStatus {
   REVIEWING
   APPROVED
   REJECTED
+  NEED_MORE_INFO
+}
+
+enum ApprovalStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum ComplaintType {
+  USER
+  PET
+  MATCHING
+  STORE
+  SPA
+  REVIEW
+}
+
+enum ComplaintStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+  ESCALATED
+}
+
+enum ComplaintAction {
+  DISMISS
+  WARNING
+  HIDE_CONTENT
+  SUSPEND_ACCOUNT
+  RESOLVE
+  ESCALATE
+}
+
+enum SpaBookingStatus {
+  PENDING
+  CONFIRMED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
 /// Trạng thái badge xác minh hiển thị trên swipe card:
@@ -126,21 +178,22 @@ enum VerificationBadge {
 // =============================================================
 
 model User {
-  id                String    @id @default(cuid())
-  email             String    @unique
-  googleId          String?   @unique
+  id                String        @id @default(cuid())
+  email             String        @unique
+  googleId          String?       @unique
   /// Mật khẩu đã được hash (bcrypt)
   passwordHash      String?
   name              String
   avatarUrl         String?
   phone             String?
-  role              UserRole  @default(USER)
+  role              UserRole      @default(USER)
+  accountStatus     AccountStatus @default(ACTIVE)
   /// Xác thực email
-  isVerified        Boolean   @default(false)
+  isVerified        Boolean       @default(false)
   /// Số lần nhập sai OTP liên tiếp
-  failedOtpAttempts Int       @default(0) @map("failed_otp_attempts")
+  failedOtpAttempts Int           @default(0) @map("failed_otp_attempts")
   /// Thời điểm hết hạn khóa do nhập sai OTP
-  lockedUntil       DateTime? @map("locked_until")
+  lockedUntil       DateTime?     @map("locked_until")
   /// Refresh token lưu trong DB (backup cho Redis)
   refreshToken      String?
 
@@ -148,12 +201,18 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  pets      Pet[]
-  sentLikes Like[]    @relation("LikeSender")
-  messages  Message[]
-  addresses Address[]
-  orders    Order[]
-  matchingRequests MatchingRequest[] @relation("MatchingRequester")
+  pets                Pet[]
+  sentLikes           Like[]            @relation("LikeSender")
+  messages            Message[]
+  addresses           Address[]
+  orders              Order[]
+  matchingRequests    MatchingRequest[] @relation("MatchingRequester")
+  managedStores       Store[]           @relation("StoreManager")
+  managedSpaBranches  SpaBranch[]       @relation("SpaManager")
+  spaBookings         SpaBooking[]
+  assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
+  reviewedDocuments   PetDocument[]     @relation("PetDocumentReviewer")
+  auditLogs           AuditLog[]        @relation("AuditActor")
 
   @@map("users")
 }
@@ -239,11 +298,11 @@ model Pet {
   longitude Float?
 
   // --- Trạng thái ---
-  isActive  Boolean  @default(true) // legacy flag, kept for compatibility
-  status    PetStatus @default(ACTIVE)
-  isAvailableForMatching Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive               Boolean   @default(true) // legacy flag, kept for compatibility
+  status                 PetStatus @default(ACTIVE)
+  isAvailableForMatching Boolean   @default(false)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // Relations
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -260,8 +319,8 @@ model Pet {
   matchesAsPet2 Match[] @relation("MatchPet2")
 
   /// Các giấy tờ đã nộp để duyệt
-  documents PetDocument[]
-  sentMatchingRequests MatchingRequest[] @relation("FemalePetRequests")
+  documents                PetDocument[]
+  sentMatchingRequests     MatchingRequest[] @relation("FemalePetRequests")
   receivedMatchingRequests MatchingRequest[] @relation("MalePetRequests")
 
   @@index([species, gender, status, isAvailableForMatching])
@@ -320,8 +379,8 @@ model MatchingRequest {
   note   String?
 
   respondedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([requesterId, status])
   @@index([femalePetId, malePetId, status])
@@ -445,6 +504,7 @@ model PetDocument {
   // --- Thông tin duyệt (điền khi moderator xử lý) ---
   /// ID của moderator/admin đã duyệt
   reviewerId   String?
+  reviewer     User?     @relation("PetDocumentReviewer", fields: [reviewerId], references: [id])
   /// Tên moderator (denormalized để hiển thị nhanh)
   reviewerName String?
   /// Ghi chú của moderator (bắt buộc khi REJECTED)
@@ -475,6 +535,28 @@ model PetReport {
   createdAt  DateTime @default(now())
 
   @@map("pet_reports")
+}
+
+model Store {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  address     String?
+  phone       String?
+  status      ApprovalStatus @default(PENDING)
+  manager     User?          @relation("StoreManager", fields: [managerId], references: [id])
+  managerId   String?
+  approvedAt  DateTime?
+  suspendedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  products Product[]
+  orders   Order[]
+
+  @@index([status])
+  @@index([managerId])
+  @@map("stores")
 }
 
 // =============================================================
@@ -510,6 +592,8 @@ model Product {
   stock         Int?
   isActive      Boolean         @default(true)
   isFeatured    Boolean         @default(false)
+  store         Store?          @relation(fields: [storeId], references: [id])
+  storeId       String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   orderItems    OrderItem[]
@@ -517,6 +601,7 @@ model Product {
   @@index([category, isActive])
   @@index([isFeatured, isActive])
   @@index([targetSpecies, isActive])
+  @@index([storeId])
   @@map("products")
 }
 
@@ -553,11 +638,14 @@ model Order {
   status          OrderStatus @default(PENDING)
   totalAmount     Float
   shippingAddress String
+  store           Store?      @relation(fields: [storeId], references: [id])
+  storeId         String?
   items           OrderItem[]
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
   @@index([userId])
+  @@index([storeId])
   @@map("orders")
 }
 
@@ -572,4 +660,114 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+model SpaBranch {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  address     String?
+  phone       String?
+  status      ApprovalStatus @default(PENDING)
+  manager     User?          @relation("SpaManager", fields: [managerId], references: [id])
+  managerId   String?
+  approvedAt  DateTime?
+  suspendedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  services SpaService[]
+  bookings SpaBooking[]
+
+  @@index([status])
+  @@index([managerId])
+  @@map("spa_branches")
+}
+
+model SpaService {
+  id          String    @id @default(cuid())
+  branch      SpaBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId    String
+  name        String
+  description String?
+  price       Float
+  durationMin Int
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  bookings SpaBooking[]
+
+  @@index([branchId, isActive])
+  @@map("spa_services")
+}
+
+model SpaBooking {
+  id            String           @id @default(cuid())
+  branch        SpaBranch        @relation(fields: [branchId], references: [id])
+  branchId      String
+  service       SpaService?      @relation(fields: [serviceId], references: [id])
+  serviceId     String?
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  staff         User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
+  staffId       String?
+  petName       String?
+  scheduledAt   DateTime
+  status        SpaBookingStatus @default(PENDING)
+  priceSnapshot Float?
+  note          String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([branchId, status])
+  @@index([userId])
+  @@index([staffId])
+  @@map("spa_bookings")
+}
+
+model Complaint {
+  id           String           @id @default(cuid())
+  type         ComplaintType
+  status       ComplaintStatus  @default(PENDING)
+  title        String
+  detail       String?
+  reporterId   String?
+  targetType   String?
+  targetId     String?
+  actionTaken  ComplaintAction?
+  adminNote    String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([type, status])
+  @@index([reporterId])
+  @@map("complaints")
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
 }

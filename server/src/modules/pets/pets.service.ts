@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Gender, PetStatus } from '@prisma/client';
+import { DocumentStatus, DocumentType, Gender, PetStatus, VerificationBadge } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePetDto } from './dto/create-pet.dto';
 
@@ -20,6 +20,26 @@ export class PetsService {
       throw new BadRequestException('Birthday is invalid.');
     }
 
+    const documents = [];
+    if (dto.isVaccinated) {
+      documents.push({
+        type: DocumentType.VACCINE_RECORD,
+        title: 'Sổ tiêm phòng',
+        imageUrls: dto.vaccineDocumentUrls ?? [],
+        userNote: dto.vaccineNote ?? 'Người dùng khai báo đã tiêm đủ 3 mũi cơ bản.',
+        status: DocumentStatus.PENDING,
+      });
+    }
+    if (dto.hasPedigree) {
+      documents.push({
+        type: DocumentType.PEDIGREE_CERT,
+        title: 'Giấy chứng nhận phả hệ',
+        imageUrls: dto.pedigreeDocumentUrls ?? [],
+        userNote: dto.pedigreeNote ?? dto.pedigreeNumber,
+        status: DocumentStatus.PENDING,
+      });
+    }
+
     return this.prisma.pet.create({
       data: {
         ownerId: userId,
@@ -38,10 +58,13 @@ export class PetsService {
         pedigreeNumber: dto.pedigreeNumber,
         breedingOption: dto.breedingOption,
         breedingFee: dto.breedingFee,
+        verificationBadge: documents.length ? VerificationBadge.PENDING : VerificationBadge.NONE,
         status: dto.status ?? PetStatus.ACTIVE,
         isActive: (dto.status ?? PetStatus.ACTIVE) === PetStatus.ACTIVE,
         isAvailableForMatching: false,
+        documents: documents.length ? { create: documents } : undefined,
       },
+      include: { documents: true },
     });
   }
 

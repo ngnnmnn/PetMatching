@@ -22,6 +22,8 @@ type Pet = {
   gallery: string[];
   personality?: string | null;
   hasPedigree: boolean;
+  pedigreeVerified: boolean;
+  vaccineVerified: boolean;
   verified?: boolean;
   isAvailableForMatching: boolean;
   compatibilityScore?: number;
@@ -163,13 +165,13 @@ export default function ExplorePage() {
                       {pet.location}
                     </span>
                     <span>{pet.weight} kg</span>
-                    {pet.hasPedigree && (
+                    {pet.pedigreeVerified && (
                       <span className="inline-flex items-center gap-1 text-primary">
                         <BadgeCheck className="size-4" />
                         Phả hệ
                       </span>
                     )}
-                    {pet.verified && (
+                    {(pet.verified || pet.pedigreeVerified || pet.vaccineVerified) && (
                       <span className="inline-flex items-center gap-1 text-primary">
                         <ShieldCheck className="size-4" />
                         Xác thực

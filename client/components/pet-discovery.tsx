@@ -47,7 +47,7 @@ export function PetDiscovery({ userPets = demoPets.slice(0, 2), onMatch }: PetDi
     if (filters.location && filters.location !== "all" && pet.location !== filters.location) return false
     if (pet.weight < filters.weightRange[0] || pet.weight > filters.weightRange[1]) return false
     if (filters.verifiedOnly && !pet.verified) return false
-    if (filters.hasPedigreeOnly && !pet.hasPedigree) return false
+    if (filters.hasPedigreeOnly && !pet.pedigreeVerified) return false
     return true
   })
 
@@ -520,7 +520,7 @@ function SwipeableCard({
                 Da xac minh
               </Badge>
             )}
-            {pet.hasPedigree && (
+            {pet.pedigreeVerified && (
               <Badge variant="secondary" className="gap-1">
                 Co pha he
               </Badge>

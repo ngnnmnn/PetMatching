@@ -21,6 +21,7 @@ type User = {
   phone?: string | null;
   avatarUrl?: string | null;
   role: string;
+  accountStatus?: string;
   isVerified?: boolean;
   failedOtpAttempts?: number;
   lockedUntil?: Date | null;
@@ -159,6 +160,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        accountStatus: true,
         isVerified: true,
         createdAt: true,
         phone: true,

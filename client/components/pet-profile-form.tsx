@@ -44,16 +44,24 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
   const breeds = formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : []
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
     const file = event.target.files?.[0]
     if (file) {
-      setter(URL.createObjectURL(file))
+      setter(await readFileAsDataUrl(file))
     }
   }
 
-  const handleGalleryUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGalleryUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
-    const newImages = files.slice(0, 6 - gallery.length).map((file) => URL.createObjectURL(file))
+    const newImages = await Promise.all(files.slice(0, 6 - gallery.length).map(readFileAsDataUrl))
     setGallery([...gallery, ...newImages])
   }
 
@@ -89,6 +97,17 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const handleSubmit = async () => {
     if (isSubmitting) return
 
+    if (formData.isVaccinated && !vaccinePhoto) {
+      setSubmitError("Vui lòng tải ảnh sổ tiêm phòng để gửi xác minh.")
+      setStep(2)
+      return
+    }
+    if (formData.hasPedigree && !pedigreePhoto) {
+      setSubmitError("Vui lòng tải ảnh giấy tờ phả hệ để gửi xác minh.")
+      setStep(2)
+      return
+    }
+
     const species = formData.species === "dog" ? "DOG" : "CAT"
     const gender = formData.gender === "male" ? "MALE" : "FEMALE"
     const breedingOptionMap: Record<string, string> = {
@@ -115,6 +134,10 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         isVaccinated: formData.isVaccinated,
         hasPedigree: formData.hasPedigree,
         pedigreeNumber: formData.pedigreeNumber.trim() || undefined,
+        vaccineDocumentUrls: vaccinePhoto ? [vaccinePhoto] : undefined,
+        vaccineNote: formData.isVaccinated ? "Đã tiêm đủ 3 mũi cơ bản" : undefined,
+        pedigreeDocumentUrls: pedigreePhoto ? [pedigreePhoto] : undefined,
+        pedigreeNote: formData.pedigreeNumber.trim() || "Giấy tờ phả hệ VKA/TICA",
         breedingOption: breedingOptionMap[formData.breedingOption] || undefined,
         breedingFee: formData.breedingPrice ? Number(formData.breedingPrice) : undefined,
       })

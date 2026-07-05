@@ -4,6 +4,7 @@ export type AuthenticatedUser = {
   id: string;
   email: string;
   role: string;
+  accountStatus?: string;
   name?: string;
 };
 
