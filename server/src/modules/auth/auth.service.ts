@@ -31,6 +31,7 @@ type GoogleTokenResponse = {
 };
 
 type GoogleUserInfo = {
+  sub?: string;
   email?: string;
   email_verified?: boolean;
   name?: string;
@@ -433,12 +434,14 @@ export class AuthService {
     const user = existingUser
       ? await this.usersService.updateGoogleProfile(existingUser.id, {
           name: existingUser.name || googleUser.name || googleUser.email,
+          googleId: googleUser.sub,
           avatarUrl: existingUser.avatarUrl || googleUser.picture,
           isVerified: true,
         })
       : await this.usersService.createGoogleUser({
           email: googleUser.email,
           name: googleUser.name || googleUser.email,
+          googleId: googleUser.sub,
           avatarUrl: googleUser.picture,
         });
 
