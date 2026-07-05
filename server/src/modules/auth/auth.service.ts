@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { AccountStatus } from '@prisma/client';
 import { randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { MailService } from '../../common/mail/mail.service';
@@ -20,6 +21,7 @@ type AuthUser = {
   email: string;
   name: string;
   role: string;
+  accountStatus?: string;
   avatarUrl?: string | null;
   phone?: string | null;
   isVerified?: boolean;
@@ -57,6 +59,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      accountStatus: user.accountStatus,
       name: user.name,
     };
 
@@ -69,6 +72,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        accountStatus: user.accountStatus,
         avatarUrl: user.avatarUrl,
         phone: user.phone,
         isVerified: user.isVerified,
@@ -137,6 +141,10 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng!');
+    }
+
+    if (user.accountStatus === AccountStatus.SUSPENDED) {
+      throw new UnauthorizedException('Tai khoan dang bi khoa.');
     }
 
     if (!user.isVerified) {
@@ -455,6 +463,9 @@ export class AuthService {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
+      if (user.accountStatus === AccountStatus.SUSPENDED) {
+        throw new UnauthorizedException('Account suspended');
+      }
       return {
         success: true,
         user: {
@@ -462,6 +473,7 @@ export class AuthService {
           email: user.email,
           name: user.name,
           role: user.role,
+          accountStatus: user.accountStatus,
           avatarUrl: user.avatarUrl,
           phone: user.phone,
           isVerified: user.isVerified,
