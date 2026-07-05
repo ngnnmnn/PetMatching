@@ -3,7 +3,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 type User = {
     id: string;
     email: string;
-    passwordHash: string;
+    passwordHash: string | null;
     name: string;
     phone?: string | null;
     avatarUrl?: string | null;
@@ -26,11 +26,22 @@ export declare class UsersService {
         avatarUrl?: string;
         role?: UserRole;
     }): Promise<Omit<User, 'passwordHash'>>;
+    createGoogleUser(data: {
+        email: string;
+        name: string;
+        avatarUrl?: string;
+    }): Promise<Omit<User, 'passwordHash'>>;
+    updateGoogleProfile(userId: string, data: {
+        name?: string;
+        avatarUrl?: string;
+        isVerified?: boolean;
+    }): Promise<Omit<User, 'passwordHash'>>;
     updateRefreshToken(userId: string, refreshToken: string | null): Promise<{
+        name: string;
         id: string;
         email: string;
-        passwordHash: string;
-        name: string;
+        googleId: string | null;
+        passwordHash: string | null;
         avatarUrl: string | null;
         phone: string | null;
         role: import("@prisma/client").$Enums.UserRole;
@@ -39,10 +50,11 @@ export declare class UsersService {
         createdAt: Date;
         updatedAt: Date;
     }>;
+    markEmailVerified(userId: string): Promise<Omit<User, 'passwordHash'>>;
     getAllUsers(): Promise<{
+        name: string;
         id: string;
         email: string;
-        name: string;
         avatarUrl: string | null;
         phone: string | null;
         role: import("@prisma/client").$Enums.UserRole;

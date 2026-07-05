@@ -17,6 +17,8 @@ const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
 const login_dto_1 = require("./dto/login.dto");
 const register_dto_1 = require("./dto/register.dto");
+const resend_otp_dto_1 = require("./dto/resend-otp.dto");
+const verify_email_dto_1 = require("./dto/verify-email.dto");
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
@@ -27,6 +29,32 @@ let AuthController = class AuthController {
     }
     async register(registerDto) {
         return this.authService.register(registerDto);
+    }
+    async verifyEmail(verifyEmailDto) {
+        return this.authService.verifyEmail(verifyEmailDto);
+    }
+    async resendOtp(resendOtpDto) {
+        return this.authService.resendOtp(resendOtpDto);
+    }
+    async googleAuth(res) {
+        return res.redirect(this.authService.getGoogleAuthUrl());
+    }
+    async googleCallback(code, error, res) {
+        const clientUrl = process.env.CLIENT_URL ||
+            process.env.FRONTEND_URL ||
+            'http://localhost:3000';
+        if (error) {
+            return res.redirect(`${clientUrl}/auth/google/callback?error=${encodeURIComponent(error)}`);
+        }
+        try {
+            const authResult = await this.authService.googleLogin(code);
+            const params = new URLSearchParams({ token: authResult.accessToken });
+            return res.redirect(`${clientUrl}/auth/google/callback?${params.toString()}`);
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : 'Đăng nhập Google thất bại';
+            return res.redirect(`${clientUrl}/auth/google/callback?error=${encodeURIComponent(message)}`);
+        }
     }
     async verify(authHeader) {
         const token = authHeader?.split(' ')[1];
@@ -50,6 +78,38 @@ __decorate([
     __metadata("design:paramtypes", [register_dto_1.RegisterDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "register", null);
+__decorate([
+    (0, common_1.Post)('verify-email'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [verify_email_dto_1.VerifyEmailDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "verifyEmail", null);
+__decorate([
+    (0, common_1.Post)('resend-otp'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [resend_otp_dto_1.ResendOtpDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "resendOtp", null);
+__decorate([
+    (0, common_1.Get)('google'),
+    __param(0, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "googleAuth", null);
+__decorate([
+    (0, common_1.Get)('google/callback'),
+    __param(0, (0, common_1.Query)('code')),
+    __param(1, (0, common_1.Query)('error')),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "googleCallback", null);
 __decorate([
     (0, common_1.Get)('verify'),
     __param(0, (0, common_1.Headers)('authorization')),

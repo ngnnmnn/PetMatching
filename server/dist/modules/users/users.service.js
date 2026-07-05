@@ -45,8 +45,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
-const prisma_service_1 = require("../../common/prisma/prisma.service");
+const crypto_1 = require("crypto");
 const bcrypt = __importStar(require("bcrypt"));
+const prisma_service_1 = require("../../common/prisma/prisma.service");
 let UsersService = class UsersService {
     prisma;
     constructor(prisma) {
@@ -65,6 +66,8 @@ let UsersService = class UsersService {
     async validateUser(email, password) {
         const user = await this.findByEmail(email);
         if (!user)
+            return null;
+        if (!user.passwordHash)
             return null;
         const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
         if (!isPasswordValid)
@@ -86,7 +89,34 @@ let UsersService = class UsersService {
                 phone: data.phone,
                 avatarUrl: data.avatarUrl,
                 role: data.role ?? client_1.UserRole.USER,
+                isVerified: false,
             },
+        });
+        const { passwordHash, ...result } = user;
+        return result;
+    }
+    async createGoogleUser(data) {
+        const existingUser = await this.findByEmail(data.email);
+        if (existingUser) {
+            throw new common_1.ConflictException('Email đã được đăng ký!');
+        }
+        const user = await this.prisma.user.create({
+            data: {
+                email: data.email,
+                passwordHash: await bcrypt.hash((0, crypto_1.randomUUID)(), 10),
+                name: data.name,
+                avatarUrl: data.avatarUrl,
+                isVerified: true,
+                role: client_1.UserRole.USER,
+            },
+        });
+        const { passwordHash, ...result } = user;
+        return result;
+    }
+    async updateGoogleProfile(userId, data) {
+        const user = await this.prisma.user.update({
+            where: { id: userId },
+            data,
         });
         const { passwordHash, ...result } = user;
         return result;
@@ -96,6 +126,14 @@ let UsersService = class UsersService {
             where: { id: userId },
             data: { refreshToken },
         });
+    }
+    async markEmailVerified(userId) {
+        const user = await this.prisma.user.update({
+            where: { id: userId },
+            data: { isVerified: true },
+        });
+        const { passwordHash, ...result } = user;
+        return result;
     }
     async getAllUsers() {
         return this.prisma.user.findMany({
