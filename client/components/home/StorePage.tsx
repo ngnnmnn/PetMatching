@@ -1,25 +1,20 @@
 'use client';
 
 import { useCallback } from 'react';
-import Link from 'next/link';
 import {
   BadgeCheck,
-  Heart,
-  Search,
-  Scissors,
   ShieldCheck,
   ShoppingCart,
   Sparkles,
   Store,
   Truck,
 } from 'lucide-react';
-import { BrandMark } from '@/components/auth/AuthShell';
+import AppHeader from '@/components/layout/AppHeader';
 import { useProducts } from '@/hooks/useProducts';
 import CategoryTabs from './CategoryTabs';
 import FeaturedSection from './FeaturedSection';
 import ProductGrid from './ProductGrid';
 import SearchFilterBar from './SearchFilterBar';
-import UserDropdown from './UserDropdown';
 
 type SortKey = 'popular' | 'newest' | 'price_asc' | 'price_desc';
 
@@ -62,62 +57,7 @@ export default function StorePage() {
         fontFamily: 'Inter, Outfit, ui-sans-serif, system-ui, sans-serif',
       }}
     >
-      <nav className="sticky top-0 z-40 border-b border-[#ECE7DE] bg-white/90 shadow-[0_10px_30px_rgba(26,26,26,0.05)] backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <Link
-            href="/home"
-            className="flex min-w-0 items-center gap-3 rounded-md pr-2 text-[var(--text-main)] transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
-          >
-            <BrandMark size="sm" />
-            <span className="hidden leading-tight sm:block">
-              <span className="block text-lg font-extrabold tracking-normal">PetMatch</span>
-              <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-[#0F766E]">Store</span>
-            </span>
-          </Link>
-
-          <div className="hidden items-center rounded-lg border border-[#EFEAE2] bg-[#FBFAF7] p-1 md:flex">
-            {[
-              { label: 'Khám phá', href: '/explore', icon: Search },
-              { label: 'Yêu thích', href: '/favorites', icon: Heart },
-              { label: 'Thú cưng', href: '/my-pets', icon: BadgeCheck },
-            ].map((nav) => (
-              <Link
-                key={nav.label}
-                href={nav.href}
-                className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-semibold text-[var(--text-muted)] transition hover:bg-white hover:text-[var(--text-main)] hover:shadow-sm"
-              >
-                <nav.icon className="size-4" />
-                {nav.label}
-              </Link>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <Link
-              href="/spa"
-              className="hidden h-10 items-center gap-1.5 rounded-md border border-transparent px-3 text-sm font-semibold text-[var(--text-muted)] transition hover:border-[#EFEAE2] hover:bg-[#FBFAF7] hover:text-[var(--text-main)] sm:flex"
-            >
-              <Scissors className="size-4" />
-              Spa
-            </Link>
-            <span className="hidden h-10 items-center gap-1.5 rounded-md border border-[rgba(228,93,28,0.18)] bg-[var(--bg-demo-box)] px-3 text-sm font-extrabold text-[var(--primary-color)] shadow-[0_10px_20px_rgba(228,93,28,0.10)] sm:flex">
-              <Store className="size-4" />
-              Cửa hàng
-            </span>
-            <button
-              type="button"
-              className="relative inline-flex size-10 items-center justify-center rounded-md border border-[#EFEAE2] bg-white text-[var(--text-main)] shadow-sm transition hover:border-[rgba(228,93,28,0.28)] hover:text-[var(--primary-color)]"
-              aria-label="Giỏ hàng"
-            >
-              <ShoppingCart className="size-5" />
-              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-[var(--primary-color)] text-[10px] font-bold text-white shadow-sm">
-                0
-              </span>
-            </button>
-            <UserDropdown />
-          </div>
-        </div>
-      </nav>
+      <AppHeader sectionLabel="Store" />
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6">
         <section className="relative overflow-hidden rounded-lg bg-[#12312F] text-white shadow-[0_24px_70px_rgba(18,49,47,0.18)]">

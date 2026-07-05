@@ -26,6 +26,12 @@ enum Gender {
   FEMALE
 }
 
+enum PetStatus {
+  ACTIVE
+  HIDDEN
+  INACTIVE
+}
+
 /// Hình thức phối giống:
 /// CASH         - Thu tiền mặt (có breedingFee)
 /// SHARE_LITTER - Chia con non (chủ cái lấy X con trong lứa)
@@ -53,6 +59,14 @@ enum LikeStatus {
 enum MatchStatus {
   ACTIVE
   COMPLETED
+  CANCELLED
+}
+
+enum MatchingRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  PASSED
   CANCELLED
 }
 
@@ -139,6 +153,7 @@ model User {
   messages  Message[]
   addresses Address[]
   orders    Order[]
+  matchingRequests MatchingRequest[] @relation("MatchingRequester")
 
   @@map("users")
 }
@@ -224,7 +239,9 @@ model Pet {
   longitude Float?
 
   // --- Trạng thái ---
-  isActive  Boolean  @default(true) // false = đã tạm ngừng tìm kiếm
+  isActive  Boolean  @default(true) // legacy flag, kept for compatibility
+  status    PetStatus @default(ACTIVE)
+  isAvailableForMatching Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -244,8 +261,10 @@ model Pet {
 
   /// Các giấy tờ đã nộp để duyệt
   documents PetDocument[]
+  sentMatchingRequests MatchingRequest[] @relation("FemalePetRequests")
+  receivedMatchingRequests MatchingRequest[] @relation("MalePetRequests")
 
-  @@index([species, gender, isActive])
+  @@index([species, gender, status, isAvailableForMatching])
   @@index([ownerId])
   @@index([breed])
   @@index([location])
@@ -284,6 +303,31 @@ model Like {
 // =============================================================
 // MATCH - Hai bên đã like nhau thành công
 // =============================================================
+
+model MatchingRequest {
+  id String @id @default(cuid())
+
+  requester   User   @relation("MatchingRequester", fields: [requesterId], references: [id])
+  requesterId String
+
+  femalePet   Pet    @relation("FemalePetRequests", fields: [femalePetId], references: [id])
+  femalePetId String
+
+  malePet   Pet    @relation("MalePetRequests", fields: [malePetId], references: [id])
+  malePetId String
+
+  status MatchingRequestStatus @default(PENDING)
+  note   String?
+
+  respondedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([requesterId, status])
+  @@index([femalePetId, malePetId, status])
+  @@index([malePetId, status])
+  @@map("matching_requests")
+}
 
 model Match {
   id String @id @default(cuid())

@@ -38,6 +38,7 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { BrandMark } from '@/components/auth/AuthShell';
 import UserDropdown from '@/components/home/UserDropdown';
+import AppHeader from '@/components/layout/AppHeader';
 import { usersApi } from '@/lib/api/users';
 import { Address, ProfileResponse } from '@/types';
 import {
@@ -553,7 +554,8 @@ export default function ProfilePage() {
       className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)]"
       style={{ fontFamily: 'Inter, Outfit, ui-sans-serif, system-ui, sans-serif' }}
     >
-      <nav className="sticky top-0 z-40 border-b border-[#ECE7DE] bg-white/90 shadow-[0_10px_30px_rgba(26,26,26,0.05)] backdrop-blur-xl">
+      <AppHeader sectionLabel="Profile" />
+      <nav className="hidden">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link
             href="/home"

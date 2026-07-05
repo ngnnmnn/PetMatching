@@ -8,10 +8,10 @@ export const dogBreeds = [
   'Pomeranian',
   'Chihuahua',
   'Beagle',
-  'Bulldog Phap',
+  'Bulldog Pháp',
   'Alaska',
   'Samoyed',
-  'Cho Phu Quoc',
+  'Chó Phú Quốc',
 ];
 
 export const catBreeds = [
@@ -24,27 +24,27 @@ export const catBreeds = [
   'Bengal',
   'Siamese',
   'Sphynx',
-  'Meo ta',
+  'Mèo ta',
   'Exotic Shorthair',
 ];
 
 export const provinces = [
-  'TP. Ho Chi Minh',
-  'Ha Noi',
-  'Da Nang',
-  'Binh Duong',
-  'Dong Nai',
-  'Can Tho',
-  'Hai Phong',
+  'TP. Hồ Chí Minh',
+  'Hà Nội',
+  'Đà Nẵng',
+  'Bình Dương',
+  'Đồng Nai',
+  'Cần Thơ',
+  'Hải Phòng',
   'Nha Trang',
-  'Hue',
-  'Vung Tau',
+  'Huế',
+  'Vũng Tàu',
 ];
 
 export const breedingOptions = [
-  { value: 'cash', label: 'Thu phi tien mat' },
-  { value: 'share', label: 'Chia con non sau khi de' },
-  { value: 'negotiate', label: 'Thoa thuan sau' },
+  { value: 'cash', label: 'Thu phí tiền mặt' },
+  { value: 'share', label: 'Chia con non sau khi đẻ' },
+  { value: 'negotiate', label: 'Thỏa thuận sau' },
 ];
 
 export interface Pet {
@@ -84,12 +84,12 @@ export const demoPets: Pet[] = [
     pedigreeNumber: 'VKA-2023-001',
     avatar: 'https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=400&h=400&fit=crop',
     gallery: ['https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=600'],
-    personality: 'Hien, thich choi dua va quan nguoi.',
-    description: 'Da duoc huan luyen co ban.',
+    personality: 'Hiền, thích chơi đùa và quấn người.',
+    description: 'Đã được huấn luyện cơ bản.',
     breedingOption: 'cash',
     breedingPrice: 5000000,
-    location: 'TP. Ho Chi Minh',
-    ownerName: 'Nguyen Van A',
+    location: 'TP. Hồ Chí Minh',
+    ownerName: 'Nguyễn Văn A',
     verified: true,
   },
   {
@@ -105,15 +105,15 @@ export const demoPets: Pet[] = [
     pedigreeNumber: 'TICA-2022-045',
     avatar: 'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=400&h=400&fit=crop',
     gallery: ['https://images.unsplash.com/photo-1574158622682-e40e69881006?w=600'],
-    personality: 'Diem dam, thich nam phoi nang.',
+    personality: 'Điềm đạm, thích nằm phơi nắng.',
     breedingOption: 'share',
-    location: 'Ha Noi',
-    ownerName: 'Tran Thi B',
+    location: 'Hà Nội',
+    ownerName: 'Trần Thị B',
     verified: true,
   },
   {
     id: '3',
-    name: 'Dau Dau',
+    name: 'Đậu Đậu',
     species: 'dog',
     breed: 'Golden Retriever',
     gender: 'female',
@@ -123,10 +123,10 @@ export const demoPets: Pet[] = [
     hasPedigree: false,
     avatar: 'https://images.unsplash.com/photo-1633722715463-d30f4f325e24?w=400&h=400&fit=crop',
     gallery: ['https://images.unsplash.com/photo-1633722715463-d30f4f325e24?w=600'],
-    personality: 'Than thien, yeu tre em.',
+    personality: 'Thân thiện, yêu trẻ em.',
     breedingOption: 'negotiate',
-    location: 'Da Nang',
-    ownerName: 'Le Van C',
+    location: 'Đà Nẵng',
+    ownerName: 'Lê Văn C',
     verified: false,
   },
 ];
@@ -135,14 +135,14 @@ export function calculateAge(birthday: Date): string {
   const now = new Date();
   const months = (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth());
   if (months < 12) {
-    return `${months} thang tuoi`;
+    return `${months} tháng tuổi`;
   }
 
   const years = Math.floor(months / 12);
   const remainingMonths = months % 12;
-  return remainingMonths === 0 ? `${years} tuoi` : `${years} tuoi ${remainingMonths} thang`;
+  return remainingMonths === 0 ? `${years} tuổi` : `${years} tuổi ${remainingMonths} tháng`;
 }
 
 export function formatPrice(price: number): string {
-  return `${new Intl.NumberFormat('vi-VN').format(price)} VND`;
+  return `${new Intl.NumberFormat('vi-VN').format(price)} VNĐ`;
 }
