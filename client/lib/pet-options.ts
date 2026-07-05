@@ -57,6 +57,8 @@ export interface Pet {
   weight: number;
   isVaccinated: boolean;
   hasPedigree: boolean;
+  vaccineVerified?: boolean;
+  pedigreeVerified?: boolean;
   pedigreeNumber?: string;
   avatar?: string;
   gallery: string[];

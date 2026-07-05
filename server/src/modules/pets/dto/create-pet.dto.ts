@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 import { BreedingOption, Gender, PetStatus, Species } from '@prisma/client';
 
 export class CreatePetDto {
@@ -46,6 +46,24 @@ export class CreatePetDto {
   @IsOptional()
   @IsString()
   pedigreeNumber?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  vaccineDocumentUrls?: string[];
+
+  @IsOptional()
+  @IsString()
+  vaccineNote?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  pedigreeDocumentUrls?: string[];
+
+  @IsOptional()
+  @IsString()
+  pedigreeNote?: string;
 
   @IsOptional()
   @IsEnum(BreedingOption)
