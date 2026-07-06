@@ -1,10 +1,20 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import StorePage from '@/components/home/StorePage';
 
-export const metadata = {
-  title: 'Cửa hàng thú cưng | PetMatch',
-  description: 'Mua sắm sản phẩm chất lượng cao cho thú cưng của bạn',
-};
-
 export default function HomeRoute() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    const user = storedUser ? (JSON.parse(storedUser) as { role?: string }) : null;
+
+    if (user?.role === 'ADMIN') {
+      router.replace('/admin');
+    }
+  }, [router]);
+
   return <StorePage />;
 }
