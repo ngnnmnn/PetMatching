@@ -24,6 +24,8 @@ import AppHeader from '@/components/layout/AppHeader';
 import { productsApi } from '@/lib/api/products';
 import { Product, ProductCategory } from '@/types';
 import ProductCard from '@/components/home/ProductCard';
+import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 
 const CATEGORY_LABELS: Record<ProductCategory, string> = {
   DOG_FOOD: 'Thức ăn cho chó',
@@ -57,8 +59,11 @@ export default function ProductDetailPage() {
 
   const [activeImage, setActiveImage] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
-  const [isWishlisted, setIsWishlisted] = useState(false);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
+
+  const { addToCart } = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
+  const isWishlisted = product ? isInWishlist(product.id) : false;
 
   // Load product detail and related products
   useEffect(() => {
@@ -121,6 +126,7 @@ export default function ProductDetailPage() {
     // Simulate adding to cart action
     setTimeout(() => {
       setIsAddingToCart(false);
+      addToCart(product, quantity, false);
       toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}" vào giỏ hàng!`, {
         action: {
           label: 'Xem giỏ hàng',
@@ -131,10 +137,8 @@ export default function ProductDetailPage() {
   };
 
   const handleToggleWishlist = () => {
-    setIsWishlisted(!isWishlisted);
-    toast.message(
-      !isWishlisted ? 'Đã thêm vào danh sách yêu thích' : 'Đã xóa khỏi danh sách yêu thích'
-    );
+    if (!product) return;
+    toggleWishlist(product);
   };
 
   if (loading) {
@@ -403,7 +407,9 @@ export default function ProductDetailPage() {
                   disabled={product.stock === 0}
                   className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none"
                   onClick={() => {
-                    toast.success('Bắt đầu quy trình thanh toán...');
+                    if (!product) return;
+                    addToCart(product, quantity, false);
+                    router.push('/cart');
                   }}
                 >
                   Mua ngay

@@ -21,4 +21,14 @@ export const usersApi = {
   deleteAddress: (id: string) => api.delete(`/users/addresses/${id}`),
   setDefaultAddress: (id: string) =>
     api.patch<Address>(`/users/addresses/${id}/default`),
+  getOrders: () => api.get<any[]>('/users/orders'),
+  createOrder: (data: {
+    totalAmount: number;
+    shippingAddress: string;
+    items: { productId: string; quantity: number; price: number }[];
+  }) => api.post<any>('/users/orders', data),
+  cancelOrder: (id: string) => api.patch<any>(`/users/orders/${id}/cancel`),
+  updateOrderShipping: (id: string, shippingAddress: string) =>
+    api.put<any>(`/users/orders/${id}/shipping`, { shippingAddress }),
 };
+

@@ -11,6 +11,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { CreateOrderDto } from './dto/create-order.dto';
 
 type User = {
   id: string;
@@ -367,4 +368,89 @@ export class UsersService {
 
     return address;
   }
+
+  async getOrders(userId: string) {
+    return this.prisma.order.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async createOrder(userId: string, dto: CreateOrderDto) {
+    return this.prisma.order.create({
+      data: {
+        userId,
+        totalAmount: dto.totalAmount,
+        shippingAddress: dto.shippingAddress,
+        status: 'PENDING',
+        items: {
+          create: dto.items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+        },
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async cancelOrder(userId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+    });
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+    if (order.status !== 'PENDING') {
+      throw new BadRequestException('Chỉ có thể hủy đơn hàng ở trạng thái chờ xác nhận.');
+    }
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'CANCELLED' },
+    });
+  }
+
+  async updateOrderShipping(userId: string, orderId: string, data: { shippingAddress: string }) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+    });
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+    if (order.status !== 'PENDING') {
+      throw new BadRequestException('Chỉ có thể thay đổi thông tin đơn hàng ở trạng thái chờ xác nhận.');
+    }
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { shippingAddress: data.shippingAddress },
+    });
+  }
 }
+
+

@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { Heart, PackageCheck, ShoppingCart, Star } from 'lucide-react';
-import { toast } from 'sonner';
 import { Product } from '@/types';
+import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
@@ -26,16 +27,20 @@ export default function ProductCard({ product, featured = false }: { product: Pr
   const discount = getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
 
+  const { addToCart } = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
+  const isWishlisted = isInWishlist(product.id);
+
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    toast.success(`Đã thêm sản phẩm "${product.name}" vào giỏ hàng!`);
+    addToCart(product, 1);
   };
 
   const handleAddToWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    toast.success(`Đã thêm "${product.name}" vào danh sách yêu thích!`);
+    toggleWishlist(product);
   };
 
   return (
@@ -64,9 +69,13 @@ export default function ProductCard({ product, featured = false }: { product: Pr
           type="button"
           aria-label="Thêm vào yêu thích"
           onClick={handleAddToWishlist}
-          className="absolute bottom-2 right-2 inline-flex size-9 items-center justify-center rounded-full bg-white/95 text-[var(--text-main)] shadow-sm transition hover:text-[var(--primary-color)]"
+          className={`absolute bottom-2 right-2 inline-flex size-9 items-center justify-center rounded-full bg-white/95 shadow-sm transition ${
+            isWishlisted
+              ? 'text-red-500 hover:text-red-600'
+              : 'text-[var(--text-main)] hover:text-[var(--primary-color)]'
+          }`}
         >
-          <Heart className="size-4" />
+          <Heart className={`size-4 ${isWishlisted ? 'fill-red-500' : ''}`} />
         </button>
       </div>
 
