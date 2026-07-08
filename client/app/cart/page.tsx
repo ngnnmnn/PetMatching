@@ -8,8 +8,7 @@ import {
   Minus,
   Plus,
   ArrowLeft,
-  ShoppingBag,
-  Tag
+  ShoppingBag
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
@@ -28,20 +27,50 @@ export default function CartPage() {
   const {
     cartItems,
     removeFromCart,
-    updateQuantity,
-    cartTotal,
-    cartCount
+    updateQuantity
   } = useCart();
 
   const [isMounted, setIsMounted] = useState(false);
-  const [promoCode, setPromoCode] = useState('');
-  const [discountPercent, setDiscountPercent] = useState(0);
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [appliedCode, setAppliedCode] = useState('');
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Initialize selectedItemIds when cart is first loaded
+  useEffect(() => {
+    if (isMounted && cartItems.length > 0 && !hasInitializedSelection) {
+      setSelectedItemIds(cartItems.map((item) => item.id));
+      setHasInitializedSelection(true);
+    }
+  }, [cartItems, isMounted, hasInitializedSelection]);
+
+  // Sync selectedItemIds when cart items change (auto-select new items, clean up deleted items)
+  useEffect(() => {
+    if (hasInitializedSelection) {
+      const currentIds = cartItems.map((item) => item.id);
+      setSelectedItemIds((prev) => {
+        const filtered = prev.filter((id) => currentIds.includes(id));
+        const newIds = currentIds.filter((id) => !filtered.includes(id));
+        return [...filtered, ...newIds];
+      });
+    }
+  }, [cartItems, hasInitializedSelection]);
+
+  const handleToggleSelectItem = (id: string) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedItemIds.length === cartItems.length) {
+      setSelectedItemIds([]);
+    } else {
+      setSelectedItemIds(cartItems.map((item) => item.id));
+    }
+  };
 
   if (!isMounted) {
     return (
@@ -55,40 +84,19 @@ export default function CartPage() {
     );
   }
 
-  // Shipping Fee Logic: Free shipping for orders > 500k, otherwise 30k
-  const shippingFee = cartTotal > 500000 || cartTotal === 0 ? 0 : 30000;
+  // Calculate totals based on selected items only
+  const selectedItems = cartItems.filter((item) => selectedItemIds.includes(item.id));
   
-  // Discount Calculation
-  const discountVal = (cartTotal * discountPercent) / 100 + discountAmount;
-  const finalTotal = Math.max(0, cartTotal + shippingFee - discountVal);
+  const selectedTotal = selectedItems.reduce((acc, item) => {
+    const price = item.product.salePrice ?? item.product.originalPrice;
+    return acc + price * item.quantity;
+  }, 0);
 
-  const handleApplyPromoCode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!promoCode.trim()) return;
+  const selectedCount = selectedItems.reduce((acc, item) => acc + item.quantity, 0);
 
-    const code = promoCode.trim().toUpperCase();
-    if (code === 'PETMATCH10') {
-      setDiscountPercent(10);
-      setDiscountAmount(0);
-      setAppliedCode(code);
-      toast.success('Áp dụng mã PETMATCH10 thành công! Giảm 10% tổng hóa đơn.');
-    } else if (code === 'HELLOWORLD') {
-      setDiscountPercent(0);
-      setDiscountAmount(50000);
-      setAppliedCode(code);
-      toast.success('Áp dụng mã HELLOWORLD thành công! Giảm 50.000đ.');
-    } else {
-      toast.error('Mã giảm giá không hợp lệ hoặc đã hết hạn.');
-    }
-    setPromoCode('');
-  };
-
-  const handleRemovePromo = () => {
-    setDiscountPercent(0);
-    setDiscountAmount(0);
-    setAppliedCode('');
-    toast.message('Đã hủy áp dụng mã giảm giá');
-  };
+  // Shipping Fee Logic: Free shipping for orders > 500k, otherwise 30k
+  const shippingFee = selectedTotal > 500000 || selectedTotal === 0 ? 0 : 30000;
+  const finalTotal = selectedTotal + shippingFee;
 
   return (
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-16">
@@ -130,6 +138,21 @@ export default function CartPage() {
             {/* Cart Items List */}
             <div className="lg:col-span-8 space-y-4">
               <div className="rounded-2xl border border-[var(--border-color)] bg-white overflow-hidden shadow-sm">
+                
+                {/* Select All Bar */}
+                <div className="bg-[#FCFCFA] px-4 py-3 border-b border-[var(--border-color)] flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedItemIds.length === cartItems.length && cartItems.length > 0}
+                    onChange={handleToggleSelectAll}
+                    className="size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer shrink-0"
+                    id="select-all-cart"
+                  />
+                  <label htmlFor="select-all-cart" className="text-sm font-bold text-[var(--text-main)] cursor-pointer select-none">
+                    Chọn tất cả ({cartItems.length} sản phẩm)
+                  </label>
+                </div>
+
                 <div className="divide-y divide-[var(--border-color)]">
                   {cartItems.map((item) => {
                     const price = item.product.salePrice ?? item.product.originalPrice;
@@ -138,6 +161,16 @@ export default function CartPage() {
 
                     return (
                       <div key={item.id} className="p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                        {/* Checkbox */}
+                        <div className="flex items-center h-full sm:self-center shrink-0 pr-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedItemIds.includes(item.id)}
+                            onChange={() => handleToggleSelectItem(item.id)}
+                            className="size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer shrink-0"
+                          />
+                        </div>
+
                         {/* Product Image */}
                         <Link href={`/home/product/${item.id}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)]">
                           <img
@@ -146,7 +179,7 @@ export default function CartPage() {
                             className="w-full h-full object-cover"
                           />
                         </Link>
-
+ 
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</p>
@@ -165,7 +198,7 @@ export default function CartPage() {
                             )}
                           </div>
                         </div>
-
+ 
                         {/* Quantity Controls */}
                         <div className="flex items-center gap-3">
                           <div className="flex items-center rounded-lg border border-[var(--border-color)] bg-white p-1">
@@ -185,12 +218,12 @@ export default function CartPage() {
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
-
+ 
                           {/* Item Subtotal */}
                           <div className="hidden sm:block text-right min-w-[80px]">
                             <span className="text-sm font-black text-[var(--text-main)]">{formatCurrency(itemSubtotal)}</span>
                           </div>
-
+ 
                           {/* Delete Button */}
                           <button
                             type="button"
@@ -206,58 +239,8 @@ export default function CartPage() {
                   })}
                 </div>
               </div>
-
-              {/* Promo Code Box */}
-              <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-extrabold text-[var(--text-main)] mb-3 flex items-center gap-2">
-                  <Tag className="size-4 text-primary" />
-                  Mã giảm giá
-                </h3>
-                {appliedCode ? (
-                  <div className="flex items-center justify-between rounded-xl bg-green-50 border border-green-200 p-3.5">
-                    <div className="flex items-center gap-2">
-                      <div className="size-2 rounded-full bg-green-500 shrink-0" />
-                      <div>
-                        <span className="text-sm font-extrabold text-green-800">Đã áp dụng: {appliedCode}</span>
-                        <p className="text-[11px] text-green-700 font-semibold mt-0.5">
-                          {discountPercent > 0 ? `Giảm ${discountPercent}% tổng đơn hàng` : `Giảm ${formatCurrency(discountAmount)}`}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleRemovePromo}
-                      className="text-xs font-bold text-red-600 hover:text-red-800 hover:underline"
-                    >
-                      Hủy bỏ
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleApplyPromoCode} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Nhập mã (Ví dụ: PETMATCH10, HELLOWORLD)"
-                      value={promoCode}
-                      onChange={(e) => setPromoCode(e.target.value)}
-                      className="flex-1 rounded-xl border border-[var(--border-color)] px-4 py-2 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
-                    />
-                    <button
-                      type="submit"
-                      className="rounded-xl bg-[#0F766E] px-5 py-2 text-sm font-extrabold text-white hover:bg-[#115E59] transition"
-                    >
-                      Áp dụng
-                    </button>
-                  </form>
-                )}
-                <div className="mt-2.5 flex flex-wrap gap-2 text-[10px] text-[var(--text-muted)] font-semibold">
-                  <span>Mã gợi ý:</span>
-                  <button type="button" onClick={() => setPromoCode('PETMATCH10')} className="underline text-[#0F766E] hover:text-[#115E59]">PETMATCH10 (Giảm 10%)</button>
-                  <span>|</span>
-                  <button type="button" onClick={() => setPromoCode('HELLOWORLD')} className="underline text-[#0F766E] hover:text-[#115E59]">HELLOWORLD (Giảm 50k)</button>
-                </div>
-              </div>
             </div>
-
+ 
             {/* Order Summary & Checkout Redirect */}
             <div className="lg:col-span-4 space-y-6">
               
@@ -267,44 +250,42 @@ export default function CartPage() {
                 
                 <div className="space-y-2.5 text-sm font-semibold">
                   <div className="flex justify-between text-[var(--text-muted)]">
-                    <span>Tạm tính ({cartCount} sản phẩm)</span>
-                    <span className="text-[var(--text-main)]">{formatCurrency(cartTotal)}</span>
+                    <span>Tạm tính ({selectedCount} sản phẩm)</span>
+                    <span className="text-[var(--text-main)]">{formatCurrency(selectedTotal)}</span>
                   </div>
                   <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Phí vận chuyển</span>
                     <span className="text-[var(--text-main)]">
-                      {shippingFee === 0 ? 'Tính khi giao' : formatCurrency(shippingFee)}
+                      {shippingFee === 0 ? (selectedTotal > 500000 ? 'Miễn phí' : 'Tính khi giao') : formatCurrency(shippingFee)}
                     </span>
                   </div>
                   {shippingFee > 0 && (
                     <p className="text-[10px] text-amber-600 font-extrabold mt-0.5">
-                      Mua thêm {formatCurrency(500000 - cartTotal)} để được Miễn phí vận chuyển!
+                      Mua thêm {formatCurrency(500000 - selectedTotal)} để được Miễn phí vận chuyển!
                     </p>
-                  )}
-                  {appliedCode && (
-                    <div className="flex justify-between text-green-600">
-                      <span>Giảm giá ({appliedCode})</span>
-                      <span>-{formatCurrency(discountVal)}</span>
-                    </div>
                   )}
                   
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end">
                     <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
                     <span className="text-xl font-black text-[var(--primary-color)]">{formatCurrency(finalTotal)}</span>
                   </div>
-
+ 
                   <button
+                    disabled={selectedItemIds.length === 0}
                     onClick={() => {
-                      const url = appliedCode ? `/checkout?code=${appliedCode}` : '/checkout';
-                      router.push(url);
+                      localStorage.setItem(
+                        'petmatch_selected_cart_items',
+                        JSON.stringify(selectedItemIds)
+                      );
+                      router.push('/checkout');
                     }}
-                    className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] focus-visible:outline-none"
+                    className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] focus-visible:outline-none disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Mua ngay
                   </button>
                 </div>
               </div>
-
+ 
             </div>
           </div>
         )}

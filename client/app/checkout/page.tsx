@@ -15,7 +15,8 @@ import {
   Loader2,
   ShieldCheck,
   RotateCcw,
-  X
+  X,
+  Tag
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
@@ -36,12 +37,10 @@ function formatCurrency(value: number) {
 function CheckoutPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const appliedCode = searchParams.get('code') || '';
 
   const {
     cartItems,
-    cartTotal,
-    cartCount,
+    removeFromCart,
     clearCart
   } = useCart();
 
@@ -49,6 +48,14 @@ function CheckoutPageContent() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
+  // Selection and promo code state
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [isAddressesExpanded, setIsAddressesExpanded] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [appliedCode, setAppliedCode] = useState('');
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
+
   // Addresses from DB
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>(''); // empty means "new address"
@@ -81,18 +88,78 @@ function CheckoutPageContent() {
   const [recipientNameStr, setRecipientNameStr] = useState('');
   const [recipientPhoneStr, setRecipientPhoneStr] = useState('');
 
-  // Discount calculation based on code passed in query
-  let discountPercent = 0;
-  let discountAmount = 0;
-  if (appliedCode === 'PETMATCH10') {
-    discountPercent = 10;
-  } else if (appliedCode === 'HELLOWORLD') {
-    discountAmount = 50000;
-  }
+  // Load selected items from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('petmatch_selected_cart_items');
+    if (stored) {
+      try {
+        setSelectedItemIds(JSON.parse(stored));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
 
-  const shippingFee = cartTotal > 500000 || cartTotal === 0 ? 0 : 30000;
-  const discountVal = (cartTotal * discountPercent) / 100 + discountAmount;
-  const finalTotal = Math.max(0, cartTotal + shippingFee - discountVal);
+  // Initialize promo code from query parameter if present
+  useEffect(() => {
+    const code = searchParams.get('code') || '';
+    if (code) {
+      const upperCode = code.toUpperCase();
+      if (upperCode === 'PETMATCH10') {
+        setDiscountPercent(10);
+        setDiscountAmount(0);
+        setAppliedCode(upperCode);
+      } else if (upperCode === 'HELLOWORLD') {
+        setDiscountPercent(0);
+        setDiscountAmount(50000);
+        setAppliedCode(upperCode);
+      }
+    }
+  }, [searchParams]);
+
+  const handleApplyPromoCode = (e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (!promoCode.trim()) return;
+
+    const code = promoCode.trim().toUpperCase();
+    if (code === 'PETMATCH10') {
+      setDiscountPercent(10);
+      setDiscountAmount(0);
+      setAppliedCode(code);
+      toast.success('Áp dụng mã PETMATCH10 thành công! Giảm 10% tổng hóa đơn.');
+    } else if (code === 'HELLOWORLD') {
+      setDiscountPercent(0);
+      setDiscountAmount(50000);
+      setAppliedCode(code);
+      toast.success('Áp dụng mã HELLOWORLD thành công! Giảm 50.000đ.');
+    } else {
+      toast.error('Mã giảm giá không hợp lệ hoặc đã hết hạn.');
+    }
+    setPromoCode('');
+  };
+
+  const handleRemovePromo = () => {
+    setDiscountPercent(0);
+    setDiscountAmount(0);
+    setAppliedCode('');
+    toast.message('Đã hủy áp dụng mã giảm giá');
+  };
+
+  // Filter checkout items based on selected items in cart page
+  const checkoutItems = selectedItemIds.length > 0
+    ? cartItems.filter((item) => selectedItemIds.includes(item.id))
+    : cartItems;
+
+  const checkoutTotal = checkoutItems.reduce((acc, item) => {
+    const price = item.product.salePrice ?? item.product.originalPrice;
+    return acc + price * item.quantity;
+  }, 0);
+
+  const checkoutCount = checkoutItems.reduce((acc, item) => acc + item.quantity, 0);
+
+  const shippingFee = checkoutTotal > 500000 || checkoutTotal === 0 ? 0 : 30000;
+  const discountVal = (checkoutTotal * discountPercent) / 100 + discountAmount;
+  const finalTotal = Math.max(0, checkoutTotal + shippingFee - discountVal);
 
   const loadAddresses = async () => {
     try {
@@ -246,7 +313,7 @@ function CheckoutPageContent() {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cartItems.length === 0) {
+    if (checkoutItems.length === 0) {
       toast.error('Giỏ hàng trống, không thể đặt hàng.');
       return;
     }
@@ -288,8 +355,9 @@ function CheckoutPageContent() {
       }
 
       // Prepare order items
-      const orderItems = cartItems.map((item) => ({
+      const orderItems = checkoutItems.map((item) => ({
         productId: item.product.id,
+        shadowId: item.id, // reference if needed
         quantity: item.quantity,
         price: item.product.salePrice ?? item.product.originalPrice
       }));
@@ -318,9 +386,20 @@ function CheckoutPageContent() {
     }
   };
 
-  const handleCloseSuccessModal = () => {
+  const handleCloseSuccessModal = async () => {
     setShowSuccessModal(false);
-    clearCart();
+    if (selectedItemIds.length > 0) {
+      if (selectedItemIds.length === cartItems.length) {
+        await clearCart();
+      } else {
+        for (const id of selectedItemIds) {
+          await removeFromCart(id);
+        }
+      }
+    } else {
+      await clearCart();
+    }
+    localStorage.removeItem('petmatch_selected_cart_items');
     router.push('/orders');
   };
 
@@ -371,7 +450,10 @@ function CheckoutPageContent() {
                 {/* Saved Addresses List */}
                 {savedAddresses.length > 0 && (
                   <div className="space-y-3">
-                    {savedAddresses.map((addr) => (
+                    {(isAddressesExpanded
+                      ? savedAddresses
+                      : savedAddresses.filter((addr, index) => index < 2 || addr.id === selectedAddressId)
+                    ).map((addr) => (
                       <label
                         key={addr.id}
                         className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${
@@ -431,6 +513,16 @@ function CheckoutPageContent() {
                         </div>
                       </label>
                     ))}
+
+                    {savedAddresses.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddressesExpanded(!isAddressesExpanded)}
+                        className="text-xs font-bold text-[#0F766E] hover:underline flex items-center gap-1 mt-2 transition cursor-pointer"
+                      >
+                        {isAddressesExpanded ? 'Thu gọn' : 'Xem thêm địa chỉ khác'}
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -601,12 +693,69 @@ function CheckoutPageContent() {
             {/* Right side: Summary & Submit Button */}
             <div className="lg:col-span-4 space-y-6">
               
+              {/* Promo Code Box */}
+              <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-extrabold text-[var(--text-main)] mb-3 flex items-center gap-2">
+                  <Tag className="size-4 text-primary" />
+                  Mã giảm giá
+                </h3>
+                {appliedCode ? (
+                  <div className="flex items-center justify-between rounded-xl bg-green-50 border border-green-200 p-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="size-2 rounded-full bg-green-500 shrink-0" />
+                      <div>
+                        <span className="text-sm font-extrabold text-green-800">Đã áp dụng: {appliedCode}</span>
+                        <p className="text-[11px] text-green-700 font-semibold mt-0.5">
+                          {discountPercent > 0 ? `Giảm ${discountPercent}% tổng đơn hàng` : `Giảm ${formatCurrency(discountAmount)}`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemovePromo}
+                      className="text-xs font-bold text-red-600 hover:text-red-800 hover:underline"
+                    >
+                      Hủy bỏ
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Nhập mã (Ví dụ: PETMATCH10, HELLOWORLD)"
+                      value={promoCode}
+                      onChange={(e) => setPromoCode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyPromoCode(e);
+                        }
+                      }}
+                      className="flex-1 rounded-xl border border-[var(--border-color)] px-4 py-2 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => handleApplyPromoCode(e)}
+                      className="rounded-xl bg-[#0F766E] px-5 py-2 text-sm font-extrabold text-white hover:bg-[#115E59] transition cursor-pointer"
+                    >
+                      Áp dụng
+                    </button>
+                  </div>
+                )}
+                <div className="mt-2.5 flex flex-wrap gap-2 text-[10px] text-[var(--text-muted)] font-semibold">
+                  <span>Mã gợi ý:</span>
+                  <button type="button" onClick={() => setPromoCode('PETMATCH10')} className="underline text-[#0F766E] hover:text-[#115E59] cursor-pointer">PETMATCH10 (Giảm 10%)</button>
+                  <span>|</span>
+                  <button type="button" onClick={() => setPromoCode('HELLOWORLD')} className="underline text-[#0F766E] hover:text-[#115E59] cursor-pointer">HELLOWORLD (Giảm 50k)</button>
+                </div>
+              </div>
+
               {/* Order Items Summary */}
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-sm space-y-4">
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b border-[var(--border-color)]">Đơn hàng của bạn</h3>
                 
                 <div className="divide-y divide-[var(--border-color)] max-h-56 overflow-y-auto pr-1">
-                  {cartItems.map((item) => {
+                  {checkoutItems.map((item) => {
                     const price = item.product.salePrice ?? item.product.originalPrice;
                     return (
                       <div key={item.id} className="py-3 flex gap-3 items-center">
@@ -629,8 +778,8 @@ function CheckoutPageContent() {
 
                 <div className="space-y-2.5 text-xs font-semibold pt-4 border-t border-[var(--border-color)]">
                   <div className="flex justify-between text-[var(--text-muted)]">
-                    <span>Tạm tính</span>
-                    <span className="text-[var(--text-main)]">{formatCurrency(cartTotal)}</span>
+                    <span>Tạm tính ({checkoutCount} sản phẩm)</span>
+                    <span className="text-[var(--text-main)]">{formatCurrency(checkoutTotal)}</span>
                   </div>
                   <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Phí vận chuyển</span>
@@ -653,7 +802,7 @@ function CheckoutPageContent() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none"
+                    className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none cursor-pointer"
                   >
                     {submitting ? (
                       <Loader2 className="size-4 animate-spin text-white" />
