@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -33,7 +33,7 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const appliedCode = searchParams.get('code') || '';
@@ -789,5 +789,17 @@ export default function CheckoutPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg-page)]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[var(--primary-color)] border-r-transparent" />
+      </div>
+    }>
+      <CheckoutPageContent />
+    </Suspense>
   );
 }

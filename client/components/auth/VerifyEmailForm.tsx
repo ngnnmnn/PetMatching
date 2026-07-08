@@ -58,6 +58,7 @@ export default function VerifyEmailForm() {
       if (response.data.success) {
         localStorage.setItem('accessToken', response.data.accessToken);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        window.dispatchEvent(new Event('auth-change'));
         router.push('/home');
       }
     } catch (err: any) {

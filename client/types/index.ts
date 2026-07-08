@@ -109,6 +109,7 @@ export interface Product {
   description?: string;
   imageUrl?: string;
   images: string[];
+  specifications?: Record<string, string> | null;
   originalPrice: number;
   salePrice?: number | null;
   brand?: string;

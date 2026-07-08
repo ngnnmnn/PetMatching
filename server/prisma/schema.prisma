@@ -213,6 +213,8 @@ model User {
   assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
   reviewedDocuments   PetDocument[]     @relation("PetDocumentReviewer")
   auditLogs           AuditLog[]        @relation("AuditActor")
+  cartItems           CartItem[]
+  wishlistItems       WishlistItem[]
 
   @@map("users")
 }
@@ -583,6 +585,7 @@ model Product {
   description   String?
   imageUrl      String?
   images        String[]
+  specifications Json?
   originalPrice Float
   salePrice     Float?
   brand         String?
@@ -597,6 +600,8 @@ model Product {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   orderItems    OrderItem[]
+  cartItems     CartItem[]
+  wishlistItems WishlistItem[]
 
   @@index([category, isActive])
   @@index([isFeatured, isActive])
@@ -770,4 +775,38 @@ model AuditLog {
   @@index([actorId])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// =============================================================
+// CART & WISHLIST
+// =============================================================
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@map("wishlist_items")
 }

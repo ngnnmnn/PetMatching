@@ -17,7 +17,8 @@ import {
   Sparkles,
   PackageCheck,
   Store,
-  Loader2
+  Loader2,
+  Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
@@ -175,7 +176,7 @@ export default function ProductDetailPage() {
     );
   }
 
-  const discount = product.salePrice && product.originalPrice
+  const discount = product.salePrice && product.originalPrice && product.salePrice < product.originalPrice
     ? Math.round(((product.originalPrice - product.salePrice) / product.originalPrice) * 100)
     : null;
 
@@ -233,14 +234,14 @@ export default function ProductDetailPage() {
           {/* Gallery (Left Col: 5 spans on large screens) */}
           <div className="flex flex-col gap-4 lg:col-span-5">
             {/* Main Image Frame */}
-            <div className="relative aspect-square overflow-hidden rounded-xl border border-[var(--border-color)] bg-[#F8F7F4]">
+            <div className="relative aspect-square overflow-hidden rounded-2xl border border-[#F0EBE4] bg-[#F8F7F4] flex items-center justify-center p-4">
               <img
                 src={activeImage}
                 alt={product.name}
-                className="h-full w-full object-cover transition-all duration-300"
+                className="max-h-full max-w-full object-contain transition-all duration-300 rounded-xl"
               />
               {discount && (
-                <span className="absolute left-3 top-3 rounded-md bg-[var(--primary-color)] px-2.5 py-1 text-xs font-black text-white shadow-md">
+                <span className="absolute left-4 top-4 rounded-lg bg-[var(--primary-color)] px-3 py-1.5 text-xs font-black text-white shadow-md">
                   -{discount}%
                 </span>
               )}
@@ -254,8 +255,10 @@ export default function ProductDetailPage() {
                     key={idx}
                     type="button"
                     onClick={() => setActiveImage(img)}
-                    className={`relative size-16 overflow-hidden rounded-lg border-2 bg-white transition hover:opacity-90 ${
-                      activeImage === img ? 'border-[var(--primary-color)]' : 'border-[var(--border-color)]'
+                    className={`relative size-20 overflow-hidden rounded-xl border-2 bg-white transition-all duration-200 hover:scale-105 hover:shadow-md ${
+                      activeImage === img
+                        ? 'border-[var(--primary-color)] ring-2 ring-[var(--primary-color)]/20'
+                        : 'border-[var(--border-color)] hover:border-gray-300'
                     }`}
                   >
                     <img src={img} alt={`thumbnail-${idx}`} className="h-full w-full object-cover" />
@@ -270,75 +273,76 @@ export default function ProductDetailPage() {
             <div>
               {/* Brand and category labels */}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs font-black uppercase tracking-[0.12em] text-[#0F766E]">
-                  {product.brand || 'Thương hiệu chọn lọc'}
-                </p>
                 <div className="flex gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF8F5] px-3 py-1 text-xs font-bold text-[#0F766E]">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-[#FFF3E0] px-3 py-1 text-xs font-bold text-[#E65100]">
+                    {CATEGORY_LABELS[product.category] || product.category}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-[#EEF8F5] px-3 py-1 text-xs font-bold text-[#0F766E]">
                     <PackageCheck className="h-3.5 w-3.5" />
                     {speciesLabel}
                   </span>
-                  {product.unit && (
-                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-[var(--text-muted)]">
-                      Đơn vị: {product.unit}
-                    </span>
-                  )}
                 </div>
+                {product.unit && (
+                  <span className="rounded-md bg-gray-100 px-3 py-1 text-xs font-bold text-[var(--text-muted)]">
+                    Đơn vị: {product.unit}
+                  </span>
+                )}
               </div>
 
               {/* Title */}
-              <h1 className="mt-3 text-2xl font-black leading-tight text-[var(--text-main)] sm:text-3xl">
+              <h1 className="mt-3 text-3xl font-black leading-tight text-[var(--text-main)] sm:text-4xl">
                 {product.name}
               </h1>
 
-              {/* Rating summary */}
-              <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-                <div className="flex items-center gap-1 text-[#F59E0B]">
+              {/* Rating summary & stock */}
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                <div className="flex items-center gap-0.5 text-[#F59E0B]">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star
                       key={i}
                       className={`h-4.5 w-4.5 ${
                         i < Math.floor(product.rating)
-                          ? 'fill-[#F59E0B]'
+                          ? 'fill-[#F59E0B] text-[#F59E0B]'
                           : i < product.rating
-                          ? 'fill-[#F59E0B]/50'
+                          ? 'fill-[#F59E0B]/50 text-[#F59E0B]'
                           : 'text-gray-300'
                       }`}
                     />
                   ))}
-                  <span className="ml-1.5 font-extrabold text-[var(--text-main)]">
+                  <span className="ml-1.5 font-bold text-[var(--text-main)]">
                     {product.rating.toFixed(1)}
                   </span>
                 </div>
-                <span className="h-4 w-px bg-gray-200" />
+                <span className="text-gray-300">|</span>
                 <span className="font-semibold text-[var(--text-muted)]">
-                  {product.reviewCount} Đánh giá
+                  ({product.reviewCount} đánh giá)
                 </span>
-                <span className="h-4 w-px bg-gray-200" />
-                <span className="font-semibold text-[var(--text-muted)]">
+                <span className="text-gray-300">|</span>
+                <span className="font-bold flex items-center gap-1">
                   {product.stock === null || product.stock === undefined ? (
-                    <span className="text-[#0F766E]">Còn hàng</span>
+                    <span className="text-[#0F766E] flex items-center gap-1">
+                      <span className="text-xs font-bold">✓</span> Còn hàng
+                    </span>
                   ) : product.stock > 0 ? (
-                    <span>Còn {product.stock} sản phẩm</span>
+                    <span className="text-[#0F766E] flex items-center gap-1">
+                      <span className="text-xs font-bold">✓</span> Còn hàng
+                    </span>
                   ) : (
                     <span className="text-red-500 font-extrabold">Hết hàng</span>
                   )}
                 </span>
               </div>
 
-              {/* Divider */}
-              <div className="my-5 border-t border-[var(--border-color)]" />
-
               {/* Price section */}
-              <div className="rounded-xl bg-[#FAF9F5] p-4.5">
-                <p className="text-xs font-bold text-[var(--text-muted)] mb-1">Giá bán ưu đãi</p>
+              <div className="rounded-2xl bg-[#FAF6F0] p-5 mt-5 border border-[#F4EBE0]">
+                <p className="text-xs font-bold text-[var(--text-muted)] mb-1.5 uppercase tracking-wider">Giá bán</p>
                 <div className="flex flex-wrap items-baseline gap-3">
                   <span className="text-3xl font-black text-[var(--primary-color)]">
                     {formatCurrency(displayPrice)}
                   </span>
                   {hasDiscount && (
                     <>
-                      <span className="text-sm text-[var(--text-muted)] line-through">
+                      <span className="text-base text-[var(--text-muted)] line-through">
                         {formatCurrency(product.originalPrice)}
                       </span>
                       <span className="inline-block rounded-md bg-[var(--primary-color)]/10 px-2 py-0.5 text-xs font-black text-[var(--primary-color)]">
@@ -349,14 +353,11 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              {/* Short / Detailed Description */}
+              {/* Short Description */}
               {product.description && (
-                <div className="mt-5 space-y-2">
-                  <h3 className="text-sm font-extrabold text-[var(--text-main)]">Mô tả chi tiết</h3>
-                  <div className="rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] p-4 text-sm leading-relaxed text-[var(--text-main)]/85 shadow-inner whitespace-pre-line">
-                    {product.description}
-                  </div>
-                </div>
+                <p className="mt-5 text-sm text-[var(--text-main)]/80 leading-relaxed font-medium">
+                  {product.description.split(/[.\n]/)[0]}.
+                </p>
               )}
             </div>
 
@@ -365,22 +366,22 @@ export default function ProductDetailPage() {
               {/* Quantity selector */}
               {product.stock !== 0 && (
                 <div className="flex items-center gap-4">
-                  <span className="text-sm font-extrabold text-[var(--text-main)]">Số lượng:</span>
-                  <div className="flex items-center rounded-lg border border-[var(--border-color)] bg-white p-1">
+                  <span className="text-sm font-extrabold text-[var(--text-main)]">Số lượng</span>
+                  <div className="flex items-center rounded-xl border border-[var(--border-color)] bg-white p-1 shadow-sm">
                     <button
                       type="button"
                       onClick={handleDecrement}
-                      className="inline-flex size-8 items-center justify-center rounded bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black"
+                      className="inline-flex size-9 items-center justify-center rounded-lg bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black active:scale-95"
                     >
-                      <Minus className="h-3.5 w-3.5" />
+                      <Minus className="h-4 w-4" />
                     </button>
-                    <span className="w-12 text-center text-sm font-black">{quantity}</span>
+                    <span className="w-12 text-center text-sm font-black text-[var(--text-main)]">{quantity}</span>
                     <button
                       type="button"
                       onClick={handleIncrement}
-                      className="inline-flex size-8 items-center justify-center rounded bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black"
+                      className="inline-flex size-9 items-center justify-center rounded-lg bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black active:scale-95"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <Plus className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -392,7 +393,7 @@ export default function ProductDetailPage() {
                   type="button"
                   onClick={handleAddToCart}
                   disabled={product.stock === 0 || isAddingToCart}
-                  className="flex-1 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#0F766E] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#115E59] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none"
+                  className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl border-2 border-[#0F766E] bg-white px-6 text-sm font-black text-[#0F766E] shadow-sm transition-all duration-200 hover:bg-[#F2FAF8] active:scale-98 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200"
                 >
                   {isAddingToCart ? (
                     <Loader2 className="h-4.5 w-4.5 animate-spin" />
@@ -405,48 +406,80 @@ export default function ProductDetailPage() {
                 <button
                   type="button"
                   disabled={product.stock === 0}
-                  className="flex-1 inline-flex h-12 items-center justify-center rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none"
+                  className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#E45D1C] to-[#EF6C00] px-6 text-sm font-black text-white shadow-md transition-all duration-200 hover:opacity-95 hover:shadow-lg active:scale-98 disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none"
                   onClick={() => {
                     if (!product) return;
                     addToCart(product, quantity, false);
                     router.push('/cart');
                   }}
                 >
+                  <Zap className="h-4.5 w-4.5 fill-white text-white" />
                   Mua ngay
                 </button>
 
                 <button
                   type="button"
                   onClick={handleToggleWishlist}
-                  className={`inline-flex size-12 items-center justify-center rounded-xl border transition shadow-sm ${
+                  className={`inline-flex size-13 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm active:scale-95 ${
                     isWishlisted
                       ? 'border-red-200 bg-red-50 text-red-500 hover:bg-red-100/50'
-                      : 'border-[var(--border-color)] bg-white text-[var(--text-main)] hover:border-gray-300'
+                      : 'border-[var(--border-color)] bg-white text-[var(--text-main)] hover:border-gray-300 hover:bg-gray-50'
                   }`}
                   aria-label="Thêm vào yêu thích"
                 >
-                  <Heart className={`h-5 w-5 ${isWishlisted ? 'fill-red-500' : ''}`} />
+                  <Heart className={`h-5.5 w-5.5 ${isWishlisted ? 'fill-red-500' : ''}`} />
                 </button>
               </div>
 
-              {/* Trust badges */}
-              <div className="grid grid-cols-3 gap-2.5 pt-4 border-t border-[var(--border-color)]">
-                {[
-                  { icon: ShieldCheck, title: 'Chất lượng', desc: '100% Chính hãng' },
-                  { icon: Truck, title: 'Vận chuyển', desc: 'Giao hàng nhanh' },
-                  { icon: RotateCcw, title: 'Đổi trả', desc: 'Trong vòng 7 ngày' },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex flex-col items-center text-center p-2 rounded-lg bg-[#FAF9F5]">
-                    <item.icon className="h-5 w-5 text-[#0F766E] mb-1" />
-                    <span className="text-[11px] font-extrabold text-[var(--text-main)]">{item.title}</span>
-                    <span className="text-[9px] font-semibold text-[var(--text-muted)] mt-0.5">{item.desc}</span>
-                  </div>
-                ))}
+              {/* Service Badges */}
+              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-4 border-t border-[var(--border-color)] text-sm font-semibold text-[var(--text-muted)]">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[#0F766E] text-base">🚚</span> Miễn phí giao hàng đơn từ 500K
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[#0F766E] text-base">✓</span> Đổi trả trong 7 ngày
+                </span>
               </div>
 
             </div>
           </div>
         </div>
+
+        {/* Detailed description */}
+        {product.description && (
+          <div className="mt-8 space-y-3">
+            <h3 className="text-base font-black text-[var(--text-main)]">Mô tả chi tiết</h3>
+            <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 text-sm leading-relaxed text-[var(--text-main)]/85 shadow-sm whitespace-pre-line">
+              {product.description}
+            </div>
+          </div>
+        )}
+
+        {/* Specifications Section (Optional) */}
+        {product.specifications && Object.keys(product.specifications).length > 0 && (
+          <div className="mt-8 space-y-3">
+            <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-1.5">
+              <Sparkles className="h-4.5 w-4.5 text-[#F59E0B]" />
+              Thông số kỹ thuật
+            </h3>
+            <div className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white shadow-sm">
+              <table className="w-full text-left border-collapse text-sm">
+                <tbody>
+                  {Object.entries(product.specifications as Record<string, string>).map(([key, val], idx) => (
+                    <tr key={key} className={idx % 2 === 0 ? 'bg-[#FAF9F6]' : 'bg-white'}>
+                      <td className="w-1/3 px-5 py-4 font-bold text-[var(--text-muted)] border-b border-[var(--border-color)]">
+                        {key}
+                      </td>
+                      <td className="px-5 py-4 font-medium text-[var(--text-main)] border-b border-[var(--border-color)]">
+                        {val}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Related Products Section */}
         {relatedProducts.length > 0 && (

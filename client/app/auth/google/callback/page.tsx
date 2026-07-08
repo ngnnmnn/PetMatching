@@ -49,6 +49,7 @@ export default function GoogleCallbackPage() {
         }
 
         localStorage.setItem('user', JSON.stringify(data.user));
+        window.dispatchEvent(new Event('auth-change'));
         window.location.replace('/home');
       } finally {
         window.clearTimeout(timeoutId);
