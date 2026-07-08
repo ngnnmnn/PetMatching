@@ -22,8 +22,8 @@ export default function FeaturedSection({ products, loading }: { products: Produ
     <section>
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-extrabold text-[var(--text-main)]">
-            <Sparkles className="size-5 text-[#F59E0B]" />
+          <h2 className="flex items-center gap-2 text-2xl sm:text-3xl font-black text-[var(--text-main)]">
+            <Sparkles className="size-6 text-[#F59E0B]" />
             Sản phẩm nổi bật
           </h2>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Những món được đánh giá và quan tâm nhiều nhất.</p>

@@ -406,11 +406,22 @@ export default function ProductDetailPage() {
                 <button
                   type="button"
                   disabled={product.stock === 0}
-                  className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#E45D1C] to-[#EF6C00] px-6 text-sm font-black text-white shadow-md transition-all duration-200 hover:opacity-95 hover:shadow-lg active:scale-98 disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none"
+                  className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#E45D1C] to-[#EF6C00] px-6 text-sm font-black text-white shadow-md transition-all duration-200 hover:opacity-95 hover:shadow-lg active:scale-98 disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none cursor-pointer"
                   onClick={() => {
                     if (!product) return;
-                    addToCart(product, quantity, false);
-                    router.push('/cart');
+                    try {
+                      const directCheckoutItem = {
+                        id: product.id,
+                        product: product,
+                        quantity: quantity
+                      };
+                      localStorage.setItem('petmatch_direct_checkout_item', JSON.stringify(directCheckoutItem));
+                      localStorage.removeItem('petmatch_selected_cart_items'); // ensure no cart items are checked out
+                      router.push('/checkout');
+                    } catch (e) {
+                      console.error(e);
+                      toast.error('Có lỗi xảy ra trong quá trình đặt hàng.');
+                    }
                   }}
                 >
                   <Zap className="h-4.5 w-4.5 fill-white text-white" />

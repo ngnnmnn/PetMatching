@@ -38,23 +38,19 @@ export default function CartPage() {
     setIsMounted(true);
   }, []);
 
-  // Initialize selectedItemIds when cart is first loaded
+  // Initialize selectedItemIds when cart is first loaded (defaulting to unchecked)
   useEffect(() => {
     if (isMounted && cartItems.length > 0 && !hasInitializedSelection) {
-      setSelectedItemIds(cartItems.map((item) => item.id));
+      setSelectedItemIds([]);
       setHasInitializedSelection(true);
     }
   }, [cartItems, isMounted, hasInitializedSelection]);
 
-  // Sync selectedItemIds when cart items change (auto-select new items, clean up deleted items)
+  // Sync selectedItemIds when cart items change (clean up deleted items from selection)
   useEffect(() => {
     if (hasInitializedSelection) {
       const currentIds = cartItems.map((item) => item.id);
-      setSelectedItemIds((prev) => {
-        const filtered = prev.filter((id) => currentIds.includes(id));
-        const newIds = currentIds.filter((id) => !filtered.includes(id));
-        return [...filtered, ...newIds];
-      });
+      setSelectedItemIds((prev) => prev.filter((id) => currentIds.includes(id)));
     }
   }, [cartItems, hasInitializedSelection]);
 
@@ -277,6 +273,7 @@ export default function CartPage() {
                         'petmatch_selected_cart_items',
                         JSON.stringify(selectedItemIds)
                       );
+                      localStorage.removeItem('petmatch_direct_checkout_item');
                       router.push('/checkout');
                     }}
                     className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] focus-visible:outline-none disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed cursor-pointer"

@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { Grid3X3 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import { useProducts } from '@/hooks/useProducts';
 import CategoryTabs from './CategoryTabs';
@@ -62,25 +63,38 @@ export default function StorePage() {
 
           <FeaturedSection products={featuredProducts} loading={featuredLoading} />
 
-          <div id="search-filter-section" className="scroll-mt-6 space-y-8">
-            <SearchFilterBar
-              onSearch={handleSearch}
-              onSpeciesChange={handleSpeciesChange}
-              onSortChange={handleSortChange}
-              species={filters.targetSpecies ?? ''}
-              sortBy={filters.sortBy ?? 'popular'}
-            />
-
-            <CategoryTabs active={filters.category} onChange={handleCategoryChange} />
-          </div>
-
-          {error && (
-            <div className="rounded-lg border border-red-100 bg-red-50 py-4 text-center text-sm font-medium text-red-600">
-              {error}
+          {/* Tất cả sản phẩm Section */}
+          <section className="space-y-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="flex items-center gap-2 text-2xl sm:text-3xl font-black text-[var(--text-main)]">
+                  <Grid3X3 className="size-6 text-[#0F766E]" />
+                  Tất cả sản phẩm
+                </h2>
+                {!loading && <p className="mt-1 text-sm text-[var(--text-muted)]">{meta.total} sản phẩm phù hợp</p>}
+              </div>
             </div>
-          )}
 
-          <ProductGrid products={products} loading={loading} total={meta.total} />
+            <div id="search-filter-section" className="scroll-mt-6 space-y-8">
+              <SearchFilterBar
+                onSearch={handleSearch}
+                onSpeciesChange={handleSpeciesChange}
+                onSortChange={handleSortChange}
+                species={filters.targetSpecies ?? ''}
+                sortBy={filters.sortBy ?? 'popular'}
+              />
+
+              <CategoryTabs active={filters.category} onChange={handleCategoryChange} />
+            </div>
+
+            {error && (
+              <div className="rounded-lg border border-red-100 bg-red-50 py-4 text-center text-sm font-medium text-red-600">
+                {error}
+              </div>
+            )}
+
+            <ProductGrid products={products} loading={loading} />
+          </section>
         </main>
       </div>
       <Footer />

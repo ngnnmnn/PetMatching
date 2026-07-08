@@ -1,6 +1,6 @@
 'use client';
 
-import { Grid3X3, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Product } from '@/types';
 import ProductCard from './ProductCard';
 
@@ -20,24 +20,12 @@ function SkeletonCard() {
 export default function ProductGrid({
   products,
   loading,
-  total,
 }: {
   products: Product[];
   loading: boolean;
-  total: number;
 }) {
   return (
     <section>
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-extrabold text-[var(--text-main)]">
-            <Grid3X3 className="size-5 text-[#0F766E]" />
-            Tất cả sản phẩm
-          </h2>
-          {!loading && <p className="mt-1 text-sm text-[var(--text-muted)]">{total} sản phẩm phù hợp</p>}
-        </div>
-      </div>
-
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {loading
           ? Array.from({ length: 12 }).map((_, index) => <SkeletonCard key={index} />)

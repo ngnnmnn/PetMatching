@@ -41,6 +41,7 @@ function CheckoutPageContent() {
   const {
     cartItems,
     removeFromCart,
+    updateQuantity,
     clearCart
   } = useCart();
 
@@ -50,6 +51,7 @@ function CheckoutPageContent() {
   
   // Selection and promo code state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [directCheckoutItem, setDirectCheckoutItem] = useState<any | null>(null);
   const [isAddressesExpanded, setIsAddressesExpanded] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [appliedCode, setAppliedCode] = useState('');
@@ -88,12 +90,21 @@ function CheckoutPageContent() {
   const [recipientNameStr, setRecipientNameStr] = useState('');
   const [recipientPhoneStr, setRecipientPhoneStr] = useState('');
 
-  // Load selected items from localStorage
+  // Load selected items and direct checkout item from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('petmatch_selected_cart_items');
     if (stored) {
       try {
         setSelectedItemIds(JSON.parse(stored));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    const storedDirect = localStorage.getItem('petmatch_direct_checkout_item');
+    if (storedDirect) {
+      try {
+        setDirectCheckoutItem(JSON.parse(storedDirect));
       } catch (e) {
         console.error(e);
       }
@@ -145,8 +156,10 @@ function CheckoutPageContent() {
     toast.message('Đã hủy áp dụng mã giảm giá');
   };
 
-  // Filter checkout items based on selected items in cart page
-  const checkoutItems = selectedItemIds.length > 0
+  // If we have a direct checkout item, checkout only that item. Otherwise, filter cart items.
+  const checkoutItems = directCheckoutItem
+    ? [directCheckoutItem]
+    : selectedItemIds.length > 0
     ? cartItems.filter((item) => selectedItemIds.includes(item.id))
     : cartItems;
 
@@ -357,14 +370,13 @@ function CheckoutPageContent() {
       // Prepare order items
       const orderItems = checkoutItems.map((item) => ({
         productId: item.product.id,
-        shadowId: item.id, // reference if needed
-        quantity: item.quantity,
-        price: item.product.salePrice ?? item.product.originalPrice
+        quantity: Number(item.quantity),
+        price: Number(item.product.salePrice ?? item.product.originalPrice)
       }));
 
       // Create Order in DB
       const res = await usersApi.createOrder({
-        totalAmount: finalTotal,
+        totalAmount: Number(finalTotal),
         shippingAddress: finalAddress,
         items: orderItems
       });
@@ -380,7 +392,11 @@ function CheckoutPageContent() {
       toast.success('Đã đặt hàng thành công!');
     } catch (err: any) {
       console.error('Failed to place order', err);
-      toast.error(err.response?.data?.message || 'Có lỗi xảy ra trong quá trình đặt hàng.');
+      console.error('Order error response details:', err.response?.data);
+      const errMsg = Array.isArray(err.response?.data?.message)
+        ? err.response.data.message.join(', ')
+        : err.response?.data?.message || 'Có lỗi xảy ra trong quá trình đặt hàng.';
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -388,18 +404,24 @@ function CheckoutPageContent() {
 
   const handleCloseSuccessModal = async () => {
     setShowSuccessModal(false);
-    if (selectedItemIds.length > 0) {
-      if (selectedItemIds.length === cartItems.length) {
-        await clearCart();
-      } else {
-        for (const id of selectedItemIds) {
-          await removeFromCart(id);
-        }
-      }
+    if (directCheckoutItem) {
+      // Direct checkout bypassing cart: Do not touch the cart database/state
+      localStorage.removeItem('petmatch_direct_checkout_item');
     } else {
-      await clearCart();
+      // Cart checkout: Clear only the checked-out items from the cart
+      if (selectedItemIds.length > 0) {
+        if (selectedItemIds.length === cartItems.length) {
+          await clearCart();
+        } else {
+          for (const id of selectedItemIds) {
+            await removeFromCart(id);
+          }
+        }
+      } else {
+        await clearCart();
+      }
+      localStorage.removeItem('petmatch_selected_cart_items');
     }
-    localStorage.removeItem('petmatch_selected_cart_items');
     router.push('/orders');
   };
 
