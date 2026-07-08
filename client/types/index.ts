@@ -131,3 +131,60 @@ export interface PaginatedResponse<T> {
     totalPages: number;
   };
 }
+
+export interface SpaServiceType {
+  id: string;
+  branchId: string;
+  name: string;
+  description: string | null;
+  price: number;
+  durationMin: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  branch?: {
+    id: string;
+    name: string;
+    address: string | null;
+    phone: string | null;
+  };
+}
+
+export interface SpaBranchType {
+  id: string;
+  name: string;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
+  managerId: string | null;
+  approvedAt: string | null;
+  suspendedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  services?: SpaServiceType[];
+}
+
+export interface SpaBookingType {
+  id: string;
+  branchId: string;
+  serviceId: string | null;
+  userId: string;
+  staffId: string | null;
+  petName: string | null;
+  scheduledAt: string;
+  status: 'PENDING' | 'CONFIRMED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+  priceSnapshot: number | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  branch: {
+    name: string;
+    address: string | null;
+    phone: string | null;
+  };
+  service: {
+    name: string;
+    description: string | null;
+  };
+}

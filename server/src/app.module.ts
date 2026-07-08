@@ -6,8 +6,9 @@ import { ProductsModule } from './modules/products/products.module';
 import { PetsModule } from './modules/pets/pets.module';
 import { MatchingModule } from './modules/matching/matching.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { SpaModule } from './modules/spa/spa.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule, ProductsModule, PetsModule, MatchingModule, AdminModule],
+  imports: [PrismaModule, AuthModule, UsersModule, ProductsModule, PetsModule, MatchingModule, AdminModule, SpaModule],
 })
 export class AppModule {}
