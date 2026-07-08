@@ -5,6 +5,32 @@ const prisma = new PrismaClient();
 async function main() {
   const products = [
     {
+      name: 'Bát ăn tự động PUKY',
+      slug: 'bat-an-tu-dong-puky',
+      category: ProductCategory.ACCESSORY,
+      targetSpecies: 'ALL',
+      brand: 'PUKY',
+      unit: 'cái',
+      originalPrice: 1290000,
+      salePrice: 1290000,
+      rating: 4.7,
+      reviewCount: 56,
+      isFeatured: true,
+      isActive: true,
+      imageUrl: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=600&h=600&fit=crop',
+      images: [
+        'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&h=600&fit=crop',
+        'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=600&h=600&fit=crop',
+      ],
+      description: 'Bát ăn tự động dung tích 4L, chia tối đa 6 bữa/ngày. Điều khiển từ xa qua ứng dụng, có camera ghi hình HD và loa thoại 2 chiều giúp bạn yên tâm chăm sóc thú cưng mọi lúc mọi nơi.',
+      specifications: {
+        'Dung tích': '4 lít',
+        'Số bữa': 'Tối đa 6 bữa/ngày',
+        'Camera': 'HD 1080p, đàm thoại 2 chiều',
+        'Kết nối': 'WiFi 2.4GHz',
+      },
+    },
+    {
       name: 'Royal Canin Corgi Adult 3kg',
       slug: 'royal-canin-corgi-adult-3kg',
       category: ProductCategory.DOG_FOOD,
@@ -18,7 +44,10 @@ async function main() {
       isFeatured: true,
       isActive: true,
       imageUrl: 'https://images.unsplash.com/photo-1601758125946-6ec2ef64daf8?w=600&h=600&fit=crop',
-      images: [],
+      images: [
+        'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=600&h=600&fit=crop',
+        'https://images.unsplash.com/photo-1537151608828-ea2b117b6b86?w=600&h=600&fit=crop',
+      ],
       description: 'Thuc an hat cao cap danh rieng cho cho Corgi truong thanh, ho tro khop va duy tri can nang ly tuong.',
     },
     {
@@ -35,7 +64,9 @@ async function main() {
       isFeatured: true,
       isActive: true,
       imageUrl: 'https://images.unsplash.com/photo-1589883661923-6476cb0ae9f2?w=600&h=600&fit=crop',
-      images: [],
+      images: [
+        'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&h=600&fit=crop',
+      ],
       description: 'Thuc an kho vi ca ngu thom ngon, giau protein, phu hop voi nhieu giong meo.',
     },
     {

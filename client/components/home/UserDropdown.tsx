@@ -104,6 +104,7 @@ export default function UserDropdown() {
               onClick={() => {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('user');
+                window.dispatchEvent(new Event('auth-change'));
                 router.push('/login');
               }}
               className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-500 transition hover:bg-red-50"

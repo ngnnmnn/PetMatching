@@ -14,6 +14,7 @@ import {
 import { BrandMark } from '@/components/auth/AuthShell';
 import UserDropdown from '@/components/home/UserDropdown';
 import { cn } from '@/lib/utils';
+import { useCart } from '@/context/CartContext';
 
 const MAIN_NAV = [
   { label: 'Khám phá', href: '/explore', icon: Search },
@@ -29,6 +30,7 @@ type AppHeaderProps = {
 export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderProps) {
   const pathname = usePathname();
   const storeActive = pathname === '/home' || pathname.startsWith('/home/');
+  const { cartCount } = useCart();
 
   return (
     <nav className="sticky top-0 z-40 border-b border-[var(--border-color)] bg-card/95 shadow-sm backdrop-blur">
@@ -86,16 +88,18 @@ export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderPro
             <Store className="size-4" />
             Cửa hàng
           </Link>
-          <button
-            type="button"
+          <Link
+            href="/cart"
             className="relative inline-flex size-10 items-center justify-center rounded-md border border-[var(--border-color)] bg-card text-foreground shadow-sm transition hover:border-primary hover:text-primary"
             aria-label="Giỏ hàng"
           >
             <ShoppingCart className="size-5" />
-            <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shadow-sm">
-              0
-            </span>
-          </button>
+            {cartCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shadow-sm animate-in zoom-in-50 duration-200">
+                {cartCount}
+              </span>
+            )}
+          </Link>
           <UserDropdown />
         </div>
       </div>

@@ -22,6 +22,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { CreateOrderDto } from './dto/create-order.dto';
 import { UsersService } from './users.service';
 
 type AuthenticatedRequest = {
@@ -154,5 +155,35 @@ export class UsersController {
     @Param('id') id: string,
   ) {
     return this.usersService.setDefaultAddress(req.user.id, id);
+  }
+
+  @Get('orders')
+  getOrders(@Req() req: AuthenticatedRequest) {
+    return this.usersService.getOrders(req.user.id);
+  }
+
+  @Post('orders')
+  createOrder(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateOrderDto,
+  ) {
+    return this.usersService.createOrder(req.user.id, dto);
+  }
+
+  @Patch('orders/:id/cancel')
+  cancelOrder(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.cancelOrder(req.user.id, id);
+  }
+
+  @Put('orders/:id/shipping')
+  updateOrderShipping(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: { shippingAddress: string },
+  ) {
+    return this.usersService.updateOrderShipping(req.user.id, id, body);
   }
 }
