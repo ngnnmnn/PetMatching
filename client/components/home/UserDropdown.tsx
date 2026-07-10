@@ -82,6 +82,19 @@ export default function UserDropdown() {
                 Admin console
               </button>
             )}
+            {(user.role === 'STORE_MANAGER' || user.role === 'SPA_MANAGER') && (
+              <button
+                type="button"
+                onClick={() => {
+                  router.push('/manager');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-bold text-[#E45D1C] transition hover:bg-[#FFF5F0]"
+              >
+                <ShieldCheck className="size-4" />
+                Manager console
+              </button>
+            )}
             {MENU_ITEMS.map((item) => (
               <button
                 key={item.label}

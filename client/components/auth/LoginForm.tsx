@@ -38,7 +38,14 @@ export default function LoginForm() {
         localStorage.setItem('accessToken', response.data.accessToken);
         localStorage.setItem('user', JSON.stringify(response.data.user));
         window.dispatchEvent(new Event('auth-change'));
-        router.push(response.data.user?.role === 'ADMIN' ? '/admin' : '/home');
+        const role = response.data.user?.role;
+        if (role === 'ADMIN') {
+          router.push('/admin');
+        } else if (role === 'STORE_MANAGER' || role === 'SPA_MANAGER') {
+          router.push('/manager');
+        } else {
+          router.push('/home');
+        }
       }
     } catch (err: any) {
       const data = err.response?.data;

@@ -1,0 +1,6 @@
+TÀI KHOẢN MẪU CHO VAI TRÒ QUẢN LÝ CỬA HÀNG (STORE MANAGER)
+=========================================================
+
+- Email: managerstore@petmatch.com
+- Mật khẩu: 123456
+- Vai trò (Role): STORE_MANAGER

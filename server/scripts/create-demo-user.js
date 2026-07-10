@@ -184,10 +184,35 @@ async function main() {
     });
   }
 
+  // Seeding Store Manager account
+  const storeManagerEmail = 'managerstore@petmatch.com';
+  const storeManagerPasswordHash = await bcrypt.hash('123456', 10);
+
+  await prisma.user.upsert({
+    where: { email: storeManagerEmail },
+    update: {
+      passwordHash: storeManagerPasswordHash,
+      name: 'Store Manager',
+      phone: '0922222222',
+      role: UserRole.STORE_MANAGER,
+      isVerified: true,
+    },
+    create: {
+      email: storeManagerEmail,
+      passwordHash: storeManagerPasswordHash,
+      name: 'Store Manager',
+      phone: '0922222222',
+      role: UserRole.STORE_MANAGER,
+      isVerified: true,
+    },
+  });
+
   console.log('Demo account is ready:');
   console.log(`Email: ${email}`);
   console.log(`Password: ${password}`);
   console.log(`User ID: ${user.id}`);
+  console.log(`Store Manager Email: ${storeManagerEmail}`);
+  console.log(`Store Manager Password: 123456`);
   console.log('Demo pets and matching candidates are ready.');
 }
 

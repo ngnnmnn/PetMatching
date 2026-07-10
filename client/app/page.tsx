@@ -11,7 +11,17 @@ export default function RootPage() {
     const storedUser = localStorage.getItem('user');
     const user = storedUser ? JSON.parse(storedUser) as { role?: string } : null;
 
-    router.replace(token ? (user?.role === 'ADMIN' ? '/admin' : '/home') : '/login');
+    if (token) {
+      if (user?.role === 'ADMIN') {
+        router.replace('/admin');
+      } else if (user?.role === 'STORE_MANAGER' || user?.role === 'SPA_MANAGER') {
+        router.replace('/manager');
+      } else {
+        router.replace('/home');
+      }
+    } else {
+      router.replace('/login');
+    }
   }, [router]);
 
   return (
