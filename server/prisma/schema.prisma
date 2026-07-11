@@ -208,7 +208,9 @@ model User {
   orders              Order[]
   matchingRequests    MatchingRequest[] @relation("MatchingRequester")
   managedStores       Store[]           @relation("StoreManager")
-  managedSpaBranches  SpaBranch[]       @relation("SpaManager")
+  managedSpaBrands    SpaBrand[]        @relation("SpaManager")
+  managedSpaAddresses AddressSpa[]      @relation("SpaAddressManager")
+  spaStaffProfile     SpaStaff?         @relation("UserSpaStaffProfile")
   spaBookings         SpaBooking[]
   assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
   reviewedDocuments   PetDocument[]     @relation("PetDocumentReviewer")
@@ -324,6 +326,7 @@ model Pet {
   documents                PetDocument[]
   sentMatchingRequests     MatchingRequest[] @relation("FemalePetRequests")
   receivedMatchingRequests MatchingRequest[] @relation("MalePetRequests")
+  spaBookings              SpaBooking[]
 
   @@index([species, gender, status, isAvailableForMatching])
   @@index([ownerId])
@@ -667,12 +670,10 @@ model OrderItem {
   @@map("order_items")
 }
 
-model SpaBranch {
+model SpaBrand {
   id          String         @id @default(cuid())
   name        String
   description String?
-  address     String?
-  phone       String?
   status      ApprovalStatus @default(PENDING)
   manager     User?          @relation("SpaManager", fields: [managerId], references: [id])
   managerId   String?
@@ -686,13 +687,13 @@ model SpaBranch {
 
   @@index([status])
   @@index([managerId])
-  @@map("spa_branches")
+  @@map("spa_brands")
 }
 
 model SpaService {
   id          String    @id @default(cuid())
-  branch      SpaBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  branchId    String
+  brand       SpaBrand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brandId     String
   name        String
   description String?
   price       Float
@@ -703,29 +704,36 @@ model SpaService {
 
   bookings SpaBooking[]
 
-  @@index([branchId, isActive])
+  @@index([brandId, isActive])
   @@map("spa_services")
 }
 
 model SpaBooking {
   id            String           @id @default(cuid())
-  branch        SpaBranch        @relation(fields: [branchId], references: [id])
-  branchId      String
+  brand         SpaBrand?        @relation(fields: [brandId], references: [id])
+  brandId       String?
   service       SpaService?      @relation(fields: [serviceId], references: [id])
   serviceId     String?
   user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
   staff         User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
   staffId       String?
-  petName       String?
-  scheduledAt   DateTime
+  petName            String?
+  pet                Pet?             @relation(fields: [petId], references: [id])
+  petId              String?
+  addressSpa         AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
+  addressSpaId       String?
+  scheduledAt        DateTime
   status        SpaBookingStatus @default(PENDING)
-  priceSnapshot Float?
-  note          String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  priceSnapshot      Float?
+  note               String?
+  petConditionAfter  String?
+  photoAfter         String?
+  issueReported      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
-  @@index([branchId, status])
+  @@index([brandId, status])
   @@index([userId])
   @@index([staffId])
   @@map("spa_bookings")
@@ -809,4 +817,34 @@ model WishlistItem {
   @@index([userId])
   @@index([productId])
   @@map("wishlist_items")
+}
+
+model AddressSpa {
+  id          String         @id
+  name        String
+  description String?
+  address     String
+  phone       String?
+  status      ApprovalStatus @default(PENDING)
+  manager     User?          @relation("SpaAddressManager", fields: [managerId], references: [id])
+  managerId   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  bookings    SpaBooking[]   @relation("SpaBookingAddress")
+  staffs      SpaStaff[]     @relation("StaffWorkplace")
+
+  @@index([status])
+  @@index([managerId])
+  @@map("address_spa")
+}
+
+model SpaStaff {
+  id           String      @id
+  user         User        @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
+  userId       String      @unique
+  addressSpa   AddressSpa? @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
+  addressSpaId String?
+
+  @@map("spa_staff")
 }
