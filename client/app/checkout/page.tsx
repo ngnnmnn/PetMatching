@@ -549,7 +549,12 @@ function CheckoutPageContent() {
                 )}
 
                 {/* Option to use a new address */}
-                <label
+                <div
+                  onClick={() => {
+                    setSelectedAddressId('new');
+                    setEditingAddress(null); // Clear editing state for create
+                    setIsAddressModalOpen(true);
+                  }}
                   className={`flex items-center justify-between gap-3 rounded-xl border p-4 cursor-pointer transition ${
                     selectedAddressId === 'new' || selectedAddressId === ''
                       ? 'border-primary bg-primary/5 shadow-sm'
@@ -561,11 +566,7 @@ function CheckoutPageContent() {
                       type="radio"
                       name="saved_address"
                       checked={selectedAddressId === 'new' || selectedAddressId === ''}
-                      onChange={() => {
-                        setSelectedAddressId('new');
-                        setEditingAddress(null); // Clear editing state for create
-                        setIsAddressModalOpen(true);
-                      }}
+                      readOnly
                       className="accent-[var(--primary-color)]"
                     />
                     <Plus className="size-4 text-primary" />
@@ -585,7 +586,7 @@ function CheckoutPageContent() {
                       Sửa
                     </button>
                   )}
-                </label>
+                </div>
 
                 {/* Temporary Address Summary */}
                 {(selectedAddressId === 'new' || selectedAddressId === '') && receiverName && (
