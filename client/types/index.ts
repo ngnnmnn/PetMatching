@@ -135,7 +135,8 @@ export interface PaginatedResponse<T> {
 
 export interface SpaServiceType {
   id: string;
-  branchId: string;
+  brandId: string;
+  branchId?: string;
   name: string;
   description: string | null;
   price: number;
@@ -143,11 +144,13 @@ export interface SpaServiceType {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  brand?: {
+    id: string;
+    name: string;
+  };
   branch?: {
     id: string;
     name: string;
-    address: string | null;
-    phone: string | null;
   };
 }
 
@@ -155,8 +158,6 @@ export interface SpaBranchType {
   id: string;
   name: string;
   description: string | null;
-  address: string | null;
-  phone: string | null;
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
   managerId: string | null;
   approvedAt: string | null;
@@ -168,24 +169,65 @@ export interface SpaBranchType {
 
 export interface SpaBookingType {
   id: string;
-  branchId: string;
+  brandId?: string | null;
+  branchId?: string | null;
   serviceId: string | null;
   userId: string;
   staffId: string | null;
   petName: string | null;
+  petId?: string | null;
   scheduledAt: string;
   status: 'PENDING' | 'CONFIRMED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
   priceSnapshot: number | null;
   note: string | null;
+  petConditionAfter?: string | null;
+  photoAfter?: string | null;
+  issueReported?: string | null;
   createdAt: string;
   updatedAt: string;
-  branch: {
+  brand?: {
     name: string;
-    address: string | null;
-    phone: string | null;
-  };
+  } | null;
+  branch?: {
+    name: string;
+  } | null;
   service: {
     name: string;
     description: string | null;
   };
+  user?: User | null;
+  pet?: any | null;
+  staff?: {
+    name: string;
+    avatarUrl?: string | null;
+  } | null;
+  addressSpaId?: string | null;
+  addressSpa?: {
+    name: string;
+    address: string;
+    phone?: string | null;
+  } | null;
+}
+
+export interface SpaStaffType {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+  phone?: string | null;
+}
+
+export interface AddressSpaType {
+  id: string;
+  name: string;
+  description?: string | null;
+  address: string;
+  phone?: string | null;
+}
+
+export interface SpaStaffProfileType {
+  id: string;
+  userId: string;
+  addressSpaId?: string | null;
+  addressSpa?: AddressSpaType | null;
 }

@@ -73,9 +73,9 @@ export class AdminService {
       this.prisma.complaint.count({
         where: { type: ComplaintType.STORE, status: ComplaintStatus.PENDING },
       }),
-      this.prisma.spaBranch.count(),
-      this.prisma.spaBranch.count({ where: { status: ApprovalStatus.ACTIVE } }),
-      this.prisma.spaBranch.count({ where: { status: ApprovalStatus.PENDING } }),
+      this.prisma.spaBrand.count(),
+      this.prisma.spaBrand.count({ where: { status: ApprovalStatus.ACTIVE } }),
+      this.prisma.spaBrand.count({ where: { status: ApprovalStatus.PENDING } }),
       this.prisma.spaService.count(),
       this.prisma.spaBooking.count(),
       this.prisma.complaint.count({
@@ -402,7 +402,7 @@ export class AdminService {
   }
 
   getSpaBranches(query: { status?: ApprovalStatus }) {
-    return this.prisma.spaBranch.findMany({
+    return this.prisma.spaBrand.findMany({
       where: query.status ? { status: query.status } : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -413,25 +413,25 @@ export class AdminService {
   }
 
   updateSpaBranchStatus(actor: AdminActor, branchId: string, dto: UpdateApprovalStatusDto) {
-    return this.updateApprovalStatus(actor, 'SpaBranch', branchId, dto.status);
+    return this.updateApprovalStatus(actor, 'SpaBrand', branchId, dto.status);
   }
 
-  getSpaServices(branchId?: string) {
+  getSpaServices(brandId?: string) {
     return this.prisma.spaService.findMany({
-      where: branchId ? { branchId } : undefined,
+      where: brandId ? { brandId } : undefined,
       orderBy: { createdAt: 'desc' },
-      include: { branch: { select: { id: true, name: true, status: true } } },
+      include: { brand: { select: { id: true, name: true, status: true } } },
     });
   }
 
-  getSpaBookings(branchId?: string) {
+  getSpaBookings(brandId?: string) {
     return this.prisma.spaBooking.findMany({
-      where: branchId ? { branchId } : undefined,
+      where: brandId ? { brandId } : undefined,
       orderBy: { scheduledAt: 'desc' },
       include: {
         user: { select: { id: true, name: true, email: true } },
         staff: { select: { id: true, name: true, email: true } },
-        branch: { select: { id: true, name: true, status: true } },
+        brand: { select: { id: true, name: true, status: true } },
         service: { select: { id: true, name: true, price: true, durationMin: true } },
       },
     });
@@ -576,7 +576,7 @@ export class AdminService {
 
   private async updateApprovalStatus(
     actor: AdminActor,
-    targetType: 'Store' | 'SpaBranch',
+    targetType: 'Store' | 'SpaBrand',
     targetId: string,
     status: ApprovalStatus,
   ) {
@@ -589,7 +589,7 @@ export class AdminService {
     const result =
       targetType === 'Store'
         ? await this.prisma.store.update({ where: { id: targetId }, data })
-        : await this.prisma.spaBranch.update({ where: { id: targetId }, data });
+        : await this.prisma.spaBrand.update({ where: { id: targetId }, data });
 
     await this.audit(actor.id, `ADMIN_UPDATE_${targetType.toUpperCase()}_STATUS`, targetType, targetId, {
       status,

@@ -18,6 +18,22 @@ export class SpaController {
     return this.spaService.getServices();
   }
 
+  @Get('staff-list')
+  getStaffList() {
+    return this.spaService.getStaffList();
+  }
+
+  @Get('addresses')
+  getSpaAddresses() {
+    return this.spaService.getSpaAddresses();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('staff/profile')
+  getStaffProfile(@Req() req: AuthenticatedRequest) {
+    return this.spaService.getStaffProfile(req.user.id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('bookings')
   createBooking(@Req() req: AuthenticatedRequest, @Body() dto: CreateBookingDto) {
@@ -34,5 +50,26 @@ export class SpaController {
   @Patch('bookings/:id/cancel')
   cancelBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.cancelBooking(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('staff/bookings')
+  getStaffBookings(@Req() req: AuthenticatedRequest) {
+    return this.spaService.getStaffBookings(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('staff/bookings/:id')
+  updateStaffBooking(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: {
+      status?: any;
+      petConditionAfter?: string;
+      photoAfter?: string;
+      issueReported?: string;
+    },
+  ) {
+    return this.spaService.updateStaffBooking(req.user.id, bookingId, dto);
   }
 }

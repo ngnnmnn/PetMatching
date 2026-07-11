@@ -230,16 +230,16 @@ export default function SpaBookingsPage() {
                       <div>
                         <span className="text-xs text-gray-400 block leading-none">Địa chỉ</span>
                         <span className="font-semibold text-[var(--text-main)]">
-                          {booking.branch?.name}
+                          {booking.addressSpa?.name || 'Chưa chọn cơ sở'}
                         </span>
-                        {booking.branch?.address && (
+                        {booking.addressSpa?.address && (
                           <span className="text-xs text-[var(--text-muted)] block leading-snug">
-                            {booking.branch.address}
+                            {booking.addressSpa.address}
                           </span>
                         )}
-                        {booking.branch?.phone && (
+                        {booking.addressSpa?.phone && (
                           <span className="text-xs text-[var(--text-muted)] flex items-center gap-1 mt-0.5 leading-none">
-                            <Phone className="size-3" /> {booking.branch.phone}
+                            <Phone className="size-3" /> {booking.addressSpa.phone}
                           </span>
                         )}
                       </div>

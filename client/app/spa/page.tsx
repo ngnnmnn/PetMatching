@@ -8,7 +8,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { spaApi } from '@/lib/api/spa';
-import { SpaBranchType, SpaServiceType } from '@/types';
+import { SpaBranchType, SpaServiceType, AddressSpaType } from '@/types';
 import BookingDialog from '@/components/spa/BookingDialog';
 
 // Map images for high aesthetic mockups based on services
@@ -41,12 +41,12 @@ const RATING_MOCK: Record<string, { rating: number; reviews: number }> = {
 
 const CATEGORIES = [
   { label: 'Tất cả', value: 'all' },
-  { label: 'Tắm & Sấy', value: 'Tắm Sấy' },
-  { label: 'Cắt tỉa lông', value: 'Cắt Tỉa Lông' },
-  { label: 'Chăm sóc móng', value: 'Chăm Sóc Móng & Vệ Sinh' },
-  { label: 'Vệ sinh tai & răng', value: 'Vệ Sinh Tai & Răng' }, // Subcategories mapped logic
-  { label: 'Massage & Thư giãn', value: 'Massage' },
-  { label: 'Gói combo', value: 'Combo' },
+  { label: 'Tắm & Sấy', value: 'Tắm & Sấy' },
+  { label: 'Cắt tỉa lông', value: 'Cắt tỉa lông' },
+  { label: 'Chăm sóc móng', value: 'Chăm sóc móng' },
+  { label: 'Vệ sinh tai & răng', value: 'Vệ sinh tai và răng' },
+  { label: 'Massage & Thư giãn', value: 'Massage thư giãn' },
+  { label: 'Gói combo', value: 'gói combo' },
 ];
 
 export default function SpaHomePage() {
@@ -55,7 +55,7 @@ export default function SpaHomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
-  const [branches, setBranches] = useState<SpaBranchType[]>([]);
+  const [branches, setBranches] = useState<AddressSpaType[]>([]);
   const [services, setServices] = useState<SpaServiceType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -74,7 +74,7 @@ export default function SpaHomePage() {
       setLoading(true);
       try {
         const [branchesRes, servicesRes] = await Promise.all([
-          spaApi.getBranches(),
+          spaApi.getSpaAddresses(),
           spaApi.getServices(),
         ]);
         setBranches(branchesRes.data || []);
@@ -106,24 +106,14 @@ export default function SpaHomePage() {
     const matchesSearch =
       service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (service.description && service.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (service.branch?.name && service.branch.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      (service.brand?.name && service.brand.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     if (!matchesSearch) return false;
 
     // Category filter match
     if (selectedCategory === 'all') return true;
 
-    // Direct mapping match with database branch name (Tắm Sấy, Cắt Tỉa Lông, Chăm Sóc Móng & Vệ Sinh, Massage, Combo)
-    if (selectedCategory === 'Vệ Sinh Tai & Răng') {
-      // Both "vệ sinh tai & răng" and "Chăm Sóc Móng & Vệ Sinh" are under this category
-      return service.name.includes('tai') || service.name.includes('răng') || service.name.includes('vệ sinh');
-    }
-
-    if (selectedCategory === 'Chăm Sóc Móng & Vệ Sinh') {
-      return service.name.includes('móng') || service.name.toLowerCase().includes('vuốt');
-    }
-
-    return service.branch?.name === selectedCategory || service.branch?.name?.includes(selectedCategory);
+    return service.brand?.name === selectedCategory || service.brand?.name?.includes(selectedCategory);
   });
 
   const filteredBranches = branches.filter((branch) => {
@@ -292,11 +282,13 @@ export default function SpaHomePage() {
                             {service.price.toLocaleString('vi-VN')}đ
                           </span>
                         </div>
-                        <Button
-                          onClick={() => handleOpenBooking(service)}
+                         <Button
+                          asChild
                           className="bg-primary hover:bg-primary/95 text-white font-bold text-xs px-4 h-9 shadow-sm"
                         >
-                          Đặt lịch
+                          <Link href={`/spa/book?serviceId=${service.id}`}>
+                            Đặt lịch
+                          </Link>
                         </Button>
                       </div>
                     </div>

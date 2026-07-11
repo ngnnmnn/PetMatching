@@ -9,7 +9,7 @@ const MENU_ITEMS = [
   { icon: User, label: 'Hồ sơ cá nhân', href: '/profile' },
   { icon: Package, label: 'Đơn hàng của tôi', href: '/orders' },
   { icon: MessageCircle, label: 'Tin nhắn & Ghép đôi', href: '/messages' },
-  { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/appointments' },
+  { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/book' },
 ];
 
 export default function UserDropdown() {
@@ -93,6 +93,19 @@ export default function UserDropdown() {
               >
                 <ShieldCheck className="size-4" />
                 Manager console
+              </button>
+            )}
+            {user.role === 'SPA_STAFF' && (
+              <button
+                type="button"
+                onClick={() => {
+                  router.push('/spa/staff');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-bold text-[#6D28D9] transition hover:bg-[#F3E8FF]"
+              >
+                <Scissors className="size-4 text-[#6D28D9]" />
+                Trang nhân viên Spa
               </button>
             )}
             {MENU_ITEMS.map((item) => (
