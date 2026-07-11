@@ -9,6 +9,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { SpaModule } from './modules/spa/spa.module';
 import { CartModule } from './modules/cart/cart.module';
 import { WishlistModule } from './modules/wishlist/wishlist.module';
+import { ManagerModule } from './modules/manager/manager.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { WishlistModule } from './modules/wishlist/wishlist.module';
     SpaModule,
     CartModule,
     WishlistModule,
+    ManagerModule,
   ],
 })
 export class AppModule {}
