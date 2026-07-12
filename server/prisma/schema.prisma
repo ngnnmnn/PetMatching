@@ -595,7 +595,7 @@ model Product {
   unit          String?
   rating        Float           @default(0)
   reviewCount   Int             @default(0)
-  stock         Int?
+  stock         Int             @default(5)
   isActive      Boolean         @default(true)
   isFeatured    Boolean         @default(false)
   store         Store?          @relation(fields: [storeId], references: [id])

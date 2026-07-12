@@ -18,7 +18,8 @@ import {
   PackageCheck,
   Store,
   Loader2,
-  Zap
+  Zap,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
@@ -238,13 +239,19 @@ export default function ProductDetailPage() {
               <img
                 src={activeImage}
                 alt={product.name}
-                className="max-h-full max-w-full object-contain transition-all duration-300 rounded-xl"
+                className={`max-h-full max-w-full object-contain transition-all duration-300 rounded-xl ${
+                  product.stock === 0 ? 'grayscale opacity-60' : ''
+                }`}
               />
-              {discount && (
+              {product.stock === 0 ? (
+                <span className="absolute left-4 top-4 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-black text-white shadow-md z-10">
+                  Tạm hết hàng
+                </span>
+              ) : discount ? (
                 <span className="absolute left-4 top-4 rounded-lg bg-[var(--primary-color)] px-3 py-1.5 text-xs font-black text-white shadow-md">
                   -{discount}%
                 </span>
-              )}
+              ) : null}
             </div>
 
             {/* Thumbnails list */}
@@ -325,10 +332,10 @@ export default function ProductDetailPage() {
                     </span>
                   ) : product.stock > 0 ? (
                     <span className="text-[#0F766E] flex items-center gap-1">
-                      <span className="text-xs font-bold">✓</span> Còn hàng
+                      <span className="text-xs font-bold">✓</span> Còn hàng ({product.stock} sản phẩm)
                     </span>
                   ) : (
-                    <span className="text-red-500 font-extrabold">Hết hàng</span>
+                    <span className="text-red-500 font-extrabold">Tạm hết hàng</span>
                   )}
                 </span>
               </div>
@@ -384,6 +391,11 @@ export default function ProductDetailPage() {
                       <Plus className="h-4 w-4" />
                     </button>
                   </div>
+                  {product.stock !== undefined && product.stock !== null && (
+                    <span className="text-xs font-bold text-[var(--text-muted)] animate-fadeIn">
+                      (Còn {product.stock} sản phẩm trong kho)
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -397,10 +409,12 @@ export default function ProductDetailPage() {
                 >
                   {isAddingToCart ? (
                     <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  ) : product.stock === 0 ? (
+                    <X className="h-4.5 w-4.5" />
                   ) : (
                     <ShoppingCart className="h-4.5 w-4.5" />
                   )}
-                  Thêm vào giỏ hàng
+                  {product.stock === 0 ? 'Tạm hết hàng' : 'Thêm vào giỏ hàng'}
                 </button>
 
                 <button
@@ -424,8 +438,17 @@ export default function ProductDetailPage() {
                     }
                   }}
                 >
-                  <Zap className="h-4.5 w-4.5 fill-white text-white" />
-                  Mua ngay
+                  {product.stock === 0 ? (
+                    <>
+                      <X className="h-4.5 w-4.5" />
+                      Tạm hết hàng
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-4.5 w-4.5 fill-white text-white" />
+                      Mua ngay
+                    </>
+                  )}
                 </button>
 
                 <button

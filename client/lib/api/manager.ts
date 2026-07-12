@@ -5,6 +5,7 @@ export interface ManagerDashboardStats {
   totalOrders: number;
   totalProductsSold: number;
   totalCustomers: number;
+  cancellationRate: number;
 }
 
 export interface ManagerProduct {
@@ -24,6 +25,7 @@ export interface ManagerProduct {
   rating?: number;
   reviewCount?: number;
   stock?: number | null;
+  sales?: number;
   isActive: boolean;
   isFeatured: boolean;
   createdAt?: string;
@@ -62,6 +64,7 @@ export interface ManagerCustomer {
   email: string;
   phone: string;
   totalOrders: number;
+  totalCancelled: number;
   spent: number;
 }
 

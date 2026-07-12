@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
   Loader2,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats } from '@/lib/api/manager';
@@ -42,6 +43,33 @@ const ORDER_STATUS_MAP: Record<string, string> = {
   CANCELLED: 'Đã hủy',
 };
 
+// Parse shipping address helper
+function parseShippingAddress(addressStr: string) {
+  const parts = addressStr ? addressStr.split(' | ') : [];
+  let name = 'Chưa rõ';
+  let phone = 'Chưa rõ';
+  let address = addressStr || 'Chưa rõ';
+  let note = '';
+
+  for (const part of parts) {
+    if (part.startsWith('Tên: ')) {
+      name = part.replace('Tên: ', '');
+    } else if (part.startsWith('SĐT: ')) {
+      phone = part.replace('SĐT: ', '');
+    } else if (part.startsWith('Địa chỉ: ')) {
+      address = part.replace('Địa chỉ: ', '');
+    }
+  }
+
+  if (address.includes(' (Ghi chú: ')) {
+    const noteStart = address.indexOf(' (Ghi chú: ');
+    note = address.slice(noteStart + 11, -1);
+    address = address.slice(0, noteStart);
+  }
+
+  return { name, phone, address, note };
+}
+
 export default function ManagerDashboard() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
@@ -52,6 +80,7 @@ export default function ManagerDashboard() {
   const [orders, setOrders] = useState<ManagerOrder[]>([]);
   const [customers, setCustomers] = useState<ManagerCustomer[]>([]);
   const [storeInfo, setStoreInfo] = useState<StoreSettings | null>(null);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<ManagerOrder | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -118,6 +147,13 @@ export default function ManagerDashboard() {
       return matchesSearch && matchesStatus;
     });
   }, [products, searchQuery, filterStatus]);
+
+  const topSellingProducts = useMemo(() => {
+    return [...products]
+      .filter((p) => (p.sales ?? 0) > 0)
+      .sort((a, b) => (b.sales ?? 0) - (a.sales ?? 0))
+      .slice(0, 5);
+  }, [products]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -616,8 +652,11 @@ export default function ManagerDashboard() {
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#EFEAE2] bg-[#F9F8F6] text-xs font-black uppercase text-[#8A8980]">
+                    <th className="px-6 py-4 text-center w-12"></th>
                     <th className="px-6 py-4">Mã đơn</th>
                     <th className="px-6 py-4">Khách hàng</th>
+                    <th className="px-6 py-4">SĐT</th>
+                    <th className="px-6 py-4">Địa chỉ giao hàng</th>
                     <th className="px-6 py-4">Sản phẩm mua</th>
                     <th className="px-6 py-4">Ngày đặt</th>
                     <th className="px-6 py-4 text-right">Tổng thanh toán</th>
@@ -627,18 +666,39 @@ export default function ManagerDashboard() {
                 <tbody className="divide-y divide-[#EFEAE2]">
                   {filteredOrders.length > 0 ? (
                     filteredOrders.map((o) => {
-                      const itemsStr = o.items.map((i) => `${i.quantity}x ${i.product.name}`).join(', ');
+                      const shippingInfo = parseShippingAddress(o.shippingAddress);
                       return (
                         <tr key={o.id} className="transition hover:bg-[#FDFDFD]">
-                          <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]">{o.id.slice(0, 8)}...</td>
-                          <td className="px-6 py-4">
-                            <div>
-                              <p className="font-bold text-[var(--text-main)]">{o.user?.name || 'Vô danh'}</p>
-                              <p className="text-[10px] text-gray-400 font-semibold">{o.user?.email}</p>
-                            </div>
+                          <td className="px-6 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderDetails(o)}
+                              className="p-1 text-gray-500 hover:text-[var(--primary-color)] transition active:scale-95 cursor-pointer"
+                              title="Xem chi tiết đơn hàng"
+                            >
+                              <Eye className="size-4" />
+                            </button>
                           </td>
-                          <td className="px-6 py-4 text-xs font-semibold text-[#5C5B52] max-w-xs truncate" title={itemsStr}>
-                            {itemsStr}
+                          <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]" title={o.id}>
+                            {o.id.length > 15 ? o.id.slice(0, 12) + '...' : o.id}
+                          </td>
+                          <td className="px-6 py-4 font-bold text-[var(--text-main)]">
+                            {shippingInfo.name}
+                          </td>
+                          <td className="px-6 py-4 font-mono text-xs text-[#5C5B52]">
+                            {shippingInfo.phone}
+                          </td>
+                          <td className="px-6 py-4 text-xs font-semibold text-[#5C5B52] max-w-xs truncate" title={shippingInfo.address}>
+                            {shippingInfo.address}
+                          </td>
+                          <td className="px-6 py-4 text-xs font-semibold text-[#5C5B52]">
+                            <div className="space-y-1.5">
+                              {o.items.map((i, idx) => (
+                                <div key={idx} className="line-clamp-1">
+                                  {i.quantity}x {i.product.name}
+                                </div>
+                              ))}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-[#8A8980]">
                             {new Date(o.createdAt).toLocaleDateString('vi-VN')}
@@ -669,13 +729,123 @@ export default function ManagerDashboard() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Không tìm thấy đơn hàng nào.</td>
+                      <td colSpan={9} className="px-6 py-12 text-center text-gray-400">Không tìm thấy đơn hàng nào.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {selectedOrderDetails && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto"
+              onClick={() => setSelectedOrderDetails(null)}
+            >
+              <div
+                className="w-full max-w-2xl rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 my-8 relative animate-fadeIn"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderDetails(null)}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition"
+                >
+                  <X className="size-5" />
+                </button>
+                
+                <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
+                  Chi tiết đơn hàng: {selectedOrderDetails.id}
+                </h3>
+                
+                {/* Delivery Info */}
+                {(() => {
+                  const info = parseShippingAddress(selectedOrderDetails.shippingAddress);
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-semibold">
+                      <div className="space-y-1 bg-[#F9F8F6] p-3 rounded-xl border border-[#EFEAE2]">
+                        <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Thông tin người nhận</p>
+                        <p className="text-sm font-bold text-[var(--text-main)]">{info.name}</p>
+                        <p className="text-[var(--text-muted)] mt-0.5">SĐT: {info.phone}</p>
+                        <p className="text-[10px] text-gray-400 font-semibold mt-0.5">{selectedOrderDetails.user?.email}</p>
+                      </div>
+                      <div className="space-y-1 bg-[#F9F8F6] p-3 rounded-xl border border-[#EFEAE2]">
+                        <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Địa chỉ giao hàng</p>
+                        <p className="text-sm font-bold text-[var(--text-main)] leading-relaxed">{info.address}</p>
+                        {info.note && (
+                          <p className="text-amber-700 italic text-[11px] mt-1.5 font-bold">Ghi chú: {info.note}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                {/* Order Items Table */}
+                <div className="overflow-hidden rounded-xl border border-[#EFEAE2]">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-[#EFEAE2] bg-[#F9F8F6] text-xs font-black uppercase text-[#8A8980]">
+                        <th className="px-4 py-2.5">Sản phẩm</th>
+                        <th className="px-4 py-2.5 text-center w-20">Số lượng</th>
+                        <th className="px-4 py-2.5 text-right w-28">Đơn giá</th>
+                        <th className="px-4 py-2.5 text-right w-32">Thành tiền</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EFEAE2]">
+                      {selectedOrderDetails.items.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50 font-semibold text-[var(--text-main)]">
+                          <td className="px-4 py-3 flex items-center gap-3">
+                            {item.product.imageUrl && (
+                              <img src={item.product.imageUrl} alt={item.product.name} className="size-10 object-cover rounded border bg-white shrink-0" />
+                            )}
+                            <span className="line-clamp-2">{item.product.name}</span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-sm">{item.quantity}</td>
+                          <td className="px-4 py-3 text-right">{currency.format(item.price)}</td>
+                          <td className="px-4 py-3 text-right font-bold text-[var(--primary-color)]">
+                            {currency.format(item.price * item.quantity)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Order Status & Financial Summary */}
+                <div className="flex justify-between items-center pt-2 border-t text-xs font-semibold">
+                  <div>
+                    <span className="text-[#8A8980] block text-[10px] font-black uppercase tracking-wider">Trạng thái</span>
+                    <span className={cn(
+                      'inline-flex rounded-full px-2.5 py-0.5 text-xs font-black uppercase mt-1.5',
+                      selectedOrderDetails.status === 'DELIVERED' && 'bg-green-50 text-green-700',
+                      selectedOrderDetails.status === 'PENDING' && 'bg-yellow-50 text-yellow-700',
+                      selectedOrderDetails.status === 'PROCESSING' && 'bg-blue-50 text-blue-700',
+                      selectedOrderDetails.status === 'SHIPPED' && 'bg-purple-50 text-purple-700',
+                      selectedOrderDetails.status === 'CANCELLED' && 'bg-red-50 text-red-700',
+                    )}>
+                      {ORDER_STATUS_MAP[selectedOrderDetails.status] || selectedOrderDetails.status}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[#8A8980] block text-[10px] font-black uppercase tracking-wider">Tổng cộng</span>
+                    <span className="text-lg font-black text-[var(--primary-color)] mt-1 block">
+                      {currency.format(selectedOrderDetails.totalAmount)}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderDetails(null)}
+                    className="rounded-xl border px-5 py-2 font-bold hover:bg-gray-50 transition text-xs cursor-pointer animate-scaleIn"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
 
@@ -698,6 +868,7 @@ export default function ManagerDashboard() {
                     <th className="px-6 py-4">Email</th>
                     <th className="px-6 py-4">Số điện thoại</th>
                     <th className="px-6 py-4 text-center">Số đơn đặt thành công</th>
+                    <th className="px-6 py-4 text-center">Số đơn đã hủy</th>
                     <th className="px-6 py-4 text-right">Tổng chi tiêu</th>
                   </tr>
                 </thead>
@@ -710,12 +881,13 @@ export default function ManagerDashboard() {
                         <td className="px-6 py-4 text-[#5C5B52]">{c.email}</td>
                         <td className="px-6 py-4 font-mono text-[#5C5B52]">{c.phone}</td>
                         <td className="px-6 py-4 text-center font-bold text-[#0F766E]">{c.totalOrders} đơn</td>
+                        <td className="px-6 py-4 text-center font-bold text-red-600">{c.totalCancelled} đơn</td>
                         <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(c.spent)}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Chưa có dữ liệu khách hàng nào.</td>
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Chưa có dữ liệu khách hàng nào.</td>
                     </tr>
                   )}
                 </tbody>
@@ -834,7 +1006,7 @@ export default function ManagerDashboard() {
           </section>
 
           {/* Metrics */}
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-[#8A8980]">Tổng doanh thu</span>
@@ -872,6 +1044,19 @@ export default function ManagerDashboard() {
 
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">
               <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase text-[#8A8980]">Tỷ lệ hủy đơn</span>
+                <span className="p-2 rounded-lg bg-red-50 text-red-600">
+                  <X className="size-4" />
+                </span>
+              </div>
+              <p className="mt-3 text-2xl font-black">{(stats?.cancellationRate ?? 0).toFixed(1)}%</p>
+              <p className="mt-1 text-xs font-bold text-red-600">
+                {orders.filter((o) => o.status === 'CANCELLED').length} đơn đã bị hủy
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-[#8A8980]">Khách hàng đăng ký</span>
                 <span className="p-2 rounded-lg bg-orange-50 text-orange-600">
                   <Users className="size-4" />
@@ -883,7 +1068,7 @@ export default function ManagerDashboard() {
           </section>
 
           {/* Dashboard Lists */}
-          <section className="grid gap-6 lg:grid-cols-2">
+          <section className="grid gap-6 lg:grid-cols-3">
             {/* Product Status Alert */}
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
               <h3 className="text-base font-black">Sản phẩm sắp hết hàng & cần bổ sung</h3>
@@ -912,6 +1097,30 @@ export default function ManagerDashboard() {
                     ))
                 ) : (
                   <p className="text-xs text-gray-400 py-4">Kho hàng dồi dào, không có sản phẩm nào sắp hết hàng.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Best Sellers */}
+            <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
+              <h3 className="text-base font-black">Sản phẩm bán chạy nhất</h3>
+              <div className="mt-4 divide-y divide-[#EFEAE2]">
+                {topSellingProducts.length > 0 ? (
+                  topSellingProducts.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                      <div>
+                        <p className="text-sm font-bold text-[var(--text-main)]">{p.name}</p>
+                        <p className="text-xs font-semibold text-[#8A8980]">Danh mục: {CATEGORY_MAP[p.category] || p.category}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="inline-flex rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs font-black">
+                          Đã bán: {p.sales ?? 0}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 py-4">Chưa có dữ liệu bán hàng.</p>
                 )}
               </div>
             </div>

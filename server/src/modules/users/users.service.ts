@@ -390,49 +390,111 @@ export class UsersService {
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {
-    return this.prisma.order.create({
-      data: {
-        userId,
-        totalAmount: dto.totalAmount,
-        shippingAddress: dto.shippingAddress,
-        status: 'PENDING',
-        items: {
-          create: dto.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.price,
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Check stock for each item and decrement
+      for (const item of dto.items) {
+        const product = await tx.product.findUnique({
+          where: { id: item.productId },
+        });
+
+        if (!product) {
+          throw new NotFoundException(`Sản phẩm với mã ${item.productId} không tồn tại.`);
+        }
+
+        if (!product.isActive) {
+          throw new BadRequestException(`Sản phẩm "${product.name}" hiện không mở bán.`);
+        }
+
+        if (product.stock < item.quantity) {
+          throw new BadRequestException(
+            `Sản phẩm "${product.name}" chỉ còn ${product.stock} cái trong kho, không đủ đáp ứng số lượng đặt mua (${item.quantity} cái).`,
+          );
+        }
+
+        // 2. Decrement stock
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: {
+              decrement: item.quantity,
+            },
+          },
+        });
+      }
+
+      // 3. Create the order
+      const now = new Date();
+      const year = String(now.getFullYear()).slice(-2);
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const date = String(now.getDate()).padStart(2, '0');
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let randomChars = '';
+      for (let i = 0; i < 4; i++) {
+        randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const generatedId = `PM-${year}${month}${date}-${randomChars}`;
+
+      return tx.order.create({
+        data: {
+          id: generatedId,
+          userId,
+          totalAmount: dto.totalAmount,
+          shippingAddress: dto.shippingAddress,
+          status: 'PENDING',
+          items: {
+            create: dto.items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+          },
         },
-      },
-      include: {
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                imageUrl: true,
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                },
               },
             },
           },
         },
-      },
+      });
     });
   }
 
   async cancelOrder(userId: string, orderId: string) {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, userId },
-    });
-    if (!order) {
-      throw new NotFoundException('Không tìm thấy đơn hàng.');
-    }
-    if (order.status !== 'PENDING') {
-      throw new BadRequestException('Chỉ có thể hủy đơn hàng ở trạng thái chờ xác nhận.');
-    }
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: 'CANCELLED' },
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id: orderId, userId },
+        include: { items: true },
+      });
+      if (!order) {
+        throw new NotFoundException('Không tìm thấy đơn hàng.');
+      }
+      if (order.status !== 'PENDING') {
+        throw new BadRequestException('Chỉ có thể hủy đơn hàng ở trạng thái chờ xác nhận.');
+      }
+
+      // Restore stock
+      for (const item of order.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: {
+              increment: item.quantity,
+            },
+          },
+        });
+      }
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { status: 'CANCELLED' },
+      });
     });
   }
 

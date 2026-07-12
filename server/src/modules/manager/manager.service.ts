@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 @Injectable()
@@ -49,6 +49,13 @@ export class ManagerService {
     // Total orders
     const totalOrders = await this.prisma.order.count();
 
+    // Cancelled orders count
+    const cancelledOrders = await this.prisma.order.count({
+      where: { status: 'CANCELLED' },
+    });
+
+    const cancellationRate = totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
+
     // Total products sold: sum order item quantities where order status is not CANCELLED
     const itemsSold = await this.prisma.orderItem.aggregate({
       where: { order: { status: { not: 'CANCELLED' } } },
@@ -66,6 +73,7 @@ export class ManagerService {
       totalOrders,
       totalProductsSold,
       totalCustomers,
+      cancellationRate,
     };
   }
 
@@ -106,7 +114,7 @@ export class ManagerService {
         salePrice: dto.salePrice ? Number(dto.salePrice) : null,
         brand: dto.brand || '',
         unit: dto.unit || '',
-        stock: dto.stock ? Number(dto.stock) : null,
+        stock: (dto.stock !== undefined && dto.stock !== null && dto.stock !== '') ? Number(dto.stock) : undefined,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
         isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : false,
       },
@@ -128,7 +136,7 @@ export class ManagerService {
         salePrice: dto.salePrice !== undefined ? (dto.salePrice ? Number(dto.salePrice) : null) : undefined,
         brand: dto.brand,
         unit: dto.unit,
-        stock: dto.stock !== undefined ? (dto.stock ? Number(dto.stock) : null) : undefined,
+        stock: dto.stock !== undefined ? ((dto.stock !== null && dto.stock !== '') ? Number(dto.stock) : undefined) : undefined,
         isActive: dto.isActive,
         isFeatured: dto.isFeatured,
       },
@@ -169,9 +177,54 @@ export class ManagerService {
   }
 
   async updateOrderStatus(id: string, status: string) {
-    return this.prisma.order.update({
-      where: { id },
-      data: { status: status as any },
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      if (!order) {
+        throw new NotFoundException('Không tìm thấy đơn hàng.');
+      }
+
+      // If transition to CANCELLED from a non-CANCELLED state
+      if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                increment: item.quantity,
+              },
+            },
+          });
+        }
+      }
+      // If transition FROM CANCELLED to something else (e.g. processing)
+      else if (order.status === 'CANCELLED' && status !== 'CANCELLED') {
+        for (const item of order.items) {
+          // Check stock before decrementing
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (product && product.stock < item.quantity) {
+            throw new BadRequestException(
+              `Không thể đổi trạng thái đơn hàng. Sản phẩm "${product.name}" hiện không đủ hàng trong kho (chỉ còn ${product.stock} cái).`
+            );
+          }
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                decrement: item.quantity,
+              },
+            },
+          });
+        }
+      }
+
+      return tx.order.update({
+        where: { id },
+        data: { status: status as any },
+      });
     });
   }
 
@@ -180,21 +233,25 @@ export class ManagerService {
       where: { role: 'USER' },
       include: {
         orders: {
-          where: { status: { not: 'CANCELLED' } },
-          select: { totalAmount: true },
+          select: { totalAmount: true, status: true },
         },
       },
     });
 
     return users.map((u) => {
-      const totalOrders = u.orders.length;
-      const spent = u.orders.reduce((sum, o) => sum + o.totalAmount, 0);
+      const completedOrders = u.orders.filter((o) => o.status !== 'CANCELLED');
+      const cancelledOrders = u.orders.filter((o) => o.status === 'CANCELLED');
+
+      const totalOrders = completedOrders.length;
+      const totalCancelled = cancelledOrders.length;
+      const spent = completedOrders.reduce((sum, o) => sum + o.totalAmount, 0);
       return {
         id: u.id,
         name: u.name,
         email: u.email,
         phone: u.phone || 'N/A',
         totalOrders,
+        totalCancelled,
         spent,
       };
     });

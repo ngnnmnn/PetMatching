@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Heart, PackageCheck, ShoppingCart, Star } from 'lucide-react';
+import { Heart, PackageCheck, ShoppingCart, Star, X } from 'lucide-react';
 import { Product } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -51,15 +51,21 @@ export default function ProductCard({ product, featured = false }: { product: Pr
             src={product.imageUrl || '/placeholder.svg'}
             alt={product.name}
             loading="lazy"
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            className={`h-full w-full object-cover transition duration-300 group-hover:scale-105 ${
+              product.stock === 0 ? 'grayscale opacity-60' : ''
+            }`}
           />
           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/28 to-transparent opacity-0 transition group-hover:opacity-100" />
         </Link>
-        {discount && (
+        {product.stock === 0 ? (
+          <span className="absolute left-2 top-2 rounded-md bg-red-600 px-2 py-1 text-xs font-extrabold text-white shadow-sm z-10 animate-fadeIn">
+            Tạm hết hàng
+          </span>
+        ) : discount ? (
           <span className="absolute left-2 top-2 rounded-md bg-[var(--primary-color)] px-2 py-1 text-xs font-extrabold text-white shadow-sm">
             -{discount}%
           </span>
-        )}
+        ) : null}
         {featured && (
           <span className="absolute right-2 top-2 rounded-md bg-[#F59E0B] px-2 py-1 text-xs font-extrabold text-white shadow-sm">
             Hot
@@ -112,10 +118,24 @@ export default function ProductCard({ product, featured = false }: { product: Pr
         <button
           type="button"
           onClick={handleAddToCart}
-          className="mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--primary-color)] px-3 text-sm font-bold text-white transition hover:bg-[#cf5017] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.18)]"
+          disabled={product.stock === 0}
+          className={`mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-bold text-white transition focus-visible:outline-none focus-visible:ring-4 ${
+            product.stock === 0
+              ? 'bg-gray-400 cursor-not-allowed opacity-80'
+              : 'bg-[var(--primary-color)] hover:bg-[#cf5017] focus-visible:ring-[rgba(228,93,28,0.18)]'
+          }`}
         >
-          <ShoppingCart className="size-4" />
-          Thêm vào giỏ
+          {product.stock === 0 ? (
+            <>
+              <X className="size-4" />
+              Tạm hết hàng
+            </>
+          ) : (
+            <>
+              <ShoppingCart className="size-4" />
+              Thêm vào giỏ
+            </>
+          )}
         </button>
       </div>
     </article>
