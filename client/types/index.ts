@@ -90,15 +90,30 @@ export interface RegisterData {
   avatarUrl?: string;
 }
 
-export type ProductCategory =
-  | 'DOG_FOOD'
-  | 'CAT_FOOD'
-  | 'TOY'
-  | 'ACCESSORY'
-  | 'GROOMING'
-  | 'CAGE_BED'
-  | 'LEASH_COLLAR'
-  | 'MEDICAL';
+export type ProductCategory = string;
+
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductReview {
+  id: string;
+  rating: number;
+  comment?: string | null;
+  userId: string;
+  productId: string;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+  };
+}
 
 export interface Product {
   id: string;

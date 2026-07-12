@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState, useRef } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -24,7 +24,7 @@ import {
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
 import { productsApi } from '@/lib/api/products';
-import { Product, ProductCategory } from '@/types';
+import { Product, ProductCategory, ProductReview } from '@/types';
 import ProductCard from '@/components/home/ProductCard';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -62,10 +62,27 @@ export default function ProductDetailPage() {
   const [activeImage, setActiveImage] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [canUserReview, setCanUserReview] = useState(false);
+  const [submitRating, setSubmitRating] = useState(5);
+  const [submitComment, setSubmitComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const isWishlisted = product ? isInWishlist(product.id) : false;
+
+  const searchParams = useSearchParams();
+  const shouldScrollToReview = searchParams.get('review') === 'true';
+  const reviewSectionRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (shouldScrollToReview && canUserReview && reviewSectionRef.current) {
+      setTimeout(() => {
+        reviewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 600);
+    }
+  }, [shouldScrollToReview, canUserReview]);
 
   // Load product detail and related products
   useEffect(() => {
@@ -79,6 +96,25 @@ export default function ProductDetailPage() {
         const data = response.data;
         setProduct(data);
         setActiveImage(data.imageUrl || '/placeholder.svg');
+
+        // Fetch reviews
+        try {
+          const reviewsRes = await productsApi.getReviews(productId);
+          setReviews(reviewsRes.data);
+        } catch (err) {
+          console.error('Failed to load reviews', err);
+        }
+
+        // Fetch can-review eligibility if token exists
+        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        if (token) {
+          try {
+            const eligibilityRes = await productsApi.canReview(productId);
+            setCanUserReview(eligibilityRes.data);
+          } catch (err) {
+            console.error('Failed to load review eligibility', err);
+          }
+        }
 
         // Fetch related products (same category)
         setRelatedLoading(true);
@@ -141,6 +177,35 @@ export default function ProductDetailPage() {
   const handleToggleWishlist = () => {
     if (!product) return;
     toggleWishlist(product);
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingReview(true);
+    try {
+      await productsApi.submitReview(productId, {
+        rating: submitRating,
+        comment: submitComment,
+      });
+      toast.success('Gửi đánh giá thành công! Cảm ơn nhận xét của bạn.');
+      setSubmitComment('');
+      setSubmitRating(5);
+      
+      // Reload reviews, product info, and eligibility
+      const [prodRes, reviewsRes, eligibilityRes] = await Promise.all([
+        productsApi.getById(productId),
+        productsApi.getReviews(productId),
+        productsApi.canReview(productId).catch(() => ({ data: false })),
+      ]);
+      setProduct(prodRes.data);
+      setReviews(reviewsRes.data);
+      setCanUserReview(eligibilityRes.data);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Có lỗi xảy ra khi gửi đánh giá.');
+    } finally {
+      setSubmittingReview(false);
+    }
   };
 
   if (loading) {
@@ -514,6 +579,135 @@ export default function ProductDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Reviews Section */}
+        <section ref={reviewSectionRef} className="mt-12 space-y-6">
+          <div className="flex items-center justify-between border-b pb-3 border-[var(--border-color)]">
+            <h2 className="text-xl font-black text-[var(--text-main)]">Đánh giá & Nhận xét ({reviews.length})</h2>
+            {product && (
+              <div className="flex items-center gap-1.5 text-sm font-bold">
+                <span className="text-[#F59E0B] flex items-center">
+                  <Star className="h-4 w-4 fill-[#F59E0B] text-[#F59E0B]" />
+                  <span className="ml-1">{product.rating.toFixed(1)}/5</span>
+                </span>
+                <span className="text-gray-400">({product.reviewCount} đánh giá)</span>
+              </div>
+            )}
+          </div>
+
+          {/* Feedback Form (if eligible) */}
+          {canUserReview && (
+            <div className="rounded-2xl border border-[var(--primary-color)]/20 bg-[var(--primary-color)]/5 p-6 space-y-4">
+              <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-[var(--primary-color)]" />
+                Viết đánh giá sản phẩm
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] font-semibold">
+                Bạn đã mua sản phẩm này thành công. Hãy chia sẻ nhận xét của mình nhé!
+              </p>
+              <form onSubmit={handleSubmitReview} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-[var(--text-main)]">Chọn số sao đánh giá: *</label>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: 5 }).map((_, i) => {
+                      const starValue = i + 1;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setSubmitRating(starValue)}
+                          className="p-1 hover:scale-110 transition cursor-pointer text-[#F59E0B]"
+                          aria-label={`Đánh giá ${starValue} sao`}
+                        >
+                          <Star
+                            className={`h-7 w-7 ${
+                              starValue <= submitRating
+                                ? 'fill-[#F59E0B] text-[#F59E0B]'
+                                : 'text-gray-300'
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-[var(--text-main)]">Nhận xét (không bắt buộc):</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Sản phẩm rất tốt, đóng gói cẩn thận, giao hàng nhanh..."
+                    value={submitComment}
+                    onChange={(e) => setSubmitComment(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--border-color)] bg-white px-4 py-3 text-sm focus:border-[var(--primary-color)] focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={submittingReview}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-5 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-300 cursor-pointer text-sm font-black"
+                  >
+                    {submittingReview ? 'Đang gửi...' : 'Gửi đánh giá'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Reviews List */}
+          <div className="space-y-4">
+            {reviews.length > 0 ? (
+              reviews.map((review) => (
+                <div key={review.id} className="rounded-2xl border border-[var(--border-color)] bg-white p-5 space-y-3 shadow-sm animate-fadeIn">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="size-10 rounded-full bg-[var(--primary-color)]/10 text-[var(--primary-color)] font-bold flex items-center justify-center border text-sm overflow-hidden shadow-sm uppercase">
+                        {review.user?.avatarUrl ? (
+                          <img src={review.user.avatarUrl} alt={review.user.name} className="size-full object-cover" />
+                        ) : (
+                          review.user?.name.slice(0, 2).toUpperCase()
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[var(--text-main)]">{review.user?.name}</p>
+                        <p className="text-xxs text-[var(--text-muted)] font-semibold">
+                          {new Date(review.createdAt).toLocaleDateString('vi-VN', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-0.5 text-[#F59E0B]">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`h-3.5 w-3.5 ${
+                            i < review.rating ? 'fill-[#F59E0B] text-[#F59E0B]' : 'text-gray-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {review.comment && (
+                    <p className="text-sm text-[var(--text-main)] font-semibold leading-relaxed bg-[#FAF9F6] p-3.5 rounded-xl border border-[#F4EBE0]/50 italic">
+                      "{review.comment}"
+                    </p>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-12 text-center text-[var(--text-muted)] font-semibold text-sm">
+                Sản phẩm chưa có đánh giá nào. Hãy là người đầu tiên trải nghiệm và viết đánh giá nhé!
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* Related Products Section */}
         {relatedProducts.length > 0 && (

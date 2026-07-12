@@ -217,6 +217,7 @@ model User {
   auditLogs           AuditLog[]        @relation("AuditActor")
   cartItems           CartItem[]
   wishlistItems       WishlistItem[]
+  reviews             ProductReview[]
 
   @@map("users")
 }
@@ -568,22 +569,11 @@ model Store {
 // PRODUCT - San pham trong cua hang thu cung
 // =============================================================
 
-enum ProductCategory {
-  DOG_FOOD
-  CAT_FOOD
-  TOY
-  ACCESSORY
-  GROOMING
-  CAGE_BED
-  LEASH_COLLAR
-  MEDICAL
-}
-
 model Product {
   id            String          @id @default(cuid())
   name          String
   slug          String?         @unique
-  category      ProductCategory
+  category      String
   targetSpecies String          @default("ALL")
   description   String?
   imageUrl      String?
@@ -605,6 +595,7 @@ model Product {
   orderItems    OrderItem[]
   cartItems     CartItem[]
   wishlistItems WishlistItem[]
+  reviews       ProductReview[]
 
   @@index([category, isActive])
   @@index([isFeatured, isActive])
@@ -847,4 +838,31 @@ model SpaStaff {
   addressSpaId String?
 
   @@map("spa_staff")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model ProductReview {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@map("product_reviews")
 }

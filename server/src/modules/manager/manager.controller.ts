@@ -58,4 +58,9 @@ export class ManagerController {
   updateStoreSettings(@Req() req: AuthenticatedRequest, @Body() dto: any) {
     return this.managerService.updateStoreSettings(req.user.id, dto);
   }
+
+  @Post('categories')
+  createCategory(@Body() dto: { name: string }) {
+    return this.managerService.createCategory(dto);
+  }
 }

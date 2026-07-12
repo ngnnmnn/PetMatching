@@ -1,4 +1,5 @@
 import api from '@/lib/axios';
+import { Category } from '@/types';
 
 export interface ManagerDashboardStats {
   totalRevenue: number;
@@ -91,4 +92,6 @@ export const managerApi = {
 
   getStoreSettings: () => api.get<StoreSettings>('/manager/store-settings'),
   updateStoreSettings: (data: Partial<StoreSettings>) => api.put<StoreSettings>('/manager/store-settings', data),
+  
+  createCategory: (data: { name: string }) => api.post<Category>('/manager/categories', data),
 };

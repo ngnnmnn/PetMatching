@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Calendar,
@@ -138,10 +139,12 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
+  const router = useRouter();
 
   // Modal & Actions State
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
 
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
@@ -198,6 +201,20 @@ export default function OrdersPage() {
   const handleAddressEditClick = (order: Order) => {
     setEditOrder(order);
     setIsAddressModalOpen(true);
+  };
+
+  const handleReviewOrderClick = (order: Order) => {
+    const validItems = order.items.filter(item => item.product);
+    if (validItems.length === 0) {
+      toast.error('Không tìm thấy sản phẩm trong đơn hàng này.');
+      return;
+    }
+    
+    if (validItems.length === 1) {
+      router.push(`/home/product/${validItems[0].product!.id}?review=true`);
+    } else {
+      setReviewOrder(order);
+    }
   };
 
   const handleAddressFormSubmit = (data: any) => {
@@ -404,9 +421,20 @@ export default function OrdersPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="shrink-0 text-right font-black">
-                    <span className="text-xs text-[var(--text-muted)] font-bold block sm:inline mr-1">Tổng cộng:</span>
-                    <span className="text-lg text-[var(--primary-color)]">{formatCurrency(order.totalAmount)}</span>
+                  <div className="shrink-0 text-right font-black flex items-center gap-4">
+                    <div>
+                      <span className="text-xs text-[var(--text-muted)] font-bold block sm:inline mr-1">Tổng cộng:</span>
+                      <span className="text-lg text-[var(--primary-color)]">{formatCurrency(order.totalAmount)}</span>
+                    </div>
+                    {order.status === 'DELIVERED' && (
+                      <button
+                        type="button"
+                        onClick={() => handleReviewOrderClick(order)}
+                        className="rounded-xl bg-[var(--primary-color)] px-4 py-2 font-black text-white hover:bg-[#cf5017] transition shadow-sm cursor-pointer text-xs"
+                      >
+                        Viết đánh giá
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -454,6 +482,53 @@ export default function OrdersPage() {
         isDanger={true}
         loading={cancelling}
       />
+
+      {/* Product Selector Modal for Review */}
+      {reviewOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn">
+          <div className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative text-sm font-semibold text-[var(--text-main)]">
+            <button
+              onClick={() => setReviewOrder(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition cursor-pointer"
+            >
+              <X className="size-5" />
+            </button>
+            <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
+              Chọn sản phẩm để viết đánh giá
+            </h3>
+            <div className="space-y-3 pt-2">
+              {reviewOrder.items
+                .filter((item) => item.product)
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setReviewOrder(null);
+                      router.push(`/home/product/${item.product!.id}?review=true`);
+                    }}
+                    className="w-full flex items-center gap-4 rounded-xl border border-gray-100 bg-[#FAF9F5] p-3 hover:bg-gray-50 hover:border-[var(--primary-color)] transition text-left cursor-pointer font-semibold"
+                  >
+                    <div className="aspect-square size-12 rounded-lg overflow-hidden bg-white border shrink-0">
+                      <img
+                        src={item.product!.imageUrl || '/placeholder.svg'}
+                        alt={item.product!.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 font-bold">
+                      <h4 className="text-sm font-black text-[var(--text-main)] line-clamp-2 leading-snug">
+                        {item.product!.name}
+                      </h4>
+                      <p className="text-xs text-[var(--text-muted)] font-bold mt-1">
+                        Số lượng mua: {item.quantity}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -269,4 +269,38 @@ export class ManagerService {
       },
     });
   }
+
+  async createCategory(dto: { name: string }) {
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Tên danh mục không được để trống.');
+    }
+    const name = dto.name.trim();
+    const slug = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+
+    const existing = await this.prisma.category.findFirst({
+      where: {
+        OR: [
+          { name: { equals: name, mode: 'insensitive' } },
+          { slug: { equals: slug, mode: 'insensitive' } },
+        ],
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('Danh mục này đã tồn tại.');
+    }
+
+    return this.prisma.category.create({
+      data: {
+        name,
+        slug,
+      },
+    });
+  }
 }

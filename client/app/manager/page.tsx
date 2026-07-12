@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats } from '@/lib/api/manager';
+import { productsApi } from '@/lib/api/products';
+import { Category } from '@/types';
 
 // Currency Formatter
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
@@ -84,8 +86,22 @@ export default function ManagerDashboard() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [sortBy, setSortBy] = useState('DEFAULT');
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [submittingCategory, setSubmittingCategory] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [submittingSettings, setSubmittingSettings] = useState(false);
+
+  const dynamicCategoryMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    categories.forEach((cat) => {
+      map[cat.slug] = cat.name;
+    });
+    return map;
+  }, [categories]);
 
   // Product Add/Edit Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -109,18 +125,20 @@ export default function ManagerDashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, settingsRes] = await Promise.all([
+      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes] = await Promise.all([
         managerApi.getDashboardStats(),
         managerApi.getProducts(),
         managerApi.getOrders(),
         managerApi.getCustomers(),
         managerApi.getStoreSettings(),
+        productsApi.getCategories(),
       ]);
       setStats(statsRes.data);
       setProducts(productsRes.data);
       setOrders(ordersRes.data);
       setCustomers(customersRes.data);
       setStoreInfo(settingsRes.data);
+      setCategories(categoriesRes.data);
     } catch (error) {
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
@@ -135,7 +153,7 @@ export default function ManagerDashboard() {
 
   // Filtered lists based on search and status filters
   const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
+    let result = products.filter((product) => {
       const matchesSearch =
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -144,9 +162,18 @@ export default function ManagerDashboard() {
         filterStatus === 'ALL' ||
         (filterStatus === 'IN_STOCK' && (product.stock ?? 0) > 0) ||
         (filterStatus === 'OUT_OF_STOCK' && (product.stock ?? 0) === 0);
-      return matchesSearch && matchesStatus;
+      const matchesCategory =
+        filterCategory === 'ALL' ||
+        product.category === filterCategory;
+      return matchesSearch && matchesStatus && matchesCategory;
     });
-  }, [products, searchQuery, filterStatus]);
+
+    if (sortBy === 'BEST_SELLER') {
+      result = [...result].sort((a, b) => (b.sales ?? 0) - (a.sales ?? 0));
+    }
+
+    return result;
+  }, [products, searchQuery, filterStatus, filterCategory, sortBy]);
 
   const topSellingProducts = useMemo(() => {
     return [...products]
@@ -203,7 +230,7 @@ export default function ManagerDashboard() {
     setEditingProduct(null);
     setProductForm({
       name: '',
-      category: 'ACCESSORY',
+      category: categories[0]?.slug || 'ACCESSORY',
       targetSpecies: 'ALL',
       originalPrice: '',
       salePrice: '',
@@ -309,14 +336,24 @@ export default function ManagerDashboard() {
               <h2 className="text-xl font-black">Danh sách sản phẩm</h2>
               <p className="text-sm font-semibold text-[var(--text-muted)]">Quản lý kho hàng và trạng thái bán hàng thực tế.</p>
             </div>
-            <button
-              type="button"
-              onClick={handleAddClick}
-              className="flex items-center gap-2 rounded-xl bg-[var(--primary-color)] px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017]"
-            >
-              <Plus className="size-4" />
-              Thêm sản phẩm mới
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="flex items-center gap-2 rounded-xl border border-[var(--primary-color)] text-[var(--primary-color)] bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-[var(--primary-color)]/5 cursor-pointer"
+              >
+                <Plus className="size-4" />
+                Thêm danh mục mới
+              </button>
+              <button
+                type="button"
+                onClick={handleAddClick}
+                className="flex items-center gap-2 rounded-xl bg-[var(--primary-color)] px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017] cursor-pointer"
+              >
+                <Plus className="size-4" />
+                Thêm sản phẩm mới
+              </button>
+            </div>
           </div>
 
           {/* Filters */}
@@ -331,17 +368,52 @@ export default function ManagerDashboard() {
                 className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-4 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Filter className="size-4 text-[#B0B0B0]" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="rounded-xl border border-[#EFEAE2] bg-white px-3 py-2.5 text-sm font-bold text-[var(--text-main)] focus:outline-none"
-              >
-                <option value="ALL">Tất cả sản phẩm</option>
-                <option value="IN_STOCK">Còn hàng trong kho</option>
-                <option value="OUT_OF_STOCK">Đã hết hàng</option>
-              </select>
+              
+              {/* Category Filter */}
+              <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
+                <span className="text-gray-400">Danh mục:</span>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">Tất cả</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.slug}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sorting Filter */}
+              <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
+                <span className="text-gray-400">Sắp xếp:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="DEFAULT">Mặc định</option>
+                  <option value="BEST_SELLER">Bán chạy nhất</option>
+                </select>
+              </div>
+
+              {/* Stock Filter */}
+              <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
+                <span className="text-gray-400">Tồn kho:</span>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">Tất cả</option>
+                  <option value="IN_STOCK">Còn hàng</option>
+                  <option value="OUT_OF_STOCK">Hết hàng</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -377,7 +449,7 @@ export default function ManagerDashboard() {
                               <span>{p.name}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-[#5C5B52]">{CATEGORY_MAP[p.category] || p.category}</td>
+                          <td className="px-6 py-4 text-[#5C5B52]">{dynamicCategoryMap[p.category] || CATEGORY_MAP[p.category] || p.category}</td>
                           <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(p.salePrice ?? p.originalPrice)}</td>
                           <td className="px-6 py-4 text-center font-bold">{stockVal}</td>
                           <td className="px-6 py-4 text-center font-bold text-[#0F766E]">{(p as any).sales ?? 0}</td>
@@ -458,8 +530,8 @@ export default function ManagerDashboard() {
                         onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
                         className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                       >
-                        {Object.keys(CATEGORY_MAP).map((cat) => (
-                          <option key={cat} value={cat}>{CATEGORY_MAP[cat]}</option>
+                        {categories.map((cat) => (
+                          <option key={cat.id} value={cat.slug}>{cat.name}</option>
                         ))}
                       </select>
                     </div>
@@ -592,6 +664,79 @@ export default function ManagerDashboard() {
                     >
                       {submittingProduct && <Loader2 className="size-4 animate-spin text-white" />}
                       Xác nhận
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Category Modal */}
+          {isCategoryModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+              <div className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative text-sm font-semibold">
+                <button
+                  onClick={() => {
+                    setIsCategoryModalOpen(false);
+                    setNewCategoryName('');
+                  }}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition animate-none cursor-pointer"
+                >
+                  <X className="size-5" />
+                </button>
+                <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
+                  Thêm danh mục sản phẩm mới
+                </h3>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newCategoryName.trim()) return;
+                    setSubmittingCategory(true);
+                    try {
+                      await managerApi.createCategory({ name: newCategoryName });
+                      toast.success('Thêm danh mục mới thành công!');
+                      setIsCategoryModalOpen(false);
+                      setNewCategoryName('');
+                      // Refresh categories
+                      const catRes = await productsApi.getCategories();
+                      setCategories(catRes.data);
+                    } catch (error: any) {
+                      console.error(error);
+                      toast.error(error.response?.data?.message || 'Lỗi khi tạo danh mục mới.');
+                    } finally {
+                      setSubmittingCategory(false);
+                    }
+                  }}
+                  className="space-y-4 text-xs font-semibold"
+                >
+                  <div>
+                    <label className="block text-xs font-bold mb-1">Tên danh mục *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ví dụ: Bát ăn & Uống"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCategoryModalOpen(false);
+                        setNewCategoryName('');
+                      }}
+                      className="rounded-xl border border-gray-200 px-4 py-2.5 font-bold hover:bg-gray-50 transition cursor-pointer text-sm"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingCategory}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-4 py-2.5 font-bold text-white transition hover:bg-[#cf5017] disabled:bg-gray-300 cursor-pointer text-sm font-black"
+                    >
+                      {submittingCategory ? 'Đang tạo...' : 'Xác nhận'}
                     </button>
                   </div>
                 </form>
@@ -1081,7 +1226,7 @@ export default function ManagerDashboard() {
                       <div key={p.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                         <div>
                           <p className="text-sm font-bold text-[var(--text-main)]">{p.name}</p>
-                          <p className="text-xs font-semibold text-[#8A8980]">Danh mục: {CATEGORY_MAP[p.category] || p.category}</p>
+                          <p className="text-xs font-semibold text-[#8A8980]">Danh mục: {dynamicCategoryMap[p.category] || CATEGORY_MAP[p.category] || p.category}</p>
                         </div>
                         <div className="text-right">
                           <span
@@ -1110,7 +1255,7 @@ export default function ManagerDashboard() {
                     <div key={p.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                       <div>
                         <p className="text-sm font-bold text-[var(--text-main)]">{p.name}</p>
-                        <p className="text-xs font-semibold text-[#8A8980]">Danh mục: {CATEGORY_MAP[p.category] || p.category}</p>
+                        <p className="text-xs font-semibold text-[#8A8980]">Danh mục: {dynamicCategoryMap[p.category] || CATEGORY_MAP[p.category] || p.category}</p>
                       </div>
                       <div className="text-right">
                         <span className="inline-flex rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs font-black">

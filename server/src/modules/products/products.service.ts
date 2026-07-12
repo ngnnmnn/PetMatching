@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GetProductsDto } from './dto/get-products.dto';
@@ -96,5 +96,99 @@ export class ProductsService {
 
   async getProductById(id: string) {
     return this.prisma.product.findUnique({ where: { id } });
+  }
+
+  async getCategories() {
+    return this.prisma.category.findMany({
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async getReviews(productId: string) {
+    return this.prisma.productReview.findMany({
+      where: { productId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async canReview(userId: string, productId: string) {
+    // 1. Check if user already reviewed this product
+    const existingReview = await this.prisma.productReview.findUnique({
+      where: {
+        userId_productId: { userId, productId },
+      },
+    });
+    if (existingReview) {
+      return false;
+    }
+
+    // 2. Check if user has an order containing this product that is DELIVERED
+    const deliveredOrder = await this.prisma.order.findFirst({
+      where: {
+        userId,
+        status: 'DELIVERED',
+        items: {
+          some: {
+            productId,
+          },
+        },
+      },
+    });
+
+    return !!deliveredOrder;
+  }
+
+  async createReview(userId: string, productId: string, dto: { rating: number; comment?: string }) {
+    const { rating, comment } = dto;
+    if (rating < 1 || rating > 5) {
+      throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5.');
+    }
+
+    const eligible = await this.canReview(userId, productId);
+    if (!eligible) {
+      throw new BadRequestException('Bạn chỉ có thể đánh giá sản phẩm sau khi đã nhận được hàng và chưa đánh giá sản phẩm này.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Create the review
+      const review = await tx.productReview.create({
+        data: {
+          rating,
+          comment,
+          userId,
+          productId,
+        },
+      });
+
+      // 2. Calculate new average rating and review count
+      const aggregate = await tx.productReview.aggregate({
+        where: { productId },
+        _avg: { rating: true },
+        _count: { id: true },
+      });
+
+      const averageRating = aggregate._avg.rating ?? 0;
+      const reviewCount = aggregate._count.id ?? 0;
+
+      // 3. Update the Product model
+      await tx.product.update({
+        where: { id: productId },
+        data: {
+          rating: averageRating,
+          reviewCount: reviewCount,
+        },
+      });
+
+      return review;
+    });
   }
 }

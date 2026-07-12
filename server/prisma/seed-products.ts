@@ -1,4 +1,15 @@
-import { PrismaClient, ProductCategory } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+
+const ProductCategory = {
+  DOG_FOOD: 'DOG_FOOD',
+  CAT_FOOD: 'CAT_FOOD',
+  TOY: 'TOY',
+  ACCESSORY: 'ACCESSORY',
+  GROOMING: 'GROOMING',
+  CAGE_BED: 'CAGE_BED',
+  LEASH_COLLAR: 'LEASH_COLLAR',
+  MEDICAL: 'MEDICAL',
+};
 
 const prisma = new PrismaClient();
 
@@ -296,6 +307,27 @@ async function main() {
       images: [],
     },
   ];
+
+  const defaultCategories = [
+    { name: 'Thức ăn cho chó', slug: 'DOG_FOOD' },
+    { name: 'Thức ăn cho mèo', slug: 'CAT_FOOD' },
+    { name: 'Đồ chơi thú cưng', slug: 'TOY' },
+    { name: 'Phụ kiện thú cưng', slug: 'ACCESSORY' },
+    { name: 'Chăm sóc & Vệ sinh', slug: 'GROOMING' },
+    { name: 'Chuồng & Nệm ngủ', slug: 'CAGE_BED' },
+    { name: 'Vòng cổ & Dây dắt', slug: 'LEASH_COLLAR' },
+    { name: 'Y tế & Thuốc', slug: 'MEDICAL' },
+  ];
+
+  console.log('Seeding categories...');
+  for (const cat of defaultCategories) {
+    await prisma.category.upsert({
+      where: { slug: cat.slug },
+      update: cat,
+      create: cat,
+    });
+  }
+  console.log(`Seeded ${defaultCategories.length} categories`);
 
   console.log('Seeding products...');
   for (const product of products) {
