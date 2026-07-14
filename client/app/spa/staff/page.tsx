@@ -106,26 +106,53 @@ export default function SpaStaffPage() {
     }
   }, [currentUser]);
 
-  const handleUpdateBooking = async (bookingId: string) => {
+  const handleUpdateStatus = async (bookingId: string, status: string) => {
+    setActionLoading(bookingId);
+    try {
+      const res = await spaApi.updateStaffBooking(bookingId, { status });
+      toast.success('Đã xác nhận bắt đầu thực hiện dịch vụ!');
+      // Update local state
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, ...res.data } : b))
+      );
+      setEditStates((prev) => ({
+        ...prev,
+        [bookingId]: {
+          ...prev[bookingId],
+          status
+        }
+      }));
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Không thể cập nhật trạng thái.';
+      toast.error(msg);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCompleteBooking = async (bookingId: string) => {
     const state = editStates[bookingId];
-    if (!state) return;
+    if (!state || !state.petConditionAfter.trim()) {
+      toast.error('Vui lòng nhập tình trạng thú cưng sau dịch vụ.');
+      return;
+    }
 
     setActionLoading(bookingId);
     try {
       const res = await spaApi.updateStaffBooking(bookingId, {
-        status: state.status,
-        petConditionAfter: state.petConditionAfter || null,
+        status: 'COMPLETED',
+        petConditionAfter: state.petConditionAfter,
         photoAfter: state.photoAfter || null,
         issueReported: state.issueReported || null
       });
 
-      toast.success('Cập nhật thông tin lịch hẹn thành công!');
+      toast.success('Hoàn thành dịch vụ Spa thành công!');
       // Update local state
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, ...res.data } : b))
       );
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Không thể cập nhật lịch hẹn.';
+      const msg = err.response?.data?.message || 'Không thể hoàn thành dịch vụ.';
       toast.error(msg);
     } finally {
       setActionLoading(null);
@@ -444,163 +471,124 @@ export default function SpaStaffPage() {
                     </div>
 
                     {/* Right update pane */}
-                    <div className="md:col-span-7 space-y-4">
-                      {isCompleted ? (
-                        /* Completed Booking details Display */
-                        <div className="space-y-4 h-full flex flex-col justify-between">
-                          <div className="space-y-3">
-                            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-xs text-green-800 space-y-2">
-                              <span className="font-bold flex items-center gap-1.5 text-green-950">
-                                <CheckCircle className="size-4 text-green-600" />
-                                Báo cáo sau dịch vụ
-                              </span>
-                              <p className="font-medium">
-                                <span className="font-bold">Tình trạng:</span> {booking.petConditionAfter || 'Không ghi chú.'}
-                              </p>
-                              {booking.issueReported && (
-                                <p className="bg-red-50 border border-red-200 p-2 rounded-lg text-red-800 mt-2 font-medium">
-                                  <span className="font-bold flex items-center gap-1">⚠️ Sự cố:</span> {booking.issueReported}
-                                </p>
-                              )}
-                            </div>
-                            
-                            {booking.photoAfter && (
-                              <div className="space-y-1.5">
-                                <span className="text-[11px] text-gray-400 block font-semibold">Ảnh kết quả sau dịch vụ</span>
-                                <div className="max-w-[280px] rounded-lg overflow-hidden border">
-                                  <img
-                                    src={booking.photoAfter}
-                                    alt="Result"
-                                    className="w-full h-auto object-cover max-h-40"
-                                  />
-                                </div>
-                              </div>
-                            )}
+                    <div className="md:col-span-7 flex flex-col justify-center">
+                      {booking.status === 'ASSIGNED' || booking.status === 'LATE' ? (
+                        <div className="flex flex-col items-center justify-center p-6 bg-purple-50/50 rounded-2xl border border-purple-100/50 space-y-3">
+                          <p className="text-xs text-purple-800 font-bold text-center">
+                            Lịch hẹn đã sẵn sàng. Vui lòng bấm Xác nhận khi bắt đầu thực hiện dịch vụ.
+                          </p>
+                          <Button
+                            onClick={() => handleUpdateStatus(booking.id, 'IN_PROGRESS')}
+                            disabled={actionLoading === booking.id}
+                            className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-extrabold text-xs h-10 px-6 rounded-xl shadow-md transition"
+                          >
+                            {actionLoading === booking.id ? 'Đang cập nhật...' : 'Xác nhận thực hiện'}
+                          </Button>
+                        </div>
+                      ) : booking.status === 'IN_PROGRESS' ? (
+                        <div className="bg-orange-50/40 border border-orange-100 rounded-2xl p-5 space-y-4">
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-black uppercase text-orange-950 tracking-wider">
+                              Đang thực hiện dịch vụ
+                            </h4>
+                            <p className="text-[11px] text-gray-500 font-medium">
+                              Báo cáo tình trạng sau khi hoàn tất dịch vụ dưới đây để hoàn thành lịch hẹn.
+                            </p>
                           </div>
-                          
-                          <div className="text-[11px] text-gray-400 font-semibold italic text-right">
-                            Hoàn thành chăm sóc vào lúc {new Date(booking.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+
+                          <div className="space-y-3 pt-1">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-400 font-bold uppercase">Tình trạng thú cưng sau dịch vụ *</label>
+                              <Textarea
+                                placeholder="Ví dụ: Bé ngoan, sấy lông rất tốt, không có vấn đề ngoài da..."
+                                value={currentEditState.petConditionAfter}
+                                onChange={(e) => handleFieldChange(booking.id, 'petConditionAfter', e.target.value)}
+                                className="min-h-[70px] text-xs bg-white"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
+                                <Camera className="size-3" /> Ảnh sau dịch vụ (URL hoặc chọn mẫu dưới)
+                              </label>
+                              <Input
+                                placeholder="https://example.com/pet.png"
+                                value={currentEditState.photoAfter}
+                                onChange={(e) => handleFieldChange(booking.id, 'photoAfter', e.target.value)}
+                                className="text-xs h-9 bg-white"
+                              />
+                              
+                              <div className="flex flex-wrap items-center gap-1 pt-1">
+                                {PRESET_PHOTOS.map((p) => (
+                                  <button
+                                    key={p.label}
+                                    type="button"
+                                    onClick={() => handleFieldChange(booking.id, 'photoAfter', p.url)}
+                                    className={`px-2 py-0.5 text-[9px] rounded border font-bold hover:bg-gray-50 transition ${
+                                      currentEditState.photoAfter === p.url
+                                        ? 'border-purple-650 bg-purple-50 text-purple-750 font-black'
+                                        : 'border-gray-200 text-gray-500'
+                                    }`}
+                                  >
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end pt-2">
+                            <Button
+                              onClick={() => handleCompleteBooking(booking.id)}
+                              disabled={actionLoading === booking.id || !currentEditState.petConditionAfter.trim()}
+                              className="bg-green-600 hover:bg-green-750 text-white font-extrabold text-xs h-9 px-6 rounded-lg shadow-sm"
+                            >
+                              {actionLoading === booking.id ? 'Đang lưu...' : 'Hoàn thành'}
+                            </Button>
                           </div>
                         </div>
-                      ) : isCancelled ? (
-                        /* Cancelled Booking Display */
-                        <div className="flex h-full items-center justify-center text-center p-8 bg-red-50/50 rounded-xl border border-red-100">
+                      ) : booking.status === 'COMPLETED' ? (
+                        <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-4">
+                          <h4 className="text-xs font-black uppercase text-green-950 tracking-wider flex items-center gap-1.5">
+                            <CheckCircle className="size-4 text-green-600" /> Kết quả dịch vụ (Hoàn thành)
+                          </h4>
+                          <div className="text-xs text-green-900 space-y-2 font-semibold">
+                            <p><span className="font-black text-green-950">Tình trạng:</span> {booking.petConditionAfter || 'Được báo cáo tốt.'}</p>
+                            {booking.issueReported && (
+                              <p className="bg-red-50 border border-red-200 p-2 rounded-lg text-red-800 font-medium">
+                                <span className="font-bold flex items-center gap-1">⚠️ Sự cố:</span> {booking.issueReported}
+                              </p>
+                            )}
+                          </div>
+                          {booking.photoAfter && (
+                            <div className="max-w-[280px] rounded-lg overflow-hidden border border-green-200 shadow-sm bg-white">
+                              <img
+                                src={booking.photoAfter}
+                                alt="Result"
+                                className="w-full h-auto object-cover max-h-40"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : booking.status === 'CANCELLED' ? (
+                        <div className="flex h-full items-center justify-center text-center p-8 bg-red-50/50 rounded-2xl border border-red-100">
                           <div>
                             <AlertTriangle className="size-8 text-red-500 mx-auto mb-2" />
                             <span className="font-bold text-sm text-red-950 block">Lịch hẹn đã bị hủy</span>
-                            <span className="text-xs text-red-700">Lịch này đã được người dùng hoặc hệ thống hủy bỏ.</span>
+                            <span className="text-xs text-red-700">Lịch này đã được khách hàng hoặc hệ thống hủy bỏ.</span>
                           </div>
                         </div>
-                      ) : isNoShow ? (
-                        /* No Show Display */
-                        <div className="flex h-full items-center justify-center text-center p-8 bg-gray-50 rounded-xl border border-gray-200">
+                      ) : booking.status === 'NO_SHOW' ? (
+                        <div className="flex h-full items-center justify-center text-center p-8 bg-gray-50 rounded-2xl border border-gray-200">
                           <div>
                             <AlertTriangle className="size-8 text-gray-500 mx-auto mb-2" />
                             <span className="font-bold text-sm text-gray-950 block">Khách vắng mặt (No Show)</span>
-                            <span className="text-xs text-gray-600">Được đánh dấu là khách không đến đúng hẹn.</span>
+                            <span className="text-xs text-gray-600">Lịch hẹn tự động chuyển thành No Show vì quá giờ hẹn 15 phút.</span>
                           </div>
                         </div>
                       ) : (
-                        /* ACTIVE / EDITABLE FORM FOR STAFF */
-                        <div className="space-y-4">
-                          <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
-                            <ClipboardList className="size-4" />
-                            Cập nhật tiến trình & Báo cáo
-                          </h4>
-
-                          {/* Status select input */}
-                          <div className="space-y-1">
-                            <label className="text-[11px] text-gray-400 font-bold">Trạng thái dịch vụ</label>
-                            <Select
-                              value={currentEditState.status}
-                              onValueChange={(val) => handleFieldChange(booking.id, 'status', val)}
-                            >
-                              <SelectTrigger className="bg-white border-gray-300">
-                                <SelectValue placeholder="Chọn trạng thái" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="ASSIGNED">Đã tiếp nhận (Assigned)</SelectItem>
-                                <SelectItem value="IN_PROGRESS">Đang thực hiện (In Progress)</SelectItem>
-                                <SelectItem value="COMPLETED">Hoàn thành (Done)</SelectItem>
-                                <SelectItem value="NO_SHOW">Khách vắng mặt (No Show)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Status specific fields */}
-                          {currentEditState.status === 'COMPLETED' && (
-                            <>
-                              {/* Pet condition field */}
-                              <div className="space-y-1 animate-in slide-in-from-top-3 duration-250">
-                                <label className="text-[11px] text-gray-400 font-bold">Tình trạng thú cưng sau dịch vụ *</label>
-                                <Textarea
-                                  placeholder="Ví dụ: Bé ngoan, sấy lông rất tốt, không có vấn đề ngoài da..."
-                                  value={currentEditState.petConditionAfter}
-                                  onChange={(e) => handleFieldChange(booking.id, 'petConditionAfter', e.target.value)}
-                                  className="min-h-[70px] text-xs"
-                                  required
-                                />
-                              </div>
-
-                              {/* Photo URL field */}
-                              <div className="space-y-1.5 animate-in slide-in-from-top-3 duration-250">
-                                <label className="text-[11px] text-gray-400 font-bold flex items-center gap-1">
-                                  <Camera className="size-3" /> Ảnh sau dịch vụ (URL hoặc chọn mẫu dưới)
-                                </label>
-                                <Input
-                                  placeholder="https://example.com/pet.jpg"
-                                  value={currentEditState.photoAfter}
-                                  onChange={(e) => handleFieldChange(booking.id, 'photoAfter', e.target.value)}
-                                  className="text-xs h-9"
-                                />
-                                
-                                {/* Quick Presets */}
-                                <div className="flex flex-wrap items-center gap-1 pt-1">
-                                  {PRESET_PHOTOS.map((p) => (
-                                    <button
-                                      key={p.label}
-                                      type="button"
-                                      onClick={() => handleFieldChange(booking.id, 'photoAfter', p.url)}
-                                      className={`px-2 py-1 text-[10px] rounded border font-semibold hover:bg-gray-50 transition ${
-                                        currentEditState.photoAfter === p.url
-                                          ? 'border-purple-600 bg-purple-50 text-purple-700'
-                                          : 'border-gray-200 text-gray-500'
-                                      }`}
-                                    >
-                                      {p.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </>
-                          )}
-
-                          {/* Problem report field */}
-                          <div className="space-y-1">
-                            <label className="text-[11px] text-gray-400 font-bold flex items-center gap-1.5 text-red-700">
-                              <AlertTriangle className="size-3" /> Báo cáo sự cố cho Spa Manager (nếu có)
-                            </label>
-                            <Textarea
-                              placeholder="Nhập chi tiết sự cố cần trợ giúp (ví dụ: bé cắn nhân viên, có vết thương trước khi tắm...)"
-                              value={currentEditState.issueReported}
-                              onChange={(e) => handleFieldChange(booking.id, 'issueReported', e.target.value)}
-                              className="min-h-[60px] text-xs"
-                            />
-                          </div>
-
-                          {/* Submit button */}
-                          <div className="flex justify-end pt-1">
-                            <Button
-                              onClick={() => handleUpdateBooking(booking.id)}
-                              disabled={
-                                actionLoading === booking.id ||
-                                (currentEditState.status === 'COMPLETED' && !currentEditState.petConditionAfter.trim())
-                              }
-                              className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-extrabold text-xs h-9 px-5 rounded-lg"
-                            >
-                              {actionLoading === booking.id ? 'Đang lưu...' : 'Lưu cập nhật'}
-                            </Button>
-                          </div>
+                        <div className="flex h-full items-center justify-center text-center p-8 bg-gray-50 rounded-2xl border border-gray-200">
+                          <span className="text-xs font-bold text-gray-400">Trạng thái: {booking.status}</span>
                         </div>
                       )}
                     </div>

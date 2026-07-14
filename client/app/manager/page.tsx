@@ -16,9 +16,18 @@ import {
   Trash2,
   X,
   Loader2,
+  Calendar,
+  Clock,
+  Scissors,
+  Check,
+  CheckCircle2,
+  AlertCircle,
+  HelpCircle,
+  Award,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats } from '@/lib/api/manager';
+import { spaApi } from '@/lib/api/spa';
 
 // Currency Formatter
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
@@ -46,6 +55,35 @@ export default function ManagerDashboard() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
 
+  const [role, setRole] = useState<string>('');
+  const [managerUser, setManagerUser] = useState<any>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      const u = JSON.parse(stored);
+      setRole(u.role || '');
+      setManagerUser(u);
+    }
+  }, []);
+
+  if (!role) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
+        <span className="ml-2 text-sm font-bold text-[var(--text-muted)]">Đang tải...</span>
+      </div>
+    );
+  }
+
+  if (role === 'SPA_MANAGER') {
+    return <SpaManagerConsole currentTab={currentTab} managerUser={managerUser} />;
+  }
+
+  return <StoreManagerConsole currentTab={currentTab} />;
+}
+
+function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<ManagerDashboardStats | null>(null);
   const [products, setProducts] = useState<ManagerProduct[]>([]);
@@ -949,4 +987,1163 @@ export default function ManagerDashboard() {
         </div>
       );
   }
+}
+
+// =============================================================
+// SPA MANAGER CONSOLE COMPONENT
+// =============================================================
+
+function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; managerUser: any }) {
+  // states
+  const [branches, setBranches] = useState<any[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [stats, setStats] = useState<any>(null);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [staffs, setStaffs] = useState<any[]>([]);
+  const [managerBrands, setManagerBrands] = useState<any[]>([]);
+  
+  // Date and slot states
+  const [slotDate, setSlotDate] = useState<string>('');
+  const [slotsData, setSlotsData] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
+
+  // Assignment states
+  const [availableStaffsMap, setAvailableStaffsMap] = useState<Record<string, any[]>>({});
+  const [selectedAssignStaffMap, setSelectedAssignStaffMap] = useState<Record<string, string>>({});
+  const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
+  const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
+  const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
+
+  // Reschedule states
+  const [rescheduleBooking, setRescheduleBooking] = useState<any | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
+  const [rescheduleSlots, setRescheduleSlots] = useState<any[]>([]);
+  const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState<boolean>(false);
+  const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<string>('');
+  const [submittingReschedule, setSubmittingReschedule] = useState<boolean>(false);
+
+  // Service modal states
+  const [serviceModalOpen, setServiceModalOpen] = useState<boolean>(false);
+  const [editingService, setEditingService] = useState<any | null>(null);
+  const [serviceForm, setServiceForm] = useState({
+    brandId: '',
+    name: '',
+    description: '',
+    price: '',
+    durationMin: '',
+    isActive: true
+  });
+  const [submittingService, setSubmittingService] = useState<boolean>(false);
+
+  // Booking search and filters
+  const [bookingSearch, setBookingSearch] = useState<string>('');
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('ALL');
+
+  useEffect(() => {
+    // Set default slot date to today
+    setSlotDate(new Date().toISOString().split('T')[0]);
+  }, []);
+
+  // Fetch branches and brands managed by this manager
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const [branchesRes, brandsRes] = await Promise.all([
+          spaApi.getManagerBranches(),
+          spaApi.getManagerBrands(),
+        ]);
+        const bData = branchesRes.data || [];
+        setBranches(bData);
+        setManagerBrands(brandsRes.data || []);
+        if (bData.length > 0) {
+          setSelectedBranchId(bData[0].id);
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        toast.error('Lỗi khi tải thông tin quản lý.');
+        setLoading(false);
+      }
+    };
+    fetchInitialData();
+  }, []);
+
+  // Fetch data based on active tab and selected branch
+  const refreshData = async () => {
+    if (!selectedBranchId) return;
+    setLoading(true);
+    try {
+      if (currentTab === 'dashboard') {
+        const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId);
+        setStats(statsRes.data);
+        
+        // Auto fetch available staffs for confirmed bookings
+        const todayBookings = statsRes.data?.todayBookings || [];
+        const confirmed = todayBookings.filter((b: any) => b.status === 'CONFIRMED');
+        const staffMap: Record<string, any[]> = {};
+        for (const b of confirmed) {
+          try {
+            const stRes = await spaApi.getAvailableStaffForBooking(b.id);
+            staffMap[b.id] = stRes.data || [];
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        setAvailableStaffsMap(staffMap);
+
+      } else if (currentTab === 'bookings') {
+        const bookingsRes = await spaApi.getManagerBookings(selectedBranchId);
+        setBookings(bookingsRes.data || []);
+      } else if (currentTab === 'services') {
+        const servicesRes = await spaApi.getManagerServices();
+        setServices(servicesRes.data || []);
+      } else if (currentTab === 'staffs') {
+        const staffsRes = await spaApi.getManagerStaffs(selectedBranchId);
+        setStaffs(staffsRes.data || []);
+      }
+    } catch (err) {
+      toast.error('Không thể tải dữ liệu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshData();
+  }, [selectedBranchId, currentTab]);
+
+  // Fetch slots data when slots tab date changes
+  useEffect(() => {
+    const fetchSlots = async () => {
+      if (!selectedBranchId || !slotDate || currentTab !== 'slots') return;
+      setLoadingSlots(true);
+      try {
+        const res = await spaApi.getAvailability(selectedBranchId, slotDate);
+        setSlotsData(res.data || []);
+      } catch (err) {
+        toast.error('Lỗi khi tải danh sách khung giờ.');
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+    fetchSlots();
+  }, [selectedBranchId, slotDate, currentTab]);
+
+  // Fetch slots for reschedule when date changes
+  useEffect(() => {
+    const fetchRescheduleSlots = async () => {
+      if (!rescheduleBooking || !rescheduleDate) return;
+      setLoadingRescheduleSlots(true);
+      try {
+        const duration = rescheduleBooking.service?.durationMin || 30;
+        const res = await spaApi.getAvailability(selectedBranchId, rescheduleDate, duration);
+        setRescheduleSlots(res.data || []);
+      } catch (err) {
+        toast.error('Lỗi khi tải khung giờ khả dụng.');
+      } finally {
+        setLoadingRescheduleSlots(false);
+      }
+    };
+    fetchRescheduleSlots();
+  }, [rescheduleBooking, rescheduleDate]);
+
+  // Confirm booking to CONFIRMED
+  const handleConfirmBooking = async (bookingId: string) => {
+    try {
+      await spaApi.confirmBooking(bookingId);
+      toast.success('Xác nhận lịch hẹn thành công!');
+      
+      // Load available staff immediately
+      const stRes = await spaApi.getAvailableStaffForBooking(bookingId);
+      setAvailableStaffsMap(prev => ({ ...prev, [bookingId]: stRes.data || [] }));
+
+      // Refresh page data
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi xác nhận lịch hẹn.');
+    }
+  };
+
+  // Assign staff to booking
+  const handleAssignStaff = async () => {
+    if (!assignConfirmBooking || !assignConfirmStaff) return;
+    setAssigningLoading(true);
+    try {
+      await spaApi.assignStaff(assignConfirmBooking.id, assignConfirmStaff.id);
+      toast.success(`Đã phân công lịch hẹn cho ${assignConfirmStaff.name}!`);
+      setAssignConfirmBooking(null);
+      setAssignConfirmStaff(null);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi phân công nhân viên.');
+    } finally {
+      setAssigningLoading(false);
+    }
+  };
+
+  // Reschedule booking submission
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleBooking || !rescheduleDate || !selectedRescheduleSlot) {
+      toast.error('Vui lòng chọn đầy đủ ngày và giờ.');
+      return;
+    }
+    setSubmittingReschedule(true);
+    try {
+      const scheduledAt = `${rescheduleDate}T${selectedRescheduleSlot}:00`;
+      await spaApi.rescheduleBooking(rescheduleBooking.id, scheduledAt);
+      toast.success('Đổi lịch hẹn của khách hàng thành công!');
+      setRescheduleBooking(null);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi đổi lịch hẹn.');
+    } finally {
+      setSubmittingReschedule(false);
+    }
+  };
+
+  // Service submit
+  const handleServiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!serviceForm.name || !serviceForm.price || !serviceForm.durationMin) {
+      toast.error('Vui lòng nhập đầy đủ thông tin bắt buộc.');
+      return;
+    }
+    setSubmittingService(true);
+    try {
+      const data = {
+        name: serviceForm.name,
+        description: serviceForm.description,
+        price: Number(serviceForm.price),
+        durationMin: Number(serviceForm.durationMin),
+        isActive: serviceForm.isActive,
+        brandId: serviceForm.brandId
+      };
+
+      if (editingService) {
+        await spaApi.updateManagerService(editingService.id, data);
+        toast.success('Cập nhật dịch vụ thành công!');
+      } else {
+        await spaApi.createManagerService(data);
+        toast.success('Thêm dịch vụ mới thành công!');
+      }
+      setServiceModalOpen(false);
+      setEditingService(null);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi lưu dịch vụ.');
+    } finally {
+      setSubmittingService(false);
+    }
+  };
+
+  // Open edit service modal
+  const handleEditServiceClick = (service: any) => {
+    setEditingService(service);
+    setServiceForm({
+      brandId: service.brandId,
+      name: service.name,
+      description: service.description || '',
+      price: String(service.price),
+      durationMin: String(service.durationMin),
+      isActive: service.isActive
+    });
+    setServiceModalOpen(true);
+  };
+
+  // Open add service modal
+  const handleAddServiceClick = () => {
+    setEditingService(null);
+    let brandId = '';
+    if (managerBrands.length > 0) {
+      brandId = managerBrands[0].id;
+    }
+    setServiceForm({
+      brandId: brandId,
+      name: '',
+      description: '',
+      price: '',
+      durationMin: '60',
+      isActive: true
+    });
+    setServiceModalOpen(true);
+  };
+
+  // Filter bookings list
+  const filteredBookings = bookings.filter(b => {
+    const sName = b.service?.name || '';
+    const cName = b.user?.name || '';
+    const matchesSearch = sName.toLowerCase().includes(bookingSearch.toLowerCase()) || 
+                          cName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+                          b.id.toLowerCase().includes(bookingSearch.toLowerCase());
+    
+    const matchesStatus = bookingStatusFilter === 'ALL' || b.status === bookingStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  if (branches.length === 0 && !loading) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center space-y-4">
+        <AlertCircle className="size-12 text-red-500" />
+        <p className="text-sm font-black text-gray-700">Tài khoản này chưa được phân công quản lý chi nhánh Spa nào.</p>
+        <p className="text-xs text-gray-500">Vui lòng liên hệ Admin để gán quản lý chi nhánh trong AddressSpa.</p>
+      </div>
+    );
+  }
+
+  // Display branches names under name
+  const branchNames = branches.map(b => b.name).join(', ');
+
+  return (
+    <div className="space-y-6">
+      
+      {/* Dynamic Purple Header */}
+      <section className="bg-primary text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <span className="text-xs text-orange-200 block uppercase tracking-wider font-extrabold">Spa Manager</span>
+          <h2 className="text-2xl font-black">{managerUser?.name || 'Nguyễn Thị Mai'}</h2>
+          <p className="text-xs text-orange-100 mt-1 font-medium flex items-center gap-1">
+            📍 Quản lý: <span className="font-bold">{branchNames || 'Chi nhánh Spa'}</span>
+          </p>
+        </div>
+        
+        {/* Branch switcher dropdown if multiple branches */}
+        {branches.length > 1 && (
+          <div className="bg-white/10 border border-white/20 rounded-xl px-3 py-1.5 flex items-center gap-2">
+            <span className="text-xs font-bold text-orange-100">Chi nhánh hiển thị:</span>
+            <select
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              className="bg-transparent border-0 font-bold text-white text-xs focus:ring-0 focus:outline-none cursor-pointer"
+            >
+              {branches.map(b => (
+                <option key={b.id} value={b.id} className="text-gray-900 font-semibold">{b.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </section>
+
+      {loading ? (
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="size-8 animate-spin text-primary" />
+          <span className="ml-2 text-sm font-bold text-gray-500">Đang tải dữ liệu Spa...</span>
+        </div>
+      ) : (
+        <>
+          {/* TAB CONTENT: DASHBOARD */}
+          {(currentTab === 'dashboard' || !currentTab) && stats && (
+            <div className="space-y-6 animate-fadeIn">
+              
+              {/* Metrics cards row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Metric 1 */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Lịch hẹn hôm nay</span>
+                    <p className="text-2xl font-black text-gray-900 mt-1">{stats.todayBookingsCount}</p>
+                  </div>
+                  <div className="size-10 rounded-full bg-orange-55 shadow-inner flex items-center justify-center text-primary">
+                    <Calendar className="size-5" />
+                  </div>
+                </div>
+                {/* Metric 2 */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Hoàn thành</span>
+                    <p className="text-2xl font-black text-gray-900 mt-1">{stats.completedBookingsCount}</p>
+                  </div>
+                  <div className="size-10 rounded-full bg-green-50 shadow-inner flex items-center justify-center text-green-600">
+                    <CheckCircle2 className="size-5" />
+                  </div>
+                </div>
+                {/* Metric 3 */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Doanh thu</span>
+                    <p className="text-2xl font-black text-gray-900 mt-1">{(stats.totalRevenue).toLocaleString('vi-VN')}đ</p>
+                  </div>
+                  <div className="size-10 rounded-full bg-purple-50 shadow-inner flex items-center justify-center text-purple-700">
+                    <TrendingUp className="size-5" />
+                  </div>
+                </div>
+                {/* Metric 4 */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Nhân viên</span>
+                    <p className="text-2xl font-black text-gray-900 mt-1">{stats.staffCount}</p>
+                  </div>
+                  <div className="size-10 rounded-full bg-blue-50 shadow-inner flex items-center justify-center text-blue-600">
+                    <Users className="size-5" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Charts row */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Revenue by Service custom chart */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-7 space-y-4">
+                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Doanh thu theo dịch vụ</h3>
+                  <div className="space-y-3.5 pt-2">
+                    {stats.revenueByService && stats.revenueByService.length > 0 ? (
+                      stats.revenueByService.map((item: any, idx: number) => {
+                        const maxVal = Math.max(...stats.revenueByService.map((x: any) => x.value), 1);
+                        const percent = (item.value / maxVal) * 100;
+                        return (
+                          <div key={idx} className="space-y-1.5">
+                            <div className="flex justify-between text-xs font-bold text-gray-700">
+                              <span>{item.name}</span>
+                              <span className="text-primary">{item.value.toLocaleString('vi-VN')}đ</span>
+                            </div>
+                            <div className="h-6 w-full bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${percent}%` }}
+                                className="h-full bg-primary rounded-full transition-all duration-500 shadow-sm"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-gray-400 py-6 text-center">Chưa có doanh thu nào để vẽ biểu đồ.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status distribution custom chart */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-5 space-y-4">
+                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Phân bổ trạng thái lịch hẹn</h3>
+                  <div className="space-y-3 pt-2">
+                    {stats.statusDistribution && stats.statusDistribution.length > 0 ? (
+                      stats.statusDistribution.map((item: any, idx: number) => {
+                        const total = stats.statusDistribution.reduce((acc: number, x: any) => acc + x.value, 0);
+                        const percent = ((item.value / total) * 100).toFixed(0);
+                        const displayStatus = {
+                          PENDING: { label: 'Đang xử lý', color: 'bg-amber-500' },
+                          CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
+                          ASSIGNED: { label: 'Đã phân công', color: 'bg-indigo-500' },
+                          IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
+                          COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
+                          CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
+                          NO_SHOW: { label: 'No Show', color: 'bg-gray-500' },
+                          LATE: { label: 'Trễ hẹn', color: 'bg-rose-500' }
+                        }[item.status as string] || { label: item.status, color: 'bg-gray-400' };
+
+                        return (
+                          <div key={idx} className="space-y-1.5">
+                            <div className="flex justify-between text-xs font-bold text-gray-700">
+                              <span className="flex items-center gap-1.5">
+                                <span className={`size-2.5 rounded-full ${displayStatus.color}`} />
+                                {displayStatus.label}
+                              </span>
+                              <span>{item.value} ({percent}%)</span>
+                            </div>
+                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${percent}%` }}
+                                className={`h-full ${displayStatus.color} rounded-full`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-gray-400 py-6 text-center">Chưa có dữ liệu phân bổ trạng thái.</p>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Today's Booking table */}
+              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-gray-150">
+                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Lịch hẹn hôm nay ({stats.todayBookings?.length || 0})</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
+                        <th className="px-6 py-3.5">Giờ</th>
+                        <th className="px-6 py-3.5">Khách hàng / Bé</th>
+                        <th className="px-6 py-3.5">Dịch vụ</th>
+                        <th className="px-6 py-3.5">Ghi chú</th>
+                        <th className="px-6 py-3.5 text-center">Trạng thái</th>
+                        <th className="px-6 py-3.5 text-center">Phân công nhân viên</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {stats.todayBookings && stats.todayBookings.length > 0 ? (
+                        stats.todayBookings.map((b: any) => {
+                          const timeStr = new Date(b.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                          const statusStyle = {
+                            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+                            CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
+                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                            IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
+                            COMPLETED: 'bg-green-50 text-green-700 border-green-200',
+                            CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+                            NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
+                            LATE: 'bg-rose-50 text-rose-705 border-rose-200'
+                          }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
+
+                          return (
+                            <tr key={b.id} className="hover:bg-gray-50/30 transition">
+                              <td className="px-6 py-4 font-extrabold text-gray-900 whitespace-nowrap">{timeStr}</td>
+                              <td className="px-6 py-4">
+                                <div className="space-y-0.5">
+                                  <p className="font-bold text-gray-800 text-xs">{b.customerName}</p>
+                                  <p className="text-[10px] text-gray-405 font-semibold">Pet: <span className="text-gray-600 font-extrabold">{b.petName}</span></p>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 font-bold text-gray-800 text-xs">{b.serviceName}</td>
+                              <td className="px-6 py-4 text-xs italic text-gray-500 max-w-[200px] truncate" title={b.note}>
+                                {b.note ? `"${b.note}"` : '—'}
+                              </td>
+                              <td className="px-6 py-4 text-center whitespace-nowrap">
+                                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
+                                  {b.status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex justify-center items-center">
+                                  {b.status === 'PENDING' && (
+                                    <button
+                                      onClick={() => handleConfirmBooking(b.id)}
+                                      className="bg-primary hover:bg-primary/95 text-white px-3 py-1 text-xs font-bold rounded-lg shadow-sm transition"
+                                    >
+                                      Xác nhận
+                                    </button>
+                                  )}
+
+                                  {b.status === 'CONFIRMED' && (
+                                    <div className="flex items-center gap-1.5">
+                                      <select
+                                        value={selectedAssignStaffMap[b.id] || ''}
+                                        onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [b.id]: e.target.value }))}
+                                        className="border border-gray-300 rounded-lg text-xs font-semibold px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary h-8"
+                                      >
+                                        <option value="">-- Chọn nhân viên --</option>
+                                        {(availableStaffsMap[b.id] || []).map((st: any) => (
+                                          <option key={st.id} value={st.id}>{st.name}</option>
+                                        ))}
+                                      </select>
+                                      
+                                      {selectedAssignStaffMap[b.id] && (
+                                        <button
+                                          onClick={() => {
+                                            const stId = selectedAssignStaffMap[b.id];
+                                            const staffName = (availableStaffsMap[b.id] || []).find((s: any) => s.id === stId)?.name || 'Nhân viên';
+                                            setAssignConfirmBooking(b);
+                                            setAssignConfirmStaff({ id: stId, name: staffName });
+                                          }}
+                                          className="bg-purple-600 hover:bg-purple-750 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm transition h-8"
+                                        >
+                                          Phân công
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {b.status === 'ASSIGNED' && (
+                                    <span className="text-[11px] font-bold text-gray-500 leading-tight">
+                                      Nhân viên: <span className="font-black text-purple-700">✨ {b.staffName}</span>
+                                    </span>
+                                  )}
+
+                                  {['IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'LATE'].includes(b.status) && (
+                                    <span className="text-[11px] text-gray-400 font-semibold italic">
+                                      {b.staffName ? `Đã giao: ${b.staffName}` : 'Không phân công'}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Không có lịch hẹn nào phát sinh hôm nay.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB CONTENT: SERVICES */}
+          {currentTab === 'services' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-gray-900">Quản lý dịch vụ Spa</h2>
+                  <p className="text-sm font-semibold text-gray-500">Thêm, chỉnh sửa dịch vụ spa và sắp xếp theo độ phổ biến đặt lịch.</p>
+                </div>
+                <button
+                  onClick={handleAddServiceClick}
+                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017]"
+                >
+                  <Plus className="size-4" /> Thêm dịch vụ
+                </button>
+              </div>
+
+              {/* Services Table */}
+              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
+                        <th className="px-6 py-4">Tên dịch vụ</th>
+                        <th className="px-6 py-4">Nhóm / Thương hiệu</th>
+                        <th className="px-6 py-4 text-center">Thời gian</th>
+                        <th className="px-6 py-4 text-right">Giá</th>
+                        <th className="px-6 py-4 text-center">Số lượt đặt</th>
+                        <th className="px-6 py-4 text-center">Trạng thái</th>
+                        <th className="px-6 py-4 text-center">Chỉnh sửa</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {services.length > 0 ? (
+                        services.map((s: any) => (
+                          <tr key={s.id} className="hover:bg-gray-50/30 transition">
+                            <td className="px-6 py-4 font-bold text-gray-800">{s.name}</td>
+                            <td className="px-6 py-4 text-gray-500 text-xs">{s.brand?.name || 'Chăm sóc'}</td>
+                            <td className="px-6 py-4 text-center font-semibold text-gray-700">{s.durationMin} phút</td>
+                            <td className="px-6 py-4 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
+                            <td className="px-6 py-4 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
+                                s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                              }`}>
+                                {s.isActive ? 'Đang hoạt động' : 'Tắt'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                onClick={() => handleEditServiceClick(s)}
+                                className="p-1 text-gray-500 hover:text-primary transition"
+                                title="Sửa dịch vụ"
+                              >
+                                <Edit2 className="size-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTENT: BOOKINGS */}
+          {currentTab === 'bookings' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div>
+                <h2 className="text-xl font-black text-gray-900">Danh sách tất cả lịch hẹn</h2>
+                <p className="text-sm font-semibold text-gray-500">Quản lý và điều chỉnh thời gian các cuộc hẹn Spa tại chi nhánh.</p>
+              </div>
+
+              {/* Filters */}
+              <div className="flex flex-col gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm theo tên khách hàng, tên dịch vụ hoặc mã..."
+                    value={bookingSearch}
+                    onChange={(e) => setBookingSearch(e.target.value)}
+                    className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-4 text-sm focus:border-primary focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Filter className="size-4 text-gray-400" />
+                  <select
+                    value={bookingStatusFilter}
+                    onChange={(e) => setBookingStatusFilter(e.target.value)}
+                    className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-sm font-bold text-gray-700 focus:outline-none"
+                  >
+                    <option value="ALL">Tất cả trạng thái</option>
+                    <option value="PENDING">Pending (Chờ xác nhận)</option>
+                    <option value="CONFIRMED">Confirmed (Đã xác nhận)</option>
+                    <option value="ASSIGNED">Assigned (Đã giao việc)</option>
+                    <option value="IN_PROGRESS">In Progress (Đang làm)</option>
+                    <option value="COMPLETED">Completed (Hoàn thành)</option>
+                    <option value="CANCELLED">Cancelled (Đã hủy)</option>
+                    <option value="NO_SHOW">No Show (Vắng mặt)</option>
+                    <option value="LATE">Late (Trễ hẹn)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Bookings Table */}
+              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
+                        <th className="px-6 py-4">Mã lịch</th>
+                        <th className="px-6 py-4">Thời gian hẹn</th>
+                        <th className="px-6 py-4">Khách hàng / Thú cưng</th>
+                        <th className="px-6 py-4">Dịch vụ</th>
+                        <th className="px-6 py-4">Nhân viên</th>
+                        <th className="px-6 py-4 text-center">Trạng thái</th>
+                        <th className="px-6 py-4 text-center">Đổi lịch</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredBookings.length > 0 ? (
+                        filteredBookings.map((b: any) => {
+                          const dateObj = new Date(b.scheduledAt);
+                          const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+                          const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                          const statusStyle = {
+                            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+                            CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
+                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                            IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
+                            COMPLETED: 'bg-green-50 text-green-700 border-green-200',
+                            CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+                            NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
+                            LATE: 'bg-rose-50 text-rose-700 border-rose-250'
+                          }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
+
+                          return (
+                            <tr key={b.id} className="hover:bg-gray-50/30 transition">
+                              <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
+                              <td className="px-6 py-4">
+                                <span className="font-extrabold text-gray-900 block">{timeStr}</span>
+                                <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="space-y-0.5">
+                                  <p className="font-bold text-gray-800 text-xs">{b.user?.name || 'Khách hàng'}</p>
+                                  <p className="text-[10px] text-gray-500 font-semibold">Pet: <span className="text-gray-700 font-extrabold">{b.petName || b.pet?.name || 'Thú cưng'}</span></p>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-gray-800 text-xs">{b.service?.name}</p>
+                                <p className="text-[10px] text-gray-400 font-semibold">{b.priceSnapshot?.toLocaleString('vi-VN')}đ</p>
+                              </td>
+                              <td className="px-6 py-4 font-semibold text-xs text-gray-700">
+                                {b.staff ? `✨ ${b.staff.name}` : <span className="text-gray-400 italic">Chưa phân công</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center whitespace-nowrap">
+                                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
+                                  {b.status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {['PENDING', 'CONFIRMED', 'ASSIGNED', 'LATE'].includes(b.status) ? (
+                                  <button
+                                    onClick={() => {
+                                      setRescheduleBooking(b);
+                                      setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]); // tomorrow
+                                      setSelectedRescheduleSlot('');
+                                    }}
+                                    className="text-xs text-primary hover:text-[#cf5017] font-black flex items-center justify-center gap-1 mx-auto"
+                                  >
+                                    <Calendar className="size-3.5" /> Đổi lịch
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs italic">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không tìm thấy lịch hẹn phù hợp.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTENT: SLOTS (TIME SLOTS MANAGEMENT) */}
+          {currentTab === 'slots' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-gray-900">Quản lý thời gian & Nhân viên khả dụng</h2>
+                  <p className="text-sm font-semibold text-gray-500">Xem tất cả mốc thời gian 30p của ngày và danh sách kỹ thuật viên rảnh rỗi.</p>
+                </div>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={slotDate}
+                    onChange={(e) => setSlotDate(e.target.value)}
+                    className="h-10 rounded-xl border border-gray-150 bg-white px-3 py-1.5 text-sm font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {loadingSlots ? (
+                <div className="flex h-64 items-center justify-center">
+                  <Loader2 className="size-8 animate-spin text-primary" />
+                  <span className="ml-2 text-sm font-bold text-gray-500">Đang tải lịch rảnh nhân viên...</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Slots Table */}
+                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
+                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi sáng (9:00 - 12:00)</h3>
+                    <div className="divide-y">
+                      {slotsData.slice(0, 6).map((slot: any) => (
+                        <div key={slot.time} className="py-3 flex items-center justify-between">
+                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                            <Clock className="size-4 text-primary" />
+                            {slot.time}
+                          </span>
+                          <div className="text-right">
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
+                              slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                            }`}>
+                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
+                            </span>
+                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
+                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
+                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi chiều (14:00 - 18:00)</h3>
+                    <div className="divide-y">
+                      {slotsData.slice(6).map((slot: any) => (
+                        <div key={slot.time} className="py-3 flex items-center justify-between">
+                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                            <Clock className="size-4 text-primary" />
+                            {slot.time}
+                          </span>
+                          <div className="text-right">
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
+                              slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                            }`}>
+                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
+                            </span>
+                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
+                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB CONTENT: STAFFS */}
+          {currentTab === 'staffs' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div>
+                <h2 className="text-xl font-black text-gray-900">Quản lý nhân viên chi nhánh</h2>
+                <p className="text-sm font-semibold text-gray-500">Theo dõi thông tin và số liệu hiệu suất công việc của từng nhân viên spa.</p>
+              </div>
+
+              {/* Staffs Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {staffs.length > 0 ? (
+                  staffs.map((s: any) => (
+                    <div
+                      key={s.id}
+                      className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        {s.avatarUrl ? (
+                          <img
+                            src={s.avatarUrl}
+                            alt={s.name}
+                            className="size-12 rounded-full object-cover border"
+                          />
+                        ) : (
+                          <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
+                            {s.name.slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
+                          <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
+                          <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 border-t pt-4">
+                        <div className="bg-gray-50 rounded-xl p-3 text-center">
+                          <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
+                          <span className="text-lg font-black text-green-600 block mt-0.5">{s.completedCount}</span>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-3 text-center">
+                          <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
+                          <span className="text-lg font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-4 flex justify-between items-center">
+                        <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
+                        <span className="text-base font-black text-primary">{s.revenue.toLocaleString('vi-VN')}đ</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
+                    Không tìm thấy nhân viên nào ở chi nhánh này.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* CONFIRMATION POPUP FOR STAFF ASSIGNMENT */}
+      {assignConfirmBooking && assignConfirmStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 relative animate-in zoom-in-95 duration-150">
+            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Xác nhận phân công</h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Bạn có chắc chắn muốn phân công lịch hẹn dịch vụ <span className="font-extrabold text-primary">{assignConfirmBooking.serviceName}</span> cho kỹ thuật viên <span className="font-extrabold text-purple-700">{assignConfirmStaff.name}</span> không?
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                disabled={assigningLoading}
+                onClick={() => {
+                  setAssignConfirmBooking(null);
+                  setAssignConfirmStaff(null);
+                }}
+                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
+              >
+                Hủy
+              </button>
+              <button
+                disabled={assigningLoading}
+                onClick={handleAssignStaff}
+                className="px-4 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017]"
+              >
+                {assigningLoading ? 'Đang giao...' : 'Đồng ý'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESCHEDULE MODAL */}
+      {rescheduleBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-5 my-8 relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setRescheduleBooking(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="size-5" />
+            </button>
+            
+            <div>
+              <h3 className="text-base font-black text-gray-900">Đổi lịch hẹn Spa</h3>
+              <p className="text-xs text-gray-450 mt-1 font-semibold">Khách hàng: {rescheduleBooking.user?.name} ({rescheduleBooking.petName}) • Dịch vụ: {rescheduleBooking.service?.name}</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-400 font-bold uppercase">1. Chọn ngày mới</label>
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} // min tomorrow
+                  onChange={(e) => {
+                    setRescheduleDate(e.target.value);
+                    setSelectedRescheduleSlot('');
+                  }}
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-sm font-bold text-gray-700 bg-white"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] text-gray-400 font-bold uppercase">2. Chọn khung giờ khả dụng</label>
+                {loadingRescheduleSlots ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="size-6 animate-spin text-primary" />
+                  </div>
+                ) : rescheduleSlots.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {rescheduleSlots.map((slot: any) => (
+                      <button
+                        key={slot.time}
+                        disabled={!slot.isAvailable}
+                        onClick={() => setSelectedRescheduleSlot(slot.time)}
+                        className={`py-2 px-1 border rounded-lg text-center transition flex flex-col items-center justify-center ${
+                          !slot.isAvailable
+                            ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                            : selectedRescheduleSlot === slot.time
+                            ? 'bg-primary border-primary text-white shadow-sm font-bold'
+                            : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
+                        }`}
+                      >
+                        <span className="text-xs font-black">{slot.time}</span>
+                        {slot.isAvailable && (
+                          <span className={`text-[9px] mt-0.5 ${selectedRescheduleSlot === slot.time ? 'text-white' : 'text-gray-400'}`}>
+                            {slot.remainingSlots} chỗ
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-450 italic py-2">Chọn ngày để xem các khung giờ.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                disabled={submittingReschedule}
+                onClick={() => setRescheduleBooking(null)}
+                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                disabled={submittingReschedule || !selectedRescheduleSlot}
+                onClick={handleRescheduleSubmit}
+                className="px-5 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] disabled:opacity-50"
+              >
+                {submittingReschedule ? 'Đang đổi...' : 'Xác nhận đổi lịch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SERVICE MODAL (ADD / EDIT) */}
+      {serviceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setServiceModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="size-5" />
+            </button>
+
+            <div>
+              <h3 className="text-base font-black text-gray-900">{editingService ? 'Chỉnh sửa dịch vụ' : 'Thêm dịch vụ Spa mới'}</h3>
+              <p className="text-xs text-gray-455 mt-1 font-semibold">Tạo hoặc điều chỉnh dịch vụ phục vụ đặt lịch của chi nhánh.</p>
+            </div>
+
+            <form onSubmit={handleServiceSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-400 font-bold">Thương hiệu Spa (SpaBrand) *</label>
+                <select
+                  required
+                  value={serviceForm.brandId}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white"
+                >
+                  <option value="">-- Chọn thương hiệu --</option>
+                  {managerBrands.map((b: any) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-400 font-bold">Tên dịch vụ *</label>
+                <input
+                  type="text"
+                  required
+                  value={serviceForm.name}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                  placeholder="Ví dụ: Cắt tỉa lông cơ bản"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-400 font-bold">Mô tả chi tiết</label>
+                <textarea
+                  value={serviceForm.description}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full min-h-[70px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                  placeholder="Mô tả công việc và đối tượng phục vụ..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-400 font-bold">Giá dịch vụ (đ) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={serviceForm.price}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, price: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                    placeholder="150000"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-400 font-bold">Thời gian (phút) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={15}
+                    value={serviceForm.durationMin}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMin: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                    placeholder="60"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1.5">
+                <input
+                  type="checkbox"
+                  id="service-active"
+                  checked={serviceForm.isActive}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, isActive: e.target.checked }))}
+                  className="accent-primary size-4"
+                />
+                <label htmlFor="service-active" className="text-xs font-bold text-gray-700">Dịch vụ hoạt động khả dụng</label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setServiceModalOpen(false)}
+                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingService}
+                  className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017]"
+                >
+                  {submittingService ? 'Đang lưu...' : 'Lưu dịch vụ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

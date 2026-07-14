@@ -41,8 +41,8 @@ export default function LoginForm() {
         const role = response.data.user?.role;
         if (role === 'ADMIN') {
           router.push('/admin');
-        } else if (role === 'STORE_MANAGER' || role === 'SPA_MANAGER') {
-          router.push('/manager');
+        } else if (role === 'SPA_STAFF') {
+          router.push('/spa/staff');
         } else {
           router.push('/home');
         }

@@ -161,6 +161,7 @@ enum SpaBookingStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+  LATE
 }
 
 /// Trạng thái badge xác minh hiển thị trên swipe card:
