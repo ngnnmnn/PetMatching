@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -55,9 +55,53 @@ function SpaBookingWizard() {
   const [selectedAddressSpaId, setSelectedAddressSpaId] = useState<string>('');
   const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-  const [bookingDate, setBookingDate] = useState<string>('');
-  const [bookingTime, setBookingTime] = useState<string>('09:00');
+  const [bookingDate, setBookingDate] = useState<string>(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [bookingTime, setBookingTime] = useState<string>('');
   const [bookingNote, setBookingNote] = useState<string>('');
+
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
+
+  const carouselDays = useMemo(() => {
+    if (!bookingDate) return [];
+    const base = new Date(bookingDate);
+    if (isNaN(base.getTime())) return [];
+    
+    // Find the Monday of the week containing baseDate
+    const day = base.getDay();
+    const diff = base.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(base.setDate(diff));
+    
+    const days = [];
+    const weekdays = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      const weekdayStr = weekdays[d.getDay()];
+      const dayNum = d.getDate();
+      days.push({ dateStr, weekdayStr, dayNum });
+    }
+    return days;
+  }, [bookingDate]);
+
+  useEffect(() => {
+    const fetchSlots = async () => {
+      if (!selectedAddressSpaId || !bookingDate || !selectedServiceId) return;
+      setLoadingSlots(true);
+      try {
+        const s = services.find(x => x.id === selectedServiceId);
+        const duration = s?.durationMin || 30;
+        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, duration);
+        setAvailableSlots(res.data || []);
+      } catch (err) {
+        console.error('Failed to fetch available slots', err);
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+    fetchSlots();
+  }, [bookingDate, selectedAddressSpaId, selectedServiceId, services]);
 
   // Fetch initial data
   useEffect(() => {
@@ -159,10 +203,6 @@ function SpaBookingWizard() {
         toast.error('Vui lòng chọn giờ hẹn.');
         return;
       }
-      if (!selectedStaffId) {
-        toast.error('Vui lòng chọn nhân viên thực hiện.');
-        return;
-      }
     }
     setStep((s) => s + 1);
   };
@@ -183,7 +223,7 @@ function SpaBookingWizard() {
         serviceId: selectedServiceId,
         petId: selectedPetId,
         petName: pet ? pet.name : 'Thú cưng',
-        staffId: selectedStaffId,
+        staffId: undefined,
         scheduledAt,
         note: bookingNote
       });
@@ -388,85 +428,106 @@ function SpaBookingWizard() {
                 </div>
               )}
 
-              {/* STEP 2: CHOOSE DATE / TIME & STAFF */}
+              {/* STEP 2: CHOOSE DATE & AVAILABLE SLOTS */}
               {step === 2 && (
                 <div className="space-y-6">
-                  {/* Select Date and Time */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="booking-date" className="text-xs font-black uppercase text-gray-800 tracking-wider">Ngày hẹn *</Label>
-                      <Input
-                        id="booking-date"
-                        type="date"
-                        value={bookingDate}
-                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} // minimum tomorrow
-                        onChange={(e) => setBookingDate(e.target.value)}
-                        required
-                        className="bg-white border-gray-300"
-                      />
+                  {/* Select Date Horizontal List */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn ngày *</label>
+                      <div className="flex items-center gap-1.5 text-xs text-primary font-bold">
+                        <Calendar className="size-4 shrink-0" />
+                        <span>Chọn ngày khác:</span>
+                        <input
+                          type="date"
+                          min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} // min tomorrow
+                          value={bookingDate}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              setBookingDate(e.target.value);
+                              setBookingTime('');
+                            }
+                          }}
+                          className="border border-gray-300 rounded-lg px-2.5 py-1 bg-white text-xs text-gray-850 font-bold focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer h-8"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="booking-time" className="text-xs font-black uppercase text-gray-800 tracking-wider">Giờ hẹn *</Label>
-                      <select
-                        id="booking-time"
-                        value={bookingTime}
-                        onChange={(e) => setBookingTime(e.target.value)}
-                        className="w-full h-10 rounded-md border border-gray-350 bg-white px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 text-gray-700"
-                      >
-                        <option value="08:00">08:00 AM</option>
-                        <option value="09:00">09:00 AM</option>
-                        <option value="10:00">10:00 AM</option>
-                        <option value="11:00">11:00 AM</option>
-                        <option value="13:30">01:30 PM</option>
-                        <option value="14:30">02:30 PM</option>
-                        <option value="15:30">03:30 PM</option>
-                        <option value="16:30">04:30 PM</option>
-                        <option value="17:30">05:30 PM</option>
-                        <option value="18:30">06:30 PM</option>
-                      </select>
+
+                    <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+                      {carouselDays.map((day) => {
+                        const active = bookingDate === day.dateStr;
+                        const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                        const isPast = day.dateStr < tomorrowStr;
+
+                        return (
+                          <button
+                            key={day.dateStr}
+                            type="button"
+                            disabled={isPast}
+                            onClick={() => {
+                              setBookingDate(day.dateStr);
+                              setBookingTime('');
+                            }}
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border min-w-[76px] transition-all cursor-pointer ${
+                              isPast
+                                ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
+                                : active
+                                ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
+                                : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
+                            }`}
+                          >
+                            <span className="text-[10px] uppercase font-bold tracking-wider">{day.weekdayStr}</span>
+                            <span className="text-lg font-black mt-0.5">{day.dayNum}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Select Staff */}
+                  {/* Select Time Grid */}
                   <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
-                      <Scissors className="size-4 text-purple-700" /> Chọn nhân viên phục vụ *
+                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">
+                      Chọn giờ ({new Date(bookingDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}) *
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {staffs.map((staff) => (
-                        <div
-                          key={staff.id}
-                          onClick={() => setSelectedStaffId(staff.id)}
-                          className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${selectedStaffId === staff.id
-                            ? 'border-purple-600 bg-purple-50/50 ring-1 ring-purple-600'
-                            : 'border-gray-200 bg-white'
-                            }`}
-                        >
-                          <input
-                            type="radio"
-                            name="staff"
-                            checked={selectedStaffId === staff.id}
-                            onChange={() => setSelectedStaffId(staff.id)}
-                            className="accent-purple-700 size-4"
-                          />
-                          {staff.avatarUrl ? (
-                            <img
-                              src={staff.avatarUrl}
-                              alt={staff.name}
-                              className="size-10 rounded-full object-cover border-2 border-purple-100 shrink-0"
-                            />
-                          ) : (
-                            <div className="size-10 rounded-full bg-purple-100 flex items-center justify-center border text-purple-800 font-extrabold text-sm shrink-0">
-                              {staff.name.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-extrabold text-sm text-gray-900 leading-none">{staff.name}</p>
-                            <span className="text-[10px] text-purple-700 font-bold block mt-1">Kỹ thuật viên Spa</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {loadingSlots ? (
+                      <div className="text-center py-10">
+                        <div className="inline-block size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <p className="text-xs text-gray-400 font-semibold mt-2">Đang tìm các khung giờ trống...</p>
+                      </div>
+                    ) : availableSlots.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {availableSlots.map((slot) => {
+                          const isSelected = bookingTime === slot.time;
+                          const hasChuyen = slot.isAvailable;
+                          return (
+                            <button
+                              key={slot.time}
+                              type="button"
+                              disabled={!hasChuyen}
+                              onClick={() => setBookingTime(slot.time)}
+                              className={`py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${
+                                !hasChuyen
+                                  ? 'bg-gray-50 border-gray-150 text-gray-300 cursor-not-allowed'
+                                  : isSelected
+                                  ? 'bg-primary border-primary text-white shadow-md font-bold'
+                                  : 'bg-white border-gray-250 text-gray-700 hover:border-primary'
+                              }`}
+                            >
+                              <span className="text-sm font-black">{slot.time}</span>
+                              {hasChuyen ? (
+                                <span className={`text-[9px] mt-0.5 font-semibold ${isSelected ? 'text-white/80' : 'text-gray-450'}`}>
+                                  {slot.remainingSlots} chỗ
+                                </span>
+                              ) : (
+                                <span className="text-[9px] mt-0.5 font-semibold text-gray-300">Hết chỗ</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-450 italic">Vui lòng chọn ngày để xem danh sách giờ.</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -489,10 +550,10 @@ function SpaBookingWizard() {
                         <span className="text-gray-400">Thú cưng:</span>
                         <span className="font-bold text-gray-800">{selectedPet?.name} ({selectedPet?.breed})</span>
                       </div>
-                      <div className="flex justify-between pb-2 border-b border-dashed">
+                       <div className="flex justify-between pb-2 border-b border-dashed">
                         <span className="text-gray-400">Nhân viên:</span>
-                        <span className="font-extrabold text-purple-800 flex items-center gap-1">
-                          ✨ {selectedStaff?.name}
+                        <span className="font-bold text-gray-650">
+                          Hệ thống tự động phân công
                         </span>
                       </div>
                       <div className="flex justify-between pb-2 border-b border-dashed">

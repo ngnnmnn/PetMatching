@@ -15,6 +15,7 @@ import {
   ShoppingBag,
   Store,
   Users,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,8 +24,33 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 function ManagerNavigation() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
+  const [role, setRole] = useState<string>('');
 
-  const navGroups = [
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      const u = JSON.parse(stored);
+      setRole(u.role || '');
+    }
+  }, []);
+
+  const navGroups = role === 'SPA_MANAGER' ? [
+    {
+      label: 'Tổng quan',
+      items: [
+        { label: 'Bảng điều khiển', id: 'dashboard', href: '/manager', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'Quản lý Spa',
+      items: [
+        { label: 'Lịch hẹn', id: 'bookings', href: '/manager?tab=bookings', icon: Calendar },
+        { label: 'Dịch vụ', id: 'services', href: '/manager?tab=services', icon: Scissors },
+        { label: 'Khung giờ', id: 'slots', href: '/manager?tab=slots', icon: Clock },
+        { label: 'Nhân viên', id: 'staffs', href: '/manager?tab=staffs', icon: Users },
+      ],
+    },
+  ] : [
     {
       label: 'Tổng quan',
       items: [
@@ -99,7 +125,7 @@ export default function ManagerLayout({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (user?.role !== 'STORE_MANAGER') {
+    if (user?.role !== 'STORE_MANAGER' && user?.role !== 'SPA_MANAGER') {
       router.replace('/home');
       return;
     }
@@ -123,7 +149,7 @@ export default function ManagerLayout({ children }: { children: ReactNode }) {
   }
 
   const initials = (currentUser?.name ?? 'M').slice(0, 1).toUpperCase();
-  const roleName = 'Quản lý Cửa hàng';
+  const roleName = currentUser?.role === 'SPA_MANAGER' ? 'Quản lý Spa' : 'Quản lý Cửa hàng';
 
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-[var(--text-main)]">

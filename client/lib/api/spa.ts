@@ -28,4 +28,20 @@ export const spaApi = {
     photoAfter?: string;
     issueReported?: string;
   }) => api.patch<SpaBookingType>(`/spa/staff/bookings/${id}`, data),
+
+  // Spa Manager API Methods
+  getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),
+  getManagerBrands: () => api.get<any[]>('/spa/manager/brands'),
+  getManagerDashboardStats: (branchId: string) => api.get<any>(`/spa/manager/dashboard-stats?branchId=${branchId}`),
+  getManagerServices: () => api.get<any[]>('/spa/manager/services'),
+  createManagerService: (data: any) => api.post<any>('/spa/manager/services', data),
+  updateManagerService: (id: string, data: any) => api.patch<any>(`/spa/manager/services/${id}`, data),
+  getManagerBookings: (branchId: string) => api.get<any[]>(`/spa/manager/bookings?branchId=${branchId}`),
+  rescheduleBooking: (id: string, scheduledAt: string) => api.patch<any>(`/spa/manager/bookings/${id}/reschedule`, { scheduledAt }),
+  confirmBooking: (id: string) => api.patch<any>(`/spa/manager/bookings/${id}/confirm`),
+  getAvailableStaffForBooking: (id: string) => api.get<any[]>(`/spa/manager/bookings/${id}/available-staff`),
+  assignStaff: (id: string, staffId: string) => api.patch<any>(`/spa/manager/bookings/${id}/assign`, { staffId }),
+  getManagerStaffs: (branchId: string) => api.get<any[]>(`/spa/manager/staffs?branchId=${branchId}`),
+  getAvailability: (branchId: string, date: string, durationMin?: number) =>
+    api.get<any[]>(`/spa/availability?branchId=${branchId}&date=${date}${durationMin ? `&durationMin=${durationMin}` : ''}`),
 };
