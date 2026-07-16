@@ -15,6 +15,10 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CreateComplaintDto,
+  GrantSpaManagerDto,
+  HidePetDto,
+  RevokeSpaManagerDto,
+  RestorePetDto,
   ResolveComplaintDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
@@ -73,9 +77,9 @@ export class AdminService {
       this.prisma.complaint.count({
         where: { type: ComplaintType.STORE, status: ComplaintStatus.PENDING },
       }),
-      this.prisma.spaBrand.count(),
-      this.prisma.spaBrand.count({ where: { status: ApprovalStatus.ACTIVE } }),
-      this.prisma.spaBrand.count({ where: { status: ApprovalStatus.PENDING } }),
+      this.prisma.addressSpa.count(),
+      this.prisma.addressSpa.count({ where: { status: ApprovalStatus.ACTIVE } }),
+      this.prisma.addressSpa.count({ where: { status: ApprovalStatus.PENDING } }),
       this.prisma.spaService.count(),
       this.prisma.spaBooking.count(),
       this.prisma.complaint.count({
@@ -213,7 +217,15 @@ export class AdminService {
       throw new BadRequestException('Cannot assign ADMIN role from user management.');
     }
 
-    await this.ensureManagedUser(userId);
+    const currentUser = await this.ensureManagedUser(userId);
+
+    if (currentUser.role === UserRole.SPA_STAFF || dto.role === UserRole.SPA_STAFF) {
+      throw new BadRequestException('Tài khoản nhân viên Spa chỉ được quản lý bởi Spa Manager.');
+    }
+
+    if (currentUser.role === UserRole.SPA_MANAGER || dto.role === UserRole.SPA_MANAGER) {
+      throw new BadRequestException('Hãy sử dụng quy trình cấp hoặc thu hồi quyền Spa Manager.');
+    }
 
     const user = await this.prisma.user.update({
       where: { id: userId },
@@ -240,6 +252,119 @@ export class AdminService {
     return user;
   }
 
+  async grantSpaManager(actor: AdminActor, userId: string, dto: GrantSpaManagerDto) {
+    const user = await this.ensureManagedUser(userId);
+    if (user.role !== UserRole.USER) {
+      throw new BadRequestException('Chỉ có thể cấp quyền Spa Manager cho tài khoản người dùng.');
+    }
+
+    const branchIds = [...new Set(dto.branchIds)];
+    const branches = await this.prisma.addressSpa.findMany({
+      where: { id: { in: branchIds } },
+      select: { id: true, name: true, managerId: true },
+    });
+
+    if (branches.length !== branchIds.length) {
+      throw new BadRequestException('Có chi nhánh Spa không tồn tại.');
+    }
+
+    const occupiedBranches = branches.filter((branch) => branch.managerId && branch.managerId !== userId);
+    if (occupiedBranches.length && !dto.allowReassignment) {
+      throw new BadRequestException(
+        `Các chi nhánh đã có quản lý: ${occupiedBranches.map((branch) => branch.name).join(', ')}.`,
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const manager = await tx.user.update({
+        where: { id: userId },
+        data: { role: UserRole.SPA_MANAGER, accountStatus: AccountStatus.ACTIVE },
+        select: { id: true, name: true, email: true, role: true, accountStatus: true },
+      });
+
+      await tx.addressSpa.updateMany({
+        where: { id: { in: branchIds } },
+        data: { managerId: userId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_GRANT_SPA_MANAGER',
+          targetType: 'User',
+          targetId: userId,
+          metadata: {
+            branchIds,
+            reassignedBranchIds: occupiedBranches.map((branch) => branch.id),
+          },
+        },
+      });
+
+      return manager;
+    });
+  }
+
+  async revokeSpaManager(actor: AdminActor, userId: string, dto: RevokeSpaManagerDto) {
+    const user = await this.ensureManagedUser(userId);
+    if (user.role !== UserRole.SPA_MANAGER) {
+      throw new BadRequestException('Tài khoản này không phải Spa Manager.');
+    }
+
+    let replacementManagerId: string | null = null;
+    if (dto.mode === 'TRANSFER') {
+      if (!dto.newManagerId || dto.newManagerId === userId) {
+        throw new BadRequestException('Vui lòng chọn một Spa Manager khác để chuyển giao.');
+      }
+
+      const replacement = await this.prisma.user.findFirst({
+        where: {
+          id: dto.newManagerId,
+          role: UserRole.SPA_MANAGER,
+          accountStatus: AccountStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      if (!replacement) {
+        throw new BadRequestException('Spa Manager nhận chuyển giao không hợp lệ hoặc đang bị khóa.');
+      }
+      replacementManagerId = replacement.id;
+    }
+
+    const managedBranches = await this.prisma.addressSpa.findMany({
+      where: { managerId: userId },
+      select: { id: true, name: true },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.addressSpa.updateMany({
+        where: { managerId: userId },
+        data: { managerId: replacementManagerId },
+      });
+
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: { role: UserRole.USER },
+        select: { id: true, name: true, email: true, role: true, accountStatus: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_REVOKE_SPA_MANAGER',
+          targetType: 'User',
+          targetId: userId,
+          metadata: {
+            mode: dto.mode,
+            branchIds: managedBranches.map((branch) => branch.id),
+            replacementManagerId,
+          },
+        },
+      });
+
+      return updatedUser;
+    });
+  }
+
   getPets(query: { verified?: string; status?: PetStatus; search?: string }) {
     const where: Prisma.PetWhereInput = {};
 
@@ -258,7 +383,7 @@ export class AdminService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, name: true, email: true, accountStatus: true } },
         _count: { select: { documents: true, sentMatchingRequests: true, receivedMatchingRequests: true } },
       },
     });
@@ -268,22 +393,124 @@ export class AdminService {
     const pet = await this.prisma.pet.findUnique({
       where: { id },
       include: {
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, name: true, email: true, accountStatus: true } },
         documents: { orderBy: { createdAt: 'desc' } },
       },
     });
 
     if (!pet) throw new NotFoundException('Pet not found.');
-    return pet;
+    const [lastHideAction, unresolvedReportCount] = await Promise.all([
+      this.prisma.auditLog.findFirst({
+        where: { action: 'ADMIN_HIDE_PET', targetType: 'Pet', targetId: id },
+        orderBy: { createdAt: 'desc' },
+        select: { metadata: true, createdAt: true },
+      }),
+      this.prisma.petReport.count({ where: { petId: id, isResolved: false } }),
+    ]);
+
+    return { ...pet, lastHideAction, unresolvedReportCount };
   }
 
-  async hidePet(actor: AdminActor, petId: string) {
-    const pet = await this.prisma.pet.update({
+  async hidePet(actor: AdminActor, petId: string, dto: HidePetDto) {
+    const currentPet = await this.prisma.pet.findUnique({
       where: { id: petId },
-      data: { status: PetStatus.HIDDEN, isActive: false, isAvailableForMatching: false },
+      select: { id: true, status: true, isActive: true, isAvailableForMatching: true },
     });
-    await this.audit(actor.id, 'ADMIN_HIDE_PET', 'Pet', petId);
-    return pet;
+
+    if (!currentPet) throw new NotFoundException('Pet not found.');
+    if (currentPet.status === PetStatus.HIDDEN) {
+      throw new BadRequestException('Hồ sơ thú cưng đã được ẩn trước đó.');
+    }
+    if (currentPet.status === PetStatus.INACTIVE) {
+      throw new BadRequestException('Không thể ẩn hồ sơ đã được chủ sở hữu ngừng hoạt động.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const pet = await tx.pet.update({
+        where: { id: petId },
+        data: { status: PetStatus.HIDDEN, isActive: false, isAvailableForMatching: false },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_HIDE_PET',
+          targetType: 'Pet',
+          targetId: petId,
+          metadata: {
+            reason: dto.reason,
+            note: dto.note ?? null,
+            previousStatus: currentPet.status,
+            previousIsActive: currentPet.isActive,
+            previousMatchingAvailability: currentPet.isAvailableForMatching,
+          },
+        },
+      });
+
+      return pet;
+    });
+  }
+
+  async restorePet(actor: AdminActor, petId: string, dto: RestorePetDto) {
+    const pet = await this.prisma.pet.findUnique({
+      where: { id: petId },
+      include: { owner: { select: { accountStatus: true } } },
+    });
+
+    if (!pet) throw new NotFoundException('Pet not found.');
+    if (pet.status !== PetStatus.HIDDEN) {
+      throw new BadRequestException('Chỉ có thể khôi phục hồ sơ đang bị ẩn.');
+    }
+    if (pet.owner.accountStatus !== AccountStatus.ACTIVE) {
+      throw new BadRequestException('Không thể khôi phục vì tài khoản chủ sở hữu không hoạt động.');
+    }
+
+    const [unresolvedReportCount, lastHideAction] = await Promise.all([
+      this.prisma.petReport.count({ where: { petId, isResolved: false } }),
+      this.prisma.auditLog.findFirst({
+        where: { action: 'ADMIN_HIDE_PET', targetType: 'Pet', targetId: petId },
+        orderBy: { createdAt: 'desc' },
+        select: { metadata: true },
+      }),
+    ]);
+
+    if (unresolvedReportCount > 0) {
+      throw new BadRequestException('Hãy xử lý toàn bộ báo cáo chưa giải quyết trước khi khôi phục hồ sơ.');
+    }
+
+    const hideMetadata = lastHideAction?.metadata as Prisma.JsonObject | null | undefined;
+    if (hideMetadata?.reason === 'DOCUMENT_FRAUD') {
+      const approvedDocumentCount = await this.prisma.petDocument.count({
+        where: { petId, status: DocumentStatus.APPROVED },
+      });
+      if (approvedDocumentCount === 0) {
+        throw new BadRequestException('Hồ sơ cần có ít nhất một giấy tờ đã được duyệt trước khi khôi phục.');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const restoredPet = await tx.pet.update({
+        where: { id: petId },
+        data: { status: PetStatus.ACTIVE, isActive: true, isAvailableForMatching: false },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_RESTORE_PET',
+          targetType: 'Pet',
+          targetId: petId,
+          metadata: {
+            reason: dto.reason,
+            note: dto.note ?? null,
+            previousStatus: pet.status,
+            matchingAvailabilityReset: true,
+          },
+        },
+      });
+
+      return restoredPet;
+    });
   }
 
   getPetDocuments(query: { status?: DocumentStatus }) {
@@ -402,18 +629,27 @@ export class AdminService {
   }
 
   getSpaBranches(query: { status?: ApprovalStatus }) {
-    return this.prisma.spaBrand.findMany({
+    return this.prisma.addressSpa.findMany({
       where: query.status ? { status: query.status } : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
         manager: { select: { id: true, name: true, email: true, role: true } },
-        _count: { select: { services: true, bookings: true } },
+        _count: { select: { staffs: true, bookings: true } },
       },
     });
   }
 
-  updateSpaBranchStatus(actor: AdminActor, branchId: string, dto: UpdateApprovalStatusDto) {
-    return this.updateApprovalStatus(actor, 'SpaBrand', branchId, dto.status);
+  async updateSpaBranchStatus(actor: AdminActor, branchId: string, dto: UpdateApprovalStatusDto) {
+    const branch = await this.prisma.addressSpa.update({
+      where: { id: branchId },
+      data: { status: dto.status },
+    });
+
+    await this.audit(actor.id, 'ADMIN_UPDATE_SPA_BRANCH_STATUS', 'AddressSpa', branchId, {
+      status: dto.status,
+    });
+
+    return branch;
   }
 
   getSpaServices(brandId?: string) {
@@ -613,6 +849,8 @@ export class AdminService {
     if (user.role === UserRole.ADMIN) {
       throw new BadRequestException('Admin accounts cannot be managed here.');
     }
+
+    return user;
   }
 
   private audit(actorId: string | undefined, action: string, targetType: string, targetId?: string, metadata?: object) {

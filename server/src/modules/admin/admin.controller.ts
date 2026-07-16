@@ -14,6 +14,10 @@ import type { AuthenticatedRequest } from '../../common/auth/authenticated-reque
 import { AdminService } from './admin.service';
 import {
   CreateComplaintDto,
+  GrantSpaManagerDto,
+  HidePetDto,
+  RevokeSpaManagerDto,
+  RestorePetDto,
   ResolveComplaintDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
@@ -64,6 +68,24 @@ export class AdminController {
     return this.adminService.updateAccountStatus(request.user, id, dto);
   }
 
+  @Patch('users/:id/spa-manager/grant')
+  grantSpaManager(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: GrantSpaManagerDto,
+  ) {
+    return this.adminService.grantSpaManager(request.user, id, dto);
+  }
+
+  @Patch('users/:id/spa-manager/revoke')
+  revokeSpaManager(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RevokeSpaManagerDto,
+  ) {
+    return this.adminService.revokeSpaManager(request.user, id, dto);
+  }
+
   @Get('pets')
   getPets(
     @Query('verified') verified?: string,
@@ -79,8 +101,21 @@ export class AdminController {
   }
 
   @Patch('pets/:id/hide')
-  hidePet(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
-    return this.adminService.hidePet(request.user, id);
+  hidePet(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: HidePetDto,
+  ) {
+    return this.adminService.hidePet(request.user, id, dto);
+  }
+
+  @Patch('pets/:id/restore')
+  restorePet(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RestorePetDto,
+  ) {
+    return this.adminService.restorePet(request.user, id, dto);
   }
 
   @Get('pet-verifications')
