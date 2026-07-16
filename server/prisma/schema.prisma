@@ -1,20 +1,574 @@
-// =============================================================
-// PetMatching - Prisma Schema
-// Database: PostgreSQL
-// =============================================================
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// =============================================================
-// ENUM DEFINITIONS
-// =============================================================
+model User {
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  googleId            String?           @unique
+  /// Mật khẩu đã được hash (bcrypt)
+  passwordHash        String?
+  name                String
+  avatarUrl           String?
+  phone               String?
+  role                UserRole          @default(USER)
+  accountStatus       AccountStatus     @default(ACTIVE)
+  /// Xác thực email
+  isVerified          Boolean           @default(false)
+  /// Số lần nhập sai OTP liên tiếp
+  failedOtpAttempts   Int               @default(0) @map("failed_otp_attempts")
+  /// Thời điểm hết hạn khóa do nhập sai OTP
+  lockedUntil         DateTime?         @map("locked_until")
+  /// Refresh token lưu trong DB (backup cho Redis)
+  refreshToken        String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  managedSpaAddresses AddressSpa[]      @relation("SpaAddressManager")
+  addresses           Address[]
+  auditLogs           AuditLog[]        @relation("AuditActor")
+  cartItems           CartItem[]
+  sentLikes           Like[]            @relation("LikeSender")
+  matchingRequests    MatchingRequest[] @relation("MatchingRequester")
+  messages            Message[]
+  orders              Order[]
+  reviewedDocuments   PetDocument[]     @relation("PetDocumentReviewer")
+  pets                Pet[]
+  reviews             ProductReview[]
+  assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
+  spaBookings         SpaBooking[]
+  managedSpaBrands    SpaBrand[]        @relation("SpaManager")
+  spaStaffProfile     SpaStaff?         @relation("UserSpaStaffProfile")
+  managedStores       Store[]           @relation("StoreManager")
+  wishlistItems       WishlistItem[]
+
+  @@map("users")
+}
+
+model EmailOtp {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  lastSentAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@map("email_otps")
+}
+
+model Pet {
+  id                       String            @id @default(cuid())
+  name                     String
+  slug                     String?           @unique
+  species                  Species
+  breed                    String
+  gender                   Gender
+  /// Ngày sinh - dùng để tính tuổi và kiểm tra điều kiện phối giống
+  birthday                 DateTime
+  weight                   Float
+  colorDesc                String?
+  /// Chủ tự khai báo đã tiêm vaccine (chưa có bằng chứng)
+  isVaccinated             Boolean           @default(false)
+  /// Chủ tự khai báo có giấy phả hệ (chưa có bằng chứng)
+  hasPedigree              Boolean           @default(false)
+  pedigreeNumber           String?
+  /// Đã xác minh vaccine qua giấy tờ thực tế
+  vaccineVerified          Boolean           @default(false)
+  /// Đã xác minh giấy phả hệ qua giấy tờ thực tế
+  pedigreeVerified         Boolean           @default(false)
+  /// Badge tổng hợp hiển thị trên card - được cập nhật bởi DocumentService:
+  /// - NONE     → chưa upload giấy tờ nào
+  /// - PENDING  → có giấy tờ đang chờ duyệt
+  /// - VERIFIED → ít nhất một giấy tờ được duyệt
+  verificationBadge        VerificationBadge @default(NONE)
+  avatarUrl                String?
+  /// Mảng URL ảnh (Cloudinary), tối đa 6 ảnh
+  gallery                  String[]
+  personality              String?
+  breedingOption           BreedingOption    @default(NEGOTIATE)
+  /// Giá phối giống (VNĐ) - chỉ có khi breedingOption = CASH
+  breedingFee              Float?
+  /// Số con chia sẻ - chỉ có khi breedingOption = SHARE_LITTER
+  shareLitterCount         Int?
+  /// Ngày phối giống gần nhất - dùng để tính chu kỳ
+  lastBreedingAt           DateTime?
+  /// Tổng số lần phối giống thành công
+  totalBreedings           Int               @default(0)
+  location                 String
+  /// Toạ độ cho Redis GEOSEARCH (tìm gần vị trí người dùng)
+  latitude                 Float?
+  longitude                Float?
+  isActive                 Boolean           @default(true)
+  status                   PetStatus         @default(ACTIVE)
+  isAvailableForMatching   Boolean           @default(false)
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  ownerId                  String
+  sentLikes                Like[]            @relation("LikeFromPet")
+  receivedLikes            Like[]            @relation("LikeToPet")
+  matchesAsPet1            Match[]           @relation("MatchPet1")
+  matchesAsPet2            Match[]           @relation("MatchPet2")
+  sentMatchingRequests     MatchingRequest[] @relation("FemalePetRequests")
+  receivedMatchingRequests MatchingRequest[] @relation("MalePetRequests")
+  documents                PetDocument[]
+  owner                    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  spaBookings              SpaBooking[]
+
+  @@index([species, gender, status, isAvailableForMatching])
+  @@index([ownerId])
+  @@index([breed])
+  @@index([location])
+  @@map("pets")
+}
+
+model Like {
+  id         String     @id @default(cuid())
+  fromUserId String
+  fromPetId  String
+  toPetId    String
+  status     LikeStatus @default(PENDING)
+  createdAt  DateTime   @default(now())
+  fromPet    Pet        @relation("LikeFromPet", fields: [fromPetId], references: [id])
+  fromUser   User       @relation("LikeSender", fields: [fromUserId], references: [id])
+  toPet      Pet        @relation("LikeToPet", fields: [toPetId], references: [id])
+
+  @@unique([fromPetId, toPetId])
+  @@index([fromUserId])
+  @@index([toPetId, status])
+  @@map("likes")
+}
+
+model MatchingRequest {
+  id          String                @id @default(cuid())
+  requesterId String
+  femalePetId String
+  malePetId   String
+  status      MatchingRequestStatus @default(PENDING)
+  note        String?
+  respondedAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  femalePet   Pet                   @relation("FemalePetRequests", fields: [femalePetId], references: [id])
+  malePet     Pet                   @relation("MalePetRequests", fields: [malePetId], references: [id])
+  requester   User                  @relation("MatchingRequester", fields: [requesterId], references: [id])
+
+  @@index([requesterId, status])
+  @@index([femalePetId, malePetId, status])
+  @@index([malePetId, status])
+  @@map("matching_requests")
+}
+
+model Match {
+  id                 String      @id @default(cuid())
+  pet1Id             String
+  pet2Id             String
+  /// Điểm tương thích 0-100 (tính bởi matching engine)
+  compatibilityScore Int         @default(0)
+  /// Lý do match (JSON): ["same_breed", "both_pedigree", "breed_compatible", "near_location"]
+  matchReasons       Json?
+  status             MatchStatus @default(ACTIVE)
+  /// Ghi chú kết quả sau khi phối giống xong (COMPLETED)
+  breedingNote       String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  completedAt        DateTime?
+  pet1               Pet         @relation("MatchPet1", fields: [pet1Id], references: [id])
+  pet2               Pet         @relation("MatchPet2", fields: [pet2Id], references: [id])
+  messages           Message[]
+
+  @@unique([pet1Id, pet2Id])
+  @@index([pet1Id, status])
+  @@index([pet2Id, status])
+  @@map("matches")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  matchId   String
+  senderId  String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id])
+
+  @@index([matchId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model BreedRule {
+  id            String  @id @default(cuid())
+  species       Species
+  /// Giống A
+  breedA        String
+  /// Giống B
+  breedB        String
+  /// true  = tương thích tốt (cross-breed compatible, +20 điểm)
+  /// false = không khuyến nghị (genetic risk, -10 điểm)
+  isCompatible  Boolean @default(true)
+  /// Tên giống con dự kiến nếu lai (vd: "Corgi Gold", "F1 Hybrid")
+  offspringName String?
+  /// Ghi chú cảnh báo nếu có rủi ro di truyền
+  warningNote   String?
+
+  @@unique([breedA, breedB, species])
+  @@map("breed_rules")
+}
+
+model PetDocument {
+  id           String         @id @default(cuid())
+  petId        String
+  /// Loại giấy tờ
+  type         DocumentType
+  /// Tiêu đề / tên giấy tờ do user nhập (vd: "Sổ tiêm phòng 2024")
+  title        String?
+  /// Mảng URL ảnh giấy tờ (Cloudinary) - có thể upload nhiều trang
+  imageUrls    String[]
+  /// Mô tả thêm từ chủ pet (vd: số phiếu, ngày cấp)
+  userNote     String?
+  status       DocumentStatus @default(PENDING)
+  /// ID của moderator/admin đã duyệt
+  reviewerId   String?
+  /// Tên moderator (denormalized để hiển thị nhanh)
+  reviewerName String?
+  /// Ghi chú của moderator (bắt buộc khi REJECTED)
+  reviewNote   String?
+  /// Thời điểm moderator xử lý
+  reviewedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  pet          Pet            @relation(fields: [petId], references: [id], onDelete: Cascade)
+  reviewer     User?          @relation("PetDocumentReviewer", fields: [reviewerId], references: [id])
+
+  @@index([petId, type])
+  @@index([status, type])
+  @@map("pet_documents")
+}
+
+model PetReport {
+  id         String   @id @default(cuid())
+  petId      String
+  userId     String
+  reason     String
+  detail     String?
+  isResolved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@map("pet_reports")
+}
+
+model Store {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  address     String?
+  phone       String?
+  status      ApprovalStatus @default(PENDING)
+  managerId   String?
+  approvedAt  DateTime?
+  suspendedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  orders      Order[]
+  products    Product[]
+  manager     User?          @relation("StoreManager", fields: [managerId], references: [id])
+
+  @@index([status])
+  @@index([managerId])
+  @@map("stores")
+}
+
+model Product {
+  id             String          @id @default(cuid())
+  name           String
+  slug           String?         @unique
+  category       String
+  targetSpecies  String          @default("ALL")
+  description    String?
+  imageUrl       String?
+  images         String[]
+  specifications Json?
+  originalPrice  Float
+  salePrice      Float?
+  brand          String?
+  unit           String?
+  rating         Float           @default(0)
+  reviewCount    Int             @default(0)
+  stock          Int             @default(5)
+  isActive       Boolean         @default(true)
+  isFeatured     Boolean         @default(false)
+  storeId        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  reviews        ProductReview[]
+  store          Store?          @relation(fields: [storeId], references: [id])
+  wishlistItems  WishlistItem[]
+
+  @@index([category, isActive])
+  @@index([isFeatured, isActive])
+  @@index([targetSpecies, isActive])
+  @@index([storeId])
+  @@map("products")
+}
+
+model Address {
+  id            String   @id @default(cuid())
+  userId        String
+  receiverName  String
+  receiverPhone String
+  province      String
+  district      String
+  ward          String
+  detail        String
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  userId          String
+  status          OrderStatus @default(PENDING)
+  totalAmount     Float
+  shippingAddress String
+  storeId         String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  items           OrderItem[]
+  store           Store?      @relation(fields: [storeId], references: [id])
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([storeId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model SpaBrand {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  status      ApprovalStatus @default(PENDING)
+  managerId   String?
+  approvedAt  DateTime?
+  suspendedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  bookings    SpaBooking[]
+  manager     User?          @relation("SpaManager", fields: [managerId], references: [id])
+  services    SpaService[]
+
+  @@index([status])
+  @@index([managerId])
+  @@map("spa_brands")
+}
+
+model SpaService {
+  id          String       @id @default(cuid())
+  brandId     String
+  name        String
+  description String?
+  price       Float
+  durationMin Int
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  bookings    SpaBooking[]
+  brand       SpaBrand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, isActive])
+  @@map("spa_services")
+}
+
+model SpaBooking {
+  id                String           @id @default(cuid())
+  brandId           String?
+  serviceId         String?
+  userId            String
+  staffId           String?
+  petName           String?
+  petId             String?
+  addressSpaId      String?
+  scheduledAt       DateTime
+  status            SpaBookingStatus @default(PENDING)
+  priceSnapshot     Float?
+  note              String?
+  petConditionAfter String?
+  photoAfter        String?
+  issueReported     String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  addressSpa        AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
+  brand             SpaBrand?        @relation(fields: [brandId], references: [id])
+  pet               Pet?             @relation(fields: [petId], references: [id])
+  service           SpaService?      @relation(fields: [serviceId], references: [id])
+  staff             User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, status])
+  @@index([userId])
+  @@index([staffId])
+  @@map("spa_bookings")
+}
+
+model Complaint {
+  id           String           @id @default(cuid())
+  type         ComplaintType
+  status       ComplaintStatus  @default(PENDING)
+  title        String
+  detail       String?
+  reporterId   String?
+  targetType   String?
+  targetId     String?
+  actionTaken  ComplaintAction?
+  adminNote    String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([type, status])
+  @@index([reporterId])
+  @@map("complaints")
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@map("wishlist_items")
+}
+
+model AddressSpa {
+  id          String         @id
+  name        String
+  description String?
+  address     String
+  phone       String?
+  status      ApprovalStatus @default(PENDING)
+  managerId   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  manager     User?          @relation("SpaAddressManager", fields: [managerId], references: [id])
+  bookings    SpaBooking[]   @relation("SpaBookingAddress")
+  staffs      SpaStaff[]     @relation("StaffWorkplace")
+
+  @@index([status])
+  @@index([managerId])
+  @@map("address_spa")
+}
+
+model SpaStaff {
+  id           String      @id
+  userId       String      @unique
+  addressSpaId String?
+  addressSpa   AddressSpa? @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
+  user         User        @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("spa_staff")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model ProductReview {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@map("product_reviews")
+}
 
 enum Species {
   DOG
@@ -94,10 +648,6 @@ enum OrderStatus {
   CANCELLED
 }
 
-// =============================================================
-// DOCUMENT VERIFICATION ENUMS
-// =============================================================
-
 /// Loại giấy tờ cần duyệt:
 /// VACCINE_RECORD - Sổ tiêm phòng / phiếu tiêm vaccine
 /// PEDIGREE_CERT  - Giấy chứng nhận phả hệ (VKA / TICA / VNCA)
@@ -172,698 +722,4 @@ enum VerificationBadge {
   NONE
   PENDING
   VERIFIED
-}
-
-// =============================================================
-// USER - Người dùng / Chủ thú cưng
-// =============================================================
-
-model User {
-  id                String        @id @default(cuid())
-  email             String        @unique
-  googleId          String?       @unique
-  /// Mật khẩu đã được hash (bcrypt)
-  passwordHash      String?
-  name              String
-  avatarUrl         String?
-  phone             String?
-  role              UserRole      @default(USER)
-  accountStatus     AccountStatus @default(ACTIVE)
-  /// Xác thực email
-  isVerified        Boolean       @default(false)
-  /// Số lần nhập sai OTP liên tiếp
-  failedOtpAttempts Int           @default(0) @map("failed_otp_attempts")
-  /// Thời điểm hết hạn khóa do nhập sai OTP
-  lockedUntil       DateTime?     @map("locked_until")
-  /// Refresh token lưu trong DB (backup cho Redis)
-  refreshToken      String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  pets                Pet[]
-  sentLikes           Like[]            @relation("LikeSender")
-  messages            Message[]
-  addresses           Address[]
-  orders              Order[]
-  matchingRequests    MatchingRequest[] @relation("MatchingRequester")
-  managedStores       Store[]           @relation("StoreManager")
-  managedSpaBrands    SpaBrand[]        @relation("SpaManager")
-  managedSpaAddresses AddressSpa[]      @relation("SpaAddressManager")
-  spaStaffProfile     SpaStaff?         @relation("UserSpaStaffProfile")
-  spaBookings         SpaBooking[]
-  assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
-  reviewedDocuments   PetDocument[]     @relation("PetDocumentReviewer")
-  auditLogs           AuditLog[]        @relation("AuditActor")
-  cartItems           CartItem[]
-  wishlistItems       WishlistItem[]
-  reviews             ProductReview[]
-
-  @@map("users")
-}
-
-// =============================================================
-// PET - Hồ sơ thú cưng
-// =============================================================
-
-model EmailOtp {
-  id         String    @id @default(cuid())
-  email      String
-  codeHash   String
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  usedAt     DateTime?
-  lastSentAt DateTime  @default(now())
-  createdAt  DateTime  @default(now())
-
-  @@index([email])
-  @@map("email_otps")
-}
-
-model Pet {
-  id   String  @id @default(cuid())
-  name String
-  slug String? @unique // URL-friendly name: "mochi-corgi-123"
-
-  // --- Thông tin cơ bản ---
-  species   Species
-  breed     String
-  gender    Gender
-  /// Ngày sinh - dùng để tính tuổi và kiểm tra điều kiện phối giống
-  birthday  DateTime
-  weight    Float // kg
-  colorDesc String? // Mô tả màu sắc lông
-
-  // --- Sức khoẻ & Giấy tờ ---
-
-  // --- [TỰ KHAI BÁO bởi chủ pet] ---
-  // Cho phép user dùng hệ thống ngay, hiển thị "Tự khai" trên profile
-  /// Chủ tự khai báo đã tiêm vaccine (chưa có bằng chứng)
-  isVaccinated   Boolean @default(false)
-  /// Chủ tự khai báo có giấy phả hệ (chưa có bằng chứng)
-  hasPedigree    Boolean @default(false)
-  pedigreeNumber String? // VKA-2023-001 / TICA-2022-045
-
-  // --- [ĐÃ XÁC MINH bởi moderator] ---
-  // Chỉ set true khi PetDocument tương ứng được APPROVED
-  /// Đã xác minh vaccine qua giấy tờ thực tế
-  vaccineVerified  Boolean @default(false)
-  /// Đã xác minh giấy phả hệ qua giấy tờ thực tế
-  pedigreeVerified Boolean @default(false)
-
-  /// Badge tổng hợp hiển thị trên card - được cập nhật bởi DocumentService:
-  /// - NONE     → chưa upload giấy tờ nào
-  /// - PENDING  → có giấy tờ đang chờ duyệt
-  /// - VERIFIED → ít nhất một giấy tờ được duyệt
-  verificationBadge VerificationBadge @default(NONE)
-
-  // --- Hình ảnh ---
-  avatarUrl String?
-  /// Mảng URL ảnh (Cloudinary), tối đa 6 ảnh
-  gallery   String[]
-
-  // --- Mô tả ---
-  personality String? // Tính cách, đặc điểm
-
-  // --- Phối giống ---
-  breedingOption   BreedingOption @default(NEGOTIATE)
-  /// Giá phối giống (VNĐ) - chỉ có khi breedingOption = CASH
-  breedingFee      Float?
-  /// Số con chia sẻ - chỉ có khi breedingOption = SHARE_LITTER
-  shareLitterCount Int?
-  /// Ngày phối giống gần nhất - dùng để tính chu kỳ
-  lastBreedingAt   DateTime?
-  /// Tổng số lần phối giống thành công
-  totalBreedings   Int            @default(0)
-
-  // --- Vị trí ---
-  location  String // Tỉnh/Thành phố hiển thị
-  /// Toạ độ cho Redis GEOSEARCH (tìm gần vị trí người dùng)
-  latitude  Float?
-  longitude Float?
-
-  // --- Trạng thái ---
-  isActive               Boolean   @default(true) // legacy flag, kept for compatibility
-  status                 PetStatus @default(ACTIVE)
-  isAvailableForMatching Boolean   @default(false)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-
-  // Relations
-  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId String
-
-  /// Những pet mà pet này đã swipe (gửi)
-  sentLikes     Like[] @relation("LikeFromPet")
-  /// Những like mà pet này nhận được
-  receivedLikes Like[] @relation("LikeToPet")
-
-  /// Matches mà pet này tham gia (vai trò pet1)
-  matchesAsPet1 Match[] @relation("MatchPet1")
-  /// Matches mà pet này tham gia (vai trò pet2)
-  matchesAsPet2 Match[] @relation("MatchPet2")
-
-  /// Các giấy tờ đã nộp để duyệt
-  documents                PetDocument[]
-  sentMatchingRequests     MatchingRequest[] @relation("FemalePetRequests")
-  receivedMatchingRequests MatchingRequest[] @relation("MalePetRequests")
-  spaBookings              SpaBooking[]
-
-  @@index([species, gender, status, isAvailableForMatching])
-  @@index([ownerId])
-  @@index([breed])
-  @@index([location])
-  @@map("pets")
-}
-
-// =============================================================
-// LIKE - Hành động swipe (thích / bỏ qua)
-// =============================================================
-
-model Like {
-  id String @id @default(cuid())
-
-  // Người thực hiện like
-  fromUser   User   @relation("LikeSender", fields: [fromUserId], references: [id])
-  fromUserId String
-
-  // Pet của người thực hiện like
-  fromPet   Pet    @relation("LikeFromPet", fields: [fromPetId], references: [id])
-  fromPetId String
-
-  // Pet được like (đối phương)
-  toPet   Pet    @relation("LikeToPet", fields: [toPetId], references: [id])
-  toPetId String
-
-  status    LikeStatus @default(PENDING)
-  createdAt DateTime   @default(now())
-
-  /// Mỗi cặp (fromPet → toPet) chỉ có một like duy nhất
-  @@unique([fromPetId, toPetId])
-  @@index([fromUserId])
-  @@index([toPetId, status])
-  @@map("likes")
-}
-
-// =============================================================
-// MATCH - Hai bên đã like nhau thành công
-// =============================================================
-
-model MatchingRequest {
-  id String @id @default(cuid())
-
-  requester   User   @relation("MatchingRequester", fields: [requesterId], references: [id])
-  requesterId String
-
-  femalePet   Pet    @relation("FemalePetRequests", fields: [femalePetId], references: [id])
-  femalePetId String
-
-  malePet   Pet    @relation("MalePetRequests", fields: [malePetId], references: [id])
-  malePetId String
-
-  status MatchingRequestStatus @default(PENDING)
-  note   String?
-
-  respondedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@index([requesterId, status])
-  @@index([femalePetId, malePetId, status])
-  @@index([malePetId, status])
-  @@map("matching_requests")
-}
-
-model Match {
-  id String @id @default(cuid())
-
-  // Hai pet đã match với nhau
-  pet1   Pet    @relation("MatchPet1", fields: [pet1Id], references: [id])
-  pet1Id String
-
-  pet2   Pet    @relation("MatchPet2", fields: [pet2Id], references: [id])
-  pet2Id String
-
-  /// Điểm tương thích 0-100 (tính bởi matching engine)
-  compatibilityScore Int @default(0)
-
-  /// Lý do match (JSON): ["same_breed", "both_pedigree", "breed_compatible", "near_location"]
-  matchReasons Json?
-
-  status MatchStatus @default(ACTIVE)
-
-  /// Ghi chú kết quả sau khi phối giống xong (COMPLETED)
-  breedingNote String?
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  completedAt DateTime?
-
-  // Relations
-  messages Message[]
-
-  /// Mỗi cặp pet chỉ có một match (đảm bảo pet1Id < pet2Id khi insert)
-  @@unique([pet1Id, pet2Id])
-  @@index([pet1Id, status])
-  @@index([pet2Id, status])
-  @@map("matches")
-}
-
-// =============================================================
-// MESSAGE - Tin nhắn trong cuộc trò chuyện sau khi match
-// =============================================================
-
-model Message {
-  id      String @id @default(cuid())
-  content String
-
-  // Cuộc trò chuyện thuộc Match nào
-  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  matchId String
-
-  // Người gửi
-  sender   User   @relation(fields: [senderId], references: [id])
-  senderId String
-
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([matchId, createdAt])
-  @@index([senderId])
-  @@map("messages")
-}
-
-// =============================================================
-// BREED_RULE - Luật tương thích giống lai tạo
-// Dùng bởi matching engine để tính điểm compatibility
-// =============================================================
-
-model BreedRule {
-  id String @id @default(cuid())
-
-  species Species // DOG hoặc CAT
-
-  /// Giống A
-  breedA String
-  /// Giống B
-  breedB String
-
-  /// true  = tương thích tốt (cross-breed compatible, +20 điểm)
-  /// false = không khuyến nghị (genetic risk, -10 điểm)
-  isCompatible Boolean @default(true)
-
-  /// Tên giống con dự kiến nếu lai (vd: "Corgi Gold", "F1 Hybrid")
-  offspringName String?
-
-  /// Ghi chú cảnh báo nếu có rủi ro di truyền
-  warningNote String?
-
-  @@unique([breedA, breedB, species])
-  @@map("breed_rules")
-}
-
-// =============================================================
-// PET_DOCUMENT - Giấy tờ nộp để duyệt
-// =============================================================
-
-model PetDocument {
-  id String @id @default(cuid())
-
-  // Giấy tờ thuộc pet nào
-  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
-  petId String
-
-  /// Loại giấy tờ
-  type DocumentType
-
-  /// Tiêu đề / tên giấy tờ do user nhập (vd: "Sổ tiêm phòng 2024")
-  title String?
-
-  /// Mảng URL ảnh giấy tờ (Cloudinary) - có thể upload nhiều trang
-  imageUrls String[]
-
-  /// Mô tả thêm từ chủ pet (vd: số phiếu, ngày cấp)
-  userNote String?
-
-  status DocumentStatus @default(PENDING)
-
-  // --- Thông tin duyệt (điền khi moderator xử lý) ---
-  /// ID của moderator/admin đã duyệt
-  reviewerId   String?
-  reviewer     User?     @relation("PetDocumentReviewer", fields: [reviewerId], references: [id])
-  /// Tên moderator (denormalized để hiển thị nhanh)
-  reviewerName String?
-  /// Ghi chú của moderator (bắt buộc khi REJECTED)
-  reviewNote   String?
-  /// Thời điểm moderator xử lý
-  reviewedAt   DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([petId, type])
-  @@index([status, type]) // moderator query: lấy tất cả PENDING theo loại
-  @@map("pet_documents")
-}
-
-// =============================================================
-// PET_REPORT - Báo cáo hồ sơ vi phạm
-// =============================================================
-
-model PetReport {
-  id     String  @id @default(cuid())
-  petId  String // pet bị báo cáo
-  userId String // người báo cáo
-  reason String // lý do
-  detail String?
-
-  isResolved Boolean  @default(false)
-  createdAt  DateTime @default(now())
-
-  @@map("pet_reports")
-}
-
-model Store {
-  id          String         @id @default(cuid())
-  name        String
-  description String?
-  address     String?
-  phone       String?
-  status      ApprovalStatus @default(PENDING)
-  manager     User?          @relation("StoreManager", fields: [managerId], references: [id])
-  managerId   String?
-  approvedAt  DateTime?
-  suspendedAt DateTime?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-
-  products Product[]
-  orders   Order[]
-
-  @@index([status])
-  @@index([managerId])
-  @@map("stores")
-}
-
-// =============================================================
-// PRODUCT - San pham trong cua hang thu cung
-// =============================================================
-
-model Product {
-  id            String          @id @default(cuid())
-  name          String
-  slug          String?         @unique
-  category      String
-  targetSpecies String          @default("ALL")
-  description   String?
-  imageUrl      String?
-  images        String[]
-  specifications Json?
-  originalPrice Float
-  salePrice     Float?
-  brand         String?
-  unit          String?
-  rating        Float           @default(0)
-  reviewCount   Int             @default(0)
-  stock         Int             @default(5)
-  isActive      Boolean         @default(true)
-  isFeatured    Boolean         @default(false)
-  store         Store?          @relation(fields: [storeId], references: [id])
-  storeId       String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  orderItems    OrderItem[]
-  cartItems     CartItem[]
-  wishlistItems WishlistItem[]
-  reviews       ProductReview[]
-
-  @@index([category, isActive])
-  @@index([isFeatured, isActive])
-  @@index([targetSpecies, isActive])
-  @@index([storeId])
-  @@map("products")
-}
-
-// =============================================================
-// ADDRESS - Shipping address book
-// =============================================================
-
-model Address {
-  id            String   @id @default(cuid())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        String
-  receiverName  String
-  receiverPhone String
-  province      String
-  district      String
-  ward          String
-  detail        String
-  isDefault     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([userId])
-  @@map("addresses")
-}
-
-// =============================================================
-// ORDER - Store orders
-// =============================================================
-
-model Order {
-  id              String      @id @default(cuid())
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId          String
-  status          OrderStatus @default(PENDING)
-  totalAmount     Float
-  shippingAddress String
-  store           Store?      @relation(fields: [storeId], references: [id])
-  storeId         String?
-  items           OrderItem[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  @@index([userId])
-  @@index([storeId])
-  @@map("orders")
-}
-
-model OrderItem {
-  id        String  @id @default(cuid())
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderId   String
-  product   Product @relation(fields: [productId], references: [id])
-  productId String
-  quantity  Int
-  price     Float
-
-  @@index([orderId])
-  @@map("order_items")
-}
-
-model SpaBrand {
-  id          String         @id @default(cuid())
-  name        String
-  description String?
-  status      ApprovalStatus @default(PENDING)
-  manager     User?          @relation("SpaManager", fields: [managerId], references: [id])
-  managerId   String?
-  approvedAt  DateTime?
-  suspendedAt DateTime?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-
-  services SpaService[]
-  bookings SpaBooking[]
-
-  @@index([status])
-  @@index([managerId])
-  @@map("spa_brands")
-}
-
-model SpaService {
-  id          String    @id @default(cuid())
-  brand       SpaBrand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  brandId     String
-  name        String
-  description String?
-  price       Float
-  durationMin Int
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  bookings SpaBooking[]
-
-  @@index([brandId, isActive])
-  @@map("spa_services")
-}
-
-model SpaBooking {
-  id            String           @id @default(cuid())
-  brand         SpaBrand?        @relation(fields: [brandId], references: [id])
-  brandId       String?
-  service       SpaService?      @relation(fields: [serviceId], references: [id])
-  serviceId     String?
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        String
-  staff         User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
-  staffId       String?
-  petName            String?
-  pet                Pet?             @relation(fields: [petId], references: [id])
-  petId              String?
-  addressSpa         AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
-  addressSpaId       String?
-  scheduledAt        DateTime
-  status        SpaBookingStatus @default(PENDING)
-  priceSnapshot      Float?
-  note               String?
-  petConditionAfter  String?
-  photoAfter         String?
-  issueReported      String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-
-  @@index([brandId, status])
-  @@index([userId])
-  @@index([staffId])
-  @@map("spa_bookings")
-}
-
-model Complaint {
-  id           String           @id @default(cuid())
-  type         ComplaintType
-  status       ComplaintStatus  @default(PENDING)
-  title        String
-  detail       String?
-  reporterId   String?
-  targetType   String?
-  targetId     String?
-  actionTaken  ComplaintAction?
-  adminNote    String?
-  resolvedById String?
-  resolvedAt   DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  @@index([type, status])
-  @@index([reporterId])
-  @@map("complaints")
-}
-
-model SystemSetting {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("system_settings")
-}
-
-model AuditLog {
-  id         String   @id @default(cuid())
-  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
-  actorId    String?
-  action     String
-  targetType String
-  targetId   String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-
-  @@index([actorId])
-  @@index([targetType, targetId])
-  @@map("audit_logs")
-}
-
-// =============================================================
-// CART & WISHLIST
-// =============================================================
-
-model CartItem {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity  Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, productId])
-  @@index([userId])
-  @@index([productId])
-  @@map("cart_items")
-}
-
-model WishlistItem {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-
-  @@unique([userId, productId])
-  @@index([userId])
-  @@index([productId])
-  @@map("wishlist_items")
-}
-
-model AddressSpa {
-  id          String         @id
-  name        String
-  description String?
-  address     String
-  phone       String?
-  status      ApprovalStatus @default(PENDING)
-  manager     User?          @relation("SpaAddressManager", fields: [managerId], references: [id])
-  managerId   String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-
-  bookings    SpaBooking[]   @relation("SpaBookingAddress")
-  staffs      SpaStaff[]     @relation("StaffWorkplace")
-
-  @@index([status])
-  @@index([managerId])
-  @@map("address_spa")
-}
-
-model SpaStaff {
-  id           String      @id
-  user         User        @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
-  userId       String      @unique
-  addressSpa   AddressSpa? @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
-  addressSpaId String?
-
-  @@map("spa_staff")
-}
-
-model Category {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("categories")
-}
-
-model ProductReview {
-  id        String   @id @default(cuid())
-  rating    Int
-  comment   String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, productId])
-  @@index([userId])
-  @@index([productId])
-  @@map("product_reviews")
 }

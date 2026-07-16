@@ -18,3 +18,9 @@ coverage/
 .env.*
 db.env
 
+# Build outputs
+dist/
+.next/
+out/
+build/
+uploads/

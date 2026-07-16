@@ -25,7 +25,14 @@ async function bootstrap() {
       origin: string | undefined,
       callback: (error: Error | null, allow?: boolean) => void,
     ) => {
+      // Allow if no origin (e.g. server-to-server) or matched in array
       if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      
+      // Allow any vercel.app subdomains for preview environments
+      if (origin.endsWith('.vercel.app')) {
         callback(null, true);
         return;
       }
@@ -42,7 +49,8 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
   }));
   
-  await app.listen(5000);
-  console.log('Server running on port 5000');
+  const port = process.env.PORT || 5000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`Server running on port ${port}`);
 }
 bootstrap();
