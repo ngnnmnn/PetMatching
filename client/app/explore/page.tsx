@@ -100,7 +100,6 @@ export default function ExplorePage() {
   const [candidates, setCandidates] = useState<Pet[]>([]);
   const [loadingPets, setLoadingPets] = useState(true);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
-  const [petSelectorOpen, setPetSelectorOpen] = useState(false);
 
   const femalePets = useMemo(() => myPets.filter((pet) => pet.gender === 'FEMALE'), [myPets]);
   const selectedPet = useMemo(() => femalePets.find((p) => p.id === selectedPetId), [femalePets, selectedPetId]);
