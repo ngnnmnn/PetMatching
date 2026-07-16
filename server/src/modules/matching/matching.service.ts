@@ -6,12 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  BreedRule,
   Gender,
   MatchStatus,
   MatchingRequestStatus,
   Pet,
   PetStatus,
   Prisma,
+  Species,
   VerificationBadge,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -27,12 +29,44 @@ type PetWithOwner = Pet & {
   };
 };
 
+interface CompatibilityResult {
+  score: number;
+  reasons: string[];
+  warnings: string[];
+  breedInfo?: {
+    offspringName: string | null;
+    warningNote: string | null;
+    isCompatible: boolean;
+  };
+}
+
+// Tuổi tối thiểu cho phối giống (tháng)
+const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
+
+// Chu kỳ nghỉ phối giống (tháng)
+const BREEDING_COOLDOWN_MONTHS = { DOG: 6, CAT: 3 } as const;
+
 @Injectable()
 export class MatchingService {
   constructor(private prisma: PrismaService) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
+
+    // --- Hard constraint: kiểm tra chu kỳ phối giống của female pet ---
+    const cycleCheck = this.checkBreedingCycle(femalePet);
+    if (!cycleCheck.canBreed) {
+      throw new BadRequestException(
+        `Bé ${femalePet.name} đang trong thời gian nghỉ phối giống. ` +
+          `Có thể phối lại từ ${cycleCheck.nextAvailable?.toLocaleDateString('vi-VN')}.`,
+      );
+    }
+
+    // --- Hard constraint: tuổi tối thiểu cho query ---
+    const minAgeDate = new Date();
+    const minMonths = MIN_AGE_MONTHS[femalePet.species];
+    minAgeDate.setMonth(minAgeDate.getMonth() - minMonths);
+
     const where: Prisma.PetWhereInput = {
       species: femalePet.species,
       gender: Gender.MALE,
@@ -40,6 +74,8 @@ export class MatchingService {
       isActive: true,
       isAvailableForMatching: true,
       ownerId: { not: userId },
+      // Hard constraint: chỉ lấy pet đủ tuổi
+      birthday: { lte: minAgeDate },
     };
 
     if (dto.breed && dto.breed !== 'all') {
@@ -94,21 +130,33 @@ export class MatchingService {
 
     const latestByMalePetId = new Map(history.map((item) => [item.malePetId, item]));
 
-    const data = candidates
-      .filter((candidate) => {
-        const latest = latestByMalePetId.get(candidate.id);
-        if (!latest) return true;
+    // Filter candidates và tính compatibility score (async)
+    const eligibleCandidates = candidates.filter((candidate) => {
+      const latest = latestByMalePetId.get(candidate.id);
+      if (!latest) return true;
 
-        const latestProfileUpdate =
-          femalePet.updatedAt > candidate.updatedAt ? femalePet.updatedAt : candidate.updatedAt;
+      const latestProfileUpdate =
+        femalePet.updatedAt > candidate.updatedAt ? femalePet.updatedAt : candidate.updatedAt;
 
-        return latest.createdAt < latestProfileUpdate;
-      })
-      .map((candidate) => ({
-        ...this.toPetCard(candidate),
-        compatibilityScore: this.calculateCompatibilityScore(femalePet, candidate),
-      }))
-      .sort((a, b) => b.compatibilityScore - a.compatibilityScore);
+      return latest.createdAt < latestProfileUpdate;
+    });
+
+    // Tính compatibility scores song song
+    const data = await Promise.all(
+      eligibleCandidates.map(async (candidate) => {
+        const compatibility = await this.calculateCompatibilityScore(femalePet, candidate);
+        return {
+          ...this.toPetCard(candidate),
+          compatibilityScore: compatibility.score,
+          matchReasons: compatibility.reasons,
+          breedWarnings: compatibility.warnings,
+          breedInfo: compatibility.breedInfo,
+        };
+      }),
+    );
+
+    // Sắp xếp theo điểm giảm dần
+    data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
 
     return { data };
   }
@@ -134,6 +182,18 @@ export class MatchingService {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
     const malePet = await this.getMaleCandidate(dto.malePetId);
     this.ensureDifferentOwners(femalePet, malePet);
+
+    // --- Hard constraint: kiểm tra tuổi cả hai bên ---
+    this.assertMinimumAge(femalePet);
+    this.assertMinimumAge(malePet);
+
+    // --- Hard constraint: kiểm tra chu kỳ ---
+    const femaleCycle = this.checkBreedingCycle(femalePet);
+    if (!femaleCycle.canBreed) {
+      throw new BadRequestException(
+        `Bé ${femalePet.name} đang trong thời gian nghỉ phối giống.`,
+      );
+    }
 
     const existingPending = await this.prisma.matchingRequest.findFirst({
       where: {
@@ -176,6 +236,11 @@ export class MatchingService {
     const request = await this.getPendingOwnedIncomingRequest(userId, requestId);
     const [pet1Id, pet2Id] = [request.femalePetId, request.malePetId].sort();
 
+    const compatibility = await this.calculateCompatibilityScore(
+      request.femalePet,
+      request.malePet,
+    );
+
     const result = await this.prisma.$transaction(async (tx) => {
       const updatedRequest = await tx.matchingRequest.update({
         where: { id: requestId },
@@ -193,8 +258,8 @@ export class MatchingService {
           pet1Id,
           pet2Id,
           status: MatchStatus.ACTIVE,
-          compatibilityScore: this.calculateCompatibilityScore(request.femalePet, request.malePet),
-          matchReasons: ['request_accepted'],
+          compatibilityScore: compatibility.score,
+          matchReasons: compatibility.reasons,
         },
         include: {
           pet1: true,
@@ -238,6 +303,10 @@ export class MatchingService {
     });
   }
 
+  // =============================================================
+  // PRIVATE — Hard constraints
+  // =============================================================
+
   private async getOwnedFemalePet(userId: string, petId: string) {
     const pet = await this.prisma.pet.findUnique({ where: { id: petId } });
     if (!pet) {
@@ -252,6 +321,9 @@ export class MatchingService {
     if (pet.status !== PetStatus.ACTIVE || !pet.isActive) {
       throw new BadRequestException('Only active pets can join matching.');
     }
+
+    // Hard constraint: tuổi tối thiểu
+    this.assertMinimumAge(pet);
 
     return pet;
   }
@@ -269,6 +341,51 @@ export class MatchingService {
     }
 
     return pet;
+  }
+
+  /**
+   * Kiểm tra tuổi tối thiểu: chó ≥ 12 tháng, mèo ≥ 8 tháng.
+   * Throw BadRequestException nếu chưa đủ tuổi.
+   */
+  private assertMinimumAge(pet: Pet): void {
+    const ageMonths = this.getAgeInMonths(pet.birthday);
+    const minAge = MIN_AGE_MONTHS[pet.species];
+
+    if (ageMonths < minAge) {
+      throw new BadRequestException(
+        `Bé ${pet.name} mới ${ageMonths} tháng tuổi. ` +
+          `${pet.species === 'DOG' ? 'Chó' : 'Mèo'} cần ít nhất ${minAge} tháng tuổi để phối giống.`,
+      );
+    }
+  }
+
+  /**
+   * Kiểm tra chu kỳ phối giống.
+   * Chó cái: nghỉ 6 tháng sau mỗi lần phối.
+   * Mèo cái: nghỉ 3 tháng sau mỗi lần phối.
+   */
+  private checkBreedingCycle(pet: Pet): { canBreed: boolean; nextAvailable?: Date } {
+    if (!pet.lastBreedingAt) {
+      return { canBreed: true };
+    }
+
+    const cooldownMonths = BREEDING_COOLDOWN_MONTHS[pet.species];
+    const nextAvailable = new Date(pet.lastBreedingAt);
+    nextAvailable.setMonth(nextAvailable.getMonth() + cooldownMonths);
+
+    if (new Date() < nextAvailable) {
+      return { canBreed: false, nextAvailable };
+    }
+
+    return { canBreed: true };
+  }
+
+  private getAgeInMonths(birthday: Date): number {
+    const now = new Date();
+    return (
+      (now.getFullYear() - birthday.getFullYear()) * 12 +
+      (now.getMonth() - birthday.getMonth())
+    );
   }
 
   private ensureDifferentOwners(femalePet: Pet, malePet: Pet) {
@@ -299,28 +416,128 @@ export class MatchingService {
     return request;
   }
 
+  // =============================================================
+  // PRIVATE — Compatibility scoring
+  // =============================================================
+
+  /**
+   * Tính điểm tương thích 0-100 với lý do chi tiết.
+   *
+   * Base score: 30
+   * Cùng giống thuần chủng:      +25
+   * Cùng location:               +15
+   * Cả hai có phả hệ:            +10
+   * Vaccine đã xác minh:          +5
+   * Phả hệ đã xác minh:         +10
+   * Cân nặng gần nhau (≤5kg):   +10
+   * BreedRule compatible:        +20
+   * BreedRule incompatible:      -10
+   */
+  private async calculateCompatibilityScore(
+    femalePet: Pet,
+    malePet: Pet,
+  ): Promise<CompatibilityResult> {
+    let score = 30;
+    const reasons: string[] = [];
+    const warnings: string[] = [];
+
+    // Cùng giống thuần chủng (+25)
+    if (femalePet.breed === malePet.breed) {
+      score += 25;
+      reasons.push('same_breed');
+    }
+
+    // Cùng location (+15)
+    if (femalePet.location === malePet.location) {
+      score += 15;
+      reasons.push('same_location');
+    }
+
+    // Cả hai có phả hệ (tự khai) (+10)
+    if (femalePet.hasPedigree && malePet.hasPedigree) {
+      score += 10;
+      reasons.push('both_pedigree');
+    }
+
+    // Cả hai vaccine đã xác minh bởi moderator (+5)
+    if (femalePet.vaccineVerified && malePet.vaccineVerified) {
+      score += 5;
+      reasons.push('both_vaccine_verified');
+    }
+
+    // Cả hai phả hệ đã xác minh bởi moderator (+10)
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 10;
+      reasons.push('both_pedigree_verified');
+    }
+
+    // Cân nặng gần nhau ≤5kg (+10)
+    if (Math.abs(femalePet.weight - malePet.weight) <= 5) {
+      score += 10;
+      reasons.push('similar_weight');
+    }
+
+    // BreedRule lookup từ database
+    const breedRule = await this.findBreedRule(femalePet.species, femalePet.breed, malePet.breed);
+    let breedInfo: CompatibilityResult['breedInfo'] = undefined;
+
+    if (breedRule) {
+      breedInfo = {
+        offspringName: breedRule.offspringName,
+        warningNote: breedRule.warningNote,
+        isCompatible: breedRule.isCompatible,
+      };
+
+      if (breedRule.isCompatible) {
+        score += 20;
+        reasons.push('breed_compatible');
+      } else {
+        score -= 10;
+        reasons.push('breed_incompatible');
+      }
+
+      if (breedRule.warningNote) {
+        warnings.push(breedRule.warningNote);
+      }
+    }
+
+    return {
+      score: Math.min(Math.max(score, 0), 100),
+      reasons,
+      warnings,
+      breedInfo,
+    };
+  }
+
+  /**
+   * Tìm BreedRule theo cả 2 chiều: (A,B) hoặc (B,A)
+   */
+  private async findBreedRule(
+    species: Species,
+    breedA: string,
+    breedB: string,
+  ): Promise<BreedRule | null> {
+    return this.prisma.breedRule.findFirst({
+      where: {
+        species,
+        OR: [
+          { breedA, breedB },
+          { breedA: breedB, breedB: breedA },
+        ],
+      },
+    });
+  }
+
+  // =============================================================
+  // PRIVATE — Response mapping
+  // =============================================================
+
   private requestInclude() {
     return {
       requester: { select: { id: true, name: true, email: true } },
       femalePet: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
       malePet: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
     } satisfies Prisma.MatchingRequestInclude;
-  }
-
-  private calculateCompatibilityScore(femalePet: Pet, malePet: Pet) {
-    let score = 40;
-    if (femalePet.breed === malePet.breed) score += 25;
-    if (femalePet.location === malePet.location) score += 15;
-    if (femalePet.hasPedigree && malePet.hasPedigree) score += 10;
-    if (
-      femalePet.verificationBadge === VerificationBadge.VERIFIED &&
-      malePet.verificationBadge === VerificationBadge.VERIFIED
-    ) {
-      score += 10;
-    }
-    if (Math.abs(femalePet.weight - malePet.weight) <= 5) score += 10;
-
-    return Math.min(score, 100);
   }
 
   private toPetCard(pet: PetWithOwner) {
@@ -335,6 +552,8 @@ export class MatchingService {
       isVaccinated: pet.isVaccinated,
       hasPedigree: pet.hasPedigree,
       pedigreeNumber: pet.pedigreeNumber,
+      vaccineVerified: pet.vaccineVerified,
+      pedigreeVerified: pet.pedigreeVerified,
       avatar: pet.avatarUrl,
       avatarUrl: pet.avatarUrl,
       gallery: pet.gallery,
@@ -345,6 +564,7 @@ export class MatchingService {
       ownerName: pet.owner.name,
       ownerAvatar: pet.owner.avatarUrl,
       verified: pet.verificationBadge === VerificationBadge.VERIFIED,
+      verificationBadge: pet.verificationBadge,
       status: pet.status,
       isAvailableForMatching: pet.isAvailableForMatching,
       updatedAt: pet.updatedAt,
