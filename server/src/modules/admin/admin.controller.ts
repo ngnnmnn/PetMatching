@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Put, Query, Req, UseGuards } from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -13,13 +13,15 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { AdminService } from './admin.service';
 import {
-  CreateComplaintDto,
+  GrantSpaManagerDto,
+  HidePetDto,
+  RevokeSpaManagerDto,
+  RestorePetDto,
   ResolveComplaintDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
-  UpsertSettingDto,
 } from './dto/admin-actions.dto';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -64,6 +66,24 @@ export class AdminController {
     return this.adminService.updateAccountStatus(request.user, id, dto);
   }
 
+  @Patch('users/:id/spa-manager/grant')
+  grantSpaManager(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: GrantSpaManagerDto,
+  ) {
+    return this.adminService.grantSpaManager(request.user, id, dto);
+  }
+
+  @Patch('users/:id/spa-manager/revoke')
+  revokeSpaManager(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RevokeSpaManagerDto,
+  ) {
+    return this.adminService.revokeSpaManager(request.user, id, dto);
+  }
+
   @Get('pets')
   getPets(
     @Query('verified') verified?: string,
@@ -79,8 +99,21 @@ export class AdminController {
   }
 
   @Patch('pets/:id/hide')
-  hidePet(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
-    return this.adminService.hidePet(request.user, id);
+  hidePet(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: HidePetDto,
+  ) {
+    return this.adminService.hidePet(request.user, id, dto);
+  }
+
+  @Patch('pets/:id/restore')
+  restorePet(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RestorePetDto,
+  ) {
+    return this.adminService.restorePet(request.user, id, dto);
   }
 
   @Get('pet-verifications')
@@ -112,13 +145,12 @@ export class AdminController {
     return this.adminService.getStores({ status });
   }
 
-  @Patch('stores/:id/status')
-  updateStoreStatus(
+  @Put('store-settings')
+  updateStoreSettings(
     @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: UpdateApprovalStatusDto,
+    @Body() dto: { name: string; phone?: string; address?: string; description?: string },
   ) {
-    return this.adminService.updateStoreStatus(request.user, id, dto);
+    return this.adminService.updateStoreSettings(request.user, dto);
   }
 
   @Get('store-products')
@@ -145,11 +177,6 @@ export class AdminController {
     return this.adminService.updateSpaBranchStatus(request.user, id, dto);
   }
 
-  @Get('spa-services')
-  getSpaServices(@Query('branchId') branchId?: string) {
-    return this.adminService.getSpaServices(branchId);
-  }
-
   @Get('spa-bookings')
   getSpaBookings(@Query('branchId') branchId?: string) {
     return this.adminService.getSpaBookings(branchId);
@@ -158,11 +185,6 @@ export class AdminController {
   @Get('complaints')
   getComplaints(@Query('type') type?: ComplaintType, @Query('status') status?: ComplaintStatus) {
     return this.adminService.getComplaints({ type, status });
-  }
-
-  @Post('complaints')
-  createComplaint(@Req() request: AuthenticatedRequest, @Body() dto: CreateComplaintDto) {
-    return this.adminService.createComplaint(request.user, dto);
   }
 
   @Patch('complaints/:id/resolve')
@@ -174,23 +196,4 @@ export class AdminController {
     return this.adminService.resolveComplaint(request.user, id, dto);
   }
 
-  @Get('analytics')
-  getAnalytics() {
-    return this.adminService.getAnalytics();
-  }
-
-  @Get('settings')
-  getSettings() {
-    return this.adminService.getSettings();
-  }
-
-  @Post('settings')
-  upsertSetting(@Req() request: AuthenticatedRequest, @Body() dto: UpsertSettingDto) {
-    return this.adminService.upsertSetting(request.user, dto);
-  }
-
-  @Get('audit-logs')
-  getAuditLogs() {
-    return this.adminService.getAuditLogs();
-  }
 }
