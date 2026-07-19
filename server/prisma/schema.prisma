@@ -347,6 +347,9 @@ model Order {
   totalAmount     Float
   shippingAddress String
   storeId         String?
+  paymentMethod   String      @default("COD")
+  orderCode       Int?        @unique
+  paymentUrl      String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   items           OrderItem[]

@@ -15,7 +15,8 @@ import {
   XCircle,
   Loader2,
   X,
-  Edit2
+  Edit2,
+  QrCode
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
@@ -39,6 +40,8 @@ interface Order {
   status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   totalAmount: number;
   shippingAddress: string;
+  paymentMethod?: string;
+  paymentUrl?: string | null;
   createdAt: string;
   items: OrderItem[];
 }
@@ -167,6 +170,18 @@ export default function OrdersPage() {
   useEffect(() => {
     setIsMounted(true);
     loadOrders();
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const status = params.get('status');
+      if (status === 'success') {
+        toast.success('Thanh toán đơn hàng thành công!');
+        window.history.replaceState({}, '', '/orders');
+      } else if (status === 'cancel') {
+        toast.error('Thanh toán đã bị hủy.');
+        window.history.replaceState({}, '', '/orders');
+      }
+    }
   }, []);
 
   if (!isMounted) {
@@ -298,6 +313,51 @@ export default function OrdersPage() {
     }
   };
 
+  const getPaymentStatusBadge = (order: Order) => {
+    if (order.paymentMethod === 'QR') {
+      if (order.status === 'PENDING') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700 border border-amber-200">
+            Chờ thanh toán QR
+          </span>
+        );
+      } else if (order.status === 'CANCELLED') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-700 border border-red-200">
+            Đã hủy
+          </span>
+        );
+      } else {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-extrabold text-emerald-700 border border-emerald-200">
+            Đã thanh toán (PayOS)
+          </span>
+        );
+      }
+    } else {
+      // COD method
+      if (order.status === 'DELIVERED') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-extrabold text-emerald-700 border border-emerald-200">
+            Đã thanh toán (COD)
+          </span>
+        );
+      } else if (order.status === 'CANCELLED') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-700 border border-red-200">
+            Đã hủy
+          </span>
+        );
+      } else {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2.5 py-1 text-xs font-extrabold text-slate-600 border border-slate-200">
+            Thanh toán khi nhận hàng (COD)
+          </span>
+        );
+      }
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-16">
       <AppHeader sectionLabel="Đơn hàng" />
@@ -355,16 +415,28 @@ export default function OrdersPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {getStatusBadge(order.status)}
+                    {getPaymentStatusBadge(order)}
                     
                     {/* Action buttons for PENDING orders */}
                     {order.status === 'PENDING' && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {order.paymentMethod === 'QR' && order.paymentUrl && (
+                          <a
+                            href={order.paymentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#0F766E] bg-[#0F766E] text-white px-2.5 py-1 text-xs font-bold hover:bg-[#115E59] transition shadow-sm cursor-pointer"
+                          >
+                            <QrCode className="size-3 text-white" />
+                            Thanh toán ngay
+                          </a>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleAddressEditClick(order)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] bg-white px-2.5 py-1 text-xs font-bold hover:text-primary transition shadow-sm hover:bg-gray-50"
+                          className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] bg-white px-2.5 py-1 text-xs font-bold hover:text-primary transition shadow-sm hover:bg-gray-50 cursor-pointer"
                         >
                           <Edit2 className="size-3" />
                           Sửa địa chỉ
@@ -372,8 +444,9 @@ export default function OrdersPage() {
                         <button
                           type="button"
                           onClick={() => setCancelOrderId(order.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 text-red-600 px-2.5 py-1 text-xs font-bold hover:bg-red-100 transition shadow-sm"
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 text-red-600 px-2.5 py-1 text-xs font-bold hover:bg-red-100 transition shadow-sm cursor-pointer"
                         >
+                          <XCircle className="size-3" />
                           Hủy đơn
                         </button>
                       </div>

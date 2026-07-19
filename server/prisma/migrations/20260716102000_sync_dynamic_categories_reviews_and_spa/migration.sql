@@ -21,10 +21,7 @@ ADD CONSTRAINT "spa_bookings_brandId_fkey"
 FOREIGN KEY ("brandId") REFERENCES "spa_brands"("id")
 ON DELETE SET NULL ON UPDATE CASCADE;
 
--- These legacy columns are no longer present in the current SpaBrand model.
-ALTER TABLE "spa_brands"
-DROP COLUMN "address",
-DROP COLUMN "phone";
+
 
 -- Dynamic product categories.
 CREATE TABLE "categories" (

@@ -25,6 +25,7 @@ export const usersApi = {
   createOrder: (data: {
     totalAmount: number;
     shippingAddress: string;
+    paymentMethod?: string;
     items: { productId: string; quantity: number; price: number }[];
   }) => api.post<any>('/users/orders', data),
   cancelOrder: (id: string) => api.patch<any>(`/users/orders/${id}/cancel`),

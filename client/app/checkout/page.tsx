@@ -378,10 +378,35 @@ function CheckoutPageContent() {
       const res = await usersApi.createOrder({
         totalAmount: Number(finalTotal),
         shippingAddress: finalAddress,
+        paymentMethod: paymentMethod,
         items: orderItems
       });
 
       const orderData = res.data;
+
+      if (paymentMethod === 'QR' && orderData.checkoutUrl) {
+        // Clear cart immediately for QR since we redirect away from the site
+        if (directCheckoutItem) {
+          localStorage.removeItem('petmatch_direct_checkout_item');
+        } else {
+          if (selectedItemIds.length > 0) {
+            if (selectedItemIds.length === cartItems.length) {
+              await clearCart();
+            } else {
+              for (const id of selectedItemIds) {
+                await removeFromCart(id);
+              }
+            }
+          } else {
+            await clearCart();
+          }
+          localStorage.removeItem('petmatch_selected_cart_items');
+        }
+
+        toast.success('Đặt hàng thành công! Đang chuyển hướng sang cổng thanh toán PayOS...');
+        window.location.href = orderData.checkoutUrl;
+        return;
+      }
 
       setCreatedOrderId(orderData.id);
       setRecipientNameStr(name);
@@ -678,34 +703,15 @@ function CheckoutPageContent() {
 
                 {/* QR Details */}
                 {paymentMethod === 'QR' && (
-                  <div className="rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] p-5 flex flex-col md:flex-row items-center gap-6 animate-in fade-in duration-200">
-                    <div className="shrink-0 aspect-square size-36 bg-white border border-[var(--border-color)] rounded-xl flex items-center justify-center p-2.5 shadow-sm">
-                      <img
-                        src={`https://api.vietqr.io/image/970415-1133668899-yE9sXpE.jpg?accountName=PETMATCH%20VIETNAM&amount=${finalTotal}`}
-                        alt="Mã QR chuyển khoản"
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                    <div className="text-xs font-bold text-[var(--text-main)] space-y-2 flex-1">
-                      <p className="text-sm font-black uppercase text-[#0F766E]">PETMATCH BANKING</p>
-                      <div>
-                        <span className="text-[var(--text-muted)] font-semibold">Ngân hàng:</span>
-                        <p className="mt-0.5">Viettinbank (NHTMCP Công Thương Việt Nam)</p>
-                      </div>
-                      <div>
-                        <span className="text-[var(--text-muted)] font-semibold">Số tài khoản:</span>
-                        <p className="mt-0.5 font-black text-sm tracking-wide text-primary">1133668899</p>
-                      </div>
-                      <div>
-                        <span className="text-[var(--text-muted)] font-semibold">Chủ tài khoản:</span>
-                        <p className="mt-0.5">PETMATCH VIETNAM</p>
-                      </div>
-                      <div>
-                        <span className="text-[var(--text-muted)] font-semibold">Số tiền cần chuyển:</span>
-                        <p className="mt-0.5 font-black text-sm text-primary">{formatCurrency(finalTotal)}</p>
-                      </div>
-                      <p className="text-[10px] text-[var(--text-muted)] italic font-semibold pt-1 border-t border-gray-200">
-                        * Quét mã QR trên để tự động điền số tài khoản và số tiền chính xác.
+                  <div className="rounded-xl border border-teal-100 bg-[#F0FDF4]/50 p-5 flex items-start gap-4 animate-in fade-in duration-200">
+                    <QrCode className="size-8 text-[#0F766E] shrink-0 mt-0.5 animate-pulse" />
+                    <div className="text-xs font-semibold text-[var(--text-main)] space-y-1.5 flex-1">
+                      <p className="text-sm font-black text-[#0F766E]">Thanh toán tự động qua PayOS</p>
+                      <p className="text-[var(--text-muted)] leading-relaxed">
+                        Hệ thống sẽ chuyển hướng bạn đến cổng thanh toán bảo mật <strong className="font-black text-[#0F766E]">PayOS</strong> ngay sau khi bạn nhấn nút <strong className="font-black text-[#0F766E]">"Đặt hàng"</strong> bên dưới.
+                      </p>
+                      <p className="text-[var(--text-muted)] leading-relaxed">
+                        Tại đó, PayOS sẽ tạo mã QR động ngân hàng liên kết trực tiếp với tài khoản nhận tiền của bạn với số tiền chính xác là <span className="font-black text-primary">{formatCurrency(finalTotal)}</span> để bạn quét thanh toán tự động và an toàn.
                       </p>
                     </div>
                   </div>

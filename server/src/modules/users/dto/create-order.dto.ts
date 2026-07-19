@@ -1,4 +1,4 @@
-import { IsArray, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsNumber, IsString, ValidateNested, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class CreateOrderItemDto {
@@ -18,6 +18,10 @@ export class CreateOrderDto {
 
   @IsString()
   shippingAddress: string;
+
+  @IsString()
+  @IsOptional()
+  paymentMethod?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

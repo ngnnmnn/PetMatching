@@ -12,6 +12,7 @@ import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { PaymentService } from '../payment/payment.service';
 
 type User = {
   id: string;
@@ -30,9 +31,32 @@ type User = {
   refreshToken?: string | null;
 };
 
+function cleanItemNameForPayOS(name: string): string {
+  let str = name;
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a');
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e');
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, 'i');
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o');
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u');
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y');
+  str = str.replace(/đ/g, 'd');
+  str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, 'A');
+  str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, 'E');
+  str = str.replace(/Ì|Í|Ị|ỉ|Ĩ/g, 'I');
+  str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, 'O');
+  str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, 'U');
+  str = str.replace(/Ỳ|Ý|Y|Ỷ|Ỹ/g, 'Y');
+  str = str.replace(/Đ/g, 'D');
+  str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return str.replace(/[^a-zA-Z0-9 ]/g, '').substring(0, 50).trim();
+}
+
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private paymentService: PaymentService,
+  ) {}
 
   async findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({
@@ -370,7 +394,7 @@ export class UsersService {
   }
 
   async getOrders(userId: string) {
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -387,10 +411,56 @@ export class UsersService {
         },
       },
     });
+
+    // Check and sync status for PENDING QR orders
+    const pendingQrOrders = orders.filter(
+      (o) => o.status === 'PENDING' && o.paymentMethod === 'QR' && o.orderCode,
+    );
+
+    if (pendingQrOrders.length > 0) {
+      let needsReload = false;
+      for (const order of pendingQrOrders) {
+        if (!order.orderCode) continue;
+        const paymentInfo = await this.paymentService.getPaymentLinkInformation(
+          order.orderCode,
+        );
+        if (paymentInfo && paymentInfo.status === 'PAID') {
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { status: 'PROCESSING' },
+          });
+          needsReload = true;
+        }
+      }
+
+      if (needsReload) {
+        return this.prisma.order.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    imageUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+    }
+
+    return orders;
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {
-    return this.prisma.$transaction(async (tx) => {
+    const payosItems: { name: string; quantity: number; price: number }[] = [];
+
+    const order = await this.prisma.$transaction(async (tx) => {
       // 1. Check stock for each item and decrement
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
@@ -420,9 +490,31 @@ export class UsersService {
             },
           },
         });
+
+        // Store name for PayOS (strip special characters and accents, limit length)
+        payosItems.push({
+          name: cleanItemNameForPayOS(product.name),
+          quantity: item.quantity,
+          price: Math.round(item.price),
+        });
       }
 
-      // 3. Create the order
+      // 3. Generate random unique order code (9 digits) if QR payment method is used
+      let orderCode: number | null = null;
+      if (dto.paymentMethod === 'QR') {
+        let codeExists = true;
+        while (codeExists) {
+          orderCode = Math.floor(100000000 + Math.random() * 900000000);
+          const existingOrder = await tx.order.findUnique({
+            where: { orderCode },
+          });
+          if (!existingOrder) {
+            codeExists = false;
+          }
+        }
+      }
+
+      // 4. Create the order
       const now = new Date();
       const year = String(now.getFullYear()).slice(-2);
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -441,6 +533,8 @@ export class UsersService {
           totalAmount: dto.totalAmount,
           shippingAddress: dto.shippingAddress,
           status: 'PENDING',
+          paymentMethod: dto.paymentMethod || 'COD',
+          orderCode,
           items: {
             create: dto.items.map((item) => ({
               productId: item.productId,
@@ -464,6 +558,54 @@ export class UsersService {
         },
       });
     });
+
+    // 5. Integrate PayOS if QR selected
+    if (dto.paymentMethod === 'QR' && order.orderCode) {
+      try {
+        const paymentLink = await this.paymentService.createPaymentLink({
+          orderCode: order.orderCode,
+          amount: Math.round(dto.totalAmount),
+          description: `PM${order.orderCode}`,
+          returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders?status=success`,
+          cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel`,
+          items: payosItems,
+        });
+
+        // Save checkout url
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { paymentUrl: paymentLink.checkoutUrl },
+        });
+
+        return {
+          ...order,
+          checkoutUrl: paymentLink.checkoutUrl,
+        };
+      } catch (error) {
+        console.error('PayOS integration failed, rolling back order...', error);
+        // Rollback stock and delete order in database
+        await this.prisma.$transaction(async (tx) => {
+          for (const item of dto.items) {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: {
+                  increment: item.quantity,
+                },
+              },
+            });
+          }
+          await tx.order.delete({
+            where: { id: order.id },
+          });
+        });
+        throw new BadRequestException(
+          'Không thể khởi tạo liên kết thanh toán với PayOS. Vui lòng thử lại.',
+        );
+      }
+    }
+
+    return order;
   }
 
   async cancelOrder(userId: string, orderId: string) {
