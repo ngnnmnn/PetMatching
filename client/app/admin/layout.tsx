@@ -5,13 +5,13 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import {
   Activity,
-  BarChart3,
   Bell,
   ClipboardCheck,
   FileWarning,
   LayoutDashboard,
   LogOut,
   PawPrint,
+  Package,
   Settings,
   ShieldCheck,
   ShoppingBag,
@@ -26,7 +26,6 @@ const navGroups = [
     items: [
       { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
       { label: 'Người dùng & vai trò', href: '/admin/users', icon: UsersRound },
-      { label: 'Phân tích', href: '/admin/analytics', icon: BarChart3 },
     ],
   },
   {
@@ -40,9 +39,11 @@ const navGroups = [
   {
     label: 'Cửa hàng',
     items: [
-      { label: 'Danh sách cửa hàng', href: '/admin/stores', icon: ShoppingBag },
-      { label: 'Đơn hàng cửa hàng', href: '/admin/store-orders', icon: Activity },
+      { label: 'Tổng quan cửa hàng', href: '/admin/stores', icon: ShoppingBag },
+      { label: 'Sản phẩm', href: '/admin/store-products', icon: Package },
+      { label: 'Đơn hàng', href: '/admin/store-orders', icon: Activity },
       { label: 'Khiếu nại cửa hàng', href: '/admin/store-complaints', icon: FileWarning },
+      { label: 'Cấu hình cửa hàng', href: '/admin/store-settings', icon: Settings },
     ],
   },
   {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -145,6 +145,14 @@ export class AdminController {
   @Get('stores')
   getStores(@Query('status') status?: ApprovalStatus) {
     return this.adminService.getStores({ status });
+  }
+
+  @Put('store-settings')
+  updateStoreSettings(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: { name: string; phone?: string; address?: string; description?: string },
+  ) {
+    return this.adminService.updateStoreSettings(request.user, dto);
   }
 
   @Patch('stores/:id/status')

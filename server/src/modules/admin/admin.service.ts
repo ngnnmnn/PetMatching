@@ -7,6 +7,7 @@ import {
   ComplaintType,
   DocumentStatus,
   DocumentType,
+  OrderStatus,
   PetStatus,
   Prisma,
   UserRole,
@@ -49,6 +50,9 @@ export class AdminService {
       pendingStores,
       totalProducts,
       totalOrders,
+      pendingStoreOrders,
+      activeProducts,
+      outOfStockProducts,
       pendingStoreComplaints,
       totalSpaBranches,
       activeSpaBranches,
@@ -74,6 +78,9 @@ export class AdminService {
       this.prisma.store.count({ where: { status: ApprovalStatus.PENDING } }),
       this.prisma.product.count(),
       this.prisma.order.count(),
+      this.prisma.order.count({ where: { status: OrderStatus.PENDING } }),
+      this.prisma.product.count({ where: { isActive: true } }),
+      this.prisma.product.count({ where: { stock: 0 } }),
       this.prisma.complaint.count({
         where: { type: ComplaintType.STORE, status: ComplaintStatus.PENDING },
       }),
@@ -134,6 +141,9 @@ export class AdminService {
           pendingStores,
           totalProducts,
           totalOrders,
+          pendingOrders: pendingStoreOrders,
+          activeProducts,
+          outOfStockProducts,
           pendingComplaints: pendingStoreComplaints,
           revenue: storeRevenue._sum.totalAmount ?? 0,
         },
@@ -593,15 +603,21 @@ export class AdminService {
     return report;
   }
 
-  getStores(query: { status?: ApprovalStatus }) {
-    return this.prisma.store.findMany({
-      where: query.status ? { status: query.status } : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        manager: { select: { id: true, name: true, email: true, role: true } },
-        _count: { select: { products: true, orders: true } },
-      },
-    });
+  async getStores(_query: { status?: ApprovalStatus }) {
+    const [store, totalProducts, totalOrders] = await this.prisma.$transaction([
+      this.prisma.store.findFirst({
+        orderBy: { createdAt: 'asc' },
+        include: {
+          manager: { select: { id: true, name: true, email: true, role: true } },
+        },
+      }),
+      this.prisma.product.count(),
+      this.prisma.order.count(),
+    ]);
+
+    return store
+      ? [{ ...store, _count: { products: totalProducts, orders: totalOrders } }]
+      : [];
   }
 
   updateStoreStatus(actor: AdminActor, storeId: string, dto: UpdateApprovalStatusDto) {
@@ -637,6 +653,40 @@ export class AdminService {
         _count: { select: { staffs: true, bookings: true } },
       },
     });
+  }
+
+  async updateStoreSettings(
+    actor: AdminActor,
+    dto: { name: string; phone?: string; address?: string; description?: string },
+  ) {
+    if (!dto.name?.trim()) {
+      throw new BadRequestException('Tên cửa hàng không được để trống.');
+    }
+
+    const currentStore = await this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } });
+    const store = currentStore
+      ? await this.prisma.store.update({
+          where: { id: currentStore.id },
+          data: {
+            name: dto.name.trim(),
+            phone: dto.phone?.trim() || null,
+            address: dto.address?.trim() || null,
+            description: dto.description?.trim() || null,
+          },
+        })
+      : await this.prisma.store.create({
+          data: {
+            id: 'petmatching_main_store',
+            name: dto.name.trim(),
+            phone: dto.phone?.trim() || null,
+            address: dto.address?.trim() || null,
+            description: dto.description?.trim() || null,
+            status: ApprovalStatus.ACTIVE,
+          },
+        });
+
+    await this.audit(actor.id, 'ADMIN_UPDATE_STORE_SETTINGS', 'Store', store.id);
+    return store;
   }
 
   async updateSpaBranchStatus(actor: AdminActor, branchId: string, dto: UpdateApprovalStatusDto) {

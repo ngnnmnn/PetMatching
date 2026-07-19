@@ -47,6 +47,8 @@ export const adminApi = {
   matchingReports: () => api.get('/admin/matching-reports'),
   resolveMatchingReport: (id: string) => api.patch(`/admin/matching-reports/${id}/resolve`),
   stores: () => api.get('/admin/stores'),
+  updateStoreSettings: (data: { name: string; phone?: string; address?: string; description?: string }) =>
+    api.put('/admin/store-settings', data),
   updateStoreStatus: (id: string, status: ApprovalStatus) => api.patch(`/admin/stores/${id}/status`, { status }),
   storeProducts: () => api.get('/admin/store-products'),
   storeOrders: () => api.get('/admin/store-orders'),
