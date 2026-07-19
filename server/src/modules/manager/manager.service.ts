@@ -20,6 +20,19 @@ export class ManagerService {
     );
   }
 
+  private async generateProductId(): Promise<string> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const id = String(Math.floor(100000 + Math.random() * 900000));
+      const exists = await this.prisma.product.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!exists) return id;
+    }
+
+    throw new BadRequestException('Không thể tạo mã sản phẩm. Vui lòng thử lại.');
+  }
+
   async getOrCreateStore(managerId: string) {
     let store = await this.prisma.store.findFirst({
       where: { managerId },
@@ -100,8 +113,10 @@ export class ManagerService {
 
   async createProduct(dto: any) {
     const slug = this.generateSlug(dto.name);
+    const id = await this.generateProductId();
     return this.prisma.product.create({
       data: {
+        id,
         name: dto.name,
         slug,
         category: dto.category,

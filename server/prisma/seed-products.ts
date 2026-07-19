@@ -13,6 +13,15 @@ const ProductCategory = {
 
 const prisma = new PrismaClient();
 
+async function generateProductId(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const id = String(Math.floor(100000 + Math.random() * 900000));
+    const exists = await prisma.product.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) return id;
+  }
+  throw new Error('Could not generate a unique 6-digit product ID.');
+}
+
 async function main() {
   const products = [
     {
@@ -331,10 +340,11 @@ async function main() {
 
   console.log('Seeding products...');
   for (const product of products) {
+    const existing = await prisma.product.findUnique({ where: { slug: product.slug }, select: { id: true } });
     await prisma.product.upsert({
       where: { slug: product.slug },
       update: product,
-      create: product,
+      create: { ...product, id: existing?.id ?? await generateProductId() },
     });
   }
   console.log(`Seeded ${products.length} products`);

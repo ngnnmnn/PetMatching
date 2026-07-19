@@ -6,7 +6,11 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  CalendarDays,
+  CheckCircle2,
   ClipboardCheck,
+  Clock3,
+  CircleDollarSign,
   Loader2,
   PawPrint,
   ShoppingBag,
@@ -26,6 +30,9 @@ type DashboardData = {
       pendingStores: number;
       totalProducts: number;
       totalOrders: number;
+      pendingOrders: number;
+      activeProducts: number;
+      outOfStockProducts: number;
       pendingComplaints: number;
       revenue: number;
     };
@@ -111,9 +118,9 @@ export default function AdminDashboardPage() {
         tone: 'red',
       },
       {
-        label: 'Cửa hàng chờ duyệt',
-        value: data.stats.store.pendingStores,
-        href: '/admin/stores',
+        label: 'Đơn hàng chờ xử lý',
+        value: data.stats.store.pendingOrders,
+        href: '/admin/store-orders',
         tone: 'teal',
       },
       {
@@ -141,24 +148,33 @@ export default function AdminDashboardPage() {
   if (error || !data) return <StateBox title="Không thể tải bảng điều khiển" description={error || 'Không có dữ liệu trả về.'} />;
 
   return (
-    <div className="grid gap-6">
-      <section className="overflow-hidden rounded-2xl border border-[#D8E0EA] bg-[#102A43] text-white shadow-sm">
-        <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:p-7">
-          <div>
-            <p className="text-xs font-black uppercase tracking-wider text-[#7DD3C7]">Tổng quan hệ thống</p>
-            <h2 className="mt-3 max-w-3xl text-3xl font-black tracking-normal sm:text-4xl">
-              Theo dõi ghép đôi, cửa hàng và spa trong một bảng điều khiển.
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-[#B8C7D8]">
-              Nắm nhanh hàng chờ xác minh, luồng giao dịch đang hoạt động và các khiếu nại cần xử lý.
-            </p>
+    <div className="grid gap-5 pb-8">
+      <section className="relative overflow-hidden rounded-3xl bg-[#0E3B3A] text-white shadow-[0_16px_40px_rgba(15,118,110,0.18)]">
+        <div className="absolute -right-20 -top-28 size-80 rounded-full bg-[#1D7770]/55" />
+        <div className="absolute -bottom-32 right-44 size-64 rounded-full border-[40px] border-white/5" />
+        <div className="relative grid gap-7 p-6 lg:grid-cols-[minmax(0,1fr)_500px] lg:p-8">
+          <div className="flex flex-col justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[#A7F3D0]">
+                  <CheckCircle2 className="size-3.5" /> Trung tâm điều hành
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#B9D8D5]"><CalendarDays className="size-3.5" />{formatLongDate(new Date())}</span>
+              </div>
+              <h2 className="mt-5 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">Tổng quan vận hành PetMatching</h2>
+              <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-[#B9D8D5]">Theo dõi người dùng, ghép đôi, cửa hàng và Spa tại một nơi duy nhất.</p>
+            </div>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <StatusChip label="Hệ thống" value="Đang hoạt động" />
+              <StatusChip label="Mục cần xử lý" value={String(primaryMetrics[3]?.value ?? 0)} warning={Number(primaryMetrics[3]?.value ?? 0) > 0} />
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <HeroStat label="Doanh thu cửa hàng" value={currency.format(data.stats.store.revenue)} />
-            <HeroStat label="Doanh thu spa" value={currency.format(data.stats.spa.revenue)} />
-            <HeroStat label="Đơn hàng cửa hàng" value={data.stats.store.totalOrders} />
-            <HeroStat label="Lịch đặt spa" value={data.stats.spa.totalBookings} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <HeroStat icon={CircleDollarSign} label="Doanh thu cửa hàng" value={currency.format(data.stats.store.revenue)} />
+            <HeroStat icon={CircleDollarSign} label="Doanh thu Spa" value={currency.format(data.stats.spa.revenue)} />
+            <HeroStat icon={ShoppingBag} label="Tổng đơn hàng" value={data.stats.store.totalOrders} />
+            <HeroStat icon={CalendarDays} label="Tổng lịch Spa" value={data.stats.spa.totalBookings} />
           </div>
         </div>
       </section>
@@ -169,13 +185,15 @@ export default function AdminDashboardPage() {
         ))}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
         <div className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-black tracking-normal">Hàng chờ cần xử lý</h3>
-              <p className="mt-1 text-sm font-semibold text-[#64748B]">Những mục nên được quản trị viên kiểm tra trước.</p>
+              <p className="text-[11px] font-black uppercase tracking-wider text-[#B54708]">Ưu tiên hôm nay</p>
+              <h3 className="mt-1 text-xl font-black tracking-normal">Hàng chờ cần xử lý</h3>
+              <p className="mt-1 text-sm font-semibold text-[#64748B]">Truy cập nhanh những công việc cần Admin kiểm tra.</p>
             </div>
+            <span className="flex size-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><Clock3 className="size-5" /></span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {pendingItems.map((item) => (
@@ -185,13 +203,14 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
-          <h3 className="text-lg font-black tracking-normal">Nhịp hoạt động</h3>
+          <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">Sức khỏe hệ thống</p>
+          <h3 className="mt-1 text-xl font-black tracking-normal">Nhịp hoạt động</h3>
           <div className="mt-4 grid gap-4">
             <PulseRow
               icon={ShoppingBag}
-              label="Cửa hàng"
-              value={`${data.stats.store.activeStores} đang hoạt động / ${data.stats.store.pendingStores} chờ duyệt`}
-              meta={`${data.stats.store.totalProducts} sản phẩm, ${data.stats.store.totalOrders} đơn hàng`}
+              label="PetMatching Store"
+              value={`${data.stats.store.totalOrders} đơn hàng / ${data.stats.store.pendingOrders} chờ xử lý`}
+              meta={`${data.stats.store.activeProducts} sản phẩm đang bán, ${data.stats.store.outOfStockProducts} hết hàng`}
             />
             <PulseRow
               icon={Stethoscope}
@@ -209,31 +228,66 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <ActivityPanel title="Người dùng gần đây" rows={data.recentActivities.users.map((item) => ({
+      <section>
+        <SectionHeading eyebrow="Vận hành kinh doanh" title="Cửa hàng và Spa" description="Các chỉ số quan trọng của hai khối dịch vụ chính." />
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <OperationCard
+            icon={ShoppingBag}
+            title="PetMatching Store"
+            href="/admin/store-orders"
+            tone="teal"
+            revenue={data.stats.store.revenue}
+            metrics={[
+              { label: 'Đơn hàng', value: data.stats.store.totalOrders },
+              { label: 'Chờ xử lý', value: data.stats.store.pendingOrders },
+              { label: 'Sản phẩm đang bán', value: data.stats.store.activeProducts },
+              { label: 'Hết hàng', value: data.stats.store.outOfStockProducts },
+            ]}
+          />
+          <OperationCard
+            icon={Stethoscope}
+            title="Hệ thống Spa"
+            href="/admin/spa-bookings"
+            tone="violet"
+            revenue={data.stats.spa.revenue}
+            metrics={[
+              { label: 'Lịch đặt', value: data.stats.spa.totalBookings },
+              { label: 'Chi nhánh hoạt động', value: data.stats.spa.activeBranches },
+              { label: 'Dịch vụ', value: data.stats.spa.totalServices },
+              { label: 'Chờ duyệt', value: data.stats.spa.pendingBranches },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section>
+        <SectionHeading eyebrow="Cập nhật hệ thống" title="Hoạt động gần đây" description="Thông tin mới nhất phát sinh trên toàn bộ nền tảng." />
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <ActivityPanel icon={UsersRound} title="Người dùng gần đây" href="/admin/users" rows={data.recentActivities.users.map((item) => ({
           id: item.id,
           title: item.name,
           meta: `${item.email} - ${formatRole(item.role)}`,
           status: formatDate(item.createdAt),
         }))} />
-        <ActivityPanel title="Yêu cầu xác minh thú cưng" rows={data.recentActivities.petDocuments.map((item) => ({
+        <ActivityPanel icon={ClipboardCheck} title="Yêu cầu xác minh" href="/admin/pet-verifications" rows={data.recentActivities.petDocuments.map((item) => ({
           id: item.id,
           title: item.pet?.name ?? item.type,
           meta: formatStatus(item.type),
           status: formatStatus(item.status),
         }))} />
-        <ActivityPanel title="Thú cưng mới" rows={data.recentActivities.pets.map((item) => ({
+        <ActivityPanel icon={PawPrint} title="Thú cưng mới" href="/admin/pets" rows={data.recentActivities.pets.map((item) => ({
           id: item.id,
           title: item.name,
           meta: `${formatStatus(item.species)} - ${formatStatus(item.verificationBadge)}`,
           status: formatDate(item.createdAt),
         }))} />
-        <ActivityPanel title="Khiếu nại gần đây" rows={data.recentActivities.complaints.map((item) => ({
+        <ActivityPanel icon={AlertTriangle} title="Khiếu nại gần đây" href="/admin/reports" rows={data.recentActivities.complaints.map((item) => ({
           id: item.id,
           title: item.title,
           meta: formatStatus(item.type),
           status: formatStatus(item.status),
         }))} />
+        </div>
       </section>
     </div>
   );
@@ -256,12 +310,24 @@ function StateBox({ title, description }: { title: string; description: string }
   );
 }
 
-function HeroStat({ label, value }: { label: string; value: string | number }) {
+function HeroStat({ icon: Icon, label, value }: { icon: typeof ShoppingBag; label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-white/15 bg-white/10 p-4">
-      <p className="text-xs font-black uppercase tracking-wider text-[#B8C7D8]">{label}</p>
-      <p className="mt-2 truncate text-2xl font-black tracking-normal text-white">{value}</p>
+    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-wider text-[#B9D8D5]">{label}</p>
+        <Icon className="size-4 text-[#A7F3D0]" />
+      </div>
+      <p className="mt-3 truncate text-xl font-black tracking-normal text-white sm:text-2xl">{value}</p>
     </div>
+  );
+}
+
+function StatusChip({ label, value, warning = false }: { label: string; value: string; warning?: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${warning ? 'border-amber-300/25 bg-amber-300/10 text-amber-100' : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100'}`}>
+      <span className={`size-2 rounded-full ${warning ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+      {label}: <strong className="font-black">{value}</strong>
+    </span>
   );
 }
 
@@ -362,16 +428,78 @@ function PulseRow({
   );
 }
 
-function ActivityPanel({
+function SectionHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">{eyebrow}</p>
+      <h3 className="mt-1 text-xl font-black tracking-normal text-[#172033]">{title}</h3>
+      <p className="mt-1 text-sm font-semibold text-[#64748B]">{description}</p>
+    </div>
+  );
+}
+
+function OperationCard({
+  icon: Icon,
   title,
+  href,
+  tone,
+  revenue,
+  metrics,
+}: {
+  icon: typeof ShoppingBag;
+  title: string;
+  href: string;
+  tone: 'teal' | 'violet';
+  revenue: number;
+  metrics: Array<{ label: string; value: number }>;
+}) {
+  const styles = tone === 'teal'
+    ? { icon: 'bg-[#E7F3F1] text-[#0F766E]', line: 'bg-[#0F766E]', revenue: 'text-[#0F766E]' }
+    : { icon: 'bg-violet-50 text-violet-700', line: 'bg-violet-600', revenue: 'text-violet-700' };
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className={`absolute inset-y-0 left-0 w-1 ${styles.line}`} />
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className={`flex size-11 items-center justify-center rounded-xl ${styles.icon}`}><Icon className="size-5" /></span>
+          <div><h4 className="text-base font-black text-[#172033]">{title}</h4><p className="mt-0.5 text-xs font-semibold text-[#64748B]">Tổng quan hoạt động</p></div>
+        </div>
+        <Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[#64748B] hover:text-[#0F766E]">Chi tiết <ArrowRight className="size-3.5" /></Link>
+      </div>
+      <div className="mt-5 rounded-xl bg-[#F7F9FB] p-4">
+        <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">Tổng doanh thu</p>
+        <p className={`mt-1 text-2xl font-black ${styles.revenue}`}>{currency.format(revenue)}</p>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-xl border border-[#E5EAF0] px-3 py-3">
+            <p className="text-xl font-black text-[#172033]">{metric.value}</p>
+            <p className="mt-1 text-[11px] font-bold text-[#64748B]">{metric.label}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActivityPanel({
+  icon: Icon,
+  title,
+  href,
   rows,
 }: {
+  icon: typeof UsersRound;
   title: string;
+  href: string;
   rows: Array<{ id: string; title: string; meta: string; status: string }>;
 }) {
   return (
     <div className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
-      <h3 className="text-lg font-black tracking-normal">{title}</h3>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-lg bg-[#E7F3F1] text-[#0F766E]"><Icon className="size-4" /></span><h3 className="text-base font-black tracking-normal">{title}</h3></div>
+        <Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[#64748B] hover:text-[#0F766E]">Xem tất cả <ArrowRight className="size-3.5" /></Link>
+      </div>
       <div className="mt-4 divide-y divide-[#E5EAF0]">
         {rows.length ? rows.map((row) => (
           <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3.5">
@@ -393,6 +521,10 @@ function ActivityPanel({
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString('vi-VN');
+}
+
+function formatLongDate(value: Date) {
+  return new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(value);
 }
 
 function formatRole(role?: string) {

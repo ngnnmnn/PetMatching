@@ -288,7 +288,8 @@ model Store {
 }
 
 model Product {
-  id             String          @id @default(cuid())
+  /// Mã sản phẩm dạng 6 chữ số, ví dụ: 482731
+  id             String          @id
   name           String
   slug           String?         @unique
   category       String

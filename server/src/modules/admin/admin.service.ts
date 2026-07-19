@@ -7,6 +7,7 @@ import {
   ComplaintType,
   DocumentStatus,
   DocumentType,
+  OrderStatus,
   PetStatus,
   Prisma,
   UserRole,
@@ -14,7 +15,6 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
-  CreateComplaintDto,
   GrantSpaManagerDto,
   HidePetDto,
   RevokeSpaManagerDto,
@@ -24,7 +24,6 @@ import {
   UpdateAccountStatusDto,
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
-  UpsertSettingDto,
 } from './dto/admin-actions.dto';
 
 type AdminActor = {
@@ -49,6 +48,9 @@ export class AdminService {
       pendingStores,
       totalProducts,
       totalOrders,
+      pendingStoreOrders,
+      activeProducts,
+      outOfStockProducts,
       pendingStoreComplaints,
       totalSpaBranches,
       activeSpaBranches,
@@ -74,6 +76,9 @@ export class AdminService {
       this.prisma.store.count({ where: { status: ApprovalStatus.PENDING } }),
       this.prisma.product.count(),
       this.prisma.order.count(),
+      this.prisma.order.count({ where: { status: OrderStatus.PENDING } }),
+      this.prisma.product.count({ where: { isActive: true } }),
+      this.prisma.product.count({ where: { stock: 0 } }),
       this.prisma.complaint.count({
         where: { type: ComplaintType.STORE, status: ComplaintStatus.PENDING },
       }),
@@ -134,6 +139,9 @@ export class AdminService {
           pendingStores,
           totalProducts,
           totalOrders,
+          pendingOrders: pendingStoreOrders,
+          activeProducts,
+          outOfStockProducts,
           pendingComplaints: pendingStoreComplaints,
           revenue: storeRevenue._sum.totalAmount ?? 0,
         },
@@ -593,19 +601,21 @@ export class AdminService {
     return report;
   }
 
-  getStores(query: { status?: ApprovalStatus }) {
-    return this.prisma.store.findMany({
-      where: query.status ? { status: query.status } : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        manager: { select: { id: true, name: true, email: true, role: true } },
-        _count: { select: { products: true, orders: true } },
-      },
-    });
-  }
+  async getStores(_query: { status?: ApprovalStatus }) {
+    const [store, totalProducts, totalOrders] = await this.prisma.$transaction([
+      this.prisma.store.findFirst({
+        orderBy: { createdAt: 'asc' },
+        include: {
+          manager: { select: { id: true, name: true, email: true, role: true } },
+        },
+      }),
+      this.prisma.product.count(),
+      this.prisma.order.count(),
+    ]);
 
-  updateStoreStatus(actor: AdminActor, storeId: string, dto: UpdateApprovalStatusDto) {
-    return this.updateApprovalStatus(actor, 'Store', storeId, dto.status);
+    return store
+      ? [{ ...store, _count: { products: totalProducts, orders: totalOrders } }]
+      : [];
   }
 
   getStoreProducts(storeId?: string) {
@@ -639,6 +649,40 @@ export class AdminService {
     });
   }
 
+  async updateStoreSettings(
+    actor: AdminActor,
+    dto: { name: string; phone?: string; address?: string; description?: string },
+  ) {
+    if (!dto.name?.trim()) {
+      throw new BadRequestException('Tên cửa hàng không được để trống.');
+    }
+
+    const currentStore = await this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } });
+    const store = currentStore
+      ? await this.prisma.store.update({
+          where: { id: currentStore.id },
+          data: {
+            name: dto.name.trim(),
+            phone: dto.phone?.trim() || null,
+            address: dto.address?.trim() || null,
+            description: dto.description?.trim() || null,
+          },
+        })
+      : await this.prisma.store.create({
+          data: {
+            id: 'petmatching_main_store',
+            name: dto.name.trim(),
+            phone: dto.phone?.trim() || null,
+            address: dto.address?.trim() || null,
+            description: dto.description?.trim() || null,
+            status: ApprovalStatus.ACTIVE,
+          },
+        });
+
+    await this.audit(actor.id, 'ADMIN_UPDATE_STORE_SETTINGS', 'Store', store.id);
+    return store;
+  }
+
   async updateSpaBranchStatus(actor: AdminActor, branchId: string, dto: UpdateApprovalStatusDto) {
     const branch = await this.prisma.addressSpa.update({
       where: { id: branchId },
@@ -650,14 +694,6 @@ export class AdminService {
     });
 
     return branch;
-  }
-
-  getSpaServices(brandId?: string) {
-    return this.prisma.spaService.findMany({
-      where: brandId ? { brandId } : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: { brand: { select: { id: true, name: true, status: true } } },
-    });
   }
 
   getSpaBookings(brandId?: string) {
@@ -683,14 +719,6 @@ export class AdminService {
     });
   }
 
-  createComplaint(actor: AdminActor, dto: CreateComplaintDto) {
-    return this.prisma.complaint.create({
-      data: {
-        ...dto,
-      },
-    });
-  }
-
   async resolveComplaint(actor: AdminActor, complaintId: string, dto: ResolveComplaintDto) {
     const status = this.mapComplaintStatus(dto.action);
     const complaint = await this.prisma.complaint.update({
@@ -708,75 +736,6 @@ export class AdminService {
       action: dto.action,
     });
     return complaint;
-  }
-
-  async getAnalytics() {
-    const [usersByRole, ordersByStatus, bookingsByStatus, documentsByStatus, complaintsByStatus] =
-      await this.prisma.$transaction([
-        this.prisma.user.groupBy({ by: ['role'], orderBy: { role: 'asc' }, _count: { _all: true } }),
-        this.prisma.order.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-          _sum: { totalAmount: true },
-        }),
-        this.prisma.spaBooking.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-          _sum: { priceSnapshot: true },
-        }),
-        this.prisma.petDocument.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-        }),
-        this.prisma.complaint.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-        }),
-      ]);
-
-    return {
-      usersByRole,
-      ordersByStatus,
-      bookingsByStatus,
-      documentsByStatus,
-      complaintsByStatus,
-    };
-  }
-
-  getSettings() {
-    return this.prisma.systemSetting.findMany({ orderBy: { key: 'asc' } });
-  }
-
-  async upsertSetting(actor: AdminActor, dto: UpsertSettingDto) {
-    let value: Prisma.InputJsonValue;
-    try {
-      value = JSON.parse(dto.value) as Prisma.InputJsonValue;
-    } catch {
-      throw new BadRequestException('Setting value must be valid JSON.');
-    }
-
-    const setting = await this.prisma.systemSetting.upsert({
-      where: { key: dto.key },
-      create: { key: dto.key, value },
-      update: { value },
-    });
-
-    await this.audit(actor.id, 'ADMIN_UPSERT_SETTING', 'SystemSetting', setting.id, {
-      key: dto.key,
-    });
-    return setting;
-  }
-
-  getAuditLogs() {
-    return this.prisma.auditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: { actor: { select: { id: true, name: true, email: true, role: true } } },
-    });
   }
 
   private async refreshPetVerification(petId: string) {
@@ -808,29 +767,6 @@ export class AdminService {
     };
 
     await this.prisma.pet.update({ where: { id: petId }, data });
-  }
-
-  private async updateApprovalStatus(
-    actor: AdminActor,
-    targetType: 'Store' | 'SpaBrand',
-    targetId: string,
-    status: ApprovalStatus,
-  ) {
-    const data = {
-      status,
-      approvedAt: status === ApprovalStatus.ACTIVE ? new Date() : undefined,
-      suspendedAt: status === ApprovalStatus.SUSPENDED ? new Date() : undefined,
-    };
-
-    const result =
-      targetType === 'Store'
-        ? await this.prisma.store.update({ where: { id: targetId }, data })
-        : await this.prisma.spaBrand.update({ where: { id: targetId }, data });
-
-    await this.audit(actor.id, `ADMIN_UPDATE_${targetType.toUpperCase()}_STATUS`, targetType, targetId, {
-      status,
-    });
-    return result;
   }
 
   private mapComplaintStatus(action: ComplaintAction) {
