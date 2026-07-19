@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import {
   Activity,
-  Bell,
   ClipboardCheck,
   FileWarning,
   LayoutDashboard,
@@ -26,6 +25,7 @@ const navGroups = [
     items: [
       { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
       { label: 'Người dùng & vai trò', href: '/admin/users', icon: UsersRound },
+      { label: 'Báo cáo & khiếu nại', href: '/admin/reports', icon: FileWarning },
     ],
   },
   {
@@ -52,13 +52,6 @@ const navGroups = [
       { label: 'Chi nhánh spa', href: '/admin/spas', icon: Stethoscope },
       { label: 'Lịch đặt spa', href: '/admin/spa-bookings', icon: Activity },
       { label: 'Khiếu nại spa', href: '/admin/spa-complaints', icon: FileWarning },
-    ],
-  },
-  {
-    label: 'Hệ thống',
-    items: [
-      { label: 'Báo cáo', href: '/admin/reports', icon: Bell },
-      { label: 'Cài đặt', href: '/admin/settings', icon: Settings },
     ],
   },
 ];

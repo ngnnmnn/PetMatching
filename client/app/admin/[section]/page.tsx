@@ -2,15 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
-import { AlertTriangle, BarChart3, CalendarDays, CheckCircle2, ClipboardCheck, Eye, EyeOff, Loader2, Mail, MessageSquareWarning, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, ShoppingCart, UserCheck, UsersRound, UserX, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AccountStatus,
   AdminRole,
   adminApi,
   ApprovalStatus,
-  ComplaintAction,
-  DocumentStatus,
   HidePetReason,
   RestorePetReason,
 } from '@/lib/api/admin';
@@ -29,7 +27,7 @@ type PetModerationFlow = {
 
 const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER'];
 const accountStatusOptions: AccountStatus[] = ['ACTIVE', 'SUSPENDED', 'PENDING_MANAGER'];
-const readOnlySections = new Set(['stores', 'store-products', 'store-orders', 'store-settings', 'spa-bookings', 'analytics', 'settings']);
+const readOnlySections = new Set(['stores', 'store-products', 'store-orders', 'store-settings', 'spa-bookings']);
 
 const sectionConfig: Record<string, {
   title: string;
@@ -182,26 +180,6 @@ const sectionConfig: Record<string, {
     loader: () => adminApi.complaints(),
     columns: complaintColumns(),
   },
-  analytics: {
-    title: 'Phân tích',
-    description: 'Phân tích cấp hệ thống về vai trò, đơn hàng, lịch đặt, xác minh và khiếu nại.',
-    loader: adminApi.analytics,
-    columns: [
-      { key: 'group', label: 'Nhóm chỉ số' },
-      { key: 'value', label: 'Giá trị' },
-      { key: 'count', label: 'Số lượng' },
-    ],
-  },
-  settings: {
-    title: 'Cài đặt hệ thống',
-    description: 'Các cấu hình hệ thống như danh mục thú cưng, chính sách và lý do từ chối mẫu.',
-    loader: adminApi.settings,
-    columns: [
-      { key: 'key', label: 'Khóa' },
-      { key: 'value', label: 'Giá trị', render: (row) => JSON.stringify(row.value) },
-      { key: 'updatedAt', label: 'Cập nhật', render: dateCell },
-    ],
-  },
 };
 
 export default function AdminSectionPage() {
@@ -210,7 +188,6 @@ export default function AdminSectionPage() {
   const config = sectionConfig[section] ?? sectionConfig.reports;
   const hasActions = !readOnlySections.has(section);
   const [rows, setRows] = useState<Row[]>([]);
-  const [rawData, setRawData] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState('');
@@ -221,10 +198,7 @@ export default function AdminSectionPage() {
     setLoading(true);
     setError('');
     config.loader()
-      .then((response) => {
-        setRawData(!Array.isArray(response.data) ? response.data : null);
-        setRows(normalizeRows(section, response.data));
-      })
+      .then((response) => setRows(normalizeRows(section, response.data)))
       .catch(() => setError('Không thể tải dữ liệu cho mục quản trị này.'))
       .finally(() => setLoading(false));
   }, [config, section]);
@@ -243,15 +217,8 @@ export default function AdminSectionPage() {
         pending: rows.filter((row) => (row.stock ?? 0) === 0).length,
       };
     }
-    if (section === 'analytics' && rawData) {
-      const users = sumAnalyticsCounts(rawData.usersByRole);
-      const transactions = sumAnalyticsCounts(rawData.ordersByStatus) + sumAnalyticsCounts(rawData.bookingsByStatus);
-      const pending = sumAnalyticsCounts(rawData.documentsByStatus, ['PENDING', 'REVIEWING', 'NEED_MORE_INFO']) +
-        sumAnalyticsCounts(rawData.complaintsByStatus, ['PENDING', 'ESCALATED']);
-      return { total: users, active: transactions, pending };
-    }
     return { total: rows.length, pending, active };
-  }, [rows, section, rawData]);
+  }, [rows, section]);
 
   const runAction = async (row: Row, action: () => Promise<unknown>, success: string) => {
     setSavingId(row.id);
@@ -299,9 +266,9 @@ export default function AdminSectionPage() {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 self-center">
-            <MiniStat label={section === 'analytics' ? 'Người dùng' : 'Tổng'} value={titleStats.total} />
-            <MiniStat label={section === 'analytics' ? 'Giao dịch' : section === 'store-products' ? 'Đang bán' : 'Hoạt động'} value={titleStats.active} />
-            <MiniStat label={section === 'analytics' ? 'Cần xử lý' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
+            <MiniStat label="Tổng" value={titleStats.total} />
+            <MiniStat label={section === 'store-products' ? 'Đang bán' : 'Hoạt động'} value={titleStats.active} />
+            <MiniStat label={section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
           </div>
         </div>
       </section>
@@ -315,8 +282,6 @@ export default function AdminSectionPage() {
           <div className="p-6">
             <p className="font-black text-red-700">{error}</p>
           </div>
-        ) : section === 'analytics' ? (
-          <AnalyticsDashboard data={rawData} />
         ) : section === 'users' ? (
           <UserManagementPanel
             users={rows}
@@ -402,160 +367,6 @@ export default function AdminSectionPage() {
       )}
     </div>
   );
-}
-
-function AnalyticsDashboard({ data }: { data: Row | null }) {
-  if (!data) {
-    return <div className="p-10 text-center text-sm font-bold text-[#64748B]">Chưa có dữ liệu phân tích.</div>;
-  }
-
-  const totalUsers = sumAnalyticsCounts(data.usersByRole);
-  const totalOrders = sumAnalyticsCounts(data.ordersByStatus);
-  const totalBookings = sumAnalyticsCounts(data.bookingsByStatus);
-  const storeRevenue = sumAnalyticsAmount(data.ordersByStatus, 'totalAmount');
-  const spaRevenue = sumAnalyticsAmount(data.bookingsByStatus, 'priceSnapshot');
-  const pendingReviews = sumAnalyticsCounts(data.documentsByStatus, ['PENDING', 'REVIEWING', 'NEED_MORE_INFO']) +
-    sumAnalyticsCounts(data.complaintsByStatus, ['PENDING', 'ESCALATED']);
-
-  return (
-    <div className="grid gap-5 bg-[#F8FAFC] p-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <AnalyticsSummary icon={UsersRound} label="Tổng tài khoản" value={totalUsers} detail="Tài khoản trong hệ thống" tone="teal" />
-        <AnalyticsSummary icon={ShoppingCart} label="Đơn hàng" value={totalOrders} detail={moneyCell({ price: storeRevenue })} tone="blue" />
-        <AnalyticsSummary icon={CalendarDays} label="Lịch Spa" value={totalBookings} detail={moneyCell({ price: spaRevenue })} tone="violet" />
-        <AnalyticsSummary icon={MessageSquareWarning} label="Cần xử lý" value={pendingReviews} detail="Xác minh và khiếu nại" tone="amber" />
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <AnalyticsGroup
-          icon={UsersRound}
-          title="Cơ cấu người dùng"
-          description="Phân bố tài khoản theo quyền truy cập hiện tại."
-          items={data.usersByRole}
-          label={(item) => formatRole(item.role)}
-          tone="teal"
-        />
-        <AnalyticsGroup
-          icon={ShoppingCart}
-          title="Tình trạng đơn hàng"
-          description="Tiến độ xử lý đơn hàng của PetMatching Store."
-          items={data.ordersByStatus}
-          label={(item) => formatStatus(item.status)}
-          amountKey="totalAmount"
-          tone="blue"
-        />
-        <AnalyticsGroup
-          icon={CalendarDays}
-          title="Hoạt động Spa"
-          description="Phân bố lịch đặt theo trạng thái phục vụ."
-          items={data.bookingsByStatus}
-          label={(item) => formatStatus(item.status)}
-          amountKey="priceSnapshot"
-          tone="violet"
-        />
-        <AnalyticsGroup
-          icon={ClipboardCheck}
-          title="Xác minh thú cưng"
-          description="Tình trạng xử lý giấy tờ xác minh do người dùng gửi."
-          items={data.documentsByStatus}
-          label={(item) => formatStatus(item.status)}
-          tone="emerald"
-        />
-      </div>
-
-      <AnalyticsGroup
-        icon={MessageSquareWarning}
-        title="Khiếu nại hệ thống"
-        description="Tổng hợp trạng thái khiếu nại cần quản trị viên theo dõi."
-        items={data.complaintsByStatus}
-        label={(item) => formatStatus(item.status)}
-        tone="amber"
-        horizontal
-      />
-    </div>
-  );
-}
-
-function AnalyticsSummary({ icon: Icon, label, value, detail, tone }: { icon: typeof BarChart3; label: string; value: number; detail: string; tone: 'teal' | 'blue' | 'violet' | 'amber' }) {
-  const tones = {
-    teal: 'bg-[#E7F3F1] text-[#0F766E]',
-    blue: 'bg-sky-50 text-sky-700',
-    violet: 'bg-violet-50 text-violet-700',
-    amber: 'bg-amber-50 text-amber-800',
-  };
-  return (
-    <div className="rounded-2xl border border-[#D8E0EA] bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div><p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{label}</p><p className="mt-2 text-3xl font-black text-[#172033]">{value}</p></div>
-        <span className={`flex size-11 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="size-5" /></span>
-      </div>
-      <p className="mt-3 border-t border-[#EEF2F6] pt-3 text-xs font-bold text-[#64748B]">{detail}</p>
-    </div>
-  );
-}
-
-function AnalyticsGroup({
-  icon: Icon,
-  title,
-  description,
-  items,
-  label,
-  amountKey,
-  tone,
-  horizontal = false,
-}: {
-  icon: typeof BarChart3;
-  title: string;
-  description: string;
-  items?: Row[];
-  label: (item: Row) => string;
-  amountKey?: 'totalAmount' | 'priceSnapshot';
-  tone: 'teal' | 'blue' | 'violet' | 'emerald' | 'amber';
-  horizontal?: boolean;
-}) {
-  const safeItems = Array.isArray(items) ? items : [];
-  const total = Math.max(sumAnalyticsCounts(safeItems), 1);
-  const barTones = { teal: 'bg-[#0F766E]', blue: 'bg-sky-600', violet: 'bg-violet-600', emerald: 'bg-emerald-600', amber: 'bg-amber-500' };
-  const iconTones = { teal: 'bg-[#E7F3F1] text-[#0F766E]', blue: 'bg-sky-50 text-sky-700', violet: 'bg-violet-50 text-violet-700', emerald: 'bg-emerald-50 text-emerald-700', amber: 'bg-amber-50 text-amber-800' };
-
-  return (
-    <section className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
-      <div className="flex items-start gap-3">
-        <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${iconTones[tone]}`}><Icon className="size-4.5" /></span>
-        <div><h3 className="text-base font-black text-[#172033]">{title}</h3><p className="mt-1 text-xs font-semibold text-[#64748B]">{description}</p></div>
-      </div>
-      <div className={`mt-5 grid gap-4 ${horizontal ? 'md:grid-cols-2 xl:grid-cols-3' : ''}`}>
-        {safeItems.map((item, index) => {
-          const count = item._count?._all ?? item._count ?? 0;
-          const percentage = Math.round((count / total) * 100);
-          const amount = amountKey ? item._sum?.[amountKey] : null;
-          return (
-            <div key={`${item.role ?? item.status ?? index}`}>
-              <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                <span className="font-bold text-[#334155]">{label(item)}</span>
-                <span className="shrink-0 font-black text-[#172033]">{count} <span className="text-xs text-[#94A3B8]">({percentage}%)</span></span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[#EEF2F6]"><div className={`h-full rounded-full ${barTones[tone]}`} style={{ width: `${percentage}%` }} /></div>
-              {typeof amount === 'number' && <p className="mt-1.5 text-right text-[11px] font-bold text-[#64748B]">Giá trị: {moneyCell({ price: amount })}</p>}
-            </div>
-          );
-        })}
-        {!safeItems.length && <p className="text-sm font-semibold text-[#94A3B8]">Chưa có dữ liệu.</p>}
-      </div>
-    </section>
-  );
-}
-
-function sumAnalyticsCounts(items?: Row[], statuses?: string[]) {
-  if (!Array.isArray(items)) return 0;
-  return items
-    .filter((item) => !statuses || statuses.includes(item.status))
-    .reduce((sum, item) => sum + Number(item._count?._all ?? item._count ?? 0), 0);
-}
-
-function sumAnalyticsAmount(items: Row[] | undefined, key: 'totalAmount' | 'priceSnapshot') {
-  if (!Array.isArray(items)) return 0;
-  return items.reduce((sum, item) => sum + Number(item._sum?.[key] ?? 0), 0);
 }
 
 function UserManagementPanel({
@@ -1361,10 +1172,6 @@ function ActionGroup({
     );
   }
 
-  if (section === 'stores') {
-    return <ApprovalButtons row={row} update={(status) => adminApi.updateStoreStatus(row.id, status)} onAction={onAction} />;
-  }
-
   if (section === 'spas') {
     return <ApprovalButtons row={row} update={(status) => adminApi.updateSpaStatus(row.id, status)} onAction={onAction} />;
   }
@@ -1453,18 +1260,6 @@ function normalizeRows(section: string, data: Row[] | Row): Row[] {
 
   if (section === 'pet-verifications' && Array.isArray(data)) {
     return data.filter((row) => ['PENDING', 'REVIEWING', 'NEED_MORE_INFO'].includes(row.status));
-  }
-
-  if (section === 'analytics' && !Array.isArray(data)) {
-    return Object.entries(data).flatMap(([group, value]) => {
-      if (!Array.isArray(value)) return [{ id: group, group, value: JSON.stringify(value), count: '-' }];
-      return value.map((item, index) => ({
-        id: `${group}-${index}`,
-        group,
-        value: item.role ? formatRole(item.role) : item.status ? formatStatus(item.status) : JSON.stringify(item),
-        count: item._count?._all ?? item._count ?? '-',
-      }));
-    });
   }
 
   return Array.isArray(data) ? data : [];

@@ -15,7 +15,6 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
-  CreateComplaintDto,
   GrantSpaManagerDto,
   HidePetDto,
   RevokeSpaManagerDto,
@@ -25,7 +24,6 @@ import {
   UpdateAccountStatusDto,
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
-  UpsertSettingDto,
 } from './dto/admin-actions.dto';
 
 type AdminActor = {
@@ -620,10 +618,6 @@ export class AdminService {
       : [];
   }
 
-  updateStoreStatus(actor: AdminActor, storeId: string, dto: UpdateApprovalStatusDto) {
-    return this.updateApprovalStatus(actor, 'Store', storeId, dto.status);
-  }
-
   getStoreProducts(storeId?: string) {
     return this.prisma.product.findMany({
       where: storeId ? { storeId } : undefined,
@@ -702,14 +696,6 @@ export class AdminService {
     return branch;
   }
 
-  getSpaServices(brandId?: string) {
-    return this.prisma.spaService.findMany({
-      where: brandId ? { brandId } : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: { brand: { select: { id: true, name: true, status: true } } },
-    });
-  }
-
   getSpaBookings(brandId?: string) {
     return this.prisma.spaBooking.findMany({
       where: brandId ? { brandId } : undefined,
@@ -733,14 +719,6 @@ export class AdminService {
     });
   }
 
-  createComplaint(actor: AdminActor, dto: CreateComplaintDto) {
-    return this.prisma.complaint.create({
-      data: {
-        ...dto,
-      },
-    });
-  }
-
   async resolveComplaint(actor: AdminActor, complaintId: string, dto: ResolveComplaintDto) {
     const status = this.mapComplaintStatus(dto.action);
     const complaint = await this.prisma.complaint.update({
@@ -758,75 +736,6 @@ export class AdminService {
       action: dto.action,
     });
     return complaint;
-  }
-
-  async getAnalytics() {
-    const [usersByRole, ordersByStatus, bookingsByStatus, documentsByStatus, complaintsByStatus] =
-      await this.prisma.$transaction([
-        this.prisma.user.groupBy({ by: ['role'], orderBy: { role: 'asc' }, _count: { _all: true } }),
-        this.prisma.order.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-          _sum: { totalAmount: true },
-        }),
-        this.prisma.spaBooking.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-          _sum: { priceSnapshot: true },
-        }),
-        this.prisma.petDocument.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-        }),
-        this.prisma.complaint.groupBy({
-          by: ['status'],
-          orderBy: { status: 'asc' },
-          _count: { _all: true },
-        }),
-      ]);
-
-    return {
-      usersByRole,
-      ordersByStatus,
-      bookingsByStatus,
-      documentsByStatus,
-      complaintsByStatus,
-    };
-  }
-
-  getSettings() {
-    return this.prisma.systemSetting.findMany({ orderBy: { key: 'asc' } });
-  }
-
-  async upsertSetting(actor: AdminActor, dto: UpsertSettingDto) {
-    let value: Prisma.InputJsonValue;
-    try {
-      value = JSON.parse(dto.value) as Prisma.InputJsonValue;
-    } catch {
-      throw new BadRequestException('Setting value must be valid JSON.');
-    }
-
-    const setting = await this.prisma.systemSetting.upsert({
-      where: { key: dto.key },
-      create: { key: dto.key, value },
-      update: { value },
-    });
-
-    await this.audit(actor.id, 'ADMIN_UPSERT_SETTING', 'SystemSetting', setting.id, {
-      key: dto.key,
-    });
-    return setting;
-  }
-
-  getAuditLogs() {
-    return this.prisma.auditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: { actor: { select: { id: true, name: true, email: true, role: true } } },
-    });
   }
 
   private async refreshPetVerification(petId: string) {
@@ -858,29 +767,6 @@ export class AdminService {
     };
 
     await this.prisma.pet.update({ where: { id: petId }, data });
-  }
-
-  private async updateApprovalStatus(
-    actor: AdminActor,
-    targetType: 'Store' | 'SpaBrand',
-    targetId: string,
-    status: ApprovalStatus,
-  ) {
-    const data = {
-      status,
-      approvedAt: status === ApprovalStatus.ACTIVE ? new Date() : undefined,
-      suspendedAt: status === ApprovalStatus.SUSPENDED ? new Date() : undefined,
-    };
-
-    const result =
-      targetType === 'Store'
-        ? await this.prisma.store.update({ where: { id: targetId }, data })
-        : await this.prisma.spaBrand.update({ where: { id: targetId }, data });
-
-    await this.audit(actor.id, `ADMIN_UPDATE_${targetType.toUpperCase()}_STATUS`, targetType, targetId, {
-      status,
-    });
-    return result;
   }
 
   private mapComplaintStatus(action: ComplaintAction) {

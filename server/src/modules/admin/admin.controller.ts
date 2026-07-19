@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Put, Query, Req, UseGuards } from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -13,7 +13,6 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { AdminService } from './admin.service';
 import {
-  CreateComplaintDto,
   GrantSpaManagerDto,
   HidePetDto,
   RevokeSpaManagerDto,
@@ -23,7 +22,6 @@ import {
   UpdateAccountStatusDto,
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
-  UpsertSettingDto,
 } from './dto/admin-actions.dto';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -155,15 +153,6 @@ export class AdminController {
     return this.adminService.updateStoreSettings(request.user, dto);
   }
 
-  @Patch('stores/:id/status')
-  updateStoreStatus(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: UpdateApprovalStatusDto,
-  ) {
-    return this.adminService.updateStoreStatus(request.user, id, dto);
-  }
-
   @Get('store-products')
   getStoreProducts(@Query('storeId') storeId?: string) {
     return this.adminService.getStoreProducts(storeId);
@@ -188,11 +177,6 @@ export class AdminController {
     return this.adminService.updateSpaBranchStatus(request.user, id, dto);
   }
 
-  @Get('spa-services')
-  getSpaServices(@Query('branchId') branchId?: string) {
-    return this.adminService.getSpaServices(branchId);
-  }
-
   @Get('spa-bookings')
   getSpaBookings(@Query('branchId') branchId?: string) {
     return this.adminService.getSpaBookings(branchId);
@@ -201,11 +185,6 @@ export class AdminController {
   @Get('complaints')
   getComplaints(@Query('type') type?: ComplaintType, @Query('status') status?: ComplaintStatus) {
     return this.adminService.getComplaints({ type, status });
-  }
-
-  @Post('complaints')
-  createComplaint(@Req() request: AuthenticatedRequest, @Body() dto: CreateComplaintDto) {
-    return this.adminService.createComplaint(request.user, dto);
   }
 
   @Patch('complaints/:id/resolve')
@@ -217,23 +196,4 @@ export class AdminController {
     return this.adminService.resolveComplaint(request.user, id, dto);
   }
 
-  @Get('analytics')
-  getAnalytics() {
-    return this.adminService.getAnalytics();
-  }
-
-  @Get('settings')
-  getSettings() {
-    return this.adminService.getSettings();
-  }
-
-  @Post('settings')
-  upsertSetting(@Req() request: AuthenticatedRequest, @Body() dto: UpsertSettingDto) {
-    return this.adminService.upsertSetting(request.user, dto);
-  }
-
-  @Get('audit-logs')
-  getAuditLogs() {
-    return this.adminService.getAuditLogs();
-  }
 }

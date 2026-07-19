@@ -2,8 +2,6 @@ import {
   AccountStatus,
   ApprovalStatus,
   ComplaintAction,
-  ComplaintStatus,
-  ComplaintType,
   DocumentStatus,
   UserRole,
 } from '@prisma/client';
@@ -13,7 +11,6 @@ import {
   IsBoolean,
   IsEnum,
   IsIn,
-  IsJSON,
   IsOptional,
   IsString,
   ValidateIf,
@@ -106,41 +103,3 @@ export class ResolveComplaintDto {
   @IsString()
   adminNote?: string;
 }
-
-export class CreateComplaintDto {
-  @IsEnum(ComplaintType)
-  type!: ComplaintType;
-
-  @IsString()
-  title!: string;
-
-  @IsOptional()
-  @IsString()
-  detail?: string;
-
-  @IsOptional()
-  @IsString()
-  reporterId?: string;
-
-  @IsOptional()
-  @IsString()
-  targetType?: string;
-
-  @IsOptional()
-  @IsString()
-  targetId?: string;
-}
-
-export class UpsertSettingDto {
-  @IsString()
-  key!: string;
-
-  @IsJSON()
-  value!: string;
-}
-
-export type ComplaintResolution = {
-  status: ComplaintStatus;
-  actionTaken: ComplaintAction;
-  adminNote?: string;
-};
