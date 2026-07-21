@@ -232,6 +232,19 @@ export class MatchingService {
     });
   }
 
+  getOutgoingRequests(userId: string) {
+    return this.prisma.matchingRequest.findMany({
+      where: {
+        requesterId: userId,
+        status: {
+          not: MatchingRequestStatus.PASSED,
+        },
+      },
+      include: this.requestInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async acceptRequest(userId: string, requestId: string) {
     const request = await this.getPendingOwnedIncomingRequest(userId, requestId);
     const [pet1Id, pet2Id] = [request.femalePetId, request.malePetId].sort();
