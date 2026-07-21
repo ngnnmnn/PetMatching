@@ -34,6 +34,11 @@ export class MatchingController {
     return this.matchingService.getIncomingRequests(request.user.id);
   }
 
+  @Get('requests/outgoing')
+  getOutgoingRequests(@Req() request: AuthenticatedRequest) {
+    return this.matchingService.getOutgoingRequests(request.user.id);
+  }
+
   @Post('requests/:id/accept')
   acceptRequest(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.matchingService.acceptRequest(request.user.id, id);

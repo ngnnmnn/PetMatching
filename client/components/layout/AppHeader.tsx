@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation';
 import {
   BadgeCheck,
   Heart,
+  Inbox,
   MessageCircle,
+  PawPrint,
   Scissors,
   Search,
   ShoppingCart,
@@ -16,18 +18,19 @@ import UserDropdown from '@/components/home/UserDropdown';
 import { cn } from '@/lib/utils';
 import { useCart } from '@/context/CartContext';
 
+// 4 trang chính của hệ thống được đưa lên thanh điều hướng chính (Top Navigation Bar)
 const MAIN_NAV = [
   { label: 'Khám phá', href: '/explore', icon: Search },
-  { label: 'Yêu thích', href: '/favorites', icon: Heart },
-  { label: 'Thú cưng', href: '/my-pets', icon: BadgeCheck },
+  { label: 'Yêu cầu', href: '/requests', icon: Inbox },
   { label: 'Tin nhắn', href: '/messages', icon: MessageCircle },
+  { label: 'Thú cưng của tôi', href: '/my-pets', icon: PawPrint },
 ];
 
 type AppHeaderProps = {
   sectionLabel?: string;
 };
 
-export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderProps) {
+export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderProps) {
   const pathname = usePathname();
   const storeActive = pathname === '/home' || pathname.startsWith('/home/');
   const { cartCount } = useCart();
@@ -35,8 +38,9 @@ export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderPro
   return (
     <nav className="sticky top-0 z-40 border-b border-[var(--border-color)] bg-card/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+        {/* Brand Logo */}
         <Link
-          href="/home"
+          href="/explore"
           className="flex min-w-0 items-center gap-3 rounded-md pr-2 text-foreground transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
         >
           <BrandMark size="sm" />
@@ -48,7 +52,8 @@ export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderPro
           </span>
         </Link>
 
-        <div className="hidden items-center rounded-lg border border-[var(--border-color)] bg-background p-1 md:flex">
+        {/* 4 Main Header Navigation Tabs */}
+        <div className="hidden items-center rounded-xl border border-[var(--border-color)] bg-background p-1 md:flex shadow-sm">
           {MAIN_NAV.map((nav) => {
             const active = pathname === nav.href || pathname.startsWith(`${nav.href}/`);
 
@@ -57,8 +62,10 @@ export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderPro
                 key={nav.label}
                 href={nav.href}
                 className={cn(
-                  'inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-semibold transition hover:bg-card hover:text-foreground hover:shadow-sm',
-                  active ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground',
+                  'inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs lg:text-sm font-extrabold transition-all duration-200',
+                  active
+                    ? 'bg-primary text-primary-foreground shadow-md'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
                 <nav.icon className="size-4" />
@@ -68,6 +75,7 @@ export default function AppHeader({ sectionLabel = 'Cửa hàng' }: AppHeaderPro
           })}
         </div>
 
+        {/* Secondary Extensions: Spa, Store, Cart & User Profile */}
         <div className="flex items-center gap-2">
           <Link
             href="/spa"
