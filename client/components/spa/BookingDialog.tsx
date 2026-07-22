@@ -118,6 +118,7 @@ export default function BookingDialog({
       await spaApi.createBooking({
         branchId,
         serviceId,
+        mainServiceId: serviceId || '',
         petName,
         scheduledAt,
         note,

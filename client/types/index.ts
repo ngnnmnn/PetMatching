@@ -154,14 +154,20 @@ export interface SpaServiceType {
   branchId?: string;
   name: string;
   description: string | null;
+  species?: 'DOG' | 'CAT' | null;
+  petWeightMin?: number | null;
+  petWeightMax?: number | null;
   price: number;
   durationMin: number;
+  durationMax?: number | null;
+  isMain?: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
   brand?: {
     id: string;
     name: string;
+    isMain?: boolean;
   };
   branch?: {
     id: string;
@@ -187,13 +193,24 @@ export interface SpaBookingType {
   brandId?: string | null;
   branchId?: string | null;
   serviceId: string | null;
+  mainServiceId?: string | null;
+  subServiceIds?: string[];
   userId: string;
   staffId: string | null;
   petName: string | null;
   petId?: string | null;
+  petSpecies?: 'DOG' | 'CAT' | null;
+  petWeight?: number | null;
   scheduledAt: string;
-  status: 'PENDING' | 'CONFIRMED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' | 'LATE';
+  status: 'PENDING' | 'CONFIRMED' | 'CHECK_IN' | 'ARRIVED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' | 'LATE';
   priceSnapshot: number | null;
+  totalPrice?: number;
+  discountAmount?: number;
+  timeStartExpected?: string | null;
+  timeEndExpected?: string | null;
+  timeStartReal?: string | null;
+  timeEndReal?: string | null;
+  completionDiffMinutes?: number | null;
   note: string | null;
   petConditionAfter?: string | null;
   photoAfter?: string | null;
@@ -206,10 +223,10 @@ export interface SpaBookingType {
   branch?: {
     name: string;
   } | null;
-  service: {
+  service?: {
     name: string;
     description: string | null;
-  };
+  } | null;
   user?: User | null;
   pet?: any | null;
   staff?: {

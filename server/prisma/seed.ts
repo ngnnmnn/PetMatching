@@ -13,6 +13,9 @@ async function main() {
   console.log('\n--- Running seed-breed-rules.ts ---');
   execSync(`npx ts-node "${path.join(prismaDir, 'seed-breed-rules.ts')}"`, { stdio: 'inherit' });
 
+  console.log('\n--- Running seed-spa.ts ---');
+  execSync(`npx ts-node "${path.join(prismaDir, 'seed-spa.ts')}"`, { stdio: 'inherit' });
+
   console.log('\n--- Running create-demo-user.js ---');
   execSync(`node "${path.join(prismaDir, '../scripts/create-demo-user.js')}"`, { stdio: 'inherit' });
   

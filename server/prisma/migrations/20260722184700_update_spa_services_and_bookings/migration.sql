@@ -1,0 +1,19 @@
+-- AlterTable: Add weight brackets, species, and main flag to spa_services
+ALTER TABLE spa_services ADD COLUMN IF NOT EXISTS species Species,
+ADD COLUMN IF NOT EXISTS petWeightMin DOUBLE PRECISION,
+ADD COLUMN IF NOT EXISTS petWeightMax DOUBLE PRECISION,
+ADD COLUMN IF NOT EXISTS isMain BOOLEAN NOT NULL DEFAULT true;
+
+-- AlterTable: Add combo fields, expected times, and completion tracking to spa_bookings
+ALTER TABLE spa_bookings ADD COLUMN IF NOT EXISTS mainServiceId TEXT,
+ADD COLUMN IF NOT EXISTS subServiceIds TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN IF NOT EXISTS petSpecies Species,
+ADD COLUMN IF NOT EXISTS petWeight DOUBLE PRECISION,
+ADD COLUMN IF NOT EXISTS totalPrice DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS discountAmount DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS timeStartExpected TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS timeEndExpected TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS completionDiffMinutes INTEGER,
+ADD COLUMN IF NOT EXISTS petConditionAfter TEXT,
+ADD COLUMN IF NOT EXISTS photoAfter TEXT,
+ADD COLUMN IF NOT EXISTS issueReported TEXT;

@@ -8,30 +8,97 @@ import {
   Calendar,
   Clock,
   MapPin,
-  Phone,
-  Scissors,
-  User as UserIcon,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
-  Award,
-  CircleDot,
-  Plus
+  Plus,
+  PawPrint,
+  CheckCircle,
+  Scissors,
+  Sparkles
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/axios';
 import { spaApi } from '@/lib/api/spa';
-import { SpaBranchType, SpaServiceType, SpaStaffType, AddressSpaType } from '@/types';
+import { SpaServiceType, AddressSpaType } from '@/types';
 
 interface PetType {
   id: string;
   name: string;
   breed: string;
+  species: 'DOG' | 'CAT';
+  weight: number;
   avatarUrl?: string;
+}
+
+// Helper to check if an addon sub-service is already included in a selected main package / combo
+function isSubServiceIncludedInMain(
+  sub: SpaServiceType,
+  main?: SpaServiceType,
+): boolean {
+  if (!main) return false;
+
+  const mainName = (main.name || '').toLowerCase();
+  const mainDesc = (main.description || '').toLowerCase();
+  const mainText = `${mainName} ${mainDesc}`;
+
+  const subName = (sub.name || '').toLowerCase();
+  const subDesc = (sub.description || '').toLowerCase();
+  const subText = `${subName} ${subDesc}`;
+
+  // Checks for hygiene package inclusion (Vệ sinh combo: cắt móng, cạo bàn, vệ sinh tai, cạo bụng...)
+  const isComboWithHygiene =
+    mainText.includes('vệ sinh') ||
+    mainText.includes('combo') ||
+    mainText.includes('spa cắt tỉa') ||
+    mainText.includes('full day');
+
+  const isComboWithStyling =
+    mainText.includes('cắt tỉa') ||
+    mainText.includes('spa') ||
+    mainText.includes('full day');
+
+  const isComboWithShaving =
+    mainText.includes('cạo') ||
+    mainText.includes('cạo lông') ||
+    mainText.includes('full day');
+
+  // Sub-service: Cắt móng, cạo bàn
+  if (subText.includes('cắt móng') || subText.includes('cạo bàn')) {
+    if (isComboWithHygiene || mainText.includes('cắt móng') || mainText.includes('cạo bàn')) {
+      return true;
+    }
+  }
+
+  // Sub-service: Cạo bụng, hậu môn
+  if (subText.includes('cạo bụng') || subText.includes('hậu môn')) {
+    if (isComboWithHygiene || isComboWithShaving || mainText.includes('cạo bụng')) {
+      return true;
+    }
+  }
+
+  // Sub-service: Vệ sinh tai
+  if (subText.includes('vệ sinh tai') || (subText.includes('tai') && !subText.includes('nấm'))) {
+    if (isComboWithHygiene || mainText.includes('vệ sinh tai')) {
+      return true;
+    }
+  }
+
+  // Sub-service: Bấm gọn mắt, miệng
+  if (subText.includes('bấm gọn') || (subText.includes('mắt') && subText.includes('miệng'))) {
+    if (isComboWithStyling || mainText.includes('bấm gọn')) {
+      return true;
+    }
+  }
+
+  // Generic fallback check: if main text explicitly contains the sub-service name
+  if (subName.length > 3 && mainText.includes(subName)) {
+    return true;
+  }
+
+  return false;
 }
 
 function SpaBookingWizard() {
@@ -44,17 +111,19 @@ function SpaBookingWizard() {
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   // Loaded database records
-  const [services, setServices] = useState<SpaServiceType[]>([]);
+  const [mainServices, setMainServices] = useState<SpaServiceType[]>([]);
+  const [subServices, setSubServices] = useState<SpaServiceType[]>([]);
   const [addresses, setAddresses] = useState<AddressSpaType[]>([]);
   const [pets, setPets] = useState<PetType[]>([]);
-  const [staffs, setStaffs] = useState<SpaStaffType[]>([]);
 
   // Selected Booking form state
-  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
-  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
-  const [selectedAddressSpaId, setSelectedAddressSpaId] = useState<string>('');
   const [selectedPetId, setSelectedPetId] = useState<string>('');
-  const [selectedStaffId, setSelectedStaffId] = useState<string>('');
+  const [customSpecies, setCustomSpecies] = useState<'DOG' | 'CAT'>('DOG');
+  const [customWeight, setCustomWeight] = useState<number>(3);
+  const [selectedMainServiceId, setSelectedMainServiceId] = useState<string>('');
+  const [selectedSubServiceIds, setSelectedSubServiceIds] = useState<string[]>([]);
+
+  const [selectedAddressSpaId, setSelectedAddressSpaId] = useState<string>('');
   const [bookingDate, setBookingDate] = useState<string>(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [bookingTime, setBookingTime] = useState<string>('');
   const [bookingNote, setBookingNote] = useState<string>('');
@@ -62,12 +131,41 @@ function SpaBookingWizard() {
   const [availableSlots, setAvailableSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
 
+  // Active pet object
+  const activePet = useMemo(() => {
+    return pets.find((p) => p.id === selectedPetId);
+  }, [pets, selectedPetId]);
+
+  const activeSpecies = activePet ? activePet.species : customSpecies;
+  const activeWeight = activePet ? activePet.weight : customWeight;
+
+  // Load services filtered by pet species & weight
+  useEffect(() => {
+    const fetchFilteredServices = async () => {
+      try {
+        const res = await spaApi.getServices(activeSpecies, activeWeight);
+        const allSvc = Array.isArray(res.data) ? res.data : [];
+        const mains = allSvc.filter((s) => s.isMain);
+        const subs = allSvc.filter((s) => !s.isMain);
+
+        setMainServices(mains);
+        setSubServices(subs);
+
+        if (initialServiceId && mains.some((m) => m.id === initialServiceId)) {
+          setSelectedMainServiceId(initialServiceId);
+        }
+      } catch (err) {
+        console.error('Failed to load filtered services', err);
+      }
+    };
+    fetchFilteredServices();
+  }, [activeSpecies, activeWeight, initialServiceId]);
+
   const carouselDays = useMemo(() => {
     if (!bookingDate) return [];
     const base = new Date(bookingDate);
     if (isNaN(base.getTime())) return [];
     
-    // Find the Monday of the week containing baseDate
     const day = base.getDay();
     const diff = base.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(base.setDate(diff));
@@ -87,12 +185,16 @@ function SpaBookingWizard() {
 
   useEffect(() => {
     const fetchSlots = async () => {
-      if (!selectedAddressSpaId || !bookingDate || !selectedServiceId) return;
+      if (!selectedAddressSpaId || !bookingDate || (!selectedMainServiceId && selectedSubServiceIds.length === 0)) return;
       setLoadingSlots(true);
       try {
-        const s = services.find(x => x.id === selectedServiceId);
-        const duration = s?.durationMin || 30;
-        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, duration);
+        const selectedMain = mainServices.find((x) => x.id === selectedMainServiceId);
+        const selectedSubs = subServices.filter((x) => selectedSubServiceIds.includes(x.id));
+        const durationMain = selectedMain ? (selectedMain.durationMax || selectedMain.durationMin || 30) : 0;
+        const durationSubs = selectedSubs.reduce((sum, s) => sum + (s.durationMax || s.durationMin || 15), 0);
+        const totalDuration = durationMain + durationSubs;
+
+        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, totalDuration);
         setAvailableSlots(res.data || []);
       } catch (err) {
         console.error('Failed to fetch available slots', err);
@@ -101,97 +203,83 @@ function SpaBookingWizard() {
       }
     };
     fetchSlots();
-  }, [bookingDate, selectedAddressSpaId, selectedServiceId, services]);
+  }, [bookingDate, selectedAddressSpaId, selectedMainServiceId, selectedSubServiceIds, mainServices, subServices]);
 
   // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [servicesRes, addressesRes, staffsRes] = await Promise.all([
-          spaApi.getServices(),
+        const [addressesRes, petsRes] = await Promise.all([
           spaApi.getSpaAddresses(),
-          spaApi.getStaffList(),
+          api.get('/pets/my').catch(() => ({ data: [] })),
         ]);
 
-        setServices(servicesRes.data || []);
         setAddresses(addressesRes.data || []);
-        setStaffs(staffsRes.data || []);
 
-        // Pre-select service if passed in query string
-        if (initialServiceId) {
-          setSelectedServiceId(initialServiceId);
-          const s = servicesRes.data.find(x => x.id === initialServiceId);
-          if (s) {
-            setSelectedBranchId(s.branchId ?? s.brandId);
-          }
-        } else if (servicesRes.data.length > 0) {
-          setSelectedServiceId(servicesRes.data[0].id);
-          setSelectedBranchId(servicesRes.data[0].branchId ?? servicesRes.data[0].brandId);
-        }
-
-        // Pre-select first address if available
         if (addressesRes.data.length > 0) {
           setSelectedAddressSpaId(addressesRes.data[0].id);
         }
 
-        // Pre-select first staff if available
-        if (staffsRes.data.length > 0) {
-          setSelectedStaffId(staffsRes.data[0].id);
+        const myPets = petsRes.data || [];
+        setPets(myPets);
+        if (myPets.length > 0) {
+          setSelectedPetId(myPets[0].id);
         }
 
-        // Fetch user's pets
-        try {
-          const petsRes = await api.get('/pets/my');
-          const myPets = petsRes.data || [];
-          setPets(myPets);
-          if (myPets.length > 0) {
-            setSelectedPetId(myPets[0].id);
-          }
-        } catch {
-          // If not logged in or failed, leave empty
-        }
-
-        // Set default date to tomorrow
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         setBookingDate(tomorrow.toISOString().split('T')[0]);
-
-      } catch (error) {
-        toast.error('Không thể tải thông tin Spa. Vui lòng tải lại trang.');
+      } catch {
+        toast.error('Không thể tải thông tin Spa. Vui lòng thử lại.');
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [initialServiceId]);
+  }, []);
 
-  // Update selected branch when service changes to ensure consistency
-  const handleServiceChange = (serviceId: string) => {
-    setSelectedServiceId(serviceId);
-    const s = services.find(x => x.id === serviceId);
-    if (s) {
-      setSelectedBranchId(s.branchId ?? s.brandId);
-    }
+  const handleSubServiceToggle = (subId: string) => {
+    setSelectedSubServiceIds((prev) =>
+      prev.includes(subId) ? prev.filter((id) => id !== subId) : [...prev, subId]
+    );
   };
+
+  const selectedMainService = mainServices.find((s) => s.id === selectedMainServiceId);
+
+  // Available sub-services after filtering out those already included in the selected main service / combo
+  const availableSubServices = useMemo(() => {
+    if (!selectedMainService) return subServices;
+    return subServices.filter((sub) => !isSubServiceIncludedInMain(sub, selectedMainService));
+  }, [subServices, selectedMainService]);
+
+  // Automatically deselect hidden sub-services
+  useEffect(() => {
+    const validSubIds = availableSubServices.map((s) => s.id);
+    setSelectedSubServiceIds((prev) => prev.filter((id) => validSubIds.includes(id)));
+  }, [availableSubServices]);
+
+  const calculatedTotalPrice = useMemo(() => {
+    const mainPrice = selectedMainService ? selectedMainService.price : 0;
+    const subPriceTotal = availableSubServices
+      .filter((s) => selectedSubServiceIds.includes(s.id))
+      .reduce((sum, s) => sum + s.price, 0);
+    return mainPrice + subPriceTotal;
+  }, [selectedMainService, selectedSubServiceIds, availableSubServices]);
 
   const handleNextStep = () => {
     if (step === 1) {
-      if (!selectedServiceId) {
-        toast.error('Vui lòng chọn dịch vụ.');
+      if (!selectedMainServiceId && selectedSubServiceIds.length === 0) {
+        toast.error('Vui lòng chọn 1 dịch vụ chính HOẶC ít nhất 1 dịch vụ lẻ.');
         return;
       }
       if (!selectedAddressSpaId) {
-        toast.error('Vui lòng chọn địa chỉ.');
+        toast.error('Vui lòng chọn địa chỉ Spa.');
         return;
       }
       if (pets.length > 0 && !selectedPetId) {
         toast.error('Vui lòng chọn thú cưng.');
-        return;
-      }
-      if (pets.length === 0) {
-        toast.error('Bạn cần tạo hồ sơ thú cưng trước khi đặt lịch.');
         return;
       }
     } else if (step === 2) {
@@ -215,17 +303,17 @@ function SpaBookingWizard() {
     setSubmitting(true);
     try {
       const scheduledAt = new Date(`${bookingDate}T${bookingTime}:00`).toISOString();
-      const pet = pets.find(p => p.id === selectedPetId);
 
       await spaApi.createBooking({
-        branchId: selectedBranchId,
         addressSpaId: selectedAddressSpaId,
-        serviceId: selectedServiceId,
-        petId: selectedPetId,
-        petName: pet ? pet.name : 'Thú cưng',
-        staffId: undefined,
+        mainServiceId: selectedMainServiceId || undefined,
+        subServiceIds: selectedSubServiceIds,
+        petId: activePet ? activePet.id : undefined,
+        petName: activePet ? activePet.name : 'Thú cưng',
+        petSpecies: activeSpecies,
+        petWeight: activeWeight,
         scheduledAt,
-        note: bookingNote
+        note: bookingNote,
       });
 
       toast.success('Đặt lịch hẹn Spa thành công!');
@@ -238,10 +326,8 @@ function SpaBookingWizard() {
     }
   };
 
-  const selectedService = services.find(s => s.id === selectedServiceId);
-  const selectedAddress = addresses.find(a => a.id === selectedAddressSpaId);
-  const selectedPet = pets.find(p => p.id === selectedPetId);
-  const selectedStaff = staffs.find(st => st.id === selectedStaffId);
+  const selectedSubServiceList = availableSubServices.filter((s) => selectedSubServiceIds.includes(s.id));
+  const selectedAddress = addresses.find((a) => a.id === selectedAddressSpaId);
 
   const formatPrice = (price?: number) => {
     return price ? `${price.toLocaleString('vi-VN')}đ` : '0đ';
@@ -252,8 +338,6 @@ function SpaBookingWizard() {
       <AppHeader sectionLabel="Spa" />
 
       <div className="container mx-auto max-w-3xl px-4 py-8 space-y-8">
-
-        {/* Navigation back link */}
         <div className="flex items-center">
           <Link
             href="/spa"
@@ -263,130 +347,67 @@ function SpaBookingWizard() {
           </Link>
         </div>
 
-        {/* Title */}
         <div className="text-center space-y-1">
-          <h1 className="text-2xl font-black tracking-tight text-gray-800">Đặt lịch Spa</h1>
+          <h1 className="text-2xl font-black tracking-tight text-gray-800">Đặt Lịch Spa Grooming Cutepets</h1>
+          <p className="text-xs text-gray-500 font-medium">
+            Chọn 1 dịch vụ chính phù hợp với loài & cân nặng, kết hợp thêm các dịch vụ phụ tùy chọn.
+          </p>
         </div>
 
-        {/* 3-Step Wizard Navigation Indicator */}
+        {/* 3-Step Wizard Progress */}
         <div className="flex items-center justify-center max-w-md mx-auto relative pt-4">
           <div className="absolute h-0.5 bg-gray-200 left-10 right-10 top-[2.2rem] z-0" />
 
-          {/* Step 1 */}
           <div className="flex flex-col items-center gap-2 z-10 w-1/3">
-            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 1 ? 'bg-primary text-white scale-110 shadow-sm' : 'bg-gray-200 text-gray-500'
-              }`}>
+            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 1 ? 'bg-primary text-white scale-110 shadow-sm' : 'bg-gray-200 text-gray-500'}`}>
               1
             </div>
-            <span className={`text-[10px] font-bold ${step === 1 ? 'text-primary' : 'text-gray-400'}`}>Dịch vụ & Chi nhánh</span>
+            <span className={`text-[10px] font-bold ${step === 1 ? 'text-primary' : 'text-gray-400'}`}>Chọn dịch vụ chính & phụ</span>
           </div>
 
-          {/* Step 2 */}
           <div className="flex flex-col items-center gap-2 z-10 w-1/3">
-            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 2 ? 'bg-primary text-white scale-110 shadow-sm' : 'bg-gray-200 text-gray-500'
-              }`}>
+            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 2 ? 'bg-primary text-white scale-110 shadow-sm' : 'bg-gray-200 text-gray-500'}`}>
               2
             </div>
-            <span className={`text-[10px] font-bold ${step === 2 ? 'text-primary' : 'text-gray-400'}`}>Chọn lịch</span>
+            <span className={`text-[10px] font-bold ${step === 2 ? 'text-primary' : 'text-gray-400'}`}>Chọn ngày & giờ</span>
           </div>
 
-          {/* Step 3 */}
           <div className="flex flex-col items-center gap-2 z-10 w-1/3">
-            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 3 ? 'bg-primary text-white scale-110 shadow-sm' : 'bg-gray-200 text-gray-500'
-              }`}>
+            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 3 ? 'bg-primary text-white scale-110 shadow-sm' : 'bg-gray-200 text-gray-500'}`}>
               3
             </div>
-            <span className={`text-[10px] font-bold ${step === 3 ? 'text-primary' : 'text-gray-400'}`}>Xác nhận</span>
+            <span className={`text-[10px] font-bold ${step === 3 ? 'text-primary' : 'text-gray-400'}`}>Xác nhận đơn</span>
           </div>
         </div>
 
-        {/* Wizard Main Container Card */}
+        {/* Wizard Card Container */}
         <div className="bg-white border border-[var(--border-color)] rounded-2xl p-6 md:p-8 shadow-xs space-y-6">
-
           {loading ? (
             <div className="text-center py-20 text-muted-foreground">
               <div className="inline-block size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              <p className="mt-4 font-semibold text-sm">Đang tải thông tin đặt lịch...</p>
+              <p className="mt-4 font-semibold text-sm">Đang tải thông tin dịch vụ Spa Cutepets...</p>
             </div>
           ) : (
             <>
-              {/* STEP 1: SERVICE & BRANCH & PET */}
+              {/* STEP 1: PET & MAIN/SUB SERVICES */}
               {step === 1 && (
                 <div className="space-y-6">
-                  {/* Select Service */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn dịch vụ *</label>
-                    <div className="border rounded-xl divide-y overflow-hidden max-h-72 overflow-y-auto bg-gray-50/50">
-                      {services.map((service) => (
-                        <div
-                          key={service.id}
-                          onClick={() => handleServiceChange(service.id)}
-                          className={`flex items-center justify-between p-4 cursor-pointer hover:bg-purple-50/30 transition-all ${selectedServiceId === service.id ? 'bg-primary/5 border-l-4 border-primary' : ''
-                            }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="radio"
-                              name="service"
-                              checked={selectedServiceId === service.id}
-                              onChange={() => handleServiceChange(service.id)}
-                              className="accent-primary size-4"
-                            />
-                            <div>
-                              <p className="font-bold text-sm text-gray-900 leading-snug">{service.name}</p>
-                              <span className="text-[11px] text-gray-400 font-medium">⏱ {service.durationMin} phút</span>
-                            </div>
-                          </div>
-                          <span className="font-black text-sm text-primary">{formatPrice(service.price)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Select Address */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn địa chỉ *</label>
-                    <div className="grid grid-cols-1 gap-3">
-                      {addresses.map((addr) => (
-                        <div
-                          key={addr.id}
-                          onClick={() => setSelectedAddressSpaId(addr.id)}
-                          className={`flex items-start gap-3 p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${selectedAddressSpaId === addr.id
-                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                            : 'border-gray-200 bg-white'
-                            }`}
-                        >
-                          <input
-                            type="radio"
-                            name="addressSpa"
-                            checked={selectedAddressSpaId === addr.id}
-                            onChange={() => setSelectedAddressSpaId(addr.id)}
-                            className="accent-primary size-4 mt-0.5"
-                          />
-                          <div className="space-y-1">
-                            <p className="font-bold text-sm text-gray-900 leading-snug flex items-center gap-1.5">
-                              <MapPin className="size-4 text-primary shrink-0" />
-                              {addr.address}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                   {/* Select Pet */}
                   <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Thú cưng *</label>
+                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
+                      <PawPrint className="size-4 text-primary" /> Chọn thú cưng *
+                    </label>
                     {pets.length > 0 ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {pets.map((pet) => (
                           <div
                             key={pet.id}
                             onClick={() => setSelectedPetId(pet.id)}
-                            className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${selectedPetId === pet.id
-                              ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                              : 'border-gray-200 bg-white'
-                              }`}
+                            className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
+                              selectedPetId === pet.id
+                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                : 'border-gray-200 bg-white'
+                            }`}
                           >
                             <input
                               type="radio"
@@ -403,54 +424,271 @@ function SpaBookingWizard() {
                               />
                             ) : (
                               <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center border font-bold text-sm text-purple-700">
-                                {pet.name.charAt(0).toUpperCase()}
+                                {pet.species === 'CAT' ? '🐱' : '🐶'}
                               </div>
                             )}
                             <div>
                               <p className="font-extrabold text-sm text-gray-900 leading-none">{pet.name}</p>
-                              <span className="text-[10px] text-gray-400 font-bold">{pet.breed}</span>
+                              <span className="text-[10px] text-gray-500 font-bold block mt-0.5">
+                                {pet.breed} • {pet.species === 'CAT' ? 'Mèo' : 'Chó'} ({pet.weight}kg)
+                              </span>
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      /* Fallback: Create pet profile */
-                      <Link
-                        href="/my-pets/new"
-                        className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-red-300 rounded-xl hover:border-red-500 hover:bg-red-50/50 transition-all group"
-                      >
-                        <Plus className="size-6 text-red-500 mb-2 group-hover:scale-110 transition-transform" />
-                        <span className="font-extrabold text-sm text-red-600">+ Tạo hồ sơ thú cưng</span>
-                        <span className="text-[10px] text-gray-400 mt-1">Bạn cần tạo hồ sơ cho bé trước khi tiến hành đặt dịch vụ.</span>
-                      </Link>
+                      <div className="space-y-4 p-5 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl shadow-2xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-purple-100">
+                          <div>
+                            <p className="text-sm font-black text-purple-950">Bạn chưa tạo hồ sơ thú cưng?</p>
+                            <p className="text-xs text-purple-700 font-medium mt-1">Tạo hồ sơ giúp bạn theo dõi lịch sử chăm sóc và đặt lịch nhanh hơn.</p>
+                          </div>
+                          <Link href="/my-pets/new">
+                            <Button type="button" className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-black text-xs px-4 h-9 shadow-md shrink-0 flex items-center gap-1.5 rounded-xl">
+                              <Plus className="size-4" />
+                              Tạo hồ sơ thú cưng
+                            </Button>
+                          </Link>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <p className="text-xs text-purple-900 font-bold flex items-center gap-1.5">
+                            <span className="inline-block size-2 rounded-full bg-purple-600 animate-pulse"></span>
+                            Hoặc tự nhập thông tin để xem giá dịch vụ tạm thời:
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <span className="text-[11px] font-bold text-gray-600 block mb-1">Loài *</span>
+                              <select
+                                value={customSpecies}
+                                onChange={(e) => setCustomSpecies(e.target.value as 'DOG' | 'CAT')}
+                                className="w-full text-xs font-bold p-2 border rounded-lg bg-white"
+                              >
+                                <option value="DOG">🐕 Chó</option>
+                                <option value="CAT">🐱 Mèo</option>
+                              </select>
+                            </div>
+                            <div>
+                              <span className="text-[11px] font-bold text-gray-600 block mb-1">Cân nặng (kg) *</span>
+                              <input
+                                type="number"
+                                min="0.5"
+                                max="50"
+                                step="0.5"
+                                value={customWeight}
+                                onChange={(e) => setCustomWeight(parseFloat(e.target.value) || 1)}
+                                className="w-full text-xs font-bold p-2 border rounded-lg bg-white"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     )}
+                  </div>
+
+                  {/* Select Address */}
+                  <div className="space-y-3">
+                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn chi nhánh Spa *</label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {addresses.map((addr) => (
+                        <div
+                          key={addr.id}
+                          onClick={() => setSelectedAddressSpaId(addr.id)}
+                          className={`flex items-start gap-3 p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
+                            selectedAddressSpaId === addr.id
+                              ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="addressSpa"
+                            checked={selectedAddressSpaId === addr.id}
+                            onChange={() => setSelectedAddressSpaId(addr.id)}
+                            className="accent-primary size-4 mt-0.5"
+                          />
+                          <div>
+                            <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                              <MapPin className="size-4 text-primary shrink-0" />
+                              {addr.address}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* DYNAMIC CALCULATED PRICE NOTICE BANNER */}
+                  <div className="p-4 bg-gradient-to-r from-purple-50 via-amber-50 to-orange-50 border border-purple-200 rounded-2xl space-y-2 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                        <Sparkles className="size-4 text-purple-600 animate-pulse" />
+                        Giá gói chính tự động tính theo bé {activePet ? `"${activePet.name}"` : 'của bạn'}:
+                      </p>
+                      <span className="text-xs font-black text-purple-800 bg-white px-2.5 py-1 rounded-full border border-purple-200 shadow-2xs">
+                        {activeSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {activeWeight} kg
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-600 font-medium leading-relaxed">
+                      Dựa trên cân nặng <strong className="text-purple-900 font-black">{activeWeight}kg</strong> của bé, hệ thống đã khớp mốc giá chính xác cho các gói bên dưới:
+                    </p>
+                  </div>
+
+                  {/* MAIN SERVICE SELECTION (RATING EXACTLY 1 MAIN SERVICE OR OPTIONAL FOR SUB SERVICES ONLY) */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <label className="text-xs font-black uppercase text-purple-950 tracking-wider flex items-center gap-1.5">
+                        <Scissors className="size-4 text-purple-600" />
+                        Dịch vụ chính (Tùy chọn gói combo hoặc bỏ chọn để làm dịch vụ lẻ)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        {selectedMainServiceId && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedMainServiceId('');
+                            }}
+                            className="text-[11px] font-bold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 px-2.5 py-0.5 rounded-full border border-red-200 transition shadow-2xs"
+                          >
+                            ✕ Bỏ chọn gói chính (Chỉ chọn dịch vụ lẻ)
+                          </button>
+                        )}
+                        <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+                          {activeSpecies === 'CAT' ? 'Dành cho Mèo' : 'Dành cho Chó'} • {activeWeight}kg
+                        </span>
+                      </div>
+                    </div>
+
+                    {mainServices.length === 0 ? (
+                      <p className="text-xs text-gray-500 italic p-4 bg-gray-50 rounded-xl">
+                        Không tìm thấy gói dịch vụ chính phù hợp với cân nặng {activeWeight}kg.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {mainServices.map((service) => {
+                          const isSelected = selectedMainServiceId === service.id;
+                          return (
+                            <div
+                              key={service.id}
+                              onClick={() => setSelectedMainServiceId(isSelected ? '' : service.id)}
+                              className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between space-y-2 ${
+                                isSelected
+                                  ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/30'
+                                  : 'border-gray-200 bg-white hover:border-purple-200'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="radio"
+                                      name="mainService"
+                                      checked={isSelected}
+                                      onChange={() => setSelectedMainServiceId(service.id)}
+                                      className="accent-purple-700 size-4"
+                                    />
+                                    <span className="font-extrabold text-sm text-gray-900">{service.name}</span>
+                                  </div>
+                                  {service.description && (
+                                    <p className="text-[11px] text-gray-500 line-clamp-2 pl-6">{service.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between pt-2 border-t border-purple-100/60 text-xs">
+                                <span className="text-gray-400 font-semibold">⏱ {service.durationMin} - {service.durationMax || 40}p</span>
+                                <span className="font-black text-purple-800 text-sm">{formatPrice(service.price)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SUB SERVICES SELECTION (CHECKBOXES FOR OPTIONAL ADDONS) */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <label className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
+                        <Plus className="size-4 text-green-600" />
+                        Dịch vụ phụ / Dịch vụ lẻ (Chọn thêm hoặc không)
+                      </label>
+                      {selectedMainService && subServices.length > availableSubServices.length && (
+                        <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                          ✨ Đã ẩn các dịch vụ lẻ đã có sẵn trong gói combo đã chọn
+                        </span>
+                      )}
+                    </div>
+
+                    {availableSubServices.length === 0 ? (
+                      <p className="text-xs text-gray-500 italic p-3 bg-gray-50 rounded-xl border border-gray-200">
+                        Gói bạn chọn đã bao gồm đầy đủ các dịch vụ chăm sóc cơ bản. Không có dịch vụ lẻ cần chọn thêm.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {availableSubServices.map((sub) => {
+                          const isChecked = selectedSubServiceIds.includes(sub.id);
+                          return (
+                            <div
+                              key={sub.id}
+                              onClick={() => handleSubServiceToggle(sub.id)}
+                              className={`p-3 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${
+                                isChecked
+                                  ? 'border-green-500 bg-green-50/60 ring-1 ring-green-400'
+                                  : 'border-gray-200 bg-white hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleSubServiceToggle(sub.id)}
+                                  className="accent-green-600 size-4 rounded"
+                                />
+                                <div>
+                                  <span className="font-bold text-xs text-gray-900 block leading-tight">{sub.name}</span>
+                                  <span className="text-[10px] text-gray-400 font-medium">⏱ {sub.durationMin} phút</span>
+                                </div>
+                              </div>
+                              <span className="font-black text-xs text-green-700">{formatPrice(sub.price)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PRICE SUMMARY PREVIEW */}
+                  <div className="bg-purple-950 text-white rounded-xl p-4 flex items-center justify-between shadow-md">
+                    <div>
+                      <span className="text-[10px] uppercase text-purple-300 font-extrabold tracking-wider block">TỔNG CHI PHÍ SPA DỰ KIẾN</span>
+                      <span className="text-xs text-purple-200">
+                        {selectedMainService?.name || 'Chưa chọn gói'} + {selectedSubServiceList.length} dịch vụ lẻ
+                      </span>
+                    </div>
+                    <span className="text-xl font-black text-amber-300">{formatPrice(calculatedTotalPrice)}</span>
                   </div>
                 </div>
               )}
 
-              {/* STEP 2: CHOOSE DATE & AVAILABLE SLOTS */}
+              {/* STEP 2: DATE & TIME */}
               {step === 2 && (
                 <div className="space-y-6">
-                  {/* Select Date Horizontal List */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn ngày *</label>
-                      <div className="flex items-center gap-1.5 text-xs text-primary font-bold">
-                        <Calendar className="size-4 shrink-0" />
-                        <span>Chọn ngày khác:</span>
-                        <input
-                          type="date"
-                          min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} // min tomorrow
-                          value={bookingDate}
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              setBookingDate(e.target.value);
-                              setBookingTime('');
-                            }
-                          }}
-                          className="border border-gray-300 rounded-lg px-2.5 py-1 bg-white text-xs text-gray-850 font-bold focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer h-8"
-                        />
-                      </div>
+                      <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn ngày đặt lịch *</label>
+                      <input
+                        type="date"
+                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                        value={bookingDate}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setBookingDate(e.target.value);
+                            setBookingTime('');
+                          }
+                        }}
+                        className="border border-gray-300 rounded-lg px-2.5 py-1 bg-white text-xs text-gray-850 font-bold focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer h-8"
+                      />
                     </div>
 
                     <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
@@ -484,15 +722,14 @@ function SpaBookingWizard() {
                     </div>
                   </div>
 
-                  {/* Select Time Grid */}
                   <div className="space-y-3">
                     <label className="text-xs font-black uppercase text-gray-800 tracking-wider">
-                      Chọn giờ ({new Date(bookingDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}) *
+                      Chọn giờ hẹn ({new Date(bookingDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}) *
                     </label>
                     {loadingSlots ? (
                       <div className="text-center py-10">
                         <div className="inline-block size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <p className="text-xs text-gray-400 font-semibold mt-2">Đang tìm các khung giờ trống...</p>
+                        <p className="text-xs text-gray-400 font-semibold mt-2">Đang tìm khung giờ khả dụng...</p>
                       </div>
                     ) : availableSlots.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -516,72 +753,79 @@ function SpaBookingWizard() {
                               <span className="text-sm font-black">{slot.time}</span>
                               {hasChuyen ? (
                                 <span className={`text-[9px] mt-0.5 font-semibold ${isSelected ? 'text-white/80' : 'text-gray-450'}`}>
-                                  {slot.remainingSlots} chỗ
+                                  {slot.remainingSlots} nhân viên rảnh
                                 </span>
                               ) : (
-                                <span className="text-[9px] mt-0.5 font-semibold text-gray-300">Hết chỗ</span>
+                                <span className="text-[9px] mt-0.5 font-semibold text-gray-300">Đã kín lịch</span>
                               )}
                             </button>
                           );
                         })}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-450 italic">Vui lòng chọn ngày để xem danh sách giờ.</p>
+                      <p className="text-xs text-gray-450 italic">Vui lòng chọn ngày để xem giờ hẹn khả dụng.</p>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* STEP 3: CONFIRMATION & NOTES */}
+              {/* STEP 3: CONFIRMATION */}
               {step === 3 && (
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <h3 className="text-xs font-black uppercase text-gray-800 tracking-wider">Tóm tắt lịch đặt</h3>
+                    <h3 className="text-xs font-black uppercase text-gray-800 tracking-wider">Tóm tắt đơn đặt lịch Spa</h3>
                     <div className="rounded-xl border bg-gray-50 p-5 text-sm space-y-3">
                       <div className="flex justify-between pb-2 border-b border-dashed">
-                        <span className="text-gray-400">Dịch vụ:</span>
-                        <span className="font-bold text-gray-800">{selectedService?.name}</span>
+                        <span className="text-gray-500">Dịch vụ chính:</span>
+                        <span className="font-extrabold text-purple-950">{selectedMainService?.name}</span>
                       </div>
+                      {selectedSubServiceList.length > 0 && (
+                        <div className="flex justify-between pb-2 border-b border-dashed">
+                          <span className="text-gray-500">Dịch vụ phụ chọn thêm:</span>
+                          <div className="text-right">
+                            {selectedSubServiceList.map((sub) => (
+                              <span key={sub.id} className="block font-bold text-xs text-green-800">
+                                + {sub.name} ({formatPrice(sub.price)})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex justify-between pb-2 border-b border-dashed">
-                        <span className="text-gray-400">Địa chỉ:</span>
+                        <span className="text-gray-500">Địa chỉ Spa:</span>
                         <span className="font-bold text-gray-800">{selectedAddress?.address}</span>
                       </div>
                       <div className="flex justify-between pb-2 border-b border-dashed">
-                        <span className="text-gray-400">Thú cưng:</span>
-                        <span className="font-bold text-gray-800">{selectedPet?.name} ({selectedPet?.breed})</span>
-                      </div>
-                       <div className="flex justify-between pb-2 border-b border-dashed">
-                        <span className="text-gray-400">Nhân viên:</span>
-                        <span className="font-bold text-gray-650">
-                          Hệ thống tự động phân công
+                        <span className="text-gray-500">Thú cưng:</span>
+                        <span className="font-bold text-gray-800">
+                          {activePet ? `${activePet.name} (${activePet.breed})` : `Bé (${activeSpecies === 'CAT' ? 'Mèo' : 'Chó'} ${activeWeight}kg)`}
                         </span>
                       </div>
                       <div className="flex justify-between pb-2 border-b border-dashed">
-                        <span className="text-gray-400">Thời gian hẹn:</span>
+                        <span className="text-gray-500">Thời gian hẹn:</span>
                         <span className="font-bold text-gray-800">{bookingTime} - {bookingDate}</span>
                       </div>
-                      <div className="flex justify-between pt-1">
-                        <span className="text-gray-950 font-bold">Chi phí thanh toán:</span>
-                        <span className="text-base font-black text-primary">{formatPrice(selectedService?.price)}</span>
+                      <div className="flex justify-between pt-2 border-t font-extrabold text-base">
+                        <span className="text-gray-900">Tổng tiền thanh toán:</span>
+                        <span className="text-xl font-black text-purple-700">{formatPrice(calculatedTotalPrice)}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Note input */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="booking-note" className="text-xs font-black uppercase text-gray-800 tracking-wider">Ghi chú của bạn (tùy chọn)</Label>
+                    <Label htmlFor="booking-note" className="text-xs font-black uppercase text-gray-800 tracking-wider">Ghi chú cho cửa hàng (Tùy chọn)</Label>
                     <Textarea
                       id="booking-note"
                       placeholder="Nhập yêu cầu đặc biệt (ví dụ: bé nhát sấy, cạo lông chân ngắn...)"
                       value={bookingNote}
                       onChange={(e) => setBookingNote(e.target.value)}
-                      className="min-h-[100px] bg-white border-gray-300"
+                      className="min-h-[90px] bg-white border-gray-300"
                     />
                   </div>
                 </div>
               )}
 
-              {/* Action Buttons */}
+              {/* Wizard Action Buttons */}
               <div className="flex items-center justify-between pt-4 border-t">
                 {step > 1 ? (
                   <Button
@@ -609,13 +853,12 @@ function SpaBookingWizard() {
                     disabled={submitting}
                     className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-black text-xs px-8 h-10 shadow-md"
                   >
-                    {submitting ? 'Đang gửi...' : 'Xác nhận đặt lịch'}
+                    {submitting ? 'Đang đặt...' : 'Xác Nhận Đặt Lịch'}
                   </Button>
                 )}
               </div>
             </>
           )}
-
         </div>
       </div>
     </main>
@@ -624,14 +867,16 @@ function SpaBookingWizard() {
 
 export default function SpaBookingWizardPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-[var(--bg-page)]">
-        <div className="text-center space-y-4">
-          <div className="inline-block size-10 animate-spin rounded-full border-4 border-[#6D28D9] border-t-transparent" />
-          <p className="font-semibold text-sm text-gray-500">Đang tải biểu mẫu đặt lịch...</p>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[var(--bg-page)]">
+          <div className="text-center space-y-4">
+            <div className="inline-block size-10 animate-spin rounded-full border-4 border-[#6D28D9] border-t-transparent" />
+            <p className="font-semibold text-sm text-gray-500">Đang tải trang đặt lịch...</p>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <SpaBookingWizard />
     </Suspense>
   );

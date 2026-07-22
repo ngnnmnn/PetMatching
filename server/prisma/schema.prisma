@@ -379,6 +379,7 @@ model SpaBrand {
   id          String         @id @default(cuid())
   name        String
   description String?
+  isMain      Boolean        @default(true)
   status      ApprovalStatus @default(PENDING)
   managerId   String?
   approvedAt  DateTime?
@@ -395,46 +396,62 @@ model SpaBrand {
 }
 
 model SpaService {
-  id          String       @id @default(cuid())
-  brandId     String
-  name        String
-  description String?
-  price       Float
-  durationMin Int
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  bookings    SpaBooking[]
-  brand       SpaBrand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  id           String       @id @default(cuid())
+  brandId      String
+  name         String
+  description  String?
+  species      Species?
+  petWeightMin Float?
+  petWeightMax Float?
+  price        Float
+  durationMin  Int
+  durationMax  Int?
+  isMain       Boolean      @default(true)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  bookings     SpaBooking[]
+  brand        SpaBrand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, isActive])
   @@map("spa_services")
 }
 
 model SpaBooking {
-  id                String           @id @default(cuid())
-  brandId           String?
-  serviceId         String?
-  userId            String
-  staffId           String?
-  petName           String?
-  petId             String?
-  addressSpaId      String?
-  scheduledAt       DateTime
-  status            SpaBookingStatus @default(PENDING)
-  priceSnapshot     Float?
-  note              String?
-  petConditionAfter String?
-  photoAfter        String?
-  issueReported     String?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  addressSpa        AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
-  brand             SpaBrand?        @relation(fields: [brandId], references: [id])
-  pet               Pet?             @relation(fields: [petId], references: [id])
-  service           SpaService?      @relation(fields: [serviceId], references: [id])
-  staff             User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
-  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String           @id @default(cuid())
+  brandId               String?
+  serviceId             String?
+  mainServiceId         String?
+  subServiceIds         String[]         @default([])
+  userId                String
+  staffId               String?
+  petName               String?
+  petId                 String?
+  petSpecies            Species?
+  petWeight             Float?
+  addressSpaId          String?
+  scheduledAt           DateTime
+  status                SpaBookingStatus @default(PENDING)
+  priceSnapshot         Float?
+  totalPrice            Float            @default(0)
+  discountAmount        Float            @default(0)
+  timeStartExpected     DateTime?
+  timeEndExpected       DateTime?
+  timeStartReal         DateTime?
+  timeEndReal           DateTime?
+  completionDiffMinutes Int?
+  note                  String?
+  petConditionAfter     String?
+  photoAfter            String?
+  issueReported         String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  addressSpa            AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
+  brand                 SpaBrand?        @relation(fields: [brandId], references: [id])
+  pet                   Pet?             @relation(fields: [petId], references: [id])
+  service               SpaService?      @relation(fields: [serviceId], references: [id])
+  staff                 User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
+  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([brandId, status])
   @@index([userId])
@@ -710,6 +727,8 @@ enum ComplaintAction {
 enum SpaBookingStatus {
   PENDING
   CONFIRMED
+  CHECK_IN
+  ARRIVED
   ASSIGNED
   IN_PROGRESS
   COMPLETED
