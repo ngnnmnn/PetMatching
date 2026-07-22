@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { CartProvider } from '@/context/CartContext'
 import { WishlistProvider } from '@/context/WishlistContext'
 import Chatbot from '@/components/Chatbot'
+import RouteGuard from '@/components/auth/RouteGuard'
 
 const _geist = Geist({ subsets: ['latin'] })
 const _geistMono = Geist_Mono({ subsets: ['latin'] })
@@ -43,7 +44,9 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <WishlistProvider>
           <CartProvider>
-            {children}
+            <RouteGuard>
+              {children}
+            </RouteGuard>
           </CartProvider>
         </WishlistProvider>
         <Chatbot />

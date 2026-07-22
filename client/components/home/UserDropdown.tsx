@@ -19,10 +19,26 @@ export default function UserDropdown() {
   const router = useRouter();
 
   useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      setUser(JSON.parse(stored) as UserType);
-    }
+    const checkUser = () => {
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        try {
+          setUser(JSON.parse(stored) as UserType);
+        } catch (e) {
+          console.error('Failed to parse user from localStorage', e);
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+    };
+
+    checkUser();
+
+    window.addEventListener('auth-change', checkUser);
+    return () => {
+      window.removeEventListener('auth-change', checkUser);
+    };
   }, []);
 
   useEffect(() => {
@@ -37,7 +53,15 @@ export default function UserDropdown() {
   }, []);
 
   if (!user) {
-    return null;
+    return (
+      <button
+        type="button"
+        onClick={() => router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)}
+        className="flex h-10 items-center justify-center rounded-md border border-[var(--primary-color)] bg-primary px-4 text-sm font-extrabold text-white shadow-sm transition hover:bg-primary/95 focus-visible:outline-none"
+      >
+        Đăng nhập
+      </button>
+    );
   }
 
   return (

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { BrandMark } from '@/components/auth/AuthShell';
 
 const API_BASE_URL =
@@ -13,6 +14,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function GoogleCallbackPage() {
+  const router = useRouter();
   const [message, setMessage] = useState('Đang hoàn tất đăng nhập Google...');
   const [hasError, setHasError] = useState(false);
 
@@ -23,19 +25,23 @@ export default function GoogleCallbackPage() {
       const error = params.get('error');
 
       if (error) {
+        console.error('Google login returned error:', error);
         throw new Error(decodeURIComponent(error));
       }
 
       if (!token) {
+        console.error('Google login callback: token is missing in URL');
         throw new Error('Không nhận được mã đăng nhập từ Google.');
       }
 
+      console.log('Google login token received:', token);
       localStorage.setItem('accessToken', token);
 
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
       try {
+        console.log('Verifying Google token with backend at:', `${API_BASE_URL}/auth/verify`);
         const response = await fetch(`${API_BASE_URL}/auth/verify`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -44,19 +50,36 @@ export default function GoogleCallbackPage() {
         });
 
         const data = await response.json();
+        console.log('Verification response status:', response.status, data);
+
         if (!response.ok || !data.user) {
           throw new Error(data.message || 'Token đăng nhập không hợp lệ.');
         }
 
+        console.log('Google token verified successfully. User:', data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
         window.dispatchEvent(new Event('auth-change'));
-        window.location.replace('/home');
+
+        const redirectUrl = params.get('redirect') || localStorage.getItem('login_redirect_url');
+        localStorage.removeItem('login_redirect_url');
+
+        console.log('Redirecting to target URL:', redirectUrl || '/home');
+        if (redirectUrl) {
+          if (redirectUrl.startsWith('http://') || redirectUrl.startsWith('https://')) {
+            window.location.replace(redirectUrl);
+          } else {
+            router.replace(redirectUrl);
+          }
+        } else {
+          router.replace('/home');
+        }
       } finally {
         window.clearTimeout(timeoutId);
       }
     };
 
     completeLogin().catch((error) => {
+      console.error('Google login callback caught exception:', error);
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
       setHasError(true);

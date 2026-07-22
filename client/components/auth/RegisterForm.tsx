@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import api from '@/lib/axios';
@@ -10,7 +10,12 @@ import AuthShell from './AuthShell';
 
 export default function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  const redirectParam = searchParams.get('redirect');
+  const googleLoginUrl = redirectParam
+    ? `${apiBaseUrl}/auth/google?redirect=${encodeURIComponent(redirectParam)}`
+    : `${apiBaseUrl}/auth/google`;
   const [formData, setFormData] = useState<RegisterData & { confirmPassword: string }>({
     email: '',
     password: '',
@@ -182,7 +187,7 @@ export default function RegisterForm() {
         </div>
 
         <a
-          href={`${apiBaseUrl}/auth/google`}
+          href={googleLoginUrl}
           className="flex w-full items-center justify-center gap-3 rounded-xl border border-[var(--border-color)] bg-white px-4 py-3.5 text-sm font-bold text-[var(--text-main)] transition duration-200 ease-in-out hover:border-[var(--primary-color)] hover:bg-[var(--bg-demo-box)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
         >
           <span className="flex size-5 items-center justify-center rounded-full bg-white text-base shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
@@ -195,7 +200,7 @@ export default function RegisterForm() {
       <p className="mt-6 text-center text-sm font-medium text-[var(--text-muted)]">
         Đã có tài khoản?{' '}
         <Link
-          href="/login"
+          href={redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : "/login"}
           className="font-extrabold text-[var(--primary-color)] transition duration-200 ease-in-out hover:text-[#cf5017] hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
         >
           Đăng nhập

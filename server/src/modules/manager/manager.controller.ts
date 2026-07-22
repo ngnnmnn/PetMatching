@@ -63,4 +63,14 @@ export class ManagerController {
   createCategory(@Body() dto: { name: string }) {
     return this.managerService.createCategory(dto);
   }
+
+  @Put('categories/:id')
+  updateCategory(@Param('id') id: string, @Body() dto: { name: string }) {
+    return this.managerService.updateCategory(id, dto);
+  }
+
+  @Delete('categories/:id')
+  deleteCategory(@Param('id') id: string) {
+    return this.managerService.deleteCategory(id);
+  }
 }

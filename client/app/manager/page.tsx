@@ -33,6 +33,8 @@ import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSetting
 import { productsApi } from '@/lib/api/products';
 import { spaApi } from '@/lib/api/spa';
 import { Category } from '@/types';
+import { uploadImages } from '@/lib/api/uploads';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Currency Formatter
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
@@ -129,9 +131,29 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [sortBy, setSortBy] = useState('DEFAULT');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isCategorySidebarOpen, setIsCategorySidebarOpen] = useState(false);
+  const [isCategorySidebarClosing, setIsCategorySidebarClosing] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [submittingCategory, setSubmittingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+    onConfirm: () => void;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    loading: false,
+  });
   const [isSaved, setIsSaved] = useState(false);
   const [submittingSettings, setSubmittingSettings] = useState(false);
   const [feedbackProduct, setFeedbackProduct] = useState<ManagerProduct | null>(null);
@@ -152,6 +174,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ManagerProduct | null>(null);
   const [submittingProduct, setSubmittingProduct] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'ACCESSORY',
@@ -387,6 +410,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }, 300);
   };
 
+  const handleCloseCategorySidebar = () => {
+    setIsCategorySidebarClosing(true);
+    setTimeout(() => {
+      setIsCategorySidebarOpen(false);
+      setIsCategorySidebarClosing(false);
+      setNewCategoryName('');
+      setEditingCategoryId(null);
+    }, 300);
+  };
+
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productForm.name.trim() || !productForm.originalPrice) {
@@ -449,7 +482,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsCategoryModalOpen(true)}
+                onClick={() => setIsCategorySidebarOpen(true)}
                 className="flex items-center gap-2 rounded-xl border border-[var(--primary-color)] text-[var(--primary-color)] bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-[var(--primary-color)]/5 cursor-pointer"
               >
                 <Plus className="size-4" />
@@ -724,14 +757,81 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold mb-1">Đường dẫn ảnh sản phẩm</label>
-                    <input
-                      type="text"
-                      placeholder="https://images.unsplash.com/..."
-                      value={productForm.imageUrl}
-                      onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
-                      className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
-                    />
+                    <label className="block text-xs font-bold mb-1">Ảnh sản phẩm</label>
+                    
+                    {/* Live Preview Box */}
+                    {productForm.imageUrl && (
+                      <div className="relative mb-3 aspect-video w-full max-w-[200px] overflow-hidden rounded-xl border border-[#EFEAE2] bg-gray-50">
+                        <img
+                          src={productForm.imageUrl}
+                          alt="Product Preview"
+                          className="h-full w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setProductForm({ ...productForm, imageUrl: '' })}
+                          className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+                          aria-label="Xóa ảnh"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="file"
+                        id="product-image-file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setUploadingImage(true);
+                          try {
+                            const [uploaded] = await uploadImages([file], 'product');
+                            setProductForm({ ...productForm, imageUrl: uploaded.url });
+                            toast.success('Tải ảnh lên thành công!');
+                          } catch (err) {
+                            console.error('Failed to upload product image', err);
+                            toast.error('Tải ảnh lên thất bại.');
+                          } finally {
+                            setUploadingImage(false);
+                            // Clear input file value so selecting same file works again
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={uploadingImage}
+                        onClick={() => document.getElementById('product-image-file')?.click()}
+                        className="flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--primary-color)] px-4 font-bold text-[var(--primary-color)] transition hover:bg-[var(--primary-color)]/5 disabled:opacity-50"
+                      >
+                        {uploadingImage ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            Đang tải lên...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="size-4" />
+                            Tải ảnh lên từ thiết bị
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="mt-2.5">
+                      <p className="text-[10px] text-[var(--text-muted)] mb-1">Hoặc điền trực tiếp đường dẫn ảnh (URL):</p>
+                      <input
+                        type="text"
+                        placeholder="https://images.unsplash.com/..."
+                        value={productForm.imageUrl}
+                        onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
+                        className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -788,78 +888,244 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           )}
 
-          {/* Category Modal */}
-          {isCategoryModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-              <div className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative text-sm font-semibold">
-                <button
-                  onClick={() => {
-                    setIsCategoryModalOpen(false);
-                    setNewCategoryName('');
-                  }}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition animate-none cursor-pointer"
+          {/* Category Sidebar */}
+          {isCategorySidebarOpen && (
+            <div className="fixed inset-0 z-50 overflow-hidden font-semibold text-xs">
+              {/* Backdrop Overlay */}
+              <div
+                className={cn(
+                  "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+                  isCategorySidebarClosing ? "opacity-0" : "opacity-100"
+                )}
+                onClick={handleCloseCategorySidebar}
+              />
+
+              {/* Sidebar Panel */}
+              <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex sm:pl-16">
+                <div
+                  className={cn(
+                    "w-screen max-w-xl bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform relative",
+                    isCategorySidebarClosing ? "translate-x-full" : "translate-x-0 animate-in slide-in-from-right"
+                  )}
                 >
-                  <X className="size-5" />
-                </button>
-                <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
-                  Thêm danh mục sản phẩm mới
-                </h3>
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!newCategoryName.trim()) return;
-                    setSubmittingCategory(true);
-                    try {
-                      await managerApi.createCategory({ name: newCategoryName });
-                      toast.success('Thêm danh mục mới thành công!');
-                      setIsCategoryModalOpen(false);
-                      setNewCategoryName('');
-                      // Refresh categories
-                      const catRes = await productsApi.getCategories();
-                      setCategories(catRes.data);
-                    } catch (error: any) {
-                      console.error(error);
-                      toast.error(error.response?.data?.message || 'Lỗi khi tạo danh mục mới.');
-                    } finally {
-                      setSubmittingCategory(false);
-                    }
-                  }}
-                  className="space-y-4 text-xs font-semibold"
-                >
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Tên danh mục *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ví dụ: Bát ăn & Uống"
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-sm"
-                    />
+                  {/* Floating Collapse Pull-tab */}
+                  <button
+                    type="button"
+                    onClick={handleCloseCategorySidebar}
+                    className="absolute top-1/2 -left-10 -translate-y-1/2 w-10 h-20 bg-white border border-r-0 border-[#EFEAE2] shadow-[-6px_0_15px_rgba(0,0,0,0.06)] rounded-l-2xl flex items-center justify-center text-gray-400 hover:text-[var(--primary-color)] hover:bg-gray-50 transition active:scale-95 cursor-pointer z-50 group"
+                    title="Thu gọn Sidebar"
+                  >
+                    <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Header */}
+                  <div className="px-6 py-5 border-b border-[#EFEAE2] bg-[#F9F8F6]">
+                    <h3 className="text-lg font-black text-[var(--text-main)]">
+                      Quản lý danh mục sản phẩm
+                    </h3>
+                    <p className="text-xs text-[var(--text-muted)] font-semibold mt-1">
+                      Thêm mới, sửa tên hoặc xóa các danh mục sản phẩm hiện có.
+                    </p>
                   </div>
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCategoryModalOpen(false);
-                        setNewCategoryName('');
-                      }}
-                      className="rounded-xl border border-gray-200 px-4 py-2.5 font-bold hover:bg-gray-50 transition cursor-pointer text-sm"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submittingCategory}
-                      className="flex items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-4 py-2.5 font-bold text-white transition hover:bg-[#cf5017] disabled:bg-gray-300 cursor-pointer text-sm font-black"
-                    >
-                      {submittingCategory ? 'Đang tạo...' : 'Xác nhận'}
-                    </button>
+
+                  {/* Category List Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+                    
+                    {/* List of existing categories */}
+                    <div className="border border-[#EFEAE2] rounded-2xl overflow-hidden bg-[#FAF9F7]">
+                      <table className="w-full text-left text-xs font-semibold">
+                        <thead className="bg-[#F0EEEB] text-[var(--text-muted)] uppercase tracking-wider text-[10px]">
+                          <tr>
+                            <th className="px-4 py-3">Tên danh mục</th>
+                            <th className="px-4 py-3 text-right">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EFEAE2]">
+                          {categories.map((cat) => {
+                            const isEditing = editingCategoryId === cat.id;
+                            return (
+                              <tr key={cat.id} className="hover:bg-white transition duration-150">
+                                <td className="px-4 py-3">
+                                  {isEditing ? (
+                                    <input
+                                      type="text"
+                                      value={editingCategoryName}
+                                      onChange={(e) => setEditingCategoryName(e.target.value)}
+                                      className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3 py-2 focus:bg-white focus:outline-none text-xs"
+                                    />
+                                  ) : (
+                                    <span className="text-sm font-bold text-[var(--text-main)]">{cat.name}</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right whitespace-nowrap">
+                                  {isEditing ? (
+                                    <div className="inline-flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!editingCategoryName.trim()) return;
+                                          setConfirmState({
+                                            isOpen: true,
+                                            title: 'Cập nhật danh mục',
+                                            message: `Bạn có chắc chắn muốn đổi tên danh mục này thành "${editingCategoryName}"?`,
+                                            confirmText: 'Lưu thay đổi',
+                                            isDanger: false,
+                                            loading: false,
+                                            onConfirm: async () => {
+                                              setConfirmState((prev) => ({ ...prev, loading: true }));
+                                              try {
+                                                await managerApi.updateCategory(cat.id, { name: editingCategoryName });
+                                                toast.success('Cập nhật danh mục thành công!');
+                                                setEditingCategoryId(null);
+                                                const catRes = await productsApi.getCategories();
+                                                setCategories(catRes.data);
+                                              } catch (err: any) {
+                                                console.error(err);
+                                                toast.error(err.response?.data?.message || 'Lỗi khi cập nhật danh mục.');
+                                              } finally {
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                              }
+                                            }
+                                          });
+                                        }}
+                                        className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition cursor-pointer"
+                                        title="Lưu"
+                                      >
+                                        <Check className="size-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingCategoryId(null)}
+                                        className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition cursor-pointer"
+                                        title="Hủy"
+                                      >
+                                        <X className="size-4" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="inline-flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingCategoryId(cat.id);
+                                          setEditingCategoryName(cat.name);
+                                        }}
+                                        className="p-1.5 rounded-lg text-[#0F766E] hover:bg-teal-50 transition cursor-pointer"
+                                        title="Sửa"
+                                      >
+                                        <Edit2 className="size-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setConfirmState({
+                                            isOpen: true,
+                                            title: 'Xóa danh mục sản phẩm',
+                                            message: `Bạn có chắc chắn muốn xóa danh mục "${cat.name}"? Hành động này không thể hoàn tác.`,
+                                            confirmText: 'Xóa danh mục',
+                                            isDanger: true,
+                                            loading: false,
+                                            onConfirm: async () => {
+                                              setConfirmState((prev) => ({ ...prev, loading: true }));
+                                              try {
+                                                await managerApi.deleteCategory(cat.id);
+                                                toast.success('Xóa danh mục thành công!');
+                                                const catRes = await productsApi.getCategories();
+                                                setCategories(catRes.data);
+                                              } catch (err: any) {
+                                                console.error(err);
+                                                toast.error(err.response?.data?.message || 'Không thể xóa danh mục.');
+                                              } finally {
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                              }
+                                            }
+                                          });
+                                        }}
+                                        className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition cursor-pointer"
+                                        title="Xóa"
+                                      >
+                                        <Trash2 className="size-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Add New Section */}
+                    <div className="rounded-2xl border border-[#EFEAE2] p-5 space-y-3 bg-[#FAF9F7]">
+                      <h4 className="text-xs font-bold text-[var(--text-main)] uppercase tracking-wider">Thêm danh mục mới</h4>
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!newCategoryName.trim()) return;
+
+                          setConfirmState({
+                            isOpen: true,
+                            title: 'Thêm danh mục mới',
+                            message: `Bạn có chắc chắn muốn thêm danh mục mới với tên "${newCategoryName}"?`,
+                            confirmText: 'Thêm mới',
+                            isDanger: false,
+                            loading: false,
+                            onConfirm: async () => {
+                              setConfirmState((prev) => ({ ...prev, loading: true }));
+                              try {
+                                await managerApi.createCategory({ name: newCategoryName });
+                                toast.success('Thêm danh mục mới thành công!');
+                                setNewCategoryName('');
+                                const catRes = await productsApi.getCategories();
+                                setCategories(catRes.data);
+                              } catch (error: any) {
+                                console.error(error);
+                                toast.error(error.response?.data?.message || 'Lỗi khi tạo danh mục mới.');
+                              } finally {
+                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                              }
+                            }
+                          });
+                        }}
+                        className="flex gap-2 text-xs font-semibold"
+                      >
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ví dụ: Bát ăn & Uống"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3.5 py-2.5 focus:outline-none text-xs focus:ring-2 focus:ring-[var(--primary-color)]"
+                        />
+                        <button
+                          type="submit"
+                          className="rounded-xl bg-[#0F766E] px-4 py-2.5 font-bold text-white hover:bg-[#115E59] transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+                        >
+                          <Plus className="size-4" />
+                          Thêm
+                        </button>
+                      </form>
+                    </div>
+
                   </div>
-                </form>
+                </div>
               </div>
             </div>
           )}
+
+          {/* Centralized Confirmation Dialog */}
+          <ConfirmDialog
+            isOpen={confirmState.isOpen}
+            onClose={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+            onConfirm={confirmState.onConfirm}
+            title={confirmState.title}
+            message={confirmState.message}
+            confirmText={confirmState.confirmText}
+            cancelText={confirmState.cancelText}
+            isDanger={confirmState.isDanger}
+            loading={confirmState.loading}
+          />
 
           {/* Product Feedback Right Sidebar */}
           {isFeedbackModalOpen && feedbackProduct && (

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import api from '@/lib/axios';
@@ -18,6 +18,19 @@ export default function LoginForm() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams.get('redirect');
+  const googleLoginUrl = redirectParam
+    ? `${apiBaseUrl}/auth/google?redirect=${encodeURIComponent(redirectParam)}`
+    : `${apiBaseUrl}/auth/google`;
+
+  useEffect(() => {
+    const redirect = searchParams.get('redirect');
+    if (redirect) {
+      localStorage.setItem('login_redirect_url', redirect);
+    }
+  }, [searchParams]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -38,8 +51,9 @@ export default function LoginForm() {
         localStorage.setItem('accessToken', response.data.accessToken);
         localStorage.setItem('user', JSON.stringify(response.data.user));
         window.dispatchEvent(new Event('auth-change'));
-        const searchParams = new URLSearchParams(window.location.search);
-        const redirectUrl = searchParams.get('redirect');
+        
+        const redirectUrl = localStorage.getItem('login_redirect_url');
+        localStorage.removeItem('login_redirect_url');
 
         const role = response.data.user?.role;
         if (redirectUrl) {
@@ -137,7 +151,7 @@ export default function LoginForm() {
         </div>
 
         <a
-          href={`${apiBaseUrl}/auth/google`}
+          href={googleLoginUrl}
           className="flex w-full items-center justify-center gap-3 rounded-xl border border-[var(--border-color)] bg-white px-4 py-3.5 text-sm font-bold text-[var(--text-main)] transition duration-200 ease-in-out hover:border-[var(--primary-color)] hover:bg-[var(--bg-demo-box)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
         >
           <span className="flex size-5 items-center justify-center rounded-full bg-white text-base shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
@@ -151,7 +165,7 @@ export default function LoginForm() {
       <p className="mt-6 text-center text-sm font-medium text-[var(--text-muted)]">
         Chưa có tài khoản?{' '}
         <Link
-          href="/register"
+          href={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : "/register"}
           className="font-extrabold text-[var(--primary-color)] transition duration-200 ease-in-out hover:text-[#cf5017] hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
         >
           Đăng ký ngay

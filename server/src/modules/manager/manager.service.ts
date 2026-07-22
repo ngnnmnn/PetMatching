@@ -351,4 +351,80 @@ export class ManagerService {
       },
     });
   }
+
+  async updateCategory(id: string, dto: { name: string }) {
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Tên danh mục không được để trống.');
+    }
+    const category = await this.prisma.category.findUnique({
+      where: { id },
+    });
+    if (!category) {
+      throw new NotFoundException('Không tìm thấy danh mục.');
+    }
+
+    const name = dto.name.trim();
+    const slug = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+
+    const existing = await this.prisma.category.findFirst({
+      where: {
+        id: { not: id },
+        OR: [
+          { name: { equals: name, mode: 'insensitive' } },
+          { slug: { equals: slug, mode: 'insensitive' } },
+        ],
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('Danh mục với tên hoặc slug này đã tồn tại.');
+    }
+
+    const oldSlug = category.slug;
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update the category itself
+      const updatedCategory = await tx.category.update({
+        where: { id },
+        data: { name, slug },
+      });
+
+      // 2. Update all products referencing this category slug
+      if (oldSlug !== slug) {
+        await tx.product.updateMany({
+          where: { category: oldSlug },
+          data: { category: slug },
+        });
+      }
+
+      return updatedCategory;
+    });
+  }
+
+  async deleteCategory(id: string) {
+    const category = await this.prisma.category.findUnique({
+      where: { id },
+    });
+    if (!category) {
+      throw new NotFoundException('Không tìm thấy danh mục.');
+    }
+
+    // Check if there are any products with this category slug
+    const productCount = await this.prisma.product.count({
+      where: { category: category.slug },
+    });
+    if (productCount > 0) {
+      throw new BadRequestException('Không thể xóa danh mục này vì đang có sản phẩm thuộc danh mục.');
+    }
+
+    return this.prisma.category.delete({
+      where: { id },
+    });
+  }
 }

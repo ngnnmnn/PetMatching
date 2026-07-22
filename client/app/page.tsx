@@ -11,16 +11,12 @@ export default function RootPage() {
     const storedUser = localStorage.getItem('user');
     const user = storedUser ? JSON.parse(storedUser) as { role?: string } : null;
 
-    if (token) {
-      if (user?.role === 'ADMIN') {
-        router.replace('/admin');
-      } else if (user?.role === 'STORE_MANAGER' || user?.role === 'SPA_MANAGER') {
-        router.replace('/manager');
-      } else {
-        router.replace('/home');
-      }
+    if (token && user?.role === 'ADMIN') {
+      router.replace('/admin');
+    } else if (token && (user?.role === 'STORE_MANAGER' || user?.role === 'SPA_MANAGER')) {
+      router.replace('/manager');
     } else {
-      router.replace('/login');
+      router.replace('/home');
     }
   }, [router]);
 

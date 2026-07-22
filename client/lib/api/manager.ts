@@ -57,6 +57,7 @@ export interface ManagerOrder {
       imageUrl?: string;
     };
   }[];
+  ghnOrderCode?: string | null;
 }
 
 export interface ManagerCustomer {
@@ -94,4 +95,6 @@ export const managerApi = {
   updateStoreSettings: (data: Partial<StoreSettings>) => api.put<StoreSettings>('/manager/store-settings', data),
   
   createCategory: (data: { name: string }) => api.post<Category>('/manager/categories', data),
+  updateCategory: (id: string, data: { name: string }) => api.put<Category>(`/manager/categories/${id}`, data),
+  deleteCategory: (id: string) => api.delete(`/manager/categories/${id}`),
 };

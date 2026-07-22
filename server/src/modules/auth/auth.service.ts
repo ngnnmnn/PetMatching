@@ -361,7 +361,7 @@ export class AuthService {
     await this.mailService.sendOtpEmail(email, otp);
   }
 
-  getGoogleAuthUrl() {
+  getGoogleAuthUrl(redirect?: string) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) {
       throw new BadRequestException('Missing GOOGLE_CLIENT_ID');
@@ -378,6 +378,10 @@ export class AuthService {
       scope: 'openid email profile',
       prompt: 'select_account',
     });
+
+    if (redirect) {
+      params.append('state', redirect);
+    }
 
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }

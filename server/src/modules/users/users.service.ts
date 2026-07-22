@@ -631,7 +631,7 @@ export class UsersService {
           amount: Math.round(dto.totalAmount),
           description: `PM${order.orderCode}`,
           returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders?status=success`,
-          cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel`,
+          cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel&orderId=${order.id}`,
           items: payosItems,
         });
 

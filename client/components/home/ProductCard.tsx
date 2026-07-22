@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Heart, PackageCheck, ShoppingCart, Star, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Product } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -23,6 +25,7 @@ function getDiscountPercent(product: Product) {
 }
 
 export default function ProductCard({ product, featured = false }: { product: Product; featured?: boolean }) {
+  const router = useRouter();
   const displayPrice = product.salePrice ?? product.originalPrice;
   const discount = getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
@@ -34,12 +37,24 @@ export default function ProductCard({ product, featured = false }: { product: Pr
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng.');
+      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     addToCart(product, 1);
   };
 
   const handleAddToWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để lưu sản phẩm yêu thích.');
+      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     toggleWishlist(product);
   };
 
@@ -87,7 +102,7 @@ export default function ProductCard({ product, featured = false }: { product: Pr
 
       <div className="space-y-3 p-3.5">
         <Link href={`/home/product/${product.id}`} className="block group-hover:opacity-90">
-          <div className="min-h-[3rem]">
+          <div className="min-h-[3.875rem]">
             <div className="flex items-center justify-between gap-2">
               <p className="truncate text-xs font-bold uppercase tracking-[0.08em] text-[#0F766E]">{product.brand || 'PetMatch'}</p>
               {product.unit && <span className="shrink-0 text-xs font-semibold text-[var(--text-muted)]">{product.unit}</span>}

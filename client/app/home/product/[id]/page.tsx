@@ -159,6 +159,12 @@ export default function ProductDetailPage() {
 
   const handleAddToCart = () => {
     if (!product) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng.');
+      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     setIsAddingToCart(true);
 
     // Simulate adding to cart action
@@ -176,6 +182,12 @@ export default function ProductDetailPage() {
 
   const handleToggleWishlist = () => {
     if (!product) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để lưu sản phẩm yêu thích.');
+      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     toggleWishlist(product);
   };
 
@@ -488,6 +500,12 @@ export default function ProductDetailPage() {
                   className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#E45D1C] to-[#EF6C00] px-6 text-sm font-black text-white shadow-md transition-all duration-200 hover:opacity-95 hover:shadow-lg active:scale-98 disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none cursor-pointer"
                   onClick={() => {
                     if (!product) return;
+                    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+                    if (!token) {
+                      toast.error('Vui lòng đăng nhập để thực hiện mua hàng.');
+                      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+                      return;
+                    }
                     try {
                       const directCheckoutItem = {
                         id: product.id,

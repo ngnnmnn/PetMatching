@@ -45,13 +45,14 @@ export class AuthController {
   }
 
   @Get('google')
-  async googleAuth(@Res() res: Response) {
-    return res.redirect(this.authService.getGoogleAuthUrl());
+  async googleAuth(@Query('redirect') redirect: string, @Res() res: Response) {
+    return res.redirect(this.authService.getGoogleAuthUrl(redirect));
   }
 
   @Get('google/callback')
   async googleCallback(
     @Query('code') code: string,
+    @Query('state') state: string,
     @Query('error') error: string,
     @Res() res: Response,
   ) {
@@ -69,6 +70,9 @@ export class AuthController {
     try {
       const authResult = await this.authService.googleLogin(code);
       const params = new URLSearchParams({ token: authResult.accessToken });
+      if (state) {
+        params.append('redirect', state);
+      }
 
       return res.redirect(
         `${clientUrl}/auth/google/callback?${params.toString()}`,

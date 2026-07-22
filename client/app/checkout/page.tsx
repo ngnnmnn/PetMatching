@@ -149,6 +149,56 @@ function CheckoutPageContent() {
     }
   }, []);
 
+  const handleUpdateQty = async (item: any, newQty: number) => {
+    if (newQty < 1) {
+      toast.error('Số lượng tối thiểu là 1.');
+      return;
+    }
+
+    if (item.product.stock !== undefined && item.product.stock !== null && newQty > item.product.stock) {
+      toast.warning(`Chỉ còn lại ${item.product.stock} sản phẩm trong kho`);
+      return;
+    }
+
+    if (directCheckoutItem && item.id === directCheckoutItem.id) {
+      const updated = { ...directCheckoutItem, quantity: newQty };
+      setDirectCheckoutItem(updated);
+      localStorage.setItem('petmatch_direct_checkout_item', JSON.stringify(updated));
+    } else {
+      await updateQuantity(item.id, newQty);
+    }
+  };
+
+  const handleRemoveItem = async (item: any) => {
+    if (directCheckoutItem && item.id === directCheckoutItem.id) {
+      setDirectCheckoutItem(null);
+      localStorage.removeItem('petmatch_direct_checkout_item');
+      toast.info('Đã xóa sản phẩm khỏi thanh toán.');
+      router.push('/cart');
+    } else {
+      // Exclude from checkout list, DO NOT remove from cart database/state!
+      let updatedSelectedIds: string[] = [];
+      
+      if (selectedItemIds.length > 0) {
+        updatedSelectedIds = selectedItemIds.filter((id) => id !== item.id);
+      } else {
+        // If selectedItemIds was empty (checking out all cart items),
+        // we initialize it with all cart item IDs except the removed one
+        updatedSelectedIds = cartItems.map((i) => i.id).filter((id) => id !== item.id);
+      }
+      
+      setSelectedItemIds(updatedSelectedIds);
+      localStorage.setItem('petmatch_selected_cart_items', JSON.stringify(updatedSelectedIds));
+      toast.success(`Đã bỏ sản phẩm "${item.product.name}" khỏi danh sách thanh toán.`);
+      
+      // If no items are left to checkout, redirect to cart page
+      if (updatedSelectedIds.length === 0) {
+        toast.info('Không còn sản phẩm nào trong thanh toán.');
+        router.push('/cart');
+      }
+    }
+  };
+
   // Initialize promo code from query parameter if present
   useEffect(() => {
     const code = searchParams.get('code') || '';
@@ -200,6 +250,13 @@ function CheckoutPageContent() {
     : selectedItemIds.length > 0
     ? cartItems.filter((item) => selectedItemIds.includes(item.id))
     : cartItems;
+
+  // Redirect to cart if empty and not loading
+  useEffect(() => {
+    if (!loading && checkoutItems.length === 0) {
+      router.push('/cart');
+    }
+  }, [loading, checkoutItems, router]);
 
   const checkoutTotal = checkoutItems.reduce((acc, item) => {
     const price = item.product.salePrice ?? item.product.originalPrice;
@@ -255,7 +312,8 @@ function CheckoutPageContent() {
     }
   }, [selectedAddressId, savedAddresses, selectedDistrictId, selectedWardCode, apiBaseUrl]);
 
-  const shippingFee = checkoutTotal > 500000 || checkoutTotal === 0 ? 0 : calculatedShippingFee;
+  const hasItems = !!directCheckoutItem || selectedItemIds.length > 0;
+  const shippingFee = (hasItems && checkoutTotal > 500000) ? 0 : calculatedShippingFee;
   const discountVal = (checkoutTotal * discountPercent) / 100 + discountAmount;
   const finalTotal = Math.max(0, checkoutTotal + shippingFee - discountVal);
 
@@ -285,6 +343,26 @@ function CheckoutPageContent() {
     setIsMounted(true);
     loadAddresses();
   }, []);
+
+  // Handle QR Payment Cancel redirection from PayOS
+  useEffect(() => {
+    const status = searchParams.get('status');
+    const orderId = searchParams.get('orderId');
+    if (status === 'cancel' && orderId) {
+      const cancelOrder = async () => {
+        try {
+          await usersApi.cancelOrder(orderId);
+          toast.info('Đã hủy thanh toán. Đơn hàng chưa được lưu.');
+        } catch (err) {
+          console.error('Failed to cancel order on redirect:', err);
+        } finally {
+          // Clean up search parameters from URL
+          window.history.replaceState({}, '', '/checkout');
+        }
+      };
+      cancelOrder();
+    }
+  }, [searchParams]);
 
   if (!isMounted) {
     return (
@@ -631,6 +709,9 @@ function CheckoutPageContent() {
                               {addr.isDefault && (
                                 <span className="rounded bg-[#EEF8F5] text-[#0F766E] px-1.5 py-0.5 text-[9px] font-extrabold uppercase">Mặc định</span>
                               )}
+                              {(!addr.districtId || !addr.wardCode) && (
+                                <span className="rounded bg-amber-50 text-amber-700 px-1.5 py-0.5 text-[9px] font-bold border border-amber-200">Cần cập nhật vùng nhận</span>
+                              )}
                             </div>
                             
                             {/* Action Buttons to Edit or Delete Address */}
@@ -663,6 +744,11 @@ function CheckoutPageContent() {
                           <p className="text-[var(--text-muted)] mt-1.5 leading-relaxed">
                             {addr.detail}, {addr.ward}, {addr.district}, {addr.province}
                           </p>
+                          {selectedAddressId === addr.id && (!addr.districtId || !addr.wardCode) && (
+                            <p className="text-[10px] text-amber-600 font-bold mt-1.5 flex items-center gap-1">
+                              ⚠️ Địa chỉ cũ/thiếu mã vùng GHN (Phí ship mặc định 30,000₫). Vui lòng bấm "Sửa" để chọn quận/huyện, phường/xã.
+                            </p>
+                          )}
                         </div>
                       </label>
                     ))}
@@ -889,23 +975,70 @@ function CheckoutPageContent() {
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-sm space-y-4">
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b border-[var(--border-color)]">Đơn hàng của bạn</h3>
                 
-                <div className="divide-y divide-[var(--border-color)] max-h-56 overflow-y-auto pr-1">
+                <div className="divide-y divide-[var(--border-color)] max-h-[30rem] overflow-y-auto pr-1">
                   {checkoutItems.map((item) => {
                     const price = item.product.salePrice ?? item.product.originalPrice;
                     return (
-                      <div key={item.id} className="py-3 flex gap-3 items-center">
-                        <div className="aspect-square size-11 rounded-md overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)] shrink-0">
+                      <div key={item.id} className="py-4 flex gap-3 items-center border-b border-[var(--border-color)] last:border-b-0">
+                        {/* Image */}
+                        <div className="aspect-square size-14 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)] shrink-0 relative">
                           <img
                             src={item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
                             className="w-full h-full object-cover"
                           />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-[var(--text-main)] line-clamp-1">{item.product.name}</p>
-                          <p className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5">SL: {item.quantity}</p>
+                        
+                        {/* Info & Quantity Selector */}
+                        <div className="flex-1 min-w-0 flex flex-col justify-between">
+                          <p className="text-xs font-bold text-[var(--text-main)] line-clamp-2 pr-2" title={item.product.name}>
+                            {item.product.name}
+                          </p>
+                          
+                          {/* Mini Quantity Selector */}
+                          <div className="flex items-center gap-2 mt-2">
+                            <div className="flex items-center rounded-lg border border-[var(--border-color)] bg-white p-0.5 shadow-sm">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateQty(item, item.quantity - 1)}
+                                className="inline-flex size-5 items-center justify-center rounded bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-black transition active:scale-90 text-[10px] font-black cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="w-7 text-center text-xs font-black text-[var(--text-main)] select-none">
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateQty(item, item.quantity + 1)}
+                                className="inline-flex size-5 items-center justify-center rounded bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-black transition active:scale-90 text-[10px] font-black cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                            
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(item)}
+                              className="text-[10px] font-bold text-red-500 hover:text-red-700 hover:underline transition ml-1 cursor-pointer"
+                            >
+                              Xóa
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-xs font-black text-[var(--text-main)]">{formatCurrency(price * item.quantity)}</span>
+
+                        {/* Price */}
+                        <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                          <span className="text-xs font-black text-[var(--text-main)]">
+                            {formatCurrency(price * item.quantity)}
+                          </span>
+                          {item.quantity > 1 && (
+                            <span className="text-[9px] text-[var(--text-muted)] font-bold">
+                              {formatCurrency(price)} / cái
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
