@@ -7,6 +7,7 @@ import { Calendar, MapPin, Phone, Search, Sparkles, Star } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBranchType, SpaServiceType, AddressSpaType } from '@/types';
 import BookingDialog from '@/components/spa/BookingDialog';
@@ -98,6 +99,17 @@ export default function SpaHomePage() {
       branchName: service.branch?.name || 'Chi nhánh Spa',
     });
     setBookingDialogOpen(true);
+  };
+
+  const handleBookClick = (serviceId: string) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để thực hiện đặt lịch Spa.');
+      const targetUrl = `/spa/book?serviceId=${serviceId}`;
+      router.push(`/login?redirect=${encodeURIComponent(targetUrl)}`);
+      return;
+    }
+    router.push(`/spa/book?serviceId=${serviceId}`);
   };
 
   const safeServices = Array.isArray(services) ? services : [];
@@ -332,12 +344,11 @@ export default function SpaHomePage() {
                             </span>
                           </div>
                           <Button
-                            asChild
-                            className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl"
+                            type="button"
+                            onClick={() => handleBookClick(card.id)}
+                            className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl cursor-pointer"
                           >
-                            <Link href={`/spa/book?serviceId=${card.id}`}>
-                              Đặt lịch
-                            </Link>
+                            Đặt lịch
                           </Button>
                         </div>
                       </div>
