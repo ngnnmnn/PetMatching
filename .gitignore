@@ -23,4 +23,4 @@ dist/
 .next/
 out/
 build/
-uploads/
+/uploads/
