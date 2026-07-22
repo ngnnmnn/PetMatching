@@ -123,11 +123,11 @@ function SpaBookingWizard() {
           setSelectedServiceId(initialServiceId);
           const s = servicesRes.data.find(x => x.id === initialServiceId);
           if (s) {
-            setSelectedBranchId(s.branchId);
+            setSelectedBranchId(s.branchId ?? s.brandId);
           }
         } else if (servicesRes.data.length > 0) {
           setSelectedServiceId(servicesRes.data[0].id);
-          setSelectedBranchId(servicesRes.data[0].branchId);
+          setSelectedBranchId(servicesRes.data[0].branchId ?? servicesRes.data[0].brandId);
         }
 
         // Pre-select first address if available
@@ -172,7 +172,7 @@ function SpaBookingWizard() {
     setSelectedServiceId(serviceId);
     const s = services.find(x => x.id === serviceId);
     if (s) {
-      setSelectedBranchId(s.branchId);
+      setSelectedBranchId(s.branchId ?? s.brandId);
     }
   };
 

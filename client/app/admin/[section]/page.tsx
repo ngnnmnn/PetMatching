@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,7 +28,28 @@ type PetModerationFlow = {
 
 const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER'];
 const accountStatusOptions: AccountStatus[] = ['ACTIVE', 'SUSPENDED', 'PENDING_MANAGER'];
-const readOnlySections = new Set(['stores', 'store-products', 'store-orders', 'store-settings', 'spa-bookings']);
+const complaintTypeOptions = [
+  ['ALL', 'Tất cả nhóm'],
+  ['STORE', 'Cửa hàng'],
+  ['SPA', 'Spa'],
+  ['MATCHING', 'Ghép đôi'],
+  ['PET', 'Thú cưng'],
+  ['USER', 'Người dùng'],
+  ['REVIEW', 'Đánh giá'],
+] as const;
+const complaintTargetOptions = [
+  ['ALL', 'Tất cả đối tượng'],
+  ['ORDER', 'Đơn hàng'],
+  ['PRODUCT', 'Sản phẩm'],
+] as const;
+const complaintStatusOptions = [
+  ['ALL', 'Tất cả trạng thái'],
+  ['PENDING', 'Chờ xử lý'],
+  ['RESOLVED', 'Đã xử lý'],
+  ['ESCALATED', 'Đã chuyển cấp'],
+  ['DISMISSED', 'Đã bỏ qua'],
+] as const;
+const readOnlySections = new Set(['stores', 'store-overview', 'store-products', 'store-orders', 'store-settings', 'spa-overview', 'spa-services', 'spa-staff-schedule', 'spa-bookings']);
 
 const sectionConfig: Record<string, {
   title: string;
@@ -100,6 +122,12 @@ const sectionConfig: Record<string, {
       { key: 'orders', label: 'Đơn hàng', render: (row) => row._count?.orders ?? 0 },
     ],
   },
+  'store-overview': {
+    title: 'Tổng quan cửa hàng',
+    description: 'Dashboard mini theo dõi nhanh hoạt động kinh doanh của PetMatching Store.',
+    loader: adminApi.storeDashboard,
+    columns: [],
+  },
   'store-products': {
     title: 'Sản phẩm',
     description: 'Giám sát danh mục, giá bán, tồn kho và trạng thái sản phẩm của PetMatching Store.',
@@ -129,12 +157,6 @@ const sectionConfig: Record<string, {
       { key: 'createdAt', label: 'Ngày đặt', render: dateCell },
     ],
   },
-  'store-complaints': {
-    title: 'Khiếu nại cửa hàng',
-    description: 'Khiếu nại và xử lý leo thang liên quan đến đơn hàng hoặc sản phẩm.',
-    loader: () => adminApi.complaints('STORE'),
-    columns: complaintColumns(),
-  },
   'store-settings': {
     title: 'Cấu hình cửa hàng',
     description: 'Cập nhật thông tin chính thức của cửa hàng PetMatching hiển thị trên hệ thống.',
@@ -142,37 +164,53 @@ const sectionConfig: Record<string, {
     columns: [],
   },
   spas: {
-    title: 'Chi nhánh spa',
-    description: 'Duyệt, tạm dừng và giám sát các chi nhánh spa.',
+    title: 'Thông tin Spa',
+    description: 'Theo dõi thông tin và trạng thái nhận lịch của Spa PetMatching.',
     loader: adminApi.spas,
+    columns: [],
+  },
+  'spa-overview': {
+    title: 'Tổng quan Spa',
+    description: 'Dashboard mini theo dõi nhanh toàn bộ hoạt động của Spa PetMatching.',
+    loader: adminApi.spaDashboard,
+    columns: [],
+  },
+  'spa-services': {
+    title: 'Dịch vụ Spa',
+    description: 'Theo dõi danh mục, giá, thời lượng và trạng thái dịch vụ.',
+    loader: adminApi.spaServices,
     columns: [
-      { key: 'name', label: 'Chi nhánh' },
-      { key: 'manager', label: 'Quản lý', render: (row) => row.manager?.name ?? '-' },
-      { key: 'address', label: 'Địa chỉ' },
-      { key: 'phone', label: 'Điện thoại' },
+      { key: 'name', label: 'Dịch vụ' },
+      { key: 'description', label: 'Mô tả' },
+      { key: 'price', label: 'Giá', render: moneyCell },
+      { key: 'durationMin', label: 'Thời lượng', render: (row) => `${row.durationMin} phút` },
+      { key: 'isActive', label: 'Trạng thái', render: (row) => row.isActive ? 'Đang hoạt động' : 'Tạm ngừng' },
+      { key: '_count', label: 'Lượt đặt', render: (row) => row._count?.bookings ?? 0 },
+    ],
+  },
+  'spa-staff-schedule': {
+    title: 'Lịch nhân viên',
+    description: 'Theo dõi lịch Spa đã phân công cho từng nhân viên.',
+    loader: adminApi.spaStaffSchedule,
+    columns: [
+      { key: 'staff', label: 'Nhân viên', render: (row) => row.staff?.name ?? '-' },
+      { key: 'service', label: 'Dịch vụ', render: (row) => row.service?.name ?? '-' },
+      { key: 'pet', label: 'Thú cưng', render: (row) => row.pet?.name ?? row.petName ?? '-' },
+      { key: 'scheduledAt', label: 'Thời gian', render: dateCell },
       { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
-      { key: '_count', label: 'Nhân viên', render: (row) => row._count?.staffs ?? 0 },
-      { key: 'bookings', label: 'Lịch đặt', render: (row) => row._count?.bookings ?? 0 },
     ],
   },
   'spa-bookings': {
     title: 'Lịch đặt spa',
-    description: 'Tổng quan lịch đặt ở chế độ chỉ xem trên toàn bộ chi nhánh spa.',
+    description: 'Theo dõi toàn bộ lịch đặt của Spa PetMatching ở chế độ chỉ xem.',
     loader: adminApi.spaBookings,
     columns: [
       { key: 'user', label: 'Khách hàng', render: (row) => row.user?.name ?? '-' },
-      { key: 'branch', label: 'Chi nhánh', render: (row) => row.branch?.name ?? '-' },
       { key: 'service', label: 'Dịch vụ', render: (row) => row.service?.name ?? '-' },
       { key: 'staff', label: 'Nhân viên', render: (row) => row.staff?.name ?? '-' },
       { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
       { key: 'scheduledAt', label: 'Thời gian hẹn', render: dateCell },
     ],
-  },
-  'spa-complaints': {
-    title: 'Khiếu nại spa',
-    description: 'Khiếu nại và xử lý leo thang liên quan đến lịch đặt hoặc dịch vụ spa.',
-    loader: () => adminApi.complaints('SPA'),
-    columns: complaintColumns(),
   },
   reports: {
     title: 'Báo cáo & khiếu nại',
@@ -191,6 +229,9 @@ export default function AdminSectionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState('');
+  const [complaintType, setComplaintType] = useState('ALL');
+  const [complaintTarget, setComplaintTarget] = useState('ALL');
+  const [complaintStatus, setComplaintStatus] = useState('ALL');
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] = useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] = useState<PetModerationFlow | null>(null);
 
@@ -207,9 +248,38 @@ export default function AdminSectionPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (section !== 'reports') return;
+    const query = new URLSearchParams(window.location.search);
+    setComplaintType(query.get('type') ?? 'ALL');
+    setComplaintTarget(query.get('targetType') ?? 'ALL');
+    setComplaintStatus(query.get('status') ?? 'ALL');
+  }, [section]);
+
+  const visibleRows = useMemo(() => {
+    if (section !== 'reports') return rows;
+    return rows.filter((row) =>
+      (complaintType === 'ALL' || row.type === complaintType) &&
+      (complaintTarget === 'ALL' || row.targetType === complaintTarget) &&
+      (complaintStatus === 'ALL' || row.status === complaintStatus),
+    );
+  }, [complaintStatus, complaintTarget, complaintType, rows, section]);
+
   const titleStats = useMemo(() => {
+    if (section === 'store-overview') {
+      const stats = rows[0]?.stats ?? {};
+      return { total: stats.todayOrders ?? 0, active: stats.completedOrders ?? 0, pending: stats.pendingOrders ?? 0 };
+    }
+    if (section === 'spa-overview') {
+      const stats = rows[0]?.stats ?? {};
+      return { total: stats.todayBookings ?? 0, active: stats.completedBookings ?? 0, pending: stats.pendingBookings ?? 0 };
+    }
     const pending = rows.filter((row) => row.status === 'PENDING' || row.accountStatus === 'PENDING_MANAGER').length;
-    const active = rows.filter((row) => row.status === 'ACTIVE' || row.accountStatus === 'ACTIVE').length;
+    const active = section === 'spa-services'
+      ? rows.filter((row) => row.isActive).length
+      : section === 'reports'
+      ? rows.filter((row) => row.status === 'RESOLVED').length
+      : rows.filter((row) => row.status === 'ACTIVE' || row.accountStatus === 'ACTIVE').length;
     if (section === 'store-products') {
       return {
         total: rows.length,
@@ -266,8 +336,8 @@ export default function AdminSectionPage() {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 self-center">
-            <MiniStat label="Tổng" value={titleStats.total} />
-            <MiniStat label={section === 'store-products' ? 'Đang bán' : 'Hoạt động'} value={titleStats.active} />
+            <MiniStat label={section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : 'Tổng'} value={titleStats.total} />
+            <MiniStat label={['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : 'Hoạt động'} value={titleStats.active} />
             <MiniStat label={section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
           </div>
         </div>
@@ -289,56 +359,74 @@ export default function AdminSectionPage() {
             onRunAction={runAction}
             onRoleChange={handleRoleChange}
           />
+        ) : section === 'store-overview' ? (
+          <StoreOverviewPanel data={rows[0]} />
+        ) : section === 'spa-overview' ? (
+          <SpaOverviewPanel data={rows[0]} />
         ) : section === 'store-settings' ? (
           <StoreSettingsForm store={rows[0]} onSaved={load} />
+        ) : section === 'spas' ? (
+          <SpaSettingsForm spa={rows[0]} onSaved={load} />
         ) : section === 'store-products' ? (
           <ProductCatalogPanel products={rows} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left">
-              <thead className="bg-[#F7F9FB]">
-                <tr>
-                  {config.columns.map((column) => (
-                    <th key={column.key} className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]">
-                      {column.label}
-                    </th>
-                  ))}
-                  {hasActions && (
-                    <th className="px-5 py-4 text-right text-[11px] font-black uppercase tracking-wider text-[#64748B]">Thao tác</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E5EAF0]">
-                {rows.map((row, index) => (
-                  <tr key={row.id ?? `${section}-${index}`} className="transition hover:bg-[#FAFBFC]">
+          <div>
+            {section === 'reports' && (
+              <ComplaintFilters
+                type={complaintType}
+                target={complaintTarget}
+                status={complaintStatus}
+                onTypeChange={setComplaintType}
+                onTargetChange={setComplaintTarget}
+                onStatusChange={setComplaintStatus}
+              />
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse text-left">
+                <thead className="bg-[#F7F9FB]">
+                  <tr>
                     {config.columns.map((column) => (
-                      <td key={column.key} className="max-w-[280px] truncate px-5 py-4 text-sm font-semibold text-[#334155]">
-                        {renderAdminCell(column, row)}
-                      </td>
+                      <th key={column.key} className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]">
+                        {column.label}
+                      </th>
                     ))}
                     {hasActions && (
-                      <td className="px-5 py-4">
-                        <ActionGroup
-                          section={section}
-                          row={row}
-                          busy={savingId === row.id}
-                          onAction={(action, success) => runAction(row, action, success)}
-                          onRoleChange={(nextRole) => handleRoleChange(row, nextRole)}
-                          onPetModeration={(mode) => setPetModerationFlow({ mode, pet: row })}
-                        />
-                      </td>
+                      <th className="px-5 py-4 text-right text-[11px] font-black uppercase tracking-wider text-[#64748B]">Thao tác</th>
                     )}
                   </tr>
-                ))}
-                {!rows.length && (
-                  <tr>
-                    <td className="px-5 py-14 text-center text-sm font-semibold text-[#64748B]" colSpan={config.columns.length + (hasActions ? 1 : 0)}>
-                      Chưa có dữ liệu.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#E5EAF0]">
+                  {visibleRows.map((row, index) => (
+                    <tr key={row.id ?? `${section}-${index}`} className="transition hover:bg-[#FAFBFC]">
+                      {config.columns.map((column) => (
+                        <td key={column.key} className="max-w-[280px] truncate px-5 py-4 text-sm font-semibold text-[#334155]">
+                          {renderAdminCell(column, row)}
+                        </td>
+                      ))}
+                      {hasActions && (
+                        <td className="px-5 py-4">
+                          <ActionGroup
+                            section={section}
+                            row={row}
+                            busy={savingId === row.id}
+                            onAction={(action, success) => runAction(row, action, success)}
+                            onRoleChange={(nextRole) => handleRoleChange(row, nextRole)}
+                            onPetModeration={(mode) => setPetModerationFlow({ mode, pet: row })}
+                          />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {!visibleRows.length && (
+                    <tr>
+                      <td className="px-5 py-14 text-center text-sm font-semibold text-[#64748B]" colSpan={config.columns.length + (hasActions ? 1 : 0)}>
+                        Chưa có dữ liệu.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>
@@ -699,6 +787,208 @@ function StoreSettingsForm({ store, onSaved }: { store?: Row; onSaved: () => voi
   );
 }
 
+function StoreOverviewPanel({ data }: { data?: Row }) {
+  const stats = data?.stats ?? {};
+  const shortcuts = [
+    { label: 'Sản phẩm', value: stats.activeProducts ?? 0, href: '/admin/store-products' },
+    { label: 'Đơn hàng hôm nay', value: stats.todayOrders ?? 0, href: '/admin/store-orders' },
+    { label: 'Hết hàng', value: stats.outOfStockProducts ?? 0, href: '/admin/store-products' },
+    { label: 'Cấu hình cửa hàng', value: data?.store?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/store-settings' },
+  ];
+
+  return (
+    <div className="grid gap-6 p-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {shortcuts.map((item) => (
+          <Link key={`${item.href}-${item.label}`} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[#0F766E] hover:shadow-md">
+            <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{item.label}</p>
+            <p className="mt-2 text-2xl font-black text-[#172033]">{item.value}</p>
+            <p className="mt-3 text-xs font-black text-[#0F766E]">Xem chi tiết →</p>
+          </Link>
+        ))}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MiniStat label="Đơn chờ xử lý" value={stats.pendingOrders ?? 0} />
+        <MiniStat label="Đã giao" value={stats.completedOrders ?? 0} />
+        <MiniStat label="Doanh thu cửa hàng" value={moneyCell({ price: stats.revenue ?? 0 })} />
+      </div>
+
+      <section className="overflow-hidden rounded-xl border border-[#D8E0EA]">
+        <div className="flex items-center justify-between border-b border-[#E5EAF0] bg-[#F7F9FB] px-5 py-4">
+          <div>
+            <h3 className="font-black text-[#172033]">Đơn hàng gần đây</h3>
+            <p className="mt-1 text-xs font-semibold text-[#64748B]">Năm đơn hàng mới nhất của cửa hàng.</p>
+          </div>
+          <Link href="/admin/store-orders" className="text-sm font-black text-[#0F766E]">Xem tất cả</Link>
+        </div>
+        <div className="divide-y divide-[#E5EAF0]">
+          {(data?.recentOrders ?? []).map((order: Row) => (
+            <div key={order.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center">
+              <div>
+                <p className="font-black text-[#172033]">{order.user?.name ?? 'Khách hàng'}</p>
+                <p className="mt-1 text-xs font-semibold text-[#64748B]">#{order.id}</p>
+              </div>
+              <p className="text-sm font-semibold text-[#475569]">{order.items?.reduce((sum: number, item: Row) => sum + (item.quantity ?? 0), 0) ?? 0} sản phẩm</p>
+              <p className="text-sm font-black text-[#172033]">{moneyCell(order)}</p>
+              <span className="text-sm font-bold text-[#0F766E]">{formatStatus(order.status)}</span>
+            </div>
+          ))}
+          {!data?.recentOrders?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có đơn hàng.</p>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SpaOverviewPanel({ data }: { data?: Row }) {
+  const stats = data?.stats ?? {};
+  const shortcuts = [
+    { label: 'Dịch vụ Spa', value: stats.services ?? 0, href: '/admin/spa-services' },
+    { label: 'Lịch nhân viên', value: stats.staffs ?? 0, href: '/admin/spa-staff-schedule' },
+    { label: 'Lịch đặt hôm nay', value: stats.todayBookings ?? 0, href: '/admin/spa-bookings' },
+    { label: 'Thông tin Spa', value: data?.spa?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/spas' },
+  ];
+
+  return (
+    <div className="grid gap-6 p-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {shortcuts.map((item) => (
+          <Link key={item.href} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[#0F766E] hover:shadow-md">
+            <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{item.label}</p>
+            <p className="mt-2 text-2xl font-black text-[#172033]">{item.value}</p>
+            <p className="mt-3 text-xs font-black text-[#0F766E]">Xem chi tiết →</p>
+          </Link>
+        ))}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MiniStat label="Chờ xử lý" value={stats.pendingBookings ?? 0} />
+        <MiniStat label="Đã hoàn thành" value={stats.completedBookings ?? 0} />
+        <MiniStat label="Doanh thu Spa" value={moneyCell({ price: stats.revenue ?? 0 })} />
+      </div>
+
+      <section className="overflow-hidden rounded-xl border border-[#D8E0EA]">
+        <div className="flex items-center justify-between border-b border-[#E5EAF0] bg-[#F7F9FB] px-5 py-4">
+          <div>
+            <h3 className="font-black text-[#172033]">Lịch sắp tới</h3>
+            <p className="mt-1 text-xs font-semibold text-[#64748B]">Năm lịch gần nhất của Spa.</p>
+          </div>
+          <Link href="/admin/spa-bookings" className="text-sm font-black text-[#0F766E]">Xem tất cả</Link>
+        </div>
+        <div className="divide-y divide-[#E5EAF0]">
+          {(data?.upcomingBookings ?? []).map((booking: Row) => (
+            <div key={booking.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center">
+              <p className="font-black text-[#172033]">{booking.user?.name ?? 'Khách hàng'}</p>
+              <p className="text-sm font-semibold text-[#475569]">{booking.service?.name ?? 'Dịch vụ Spa'}</p>
+              <p className="text-sm font-semibold text-[#64748B]">{booking.staff?.name ?? 'Chưa phân công'}</p>
+              <p className="text-sm font-bold text-[#0F766E]">{dateCell(booking)}</p>
+            </div>
+          ))}
+          {!data?.upcomingBookings?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có lịch sắp tới.</p>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SpaSettingsForm({ spa, onSaved }: { spa?: Row; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    name: spa?.name ?? 'PetMatching Spa',
+    phone: spa?.phone ?? '',
+    address: spa?.address ?? '',
+    description: spa?.description ?? '',
+    status: (spa?.status ?? 'ACTIVE') as ApprovalStatus,
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setForm({
+      name: spa?.name ?? 'PetMatching Spa',
+      phone: spa?.phone ?? '',
+      address: spa?.address ?? '',
+      description: spa?.description ?? '',
+      status: (spa?.status ?? 'ACTIVE') as ApprovalStatus,
+    });
+  }, [spa]);
+
+  const update = (key: keyof typeof form, value: string) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form.name.trim() || !form.address.trim()) {
+      toast.error('Vui lòng nhập tên và địa chỉ Spa.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await adminApi.updateSpaSettings(form);
+      toast.success('Đã cập nhật thông tin Spa.');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Không thể cập nhật thông tin Spa.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="grid gap-6 p-6">
+      <div className="grid gap-4 rounded-xl border border-[#D8E0EA] bg-[#F7F9FB] p-4 sm:grid-cols-3">
+        <InfoStat label="Quản lý" value={spa?.manager?.name ?? 'Chưa phân công'} />
+        <InfoStat label="Nhân viên" value={spa?._count?.staffs ?? 0} />
+        <InfoStat label="Tổng lịch đặt" value={spa?._count?.bookings ?? 0} />
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        <StoreField label="Tên Spa" required value={form.name} onChange={(value) => update('name', value)} />
+        <StoreField label="Số điện thoại" value={form.phone} onChange={(value) => update('phone', value)} />
+      </div>
+      <StoreField label="Địa chỉ" required value={form.address} onChange={(value) => update('address', value)} />
+      <label className="grid gap-2 text-sm font-black text-[#172033]">
+        Trạng thái nhận lịch
+        <select
+          value={form.status}
+          onChange={(event) => update('status', event.target.value)}
+          className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+        >
+          <option value="ACTIVE">Đang nhận lịch</option>
+          <option value="SUSPENDED">Tạm ngừng nhận lịch</option>
+        </select>
+      </label>
+      <label className="grid gap-2 text-sm font-black text-[#172033]">
+        Giới thiệu Spa
+        <textarea
+          value={form.description}
+          onChange={(event) => update('description', event.target.value)}
+          rows={5}
+          placeholder="Giới thiệu ngắn về dịch vụ chăm sóc thú cưng"
+          className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+        />
+      </label>
+      <div className="flex items-center justify-between gap-4 border-t border-[#E5EAF0] pt-5">
+        <p className="text-xs font-semibold text-[#64748B]">Hệ thống chỉ sử dụng một Spa PetMatching duy nhất.</p>
+        <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0F766E] px-5 text-sm font-black text-white transition hover:bg-[#0B5F59] disabled:opacity-50">
+          {saving && <Loader2 className="size-4 animate-spin" />}
+          Lưu thông tin
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function InfoStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{label}</p>
+      <p className="mt-1 text-base font-black text-[#172033]">{value}</p>
+    </div>
+  );
+}
+
 function StoreField({
   label,
   value,
@@ -734,8 +1024,7 @@ function SpaManagerRoleDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [branches, setBranches] = useState<Row[]>([]);
-  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
+  const [spa, setSpa] = useState<Row | null>(null);
   const [revokeMode, setRevokeMode] = useState<'UNASSIGN' | 'TRANSFER'>('UNASSIGN');
   const [newManagerId, setNewManagerId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -744,31 +1033,28 @@ function SpaManagerRoleDialog({
 
   useEffect(() => {
     adminApi.spas()
-      .then((response) => setBranches(Array.isArray(response.data) ? response.data : []))
-      .catch(() => setError('Không thể tải danh sách chi nhánh Spa.'))
+      .then((response) => {
+        const spas = Array.isArray(response.data) ? response.data.slice(0, 1) : [];
+        setSpa(spas[0] ?? null);
+      })
+      .catch(() => setError('Không thể tải thông tin Spa.'))
       .finally(() => setLoading(false));
   }, []);
 
-  const managedBranches = branches.filter((branch) => branch.managerId === flow.user.id);
+  const managesSpa = spa?.managerId === flow.user.id;
   const replacementManagers = users.filter(
-    (user) => user.id !== flow.user.id && user.role === 'SPA_MANAGER' && user.accountStatus === 'ACTIVE',
+    (user) =>
+      user.id !== flow.user.id &&
+      ['USER', 'SPA_MANAGER'].includes(user.role) &&
+      user.accountStatus === 'ACTIVE',
   );
-  const selectedBranches = branches.filter((branch) => selectedBranchIds.includes(branch.id));
-  const reassignedBranches = selectedBranches.filter(
-    (branch) => branch.managerId && branch.managerId !== flow.user.id,
-  );
-
-  const toggleBranch = (branchId: string) => {
-    setSelectedBranchIds((current) =>
-      current.includes(branchId) ? current.filter((id) => id !== branchId) : [...current, branchId],
-    );
-  };
+  const isReassignment = Boolean(spa?.managerId && spa.managerId !== flow.user.id);
 
   const submit = async () => {
     setError('');
 
-    if (flow.mode === 'GRANT' && selectedBranchIds.length === 0) {
-      setError('Vui lòng chọn ít nhất một chi nhánh.');
+    if (flow.mode === 'GRANT' && !spa) {
+      setError('Chưa cấu hình thông tin Spa.');
       return;
     }
 
@@ -780,13 +1066,13 @@ function SpaManagerRoleDialog({
     setSaving(true);
     try {
       if (flow.mode === 'GRANT') {
-        await adminApi.grantSpaManager(flow.user.id, selectedBranchIds, reassignedBranches.length > 0);
-        toast.success('Đã cấp quyền Spa Manager và phân công chi nhánh.');
+        await adminApi.grantSpaManager(flow.user.id, isReassignment);
+        toast.success('Đã cấp quyền quản lý Spa.');
       } else {
         await adminApi.revokeSpaManager(flow.user.id, revokeMode, newManagerId || undefined);
         toast.success(
           revokeMode === 'TRANSFER'
-            ? 'Đã thu hồi quyền và chuyển giao chi nhánh.'
+            ? 'Đã thu hồi quyền và bàn giao Spa.'
             : 'Đã thu hồi quyền Spa Manager.',
         );
       }
@@ -819,52 +1105,38 @@ function SpaManagerRoleDialog({
           ) : flow.mode === 'GRANT' ? (
             <>
               <div>
-                <p className="text-sm font-black text-[#172033]">Chọn chi nhánh quản lý</p>
-                <p className="mt-1 text-xs font-semibold text-[#64748B]">Bắt buộc chọn ít nhất một chi nhánh.</p>
+                <p className="text-sm font-black text-[#172033]">Spa được phân công</p>
+                <p className="mt-1 text-xs font-semibold text-[#64748B]">Hệ thống chỉ có một Spa và sẽ tự động phân công.</p>
               </div>
               <div className="grid gap-3">
-                {branches.map((branch) => {
-                  const occupied = branch.managerId && branch.managerId !== flow.user.id;
-                  return (
-                    <label
-                      key={branch.id}
-                      className="flex cursor-pointer gap-3 rounded-xl border border-[#D8E0EA] p-4 transition hover:border-[#0F766E] hover:bg-[#F3FAF8]"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedBranchIds.includes(branch.id)}
-                        onChange={() => toggleBranch(branch.id)}
-                        className="mt-1 size-4 accent-[#0F766E]"
-                      />
-                      <span className="min-w-0">
-                        <span className="block font-black text-[#172033]">{branch.name}</span>
-                        <span className="mt-1 block text-xs font-semibold text-[#64748B]">{branch.address}</span>
-                        {occupied && (
-                          <span className="mt-2 block text-xs font-black text-amber-700">
-                            Đang do {branch.manager?.name ?? 'một Manager khác'} quản lý; chọn mục này sẽ chuyển quyền.
-                          </span>
-                        )}
+                {spa && (
+                  <div className="rounded-xl border border-[#D8E0EA] bg-[#F7F9FB] p-4">
+                    <span className="min-w-0">
+                      <span className="block font-black text-[#172033]">{spa.name}</span>
+                      <span className="mt-1 block text-xs font-semibold text-[#64748B]">{spa.address}</span>
+                      {isReassignment && (
+                        <span className="mt-2 block text-xs font-black text-amber-700">
+                          Đang do {spa.manager?.name ?? 'một Manager khác'} quản lý; thao tác này sẽ chuyển quyền.
+                        </span>
+                      )}
                       </span>
-                    </label>
-                  );
-                })}
+                  </div>
+                )}
               </div>
-              {reassignedBranches.length > 0 && (
+              {isReassignment && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
-                  Bạn đang chuyển {reassignedBranches.length} chi nhánh từ Manager hiện tại sang {flow.user.name}.
+                  Bạn đang chuyển quyền quản lý Spa sang {flow.user.name}.
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="rounded-xl border border-[#D8E0EA] bg-[#F7F9FB] p-4">
-                <p className="text-sm font-black text-[#172033]">Chi nhánh đang quản lý</p>
-                {managedBranches.length ? (
-                  <ul className="mt-2 grid gap-1 text-sm font-semibold text-[#475569]">
-                    {managedBranches.map((branch) => <li key={branch.id}>• {branch.name}</li>)}
-                  </ul>
+                <p className="text-sm font-black text-[#172033]">Spa đang quản lý</p>
+                {managesSpa ? (
+                  <p className="mt-2 text-sm font-semibold text-[#475569]">• {spa?.name}</p>
                 ) : (
-                  <p className="mt-2 text-sm font-semibold text-[#64748B]">Tài khoản chưa được phân công chi nhánh.</p>
+                  <p className="mt-2 text-sm font-semibold text-[#64748B]">Tài khoản chưa được phân công Spa.</p>
                 )}
               </div>
 
@@ -878,7 +1150,7 @@ function SpaManagerRoleDialog({
                 />
                 <span>
                   <span className="block font-black text-[#172033]">Bỏ phân công</span>
-                  <span className="mt-1 block text-xs font-semibold text-[#64748B]">Các chi nhánh tạm thời chưa có Manager.</span>
+                  <span className="mt-1 block text-xs font-semibold text-[#64748B]">Spa sẽ tạm thời chưa có Manager.</span>
                 </span>
               </label>
 
@@ -893,14 +1165,14 @@ function SpaManagerRoleDialog({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block font-black text-[#172033]">Chuyển giao cho Manager khác</span>
-                  <span className="mt-1 block text-xs font-semibold text-[#64748B]">Chuyển toàn bộ chi nhánh trước khi thu hồi quyền.</span>
+                  <span className="mt-1 block text-xs font-semibold text-[#64748B]">Bàn giao Spa trước khi thu hồi quyền.</span>
                   {revokeMode === 'TRANSFER' && (
                     <select
                       value={newManagerId}
                       onChange={(event) => setNewManagerId(event.target.value)}
                       className="mt-3 h-10 w-full rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]"
                     >
-                      <option value="">Chọn Spa Manager nhận chuyển giao</option>
+                      <option value="">Chọn người nhận chuyển giao</option>
                       {replacementManagers.map((manager) => (
                         <option key={manager.id} value={manager.id}>{manager.name} · {manager.email}</option>
                       ))}
@@ -921,7 +1193,7 @@ function SpaManagerRoleDialog({
           <button type="button" onClick={submit} disabled={loading || saving} className="inline-flex items-center gap-2 rounded-lg bg-[#0F766E] px-4 py-2 text-sm font-black text-white disabled:opacity-50">
             {saving && <Loader2 className="size-4 animate-spin" />}
             {flow.mode === 'GRANT'
-              ? reassignedBranches.length > 0 ? 'Chuyển quyền & cấp Manager' : 'Cấp quyền & phân công'
+              ? isReassignment ? 'Chuyển quyền & cấp Manager' : 'Cấp quyền Spa Manager'
               : revokeMode === 'TRANSFER' ? 'Thu hồi & chuyển giao' : 'Thu hồi quyền'}
           </button>
         </div>
@@ -1173,7 +1445,7 @@ function ActionGroup({
   }
 
   if (section === 'spas') {
-    return <ApprovalButtons row={row} update={(status) => adminApi.updateSpaStatus(row.id, status)} onAction={onAction} />;
+    return <ApprovalButtons update={(status) => adminApi.updateSpaStatus(row.id, status)} onAction={onAction} />;
   }
 
   if (section === 'matching-reports' && !row.isResolved) {
@@ -1184,7 +1456,7 @@ function ActionGroup({
     );
   }
 
-  if (['reports', 'store-complaints', 'spa-complaints'].includes(section) && row.status === 'PENDING') {
+  if (section === 'reports' && row.status === 'PENDING') {
     return (
       <div className="flex justify-end gap-2">
         <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveComplaint(row.id, 'RESOLVE'), 'Đã xử lý khiếu nại.')} />
@@ -1197,11 +1469,9 @@ function ActionGroup({
 }
 
 function ApprovalButtons({
-  row,
   update,
   onAction,
 }: {
-  row: Row;
   update: (status: ApprovalStatus) => Promise<unknown>;
   onAction: (action: () => Promise<unknown>, success: string) => void;
 }) {
@@ -1243,10 +1513,43 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function ComplaintFilters({
+  type,
+  target,
+  status,
+  onTypeChange,
+  onTargetChange,
+  onStatusChange,
+}: {
+  type: string;
+  target: string;
+  status: string;
+  onTypeChange: (value: string) => void;
+  onTargetChange: (value: string) => void;
+  onStatusChange: (value: string) => void;
+}) {
+  const selectClassName = 'h-11 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#334155] outline-none transition focus:border-[#0F766E] focus:ring-2 focus:ring-[#0F766E]/10';
+
+  return (
+    <div className="flex flex-wrap gap-3 border-b border-[#E5EAF0] bg-[#FAFBFC] p-4">
+      <select aria-label="Lọc theo nhóm khiếu nại" value={type} onChange={(event) => onTypeChange(event.target.value)} className={selectClassName}>
+        {complaintTypeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+      <select aria-label="Lọc theo đối tượng" value={target} onChange={(event) => onTargetChange(event.target.value)} className={selectClassName}>
+        {complaintTargetOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+      <select aria-label="Lọc theo trạng thái" value={status} onChange={(event) => onStatusChange(event.target.value)} className={selectClassName}>
+        {complaintStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function complaintColumns() {
   return [
     { key: 'title', label: 'Tiêu đề' },
-    { key: 'type', label: 'Loại' },
+    { key: 'type', label: 'Nhóm', render: (row: Row) => formatComplaintType(row.type) },
+    { key: 'targetType', label: 'Đối tượng', render: (row: Row) => formatComplaintTarget(row.targetType) },
     { key: 'status', label: 'Trạng thái' },
     { key: 'actionTaken', label: 'Hành động', render: (row: Row) => row.actionTaken ? formatStatus(row.actionTaken) : '-' },
     { key: 'createdAt', label: 'Ngày tạo', render: dateCell },
@@ -1254,6 +1557,7 @@ function complaintColumns() {
 }
 
 function normalizeRows(section: string, data: Row[] | Row): Row[] {
+  if (['store-overview', 'spa-overview'].includes(section) && !Array.isArray(data)) return [data];
   if (['stores', 'store-settings'].includes(section) && Array.isArray(data)) {
     return data.length ? [data[0]] : [];
   }
@@ -1282,6 +1586,23 @@ function formatRole(role?: string) {
   };
 
   return role ? roles[role] ?? role : '-';
+}
+
+function formatComplaintType(type?: string) {
+  const labels: Record<string, string> = {
+    STORE: 'Cửa hàng',
+    SPA: 'Spa',
+    MATCHING: 'Ghép đôi',
+    PET: 'Thú cưng',
+    USER: 'Người dùng',
+    REVIEW: 'Đánh giá',
+  };
+  return type ? labels[type] ?? type : '-';
+}
+
+function formatComplaintTarget(target?: string) {
+  const labels: Record<string, string> = { ORDER: 'Đơn hàng', PRODUCT: 'Sản phẩm' };
+  return target ? labels[target] ?? target : '-';
 }
 
 function renderAdminCell(column: { key: string; render?: (row: Row) => ReactNode }, row: Row) {

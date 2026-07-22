@@ -25,8 +25,8 @@ export const spaApi = {
   updateStaffBooking: (id: string, data: {
     status?: string;
     petConditionAfter?: string;
-    photoAfter?: string;
-    issueReported?: string;
+    photoAfter?: string | null;
+    issueReported?: string | null;
   }) => api.patch<SpaBookingType>(`/spa/staff/bookings/${id}`, data),
 
   // Spa Manager API Methods

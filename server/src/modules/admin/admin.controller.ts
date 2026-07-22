@@ -145,6 +145,11 @@ export class AdminController {
     return this.adminService.getStores({ status });
   }
 
+  @Get('store-dashboard')
+  getStoreDashboard() {
+    return this.adminService.getStoreDashboard();
+  }
+
   @Put('store-settings')
   updateStoreSettings(
     @Req() request: AuthenticatedRequest,
@@ -166,6 +171,29 @@ export class AdminController {
   @Get('spas')
   getSpaBranches(@Query('status') status?: ApprovalStatus) {
     return this.adminService.getSpaBranches({ status });
+  }
+
+  @Get('spa-dashboard')
+  getSpaDashboard() {
+    return this.adminService.getSpaDashboard();
+  }
+
+  @Get('spa-services')
+  getSpaServices() {
+    return this.adminService.getSpaServices();
+  }
+
+  @Get('spa-staff-schedule')
+  getSpaStaffSchedule() {
+    return this.adminService.getSpaStaffSchedule();
+  }
+
+  @Put('spa-settings')
+  updateSpaSettings(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: { name: string; phone?: string; address: string; description?: string; status?: ApprovalStatus },
+  ) {
+    return this.adminService.updateSpaSettings(request.user, dto);
   }
 
   @Patch('spas/:id/status')

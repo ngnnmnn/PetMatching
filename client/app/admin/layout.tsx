@@ -5,12 +5,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import {
   Activity,
+  CalendarDays,
   ClipboardCheck,
   FileWarning,
   LayoutDashboard,
   LogOut,
   PawPrint,
   Package,
+  Scissors,
   Settings,
   ShieldCheck,
   ShoppingBag,
@@ -39,19 +41,20 @@ const navGroups = [
   {
     label: 'Cửa hàng',
     items: [
-      { label: 'Tổng quan cửa hàng', href: '/admin/stores', icon: ShoppingBag },
+      { label: 'Tổng quan cửa hàng', href: '/admin/store-overview', icon: ShoppingBag },
       { label: 'Sản phẩm', href: '/admin/store-products', icon: Package },
       { label: 'Đơn hàng', href: '/admin/store-orders', icon: Activity },
-      { label: 'Khiếu nại cửa hàng', href: '/admin/store-complaints', icon: FileWarning },
       { label: 'Cấu hình cửa hàng', href: '/admin/store-settings', icon: Settings },
     ],
   },
   {
     label: 'Spa',
     items: [
-      { label: 'Chi nhánh spa', href: '/admin/spas', icon: Stethoscope },
-      { label: 'Lịch đặt spa', href: '/admin/spa-bookings', icon: Activity },
-      { label: 'Khiếu nại spa', href: '/admin/spa-complaints', icon: FileWarning },
+      { label: 'Tổng quan Spa', href: '/admin/spa-overview', icon: LayoutDashboard },
+      { label: 'Dịch vụ Spa', href: '/admin/spa-services', icon: Scissors },
+      { label: 'Lịch nhân viên', href: '/admin/spa-staff-schedule', icon: CalendarDays },
+      { label: 'Lịch đặt Spa', href: '/admin/spa-bookings', icon: Activity },
+      { label: 'Thông tin Spa', href: '/admin/spas', icon: Stethoscope },
     ],
   },
 ];

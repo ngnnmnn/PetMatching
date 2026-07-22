@@ -114,9 +114,18 @@ export class ManagerService {
   async createProduct(dto: any) {
     const slug = this.generateSlug(dto.name);
     const id = await this.generateProductId();
+    const store = await this.prisma.store.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!store) {
+      throw new BadRequestException('Cửa hàng chưa được cấu hình.');
+    }
+
     return this.prisma.product.create({
       data: {
         id,
+        storeId: store.id,
         name: dto.name,
         slug,
         category: dto.category,
