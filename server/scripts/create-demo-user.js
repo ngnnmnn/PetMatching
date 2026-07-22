@@ -308,113 +308,7 @@ async function main() {
     }
   });
 
-  const serviceTamSayCoBan = await prisma.spaService.create({
-    data: {
-      id: 'service-tam-say-co-ban',
-      brandId: brandTamSay.id,
-      name: 'Tắm & Sấy cơ bản',
-      description: 'Tắm sạch bằng sữa tắm chuyên dụng, sấy khô và chải lông. Phù hợp cho thú cưng tắm định kỳ 1-2 tuần/lần.',
-      price: 150000,
-      durationMin: 60,
-      isActive: true,
-    }
-  });
-
-  const serviceTamSayCaoCap = await prisma.spaService.create({
-    data: {
-      id: 'service-tam-say-cao-cap',
-      brandId: brandTamSay.id,
-      name: 'Tắm & Sấy cao cấp',
-      description: 'Tắm với sữa tắm dưỡng lông cao cấp, kem xả, sấy tạo kiểu. Bao gồm nước hoa thú cưng và băng rôn cổ.',
-      price: 250000,
-      durationMin: 90,
-      isActive: true,
-    }
-  });
-
-  await prisma.spaService.create({
-    data: {
-      id: 'service-cat-tia-yeu-cau',
-      brandId: brandCatTia.id,
-      name: 'Cắt tỉa lông theo yêu cầu',
-      description: 'Cắt tỉa lông theo phong cách mong muốn, có thể mang ảnh mẫu. Bao gồm cắt lông mặt, tai, thân và chân.',
-      price: 300000,
-      durationMin: 90,
-      isActive: true,
-    }
-  });
-
-  await prisma.spaService.create({
-    data: {
-      id: 'service-cat-tia-co-ban',
-      brandId: brandCatTia.id,
-      name: 'Cắt tỉa lông cơ bản',
-      description: 'Tỉa gọn các phần lông dài, cắt lông tai, vùng nhạy cảm và chân. Giữ form tự nhiên.',
-      price: 180000,
-      durationMin: 60,
-      isActive: true,
-    }
-  });
-
-  await prisma.spaService.create({
-    data: {
-      id: 'service-cham-soc-mong',
-      brandId: brandMong.id,
-      name: 'Chăm sóc móng vuốt',
-      description: 'Cắt và mài móng vuốt an toàn, dũa nhẵn. Phòng ngừa móng cong gây đau khi đi lại.',
-      price: 80000,
-      durationMin: 30,
-      isActive: true,
-    }
-  });
-
-  await prisma.spaService.create({
-    data: {
-      id: 'service-ve-sinh-tai-rang',
-      brandId: brandTaiRang.id,
-      name: 'Vệ sinh tai và răng',
-      description: 'Làm sạch ráy tai, đánh răng và xịt hơi thở thơm mát cho thú cưng.',
-      price: 120000,
-      durationMin: 45,
-      isActive: true,
-    }
-  });
-
-  await prisma.spaService.create({
-    data: {
-      id: 'service-massage-30',
-      brandId: brandMassage.id,
-      name: 'Massage thư giãn 30 phút',
-      description: 'Massage toàn thân giúp thú cưng thư giãn, giảm stress, cải thiện tuần hoàn máu.',
-      price: 200000,
-      durationMin: 30,
-      isActive: true,
-    }
-  });
-
-  const serviceFullDay = await prisma.spaService.create({
-    data: {
-      id: 'service-full-day',
-      brandId: brandCombo.id,
-      name: 'Gói Spa Full Day',
-      description: 'Tắm cao cấp + Cắt tỉa + Chăm sóc móng + Vệ sinh tai răng + Massage. Tiết kiệm 20% so với từng dịch vụ.',
-      price: 680000,
-      durationMin: 180,
-      isActive: true,
-    }
-  });
-
-  await prisma.spaService.create({
-    data: {
-      id: 'service-meo-premium',
-      brandId: brandCombo.id,
-      name: 'Gói Spa Mèo Premium',
-      description: 'Tắm + Sấy + Cắt tỉa + Massage dành riêng cho mèo. Nhân viên được đào tạo chuyên biệt về tâm lý mèo.',
-      price: 450000,
-      durationMin: 120,
-      isActive: true,
-    }
-  });
+  // Legacy Spa Services removed - managed via seed-spa.ts
 
   const staffEmail = 'hoa@spa.petmatch.vn';
   const staffPasswordHash = await bcrypt.hash('spa123', 10);
@@ -534,19 +428,25 @@ async function main() {
     }
   });
 
+  const demoService = await prisma.spaService.findFirst({ where: { isMain: true } });
+  const demoServiceId = demoService ? demoService.id : null;
+  const demoPrice = demoService ? demoService.price : 100000;
+
   await prisma.spaBooking.create({
     data: {
       id: 'demo-booking-1',
       brandId: brandCombo.id,
       addressSpaId: 'petmatch-spa-q1',
-      serviceId: serviceFullDay.id,
+      serviceId: demoServiceId,
+      mainServiceId: demoServiceId,
       userId: clientUser.id,
       staffId: staffUser.id,
       petId: mochiPet.id,
       petName: 'Mochi',
       scheduledAt: date1,
       status: SpaBookingStatus.COMPLETED,
-      priceSnapshot: serviceFullDay.price,
+      priceSnapshot: demoPrice,
+      totalPrice: demoPrice,
       note: 'Mochi hơi sợ máy sấy, làm nhẹ nhàng giúp mình nhé',
       petConditionAfter: 'Bé Mochi rất ngoan, hoàn thành tốt. Lông đẹp và thơm.',
       photoAfter: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=500&h=500&fit=crop',
@@ -558,13 +458,15 @@ async function main() {
       id: 'demo-booking-2',
       brandId: brandTamSay.id,
       addressSpaId: 'petmatch-spa-q1',
-      serviceId: serviceTamSayCoBan.id,
+      serviceId: demoServiceId,
+      mainServiceId: demoServiceId,
       userId: clientUser.id,
       staffId: staffUser.id,
       petName: 'Titan',
       scheduledAt: date2,
       status: SpaBookingStatus.ASSIGNED,
-      priceSnapshot: serviceTamSayCoBan.price,
+      priceSnapshot: demoPrice,
+      totalPrice: demoPrice,
       note: 'Titan nặng 30kg, cần 2 nhân viên hỗ trợ',
     }
   });
@@ -574,14 +476,16 @@ async function main() {
       id: 'demo-booking-3',
       brandId: brandTamSay.id,
       addressSpaId: 'petmatch-spa-q1',
-      serviceId: serviceTamSayCoBan.id,
+      serviceId: demoServiceId,
+      mainServiceId: demoServiceId,
       userId: clientUser.id,
       staffId: staffUser.id,
       petId: lunaPet.id,
       petName: 'Luna',
       scheduledAt: date3,
       status: SpaBookingStatus.IN_PROGRESS,
-      priceSnapshot: serviceTamSayCoBan.price,
+      priceSnapshot: demoPrice,
+      totalPrice: demoPrice,
       note: 'Luna thích được massage nhẹ khi sấy',
     }
   });

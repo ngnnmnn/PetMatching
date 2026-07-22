@@ -14,15 +14,15 @@ import {
   Camera,
   RefreshCw,
   Phone,
-  ClipboardList
+  Plus,
+  UserCheck
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { spaApi } from '@/lib/api/spa';
-import { SpaBookingType } from '@/types';
+import { SpaBookingType, SpaServiceType } from '@/types';
 
 // Preset sample photos for easy mock upload
 const PRESET_PHOTOS = [
@@ -41,6 +41,11 @@ export default function SpaStaffPage() {
   const [activeTab, setActiveTab] = useState<string>('ALL');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Sub services selection modal state
+  const [addingSubServicesForId, setAddingSubServicesForId] = useState<string | null>(null);
+  const [allSubServices, setAllSubServices] = useState<SpaServiceType[]>([]);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
 
   // States for the inline forms per booking
   const [editStates, setEditStates] = useState<Record<string, {
@@ -65,7 +70,6 @@ export default function SpaStaffPage() {
     }
     setCurrentUser(u);
 
-    // Default filter date to today
     const todayStr = new Date().toISOString().split('T')[0];
     setSelectedDate(todayStr);
   }, []);
@@ -74,15 +78,16 @@ export default function SpaStaffPage() {
     if (!currentUser || currentUser.accessDenied) return;
     setLoading(true);
     try {
-      const [bookingsRes, profileRes] = await Promise.all([
+      const [bookingsRes, profileRes, servicesRes] = await Promise.all([
         spaApi.getStaffBookings(),
         spaApi.getStaffProfile().catch(() => ({ data: null })),
+        spaApi.getServices(),
       ]);
 
       setBookings(bookingsRes.data || []);
       setStaffProfile(profileRes.data || null);
+      setAllSubServices((servicesRes.data || []).filter((s) => !s.isMain));
       
-      // Initialize edit states for each booking
       const initialStates: typeof editStates = {};
       bookingsRes.data.forEach((b) => {
         initialStates[b.id] = {
@@ -106,12 +111,46 @@ export default function SpaStaffPage() {
     }
   }, [currentUser]);
 
+  const handleCheckIn = async (bookingId: string) => {
+    setActionLoading(bookingId);
+    try {
+      const res = await spaApi.staffCheckIn(bookingId);
+      toast.success('Check-in khách hàng thành công!');
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, ...res.data, status: 'CHECK_IN' } : b))
+      );
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Không thể check-in.';
+      toast.error(msg);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleAddSubServices = async () => {
+    if (!addingSubServicesForId || selectedAddonIds.length === 0) return;
+    setActionLoading(addingSubServicesForId);
+    try {
+      const res = await spaApi.staffAddSubServices(addingSubServicesForId, selectedAddonIds);
+      toast.success('Đã bổ sung dịch vụ lẻ vào đơn hàng!');
+      setBookings((prev) =>
+        prev.map((b) => (b.id === addingSubServicesForId ? { ...b, ...res.data } : b))
+      );
+      setAddingSubServicesForId(null);
+      setSelectedAddonIds([]);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Không thể bổ sung dịch vụ.';
+      toast.error(msg);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleUpdateStatus = async (bookingId: string, status: string) => {
     setActionLoading(bookingId);
     try {
       const res = await spaApi.updateStaffBooking(bookingId, { status });
       toast.success('Đã xác nhận bắt đầu thực hiện dịch vụ!');
-      // Update local state
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, ...res.data } : b))
       );
@@ -147,7 +186,6 @@ export default function SpaStaffPage() {
       });
 
       toast.success('Hoàn thành dịch vụ Spa thành công!');
-      // Update local state
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, ...res.data } : b))
       );
@@ -169,17 +207,15 @@ export default function SpaStaffPage() {
     }));
   };
 
-  // Filter bookings based on status tab and selected date
   const filteredBookings = bookings.filter((b) => {
-    // Date filter
     const bookingDate = new Date(b.scheduledAt).toISOString().split('T')[0];
     if (selectedDate && bookingDate !== selectedDate) {
       return false;
     }
 
-    // Status tab filter
     if (activeTab === 'ALL') return true;
     if (activeTab === 'CONFIRMED') return b.status === 'CONFIRMED';
+    if (activeTab === 'CHECK_IN') return b.status === 'CHECK_IN' || b.status === 'ARRIVED';
     if (activeTab === 'ASSIGNED') return b.status === 'ASSIGNED';
     if (activeTab === 'IN_PROGRESS') return b.status === 'IN_PROGRESS';
     if (activeTab === 'COMPLETED') return b.status === 'COMPLETED';
@@ -193,6 +229,9 @@ export default function SpaStaffPage() {
         return { text: 'Chờ xác nhận', class: 'bg-amber-100 border-amber-300 text-amber-800' };
       case 'CONFIRMED':
         return { text: 'Đã xác nhận', class: 'bg-blue-100 border-blue-300 text-blue-800' };
+      case 'CHECK_IN':
+      case 'ARRIVED':
+        return { text: 'Đã Check-in (Khách đến)', class: 'bg-teal-100 border-teal-300 text-teal-800' };
       case 'ASSIGNED':
         return { text: 'Đã tiếp nhận', class: 'bg-indigo-100 border-indigo-300 text-indigo-800' };
       case 'IN_PROGRESS':
@@ -255,7 +294,6 @@ export default function SpaStaffPage() {
     );
   }
 
-  // Today's count
   const todayStr = new Date().toISOString().split('T')[0];
   const todayBookingsCount = bookings.filter((b) => new Date(b.scheduledAt).toISOString().split('T')[0] === todayStr).length;
 
@@ -263,7 +301,7 @@ export default function SpaStaffPage() {
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-16">
       <AppHeader sectionLabel="Spa Staff" />
 
-      {/* Purple banner section */}
+      {/* Purple banner */}
       <section className="bg-[#6D28D9] text-white py-8 px-4 shadow-md">
         <div className="mx-auto max-w-5xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
@@ -274,7 +312,7 @@ export default function SpaStaffPage() {
               <span className="text-xs text-purple-200 block uppercase tracking-wider font-semibold">
                 Nhân viên Spa {staffProfile && `• Mã NV: ${staffProfile.id}`}
               </span>
-              <h1 className="text-2xl font-black tracking-tight">{currentUser?.name || 'Lê Thị Hoa'}</h1>
+              <h1 className="text-2xl font-black tracking-tight">{currentUser?.name || 'Nhân viên Spa'}</h1>
               {staffProfile?.addressSpa && (
                 <p className="text-xs text-purple-100 mt-1 flex items-center gap-1 font-medium">
                   📍 Nơi làm việc: <span className="font-bold">{staffProfile.addressSpa.address}</span> ({staffProfile.addressSpa.name})
@@ -299,21 +337,18 @@ export default function SpaStaffPage() {
         </div>
       </section>
 
-      {/* Main Dashboard Space */}
+      {/* Main Content */}
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
         
         {/* Controls: Date Picker & Filters */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-5">
-          {/* Left: Date selector */}
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="h-10 rounded-lg border border-[var(--border-color)] bg-white px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-700"
-              />
-            </div>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="h-10 rounded-lg border border-[var(--border-color)] bg-white px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-700"
+            />
             {selectedDate !== todayStr && (
               <Button
                 variant="ghost"
@@ -325,11 +360,11 @@ export default function SpaStaffPage() {
             )}
           </div>
 
-          {/* Right: Status Filters */}
           <div className="flex flex-wrap items-center gap-1.5 bg-gray-100 p-1 rounded-lg border">
             {[
               { id: 'ALL', label: 'Tất cả' },
               { id: 'CONFIRMED', label: 'Đã xác nhận' },
+              { id: 'CHECK_IN', label: 'Đã Check-in' },
               { id: 'ASSIGNED', label: 'Đã tiếp nhận' },
               { id: 'IN_PROGRESS', label: 'Đang thực hiện' },
               { id: 'COMPLETED', label: 'Hoàn thành' }
@@ -357,7 +392,7 @@ export default function SpaStaffPage() {
             </div>
             <h3 className="text-base font-bold text-gray-800">Không có lịch làm việc</h3>
             <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Không tìm thấy lịch hẹn được giao cho bạn vào ngày {selectedDate ? formatDateVietnamese(selectedDate) : 'đang chọn'} với trạng thái này.
+              Không tìm thấy lịch hẹn được giao cho bạn vào ngày {selectedDate ? formatDateVietnamese(selectedDate) : 'đang chọn'}.
             </p>
           </div>
         ) : (
@@ -371,8 +406,6 @@ export default function SpaStaffPage() {
               };
 
               const isCompleted = booking.status === 'COMPLETED';
-              const isCancelled = booking.status === 'CANCELLED';
-              const isNoShow = booking.status === 'NO_SHOW';
               const statusInfo = getStatusLabelAndStyle(booking.status);
 
               return (
@@ -383,7 +416,7 @@ export default function SpaStaffPage() {
                   }`}
                 >
                   
-                  {/* Top line: Time Slot & Status Badge */}
+                  {/* Header info */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 border-gray-100">
                     <div className="flex items-center gap-2.5">
                       <Clock className="size-4 text-purple-600 shrink-0" />
@@ -394,10 +427,21 @@ export default function SpaStaffPage() {
                         ID: #{booking.id.slice(-6).toUpperCase()}
                       </span>
                     </div>
-                    <div>
+                    <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black ${statusInfo.class}`}>
                         {statusInfo.text}
                       </span>
+                      {/* Check-in button if customer arrived and not yet checked in */}
+                      {(booking.status === 'CONFIRMED' || booking.status === 'ASSIGNED') && (
+                        <Button
+                          onClick={() => handleCheckIn(booking.id)}
+                          disabled={actionLoading === booking.id}
+                          className="bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs h-8 px-3 rounded-lg shadow-sm"
+                        >
+                          <UserCheck className="size-3.5 mr-1" />
+                          Check-in Khách
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -424,9 +468,9 @@ export default function SpaStaffPage() {
                           <span className="font-extrabold text-base text-purple-950 block leading-tight">
                             {booking.petName || booking.pet?.name || 'Bé cưng'}
                           </span>
-                          {booking.pet && (
+                          {(booking.pet || booking.petWeight) && (
                             <span className="text-[10px] text-gray-500 font-bold block mt-0.5">
-                              {booking.pet.breed} • {booking.pet.weight}kg
+                              {booking.pet?.breed || 'Thú cưng'} • {booking.petWeight || booking.pet?.weight || '?'}kg
                             </span>
                           )}
                         </div>
@@ -450,21 +494,40 @@ export default function SpaStaffPage() {
                         </div>
                       </div>
 
-                      {/* Service Package */}
-                      <div className="rounded-xl bg-orange-50/70 border border-orange-100 px-4 py-3">
-                        <span className="text-[10px] text-orange-600 block uppercase font-extrabold tracking-wider">Gói Dịch Vụ</span>
-                        <span className="font-black text-sm text-orange-950">
-                          {booking.service?.name || 'Chăm sóc toàn diện'}
+                      {/* Service Package & Addons */}
+                      <div className="rounded-xl bg-orange-50/70 border border-orange-100 px-4 py-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-orange-600 block uppercase font-extrabold tracking-wider">Gói Dịch Vụ</span>
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              setAddingSubServicesForId(booking.id);
+                              setSelectedAddonIds([]);
+                            }}
+                            className="text-[10px] text-purple-700 hover:text-purple-900 font-bold p-0 h-auto"
+                          >
+                            + Thêm dịch vụ lẻ
+                          </Button>
+                        </div>
+                        <span className="font-black text-sm text-orange-950 block">
+                          {booking.service?.name || 'Gói Chăm Sóc Spa'}
                         </span>
-                        <span className="text-xs text-orange-700 font-bold block mt-0.5">
-                          Chi phí: {booking.priceSnapshot?.toLocaleString('vi-VN') || '0'}đ
-                        </span>
+                        {booking.subServiceIds && booking.subServiceIds.length > 0 && (
+                          <div className="text-[11px] text-orange-800 font-medium pt-1">
+                            <span className="font-bold">Dịch vụ lẻ đi kèm:</span> {booking.subServiceIds.length} dịch vụ
+                          </div>
+                        )}
+                        <div className="text-xs text-orange-800 font-black pt-1 flex items-center justify-between">
+                          <span>Tổng chi phí:</span>
+                          <span className="text-sm font-black text-purple-800">
+                            {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Customer Notes */}
                       {booking.note && (
                         <div className="bg-gray-50/75 border border-dashed rounded-xl p-3 text-xs text-gray-600">
-                          <span className="font-bold block text-gray-700 mb-1">💬 Ghi chú từ khách hàng:</span>
+                          <span className="font-bold block text-gray-700 mb-1">💬 Ghi chú từ khách:</span>
                           <p className="italic">"{booking.note}"</p>
                         </div>
                       )}
@@ -472,17 +535,17 @@ export default function SpaStaffPage() {
 
                     {/* Right update pane */}
                     <div className="md:col-span-7 flex flex-col justify-center">
-                      {booking.status === 'ASSIGNED' || booking.status === 'LATE' ? (
+                      {(booking.status === 'ASSIGNED' || booking.status === 'CHECK_IN' || booking.status === 'CONFIRMED' || booking.status === 'LATE') ? (
                         <div className="flex flex-col items-center justify-center p-6 bg-purple-50/50 rounded-2xl border border-purple-100/50 space-y-3">
                           <p className="text-xs text-purple-800 font-bold text-center">
-                            Lịch hẹn đã sẵn sàng. Vui lòng bấm Xác nhận khi bắt đầu thực hiện dịch vụ.
+                            Lịch hẹn đã sẵn sàng. Vui lòng bấm "Xác nhận thực hiện" khi bắt đầu ca làm.
                           </p>
                           <Button
                             onClick={() => handleUpdateStatus(booking.id, 'IN_PROGRESS')}
                             disabled={actionLoading === booking.id}
                             className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-extrabold text-xs h-10 px-6 rounded-xl shadow-md transition"
                           >
-                            {actionLoading === booking.id ? 'Đang cập nhật...' : 'Xác nhận thực hiện'}
+                            {actionLoading === booking.id ? 'Đang cập nhật...' : 'Xác nhận thực hiện ca làm'}
                           </Button>
                         </div>
                       ) : booking.status === 'IN_PROGRESS' ? (
@@ -509,7 +572,7 @@ export default function SpaStaffPage() {
 
                             <div className="space-y-1.5">
                               <label className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
-                                <Camera className="size-3" /> Ảnh sau dịch vụ (URL hoặc chọn mẫu dưới)
+                                <Camera className="size-3" /> Ảnh sau dịch vụ (URL hoặc chọn mẫu)
                               </label>
                               <Input
                                 placeholder="https://example.com/pet.png"
@@ -541,9 +604,9 @@ export default function SpaStaffPage() {
                             <Button
                               onClick={() => handleCompleteBooking(booking.id)}
                               disabled={actionLoading === booking.id || !currentEditState.petConditionAfter.trim()}
-                              className="bg-green-600 hover:bg-green-750 text-white font-extrabold text-xs h-9 px-6 rounded-lg shadow-sm"
+                              className="bg-green-600 hover:bg-green-700 text-white font-extrabold text-xs h-9 px-6 rounded-lg shadow-sm"
                             >
-                              {actionLoading === booking.id ? 'Đang lưu...' : 'Hoàn thành'}
+                              {actionLoading === booking.id ? 'Đang lưu...' : 'Hoàn thành dịch vụ'}
                             </Button>
                           </div>
                         </div>
@@ -570,22 +633,6 @@ export default function SpaStaffPage() {
                             </div>
                           )}
                         </div>
-                      ) : booking.status === 'CANCELLED' ? (
-                        <div className="flex h-full items-center justify-center text-center p-8 bg-red-50/50 rounded-2xl border border-red-100">
-                          <div>
-                            <AlertTriangle className="size-8 text-red-500 mx-auto mb-2" />
-                            <span className="font-bold text-sm text-red-950 block">Lịch hẹn đã bị hủy</span>
-                            <span className="text-xs text-red-700">Lịch này đã được khách hàng hoặc hệ thống hủy bỏ.</span>
-                          </div>
-                        </div>
-                      ) : booking.status === 'NO_SHOW' ? (
-                        <div className="flex h-full items-center justify-center text-center p-8 bg-gray-50 rounded-2xl border border-gray-200">
-                          <div>
-                            <AlertTriangle className="size-8 text-gray-500 mx-auto mb-2" />
-                            <span className="font-bold text-sm text-gray-950 block">Khách vắng mặt (No Show)</span>
-                            <span className="text-xs text-gray-600">Lịch hẹn tự động chuyển thành No Show vì quá giờ hẹn 15 phút.</span>
-                          </div>
-                        </div>
                       ) : (
                         <div className="flex h-full items-center justify-center text-center p-8 bg-gray-50 rounded-2xl border border-gray-200">
                           <span className="text-xs font-bold text-gray-400">Trạng thái: {booking.status}</span>
@@ -600,6 +647,53 @@ export default function SpaStaffPage() {
           </div>
         )}
       </div>
+
+      {/* Modal for adding sub services by staff */}
+      {addingSubServicesForId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
+              <Plus className="size-5 text-purple-600" /> Thêm Dịch Vụ Lẻ Cho Khách Hang
+            </h3>
+            <p className="text-xs text-gray-500">
+              Chọn các dịch vụ lẻ phát sinh trực tiếp tại cửa hàng để cập nhật vào đơn hàng.
+            </p>
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {allSubServices.map((sub) => {
+                const isSelected = selectedAddonIds.includes(sub.id);
+                return (
+                  <div
+                    key={sub.id}
+                    onClick={() =>
+                      setSelectedAddonIds((prev) =>
+                        prev.includes(sub.id) ? prev.filter((i) => i !== sub.id) : [...prev, sub.id]
+                      )
+                    }
+                    className={`p-3 border rounded-xl cursor-pointer flex items-center justify-between text-xs ${
+                      isSelected ? 'border-purple-600 bg-purple-50 font-bold' : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span>{sub.name}</span>
+                    <span className="font-black text-purple-700">{sub.price.toLocaleString('vi-VN')}đ</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setAddingSubServicesForId(null)} className="text-xs">
+                Hủy
+              </Button>
+              <Button
+                onClick={handleAddSubServices}
+                disabled={selectedAddonIds.length === 0 || !!actionLoading}
+                className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold"
+              >
+                Xác nhận thêm ({selectedAddonIds.length})
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
+import { Species } from '@prisma/client';
 
 @Controller('api/spa')
 export class SpaController {
@@ -15,8 +16,8 @@ export class SpaController {
   }
 
   @Get('services')
-  getServices() {
-    return this.spaService.getServices();
+  getServices(@Query('species') species?: Species, @Query('weight') weight?: string) {
+    return this.spaService.getServices(species, weight ? Number(weight) : undefined);
   }
 
   @Get('staff-list')
@@ -57,6 +58,22 @@ export class SpaController {
   @Get('staff/bookings')
   getStaffBookings(@Req() req: AuthenticatedRequest) {
     return this.spaService.getStaffBookings(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('staff/bookings/:id/checkin')
+  staffCheckIn(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
+    return this.spaService.staffCheckIn(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('staff/bookings/:id/sub-services')
+  staffAddSubServices(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: AddSubServicesDto,
+  ) {
+    return this.spaService.staffAddSubServices(req.user.id, bookingId, dto.subServiceIds);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -129,9 +146,48 @@ export class SpaController {
   rescheduleBooking(
     @Req() req: AuthenticatedRequest,
     @Param('id') bookingId: string,
-    @Body('scheduledAt') scheduledAt: string,
+    @Body() dto: ManagerRescheduleDto,
   ) {
-    return this.spaService.rescheduleBooking(req.user.id, bookingId, scheduledAt);
+    return this.spaService.rescheduleBooking(req.user.id, bookingId, dto.scheduledAt);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/bookings/:id/reassign')
+  managerReassignStaff(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: ManagerReassignDto,
+  ) {
+    return this.spaService.managerReassignStaff(req.user.id, bookingId, dto.staffId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/bookings/:id/late-discount')
+  managerApplyLateDiscount(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+  ) {
+    return this.spaService.managerApplyLateDiscount(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/bookings/:id/update-services')
+  managerUpdateBookingServices(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: ManagerUpdateServicesDto,
+  ) {
+    return this.spaService.managerUpdateBookingServices(req.user.id, bookingId, dto.mainServiceId, dto.subServiceIds);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Get('manager/staff-performance')
+  getManagerStaffPerformance(
+    @Req() req: AuthenticatedRequest,
+    @Query('branchId') branchId: string,
+    @Query('filter') filter?: 'ALL' | 'ON_TIME' | 'LATE',
+  ) {
+    return this.spaService.getManagerStaffPerformance(req.user.id, branchId, filter);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)

@@ -32,7 +32,7 @@ export class CloudinaryService {
           overwrite: false,
           ...options,
         },
-        (error, uploaded) => {
+        (error: any, uploaded: UploadApiResponse | undefined) => {
           if (error || !uploaded) {
             reject(error ?? new Error('Cloudinary did not return an upload result.'));
             return;

@@ -1386,7 +1386,12 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     name: '',
     description: '',
     price: '',
-    durationMin: '',
+    durationMin: '60',
+    durationMax: '',
+    isMain: true,
+    species: 'ALL' as 'ALL' | 'DOG' | 'CAT',
+    petWeightMin: '',
+    petWeightMax: '',
     isActive: true
   });
   const [submittingService, setSubmittingService] = useState<boolean>(false);
@@ -1557,22 +1562,38 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     }
   };
 
+  // Apply late discount 10%
+  const handleApplyLateDiscount = async (bookingId: string) => {
+    try {
+      await spaApi.applyLateDiscount(bookingId);
+      toast.success('Đã tự động giảm 10% giá đơn hàng do trễ hẹn!');
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi áp dụng giảm giá.');
+    }
+  };
+
   // Service submit
   const handleServiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serviceForm.name || !serviceForm.price || !serviceForm.durationMin) {
-      toast.error('Vui lòng nhập đầy đủ thông tin bắt buộc.');
+    if (!serviceForm.name || !serviceForm.price || !serviceForm.durationMin || !serviceForm.brandId) {
+      toast.error('Vui lòng nhập đầy đủ thông tin bắt buộc và chọn Thương hiệu Spa.');
       return;
     }
     setSubmittingService(true);
     try {
       const data = {
+        brandId: serviceForm.brandId,
         name: serviceForm.name,
         description: serviceForm.description,
         price: Number(serviceForm.price),
         durationMin: Number(serviceForm.durationMin),
-        isActive: serviceForm.isActive,
-        brandId: serviceForm.brandId
+        durationMax: serviceForm.durationMax ? Number(serviceForm.durationMax) : undefined,
+        isMain: serviceForm.isMain,
+        species: serviceForm.species === 'ALL' ? undefined : serviceForm.species,
+        petWeightMin: serviceForm.petWeightMin ? Number(serviceForm.petWeightMin) : undefined,
+        petWeightMax: serviceForm.petWeightMax ? Number(serviceForm.petWeightMax) : undefined,
+        isActive: serviceForm.isActive
       };
 
       if (editingService) {
@@ -1596,12 +1617,17 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const handleEditServiceClick = (service: any) => {
     setEditingService(service);
     setServiceForm({
-      brandId: service.brandId,
+      brandId: service.brandId || (managerBrands[0]?.id || ''),
       name: service.name,
       description: service.description || '',
       price: String(service.price),
-      durationMin: String(service.durationMin),
-      isActive: service.isActive
+      durationMin: String(service.durationMin || 60),
+      durationMax: service.durationMax ? String(service.durationMax) : '',
+      isMain: service.isMain ?? true,
+      species: service.species || 'ALL',
+      petWeightMin: service.petWeightMin !== null && service.petWeightMin !== undefined ? String(service.petWeightMin) : '',
+      petWeightMax: service.petWeightMax !== null && service.petWeightMax !== undefined ? String(service.petWeightMax) : '',
+      isActive: service.isActive ?? true
     });
     setServiceModalOpen(true);
   };
@@ -1609,16 +1635,18 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   // Open add service modal
   const handleAddServiceClick = () => {
     setEditingService(null);
-    let brandId = '';
-    if (managerBrands.length > 0) {
-      brandId = managerBrands[0].id;
-    }
+    let brandId = managerBrands.length > 0 ? managerBrands[0].id : '';
     setServiceForm({
-      brandId: brandId,
+      brandId,
       name: '',
       description: '',
       price: '',
       durationMin: '60',
+      durationMax: '',
+      isMain: true,
+      species: 'ALL',
+      petWeightMin: '',
+      petWeightMax: '',
       isActive: true
     });
     setServiceModalOpen(true);
@@ -1936,7 +1964,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-xl font-black text-gray-900">Quản lý dịch vụ Spa</h2>
-                  <p className="text-sm font-semibold text-gray-500">Thêm, chỉnh sửa dịch vụ spa và sắp xếp theo độ phổ biến đặt lịch.</p>
+                  <p className="text-sm font-semibold text-gray-500">Thêm, chỉnh sửa dịch vụ spa, phân loại gói chính / dịch vụ lẻ và thiết lập mốc cân nặng.</p>
                 </div>
                 <button
                   onClick={handleAddServiceClick}
@@ -1952,8 +1980,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
-                        <th className="px-6 py-4">Tên dịch vụ</th>
-                        <th className="px-6 py-4">Nhóm / Thương hiệu</th>
+                        <th className="px-6 py-4">Tên dịch vụ & Phân loại</th>
+                        <th className="px-6 py-4">Thương hiệu / Nhóm</th>
+                        <th className="px-6 py-4">Đối tượng & Cân nặng</th>
                         <th className="px-6 py-4 text-center">Thời gian</th>
                         <th className="px-6 py-4 text-right">Giá</th>
                         <th className="px-6 py-4 text-center">Số lượt đặt</th>
@@ -1963,34 +1992,56 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     </thead>
                     <tbody className="divide-y">
                       {services.length > 0 ? (
-                        services.map((s: any) => (
-                          <tr key={s.id} className="hover:bg-gray-50/30 transition">
-                            <td className="px-6 py-4 font-bold text-gray-800">{s.name}</td>
-                            <td className="px-6 py-4 text-gray-500 text-xs">{s.brand?.name || 'Chăm sóc'}</td>
-                            <td className="px-6 py-4 text-center font-semibold text-gray-700">{s.durationMin} phút</td>
-                            <td className="px-6 py-4 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
-                            <td className="px-6 py-4 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                                s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                              }`}>
-                                {s.isActive ? 'Đang hoạt động' : 'Tắt'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <button
-                                onClick={() => handleEditServiceClick(s)}
-                                className="p-1 text-gray-500 hover:text-primary transition"
-                                title="Sửa dịch vụ"
-                              >
-                                <Edit2 className="size-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
+                        services.map((s: any) => {
+                          const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
+                          const weightText = s.petWeightMin !== null && s.petWeightMax !== null
+                            ? `${s.petWeightMin}kg - ${s.petWeightMax}kg`
+                            : 'Tất cả cân nặng';
+
+                          return (
+                            <tr key={s.id} className="hover:bg-gray-50/30 transition">
+                              <td className="px-6 py-4 space-y-1">
+                                <span className="font-extrabold text-gray-900 block text-sm">{s.name}</span>
+                                <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${
+                                  s.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}>
+                                  {s.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
+                                  {s.brand?.name || 'Grooming Spa'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-xs font-semibold text-gray-700 space-y-0.5">
+                                <span className="block font-bold text-gray-800">{speciesBadge}</span>
+                                <span className="block text-gray-450 font-medium">{weightText}</span>
+                              </td>
+                              <td className="px-6 py-4 text-center font-semibold text-gray-700">{s.durationMin} phút</td>
+                              <td className="px-6 py-4 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
+                              <td className="px-6 py-4 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
+                                  s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                }`}>
+                                  {s.isActive ? 'Đang hoạt động' : 'Tắt'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <button
+                                  onClick={() => handleEditServiceClick(s)}
+                                  className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
+                                  title="Chỉnh sửa dịch vụ"
+                                >
+                                  <Edit2 className="size-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
                       ) : (
                         <tr>
-                          <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
+                          <td colSpan={8} className="px-6 py-12 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
                         </tr>
                       )}
                     </tbody>
@@ -2005,7 +2056,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             <div className="space-y-6 animate-fadeIn">
               <div>
                 <h2 className="text-xl font-black text-gray-900">Danh sách tất cả lịch hẹn</h2>
-                <p className="text-sm font-semibold text-gray-500">Quản lý và điều chỉnh thời gian các cuộc hẹn Spa tại chi nhánh.</p>
+                <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên và áp dụng giảm giá trễ hẹn 10%.</p>
               </div>
 
               {/* Filters */}
@@ -2030,6 +2081,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     <option value="ALL">Tất cả trạng thái</option>
                     <option value="PENDING">Pending (Chờ xác nhận)</option>
                     <option value="CONFIRMED">Confirmed (Đã xác nhận)</option>
+                    <option value="CHECK_IN">Check-in (Khách đã đến)</option>
                     <option value="ASSIGNED">Assigned (Đã giao việc)</option>
                     <option value="IN_PROGRESS">In Progress (Đang làm)</option>
                     <option value="COMPLETED">Completed (Hoàn thành)</option>
@@ -2052,7 +2104,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         <th className="px-6 py-4">Dịch vụ</th>
                         <th className="px-6 py-4">Nhân viên</th>
                         <th className="px-6 py-4 text-center">Trạng thái</th>
-                        <th className="px-6 py-4 text-center">Đổi lịch</th>
+                        <th className="px-6 py-4 text-center">Thao tác quản lý</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -2064,6 +2116,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                           const statusStyle = {
                             PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
                             CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
+                            CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
+                            ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
                             ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
                             IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                             COMPLETED: 'bg-green-50 text-green-700 border-green-200',
@@ -2071,6 +2125,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                             NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
                             LATE: 'bg-rose-50 text-rose-700 border-rose-250'
                           }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
+
+                          const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status);
+                          const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
 
                           return (
                             <tr key={b.id} className="hover:bg-gray-50/30 transition">
@@ -2086,8 +2143,11 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                <p className="font-bold text-gray-800 text-xs">{b.service?.name}</p>
-                                <p className="text-[10px] text-gray-400 font-semibold">{b.priceSnapshot?.toLocaleString('vi-VN')}đ</p>
+                                <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
+                                <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
+                                {b.discountAmount ? (
+                                  <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
+                                ) : null}
                               </td>
                               <td className="px-6 py-4 font-semibold text-xs text-gray-700">
                                 {b.staff ? `✨ ${b.staff.name}` : <span className="text-gray-400 italic">Chưa phân công</span>}
@@ -2098,20 +2158,34 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                {['PENDING', 'CONFIRMED', 'ASSIGNED', 'LATE'].includes(b.status) ? (
-                                  <button
-                                    onClick={() => {
-                                      setRescheduleBooking(b);
-                                      setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]); // tomorrow
-                                      setSelectedRescheduleSlot('');
-                                    }}
-                                    className="text-xs text-primary hover:text-[#cf5017] font-black flex items-center justify-center gap-1 mx-auto"
-                                  >
-                                    <Calendar className="size-3.5" /> Đổi lịch
-                                  </button>
-                                ) : (
-                                  <span className="text-gray-400 text-xs italic">—</span>
-                                )}
+                                <div className="flex flex-col items-center gap-1.5">
+                                  {canReschedule && (
+                                    <button
+                                      onClick={() => {
+                                        setRescheduleBooking(b);
+                                        setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]); // tomorrow
+                                        setSelectedRescheduleSlot('');
+                                      }}
+                                      className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                    >
+                                      <Calendar className="size-3.5" /> Đổi lịch hẹn
+                                    </button>
+                                  )}
+
+                                  {isLateOfferable && (
+                                    <button
+                                      onClick={() => handleApplyLateDiscount(b.id)}
+                                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
+                                      title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
+                                    >
+                                      🎁 Giảm 10% (Trễ 30p)
+                                    </button>
+                                  )}
+
+                                  {!canReschedule && !isLateOfferable && (
+                                    <span className="text-gray-400 text-xs italic">—</span>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2210,8 +2284,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
           {currentTab === 'staffs' && (
             <div className="space-y-6 animate-fadeIn">
               <div>
-                <h2 className="text-xl font-black text-gray-900">Quản lý nhân viên chi nhánh</h2>
-                <p className="text-sm font-semibold text-gray-500">Theo dõi thông tin và số liệu hiệu suất công việc của từng nhân viên spa.</p>
+                <h2 className="text-xl font-black text-gray-900">Quản lý nhân viên chi nhánh & Hiệu suất ca làm</h2>
+                <p className="text-sm font-semibold text-gray-500">Theo dõi tỷ lệ hoàn thành Đúng hạn / Trễ hạn và tổng doanh thu của từng kỹ thuật viên.</p>
               </div>
 
               {/* Staffs Cards Grid */}
@@ -2241,20 +2315,47 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 border-t pt-4">
-                        <div className="bg-gray-50 rounded-xl p-3 text-center">
-                          <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
-                          <span className="text-lg font-black text-green-600 block mt-0.5">{s.completedCount}</span>
+                      {/* Performance metrics breakdown */}
+                      <div className="space-y-2 border-t pt-4">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
+                          <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {s.onTimeRate ?? 100}%
+                          </span>
                         </div>
-                        <div className="bg-gray-50 rounded-xl p-3 text-center">
-                          <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
-                          <span className="text-lg font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
+                        <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            style={{ width: `${s.onTimeRate ?? 100}%` }}
+                            className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
+                            <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
+                            <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
+                          </div>
+                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
+                            <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
+                            <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                            <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
+                            <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                            <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
+                            <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="border-t pt-4 flex justify-between items-center">
+                      <div className="border-t pt-3 flex justify-between items-center">
                         <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
-                        <span className="text-base font-black text-primary">{s.revenue.toLocaleString('vi-VN')}đ</span>
+                        <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
                       </div>
                     </div>
                   ))
@@ -2313,7 +2414,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             
             <div>
               <h3 className="text-base font-black text-gray-900">Đổi lịch hẹn Spa</h3>
-              <p className="text-xs text-gray-450 mt-1 font-semibold">Khách hàng: {rescheduleBooking.user?.name} ({rescheduleBooking.petName}) • Dịch vụ: {rescheduleBooking.service?.name}</p>
+              <p className="text-xs text-gray-450 mt-1 font-semibold">Khách hàng: {rescheduleBooking.user?.name || 'Khách hàng'} ({rescheduleBooking.petName || 'Bé cưng'}) • Dịch vụ: {rescheduleBooking.service?.name}</p>
             </div>
 
             <div className="space-y-4">
@@ -2322,7 +2423,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 <input
                   type="date"
                   value={rescheduleDate}
-                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} // min tomorrow
+                  min={new Date().toISOString().split('T')[0]}
                   onChange={(e) => {
                     setRescheduleDate(e.target.value);
                     setSelectedRescheduleSlot('');
@@ -2390,7 +2491,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
       {/* SERVICE MODAL (ADD / EDIT) */}
       {serviceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
+          <div className="w-full max-w-lg bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
             <button
               onClick={() => setServiceModalOpen(false)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
@@ -2399,70 +2500,143 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             </button>
 
             <div>
-              <h3 className="text-base font-black text-gray-900">{editingService ? 'Chỉnh sửa dịch vụ' : 'Thêm dịch vụ Spa mới'}</h3>
-              <p className="text-xs text-gray-455 mt-1 font-semibold">Tạo hoặc điều chỉnh dịch vụ phục vụ đặt lịch của chi nhánh.</p>
+              <h3 className="text-base font-black text-gray-900">{editingService ? 'Chỉnh sửa dịch vụ Spa' : 'Thêm dịch vụ Spa mới'}</h3>
+              <p className="text-xs text-gray-450 mt-1 font-semibold">Tạo hoặc cập nhật mốc cân nặng, giá và nhóm thương hiệu dịch vụ.</p>
             </div>
 
             <form onSubmit={handleServiceSubmit} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold">Thương hiệu Spa (SpaBrand) *</label>
-                <select
-                  required
-                  value={serviceForm.brandId}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white"
-                >
-                  <option value="">-- Chọn thương hiệu --</option>
-                  {managerBrands.map((b: any) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
+              
+              {/* Brand & Main/Sub Category */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thương hiệu Spa (SpaBrand) *</label>
+                  <select
+                    required
+                    value={serviceForm.brandId}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">-- Chọn thương hiệu --</option>
+                    {managerBrands.map((b: any) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} {b.isMain === false ? '(Dịch vụ lẻ)' : '(Gói chính)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại dịch vụ *</label>
+                  <select
+                    value={serviceForm.isMain ? 'MAIN' : 'SUB'}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, isMain: e.target.value === 'MAIN' }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="MAIN">★ Gói dịch vụ chính (bắt buộc chọn 1)</option>
+                    <option value="SUB">✦ Dịch vụ lẻ (chọn thêm tùy chọn)</option>
+                  </select>
+                </div>
               </div>
+
+              {/* Name */}
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold">Tên dịch vụ *</label>
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Tên dịch vụ *</label>
                 <input
                   type="text"
                   required
                   value={serviceForm.name}
                   onChange={(e) => setServiceForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
-                  placeholder="Ví dụ: Cắt tỉa lông cơ bản"
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
+                  placeholder="Ví dụ: SPA Cắt tỉa lông (Chó 3-6kg)"
                 />
               </div>
 
+              {/* Species & Weight Bracket */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Loài áp dụng</label>
+                  <select
+                    value={serviceForm.species}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, species: e.target.value as any }))}
+                    className="w-full h-10 border rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-800 bg-white"
+                  >
+                    <option value="ALL">🐾 Tất cả loài</option>
+                    <option value="DOG">🐕 Chó</option>
+                    <option value="CAT">🐈 Mèo</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Cân nặng từ (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    value={serviceForm.petWeightMin}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, petWeightMin: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
+                    placeholder="Ví dụ: 1.5"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Cân nặng đến (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    value={serviceForm.petWeightMax}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, petWeightMax: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
+                    placeholder="Ví dụ: 3.0"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold">Mô tả chi tiết</label>
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả chi tiết</label>
                 <textarea
                   value={serviceForm.description}
                   onChange={(e) => setServiceForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full min-h-[70px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
-                  placeholder="Mô tả công việc và đối tượng phục vụ..."
+                  className="w-full min-h-[60px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                  placeholder="Mô tả công việc và ưu đãi dịch vụ..."
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-400 font-bold">Giá dịch vụ (đ) *</label>
+              {/* Price & Duration */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Giá dịch vụ (đ) *</label>
                   <input
                     type="number"
                     required
                     min={0}
                     value={serviceForm.price}
                     onChange={(e) => setServiceForm(prev => ({ ...prev, price: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-black text-primary bg-white"
                     placeholder="150000"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-gray-400 font-bold">Thời gian (phút) *</label>
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian tối thiểu (phút) *</label>
                   <input
                     type="number"
                     required
-                    min={15}
+                    min={10}
                     value={serviceForm.durationMin}
                     onChange={(e) => setServiceForm(prev => ({ ...prev, durationMin: e.target.value }))}
                     className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
                     placeholder="60"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian tối đa (phút)</label>
+                  <input
+                    type="number"
+                    min={10}
+                    value={serviceForm.durationMax}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMax: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                    placeholder="90"
                   />
                 </div>
               </div>
@@ -2475,21 +2649,21 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   onChange={(e) => setServiceForm(prev => ({ ...prev, isActive: e.target.checked }))}
                   className="accent-primary size-4"
                 />
-                <label htmlFor="service-active" className="text-xs font-bold text-gray-700">Dịch vụ hoạt động khả dụng</label>
+                <label htmlFor="service-active" className="text-xs font-bold text-gray-700">Dịch vụ đang hoạt động khả dụng</label>
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <button
                   type="button"
                   onClick={() => setServiceModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
+                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={submittingService}
-                  className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017]"
+                  className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer"
                 >
                   {submittingService ? 'Đang lưu...' : 'Lưu dịch vụ'}
                 </button>

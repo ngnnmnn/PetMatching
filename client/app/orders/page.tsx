@@ -129,7 +129,13 @@ function formatAddressForDisplay(addrStr: string) {
   const parsed = parseAddressString(addrStr);
   if (parsed.receiverName || parsed.receiverPhone) {
     const contact = [parsed.receiverName, parsed.receiverPhone].filter(Boolean).join(' - ');
-    let base = `${contact} | ${parsed.detail}, ${parsed.ward}, ${parsed.district}, ${parsed.province}`;
+    const addressParts = [parsed.detail, parsed.ward, parsed.district, parsed.province]
+      .map((p) => p?.trim())
+      .filter(Boolean);
+    let base = contact;
+    if (addressParts.length > 0) {
+      base += ` | ${addressParts.join(', ')}`;
+    }
     if (parsed.note) {
       base += ` (Ghi chú: ${parsed.note})`;
     }

@@ -100,9 +100,12 @@ export default function SpaHomePage() {
     setBookingDialogOpen(true);
   };
 
+  const safeServices = Array.isArray(services) ? services : [];
+  const safeBranches = Array.isArray(branches) ? branches : [];
+
   // Filtering services based on search, tabs and selected sub-categories
-  const filteredServices = services.filter((service) => {
-    // Search query match
+  const filteredServices = safeServices.filter((service) => {
+    if (!service || !service.name) return false;
     const matchesSearch =
       service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (service.description && service.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -116,7 +119,8 @@ export default function SpaHomePage() {
     return service.brand?.name === selectedCategory || service.brand?.name?.includes(selectedCategory);
   });
 
-  const filteredBranches = branches.filter((branch) => {
+  const filteredBranches = safeBranches.filter((branch) => {
+    if (!branch || !branch.name) return false;
     return (
       branch.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (branch.description && branch.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -223,80 +227,126 @@ export default function SpaHomePage() {
             <p className="mt-4 font-semibold text-sm">Đang tải dữ liệu Spa...</p>
           </div>
         ) : activeTab === 'services' ? (
-          // SERVICES GRID
-          filteredServices.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl border border-[var(--border-color)] p-8">
-              <p className="text-muted-foreground text-sm">Không tìm thấy dịch vụ nào phù hợp.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredServices.map((service) => {
-                const img = SERVICE_IMAGES[service.name] || DEFAULT_IMAGE;
-                const ratingInfo = RATING_MOCK[service.name] || { rating: 4.8, reviews: 100 };
-                // Map category label for badge
-                let categoryLabel = 'Khác';
-                if (service.name.includes('Tắm')) categoryLabel = 'Tắm & Sấy';
-                else if (service.name.includes('tỉa')) categoryLabel = 'Cắt tỉa lông';
-                else if (service.name.includes('móng')) categoryLabel = 'Chăm sóc móng';
-                else if (service.name.includes('tai') || service.name.includes('răng')) categoryLabel = 'Vệ sinh tai & răng';
-                else if (service.name.includes('Massage')) categoryLabel = 'Massage';
-                else if (service.name.includes('Gói')) categoryLabel = 'Gói combo';
+          // SERVICES GRID - GROUPED BY BRAND / BASE TITLE (ONLY 1 CARD PER SERVICE TYPE)
+          (() => {
+            const brandMap = new Map<string, {
+              id: string;
+              title: string;
+              description: string;
+              minPrice: number;
+              maxPrice: number;
+              categoryLabel: string;
+            }>();
 
-                return (
-                  <article
-                    key={service.id}
-                    className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-card shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col h-full"
-                  >
-                    <div className="relative aspect-video bg-muted overflow-hidden">
-                      <img
-                        src={img}
-                        alt={service.name}
-                        className="size-full object-cover transition-transform duration-300 hover:scale-105"
-                      />
-                      <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-xs px-3 py-1 text-[10px] font-extrabold text-white uppercase tracking-wider">
-                        {categoryLabel}
-                      </span>
-                    </div>
+            filteredServices.forEach((service) => {
+              let cleanTitle = service.brand?.name || service.name;
+              cleanTitle = cleanTitle.replace(/\s*\([^)]*\)/g, '').trim();
+              if (!cleanTitle) cleanTitle = service.name;
 
-                    <div className="p-5 flex flex-col flex-1 space-y-3 justify-between">
-                      <div className="space-y-1.5">
-                        <h3 className="text-lg font-bold text-[var(--text-main)] leading-snug line-clamp-1">
-                          {service.name}
-                        </h3>
-                        <p className="text-xs text-[var(--text-muted)] line-clamp-2 min-h-[2rem]">
-                          {service.description || 'Chưa có mô tả dịch vụ chi tiết.'}
-                        </p>
-                        
-                        {/* Rating info */}
-                        <div className="flex items-center gap-1 text-amber-500 font-bold text-xs pt-1">
-                          <Star className="size-3.5 fill-current" />
-                          <span>{ratingInfo.rating.toFixed(1)}</span>
-                          <span className="text-gray-400 font-medium">({ratingInfo.reviews})</span>
-                        </div>
-                      </div>
+              let categoryLabel = 'Grooming Spa';
+              if (cleanTitle.includes('Tắm')) categoryLabel = 'Tắm & Sấy';
+              else if (cleanTitle.includes('tỉa') || cleanTitle.includes('Tỉa')) categoryLabel = 'Cắt tỉa lông';
+              else if (cleanTitle.includes('móng') || cleanTitle.includes('Móng')) categoryLabel = 'Chăm sóc móng';
+              else if (cleanTitle.includes('tai') || cleanTitle.includes('răng')) categoryLabel = 'Vệ sinh tai & răng';
+              else if (cleanTitle.includes('Massage')) categoryLabel = 'Massage';
+              else if (cleanTitle.includes('Gói') || cleanTitle.includes('Combo')) categoryLabel = 'Gói combo';
 
-                      <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)] mt-auto">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] text-gray-400 font-medium uppercase">Giá dịch vụ</span>
-                          <span className="text-lg font-black text-primary">
-                            {service.price.toLocaleString('vi-VN')}đ
+              if (!brandMap.has(cleanTitle)) {
+                brandMap.set(cleanTitle, {
+                  id: service.id,
+                  title: cleanTitle,
+                  description: service.description || 'Dịch vụ chăm sóc chuyên sâu dành cho thú cưng theo mốc cân nặng.',
+                  minPrice: service.price,
+                  maxPrice: service.price,
+                  categoryLabel,
+                });
+              } else {
+                const existing = brandMap.get(cleanTitle)!;
+                existing.minPrice = Math.min(existing.minPrice, service.price);
+                existing.maxPrice = Math.max(existing.maxPrice, service.price);
+              }
+            });
+
+            const uniqueCards = Array.from(brandMap.values());
+
+            if (uniqueCards.length === 0) {
+              return (
+                <div className="text-center py-16 bg-white rounded-xl border border-[var(--border-color)] p-8">
+                  <p className="text-muted-foreground text-sm">Không tìm thấy dịch vụ nào phù hợp.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {uniqueCards.map((card) => {
+                  const img = SERVICE_IMAGES[card.title] || DEFAULT_IMAGE;
+                  const ratingInfo = RATING_MOCK[card.title] || { rating: 4.8, reviews: 120 };
+
+                  const priceRangeStr = card.minPrice === card.maxPrice
+                    ? `${card.minPrice.toLocaleString('vi-VN')}đ`
+                    : `${card.minPrice.toLocaleString('vi-VN')}đ – ${card.maxPrice.toLocaleString('vi-VN')}đ`;
+
+                  return (
+                    <article
+                      key={card.id}
+                      className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-card shadow-xs transition-all duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col h-full"
+                    >
+                      <div className="relative aspect-video bg-muted overflow-hidden">
+                        <img
+                          src={img}
+                          alt={card.title}
+                          className="size-full object-cover transition-transform duration-300 hover:scale-105"
+                        />
+                        <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-xs px-3 py-1 text-[10px] font-extrabold text-white uppercase tracking-wider">
+                          {card.categoryLabel}
+                        </span>
+                        {card.minPrice !== card.maxPrice && (
+                          <span className="absolute bottom-3 right-3 rounded-full bg-purple-900/80 backdrop-blur-xs px-2.5 py-0.5 text-[10px] font-bold text-purple-100">
+                            Theo mốc cân nặng
                           </span>
-                        </div>
-                         <Button
-                          asChild
-                          className="bg-primary hover:bg-primary/95 text-white font-bold text-xs px-4 h-9 shadow-sm"
-                        >
-                          <Link href={`/spa/book?serviceId=${service.id}`}>
-                            Đặt lịch
-                          </Link>
-                        </Button>
+                        )}
                       </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )
+
+                      <div className="p-5 flex flex-col flex-1 space-y-3 justify-between">
+                        <div className="space-y-1.5">
+                          <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-1">
+                            {card.title}
+                          </h3>
+                          <p className="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
+                            {card.description}
+                          </p>
+                          
+                          <div className="flex items-center gap-1 text-amber-500 font-bold text-xs pt-1">
+                            <Star className="size-3.5 fill-current" />
+                            <span>{ratingInfo.rating.toFixed(1)}</span>
+                            <span className="text-gray-400 font-medium">({ratingInfo.reviews} đánh giá)</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-4 border-t border-gray-150 mt-auto">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] text-gray-400 font-bold uppercase">Khoảng giá dịch vụ</span>
+                            <span className="text-base font-black text-primary">
+                              {priceRangeStr}
+                            </span>
+                          </div>
+                          <Button
+                            asChild
+                            className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl"
+                          >
+                            <Link href={`/spa/book?serviceId=${card.id}`}>
+                              Đặt lịch
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            );
+          })()
         ) : (
           // BRANCHES GRID
           filteredBranches.length === 0 ? (
