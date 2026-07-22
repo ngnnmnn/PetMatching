@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ShippingService } from '../shipping/shipping.service';
 
 @Injectable()
 export class ManagerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private shippingService: ShippingService,
+  ) {}
 
   private generateSlug(name: string): string {
     return (
@@ -174,7 +178,7 @@ export class ManagerService {
   }
 
   async getOrders() {
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -198,6 +202,10 @@ export class ManagerService {
         },
       },
     });
+
+    return orders.filter(
+      (o) => !(o.status === 'PENDING' && o.paymentMethod === 'QR'),
+    );
   }
 
   async updateOrderStatus(id: string, status: string) {
@@ -245,11 +253,27 @@ export class ManagerService {
         }
       }
 
-      return tx.order.update({
+      const updatedOrder = await tx.order.update({
         where: { id },
         data: { status: status as any },
       });
+
+      return updatedOrder;
     });
+
+    // Auto-create GHN order if status is set to SHIPPED and has GHN districtId/wardCode
+    if (status === 'SHIPPED') {
+      const order = await this.prisma.order.findUnique({ where: { id } });
+      if (order?.districtId && order?.wardCode && !order?.ghnOrderCode) {
+        try {
+          await this.shippingService.createShippingOrder(id);
+        } catch (err) {
+          console.error('Failed to auto-create GHN shipping order:', err);
+        }
+      }
+    }
+
+    return this.prisma.order.findUnique({ where: { id } });
   }
 
   async getCustomers() {

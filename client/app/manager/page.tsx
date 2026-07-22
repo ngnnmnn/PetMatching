@@ -25,6 +25,8 @@ import {
   AlertCircle,
   HelpCircle,
   Award,
+  MessageSquare,
+  ChevronsRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats } from '@/lib/api/manager';
@@ -49,7 +51,7 @@ const CATEGORY_MAP: Record<string, string> = {
 const ORDER_STATUS_MAP: Record<string, string> = {
   PENDING: 'Chờ xác nhận',
   PROCESSING: 'Đang chuẩn bị',
-  SHIPPED: 'Đang vận chuyển',
+  SHIPPED: 'Đã gửi bên giao hàng',
   DELIVERED: 'Đã hoàn thành',
   CANCELLED: 'Đã hủy',
 };
@@ -132,6 +134,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [submittingCategory, setSubmittingCategory] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [submittingSettings, setSubmittingSettings] = useState(false);
+  const [feedbackProduct, setFeedbackProduct] = useState<ManagerProduct | null>(null);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState<boolean>(false);
+  const [isFeedbackSidebarClosing, setIsFeedbackSidebarClosing] = useState<boolean>(false);
 
   const dynamicCategoryMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -231,6 +238,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     });
   }, [orders, searchQuery, filterStatus]);
 
+  const eligibleOrdersForGhn = useMemo(() => {
+    return filteredOrders.filter(
+      (o) => !o.ghnOrderCode && o.status !== 'CANCELLED' && o.status !== 'SHIPPED' && o.status !== 'DELIVERED'
+    );
+  }, [filteredOrders]);
+
   const handleExportExcel = () => {
     toast.success('Xuất danh sách đơn hàng sang Excel thành công!');
   };
@@ -246,6 +259,40 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       console.error('Failed to update order status', error);
       toast.error('Lỗi khi cập nhật trạng thái đơn hàng.');
     }
+  };
+
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [isBulkShipping, setIsBulkShipping] = useState<boolean>(false);
+
+  const handleBulkSendToGhn = async () => {
+    if (selectedOrderIds.length === 0) return;
+    setIsBulkShipping(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const orderId of selectedOrderIds) {
+      try {
+        await managerApi.updateOrderStatus(orderId, 'SHIPPED');
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to send order ${orderId} to GHN`, err);
+        failCount++;
+      }
+    }
+
+    setIsBulkShipping(false);
+    setSelectedOrderIds([]);
+
+    if (successCount > 0) {
+      toast.success(`Đã gửi thành công ${successCount} đơn hàng sang GHN! Trạng thái: "Đã gửi bên giao hàng"`);
+    }
+    if (failCount > 0) {
+      toast.error(`Có ${failCount} đơn hàng không gửi được do thiếu thông tin địa chỉ GHN.`);
+    }
+
+    // Refresh orders
+    const res = await managerApi.getOrders();
+    setOrders(res.data);
   };
 
   const handleUpdateSettings = async (e: React.FormEvent) => {
@@ -313,6 +360,31 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       console.error('Failed to delete product', error);
       toast.error('Lỗi khi xóa sản phẩm.');
     }
+  };
+
+  const handleViewFeedback = async (product: ManagerProduct) => {
+    setFeedbackProduct(product);
+    setIsFeedbackModalOpen(true);
+    setFeedbackLoading(true);
+    try {
+      const res = await productsApi.getReviews(product.id);
+      setFeedbacks(res.data || []);
+    } catch (err) {
+      console.error('Lỗi tải đánh giá sản phẩm', err);
+      toast.error('Lỗi khi tải thông tin đánh giá.');
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
+  const handleCloseFeedbackSidebar = () => {
+    setIsFeedbackSidebarClosing(true);
+    setTimeout(() => {
+      setIsFeedbackModalOpen(false);
+      setFeedbackProduct(null);
+      setFeedbacks([]);
+      setIsFeedbackSidebarClosing(false);
+    }, 300);
   };
 
   const handleProductSubmit = async (e: React.FormEvent) => {
@@ -505,6 +577,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           </td>
                           <td className="px-6 py-4 text-center">
                             <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => handleViewFeedback(p)}
+                                className="p-1 text-gray-500 hover:text-blue-600 transition"
+                                title="Xem đánh giá & feedback"
+                              >
+                                <MessageSquare className="size-4" />
+                              </button>
                               <button
                                 onClick={() => handleEditClick(p)}
                                 className="p-1 text-gray-500 hover:text-primary transition"
@@ -781,6 +860,164 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </div>
             </div>
           )}
+
+          {/* Product Feedback Right Sidebar */}
+          {isFeedbackModalOpen && feedbackProduct && (
+            <div className="fixed inset-0 z-50 overflow-hidden">
+              {/* Backdrop Overlay */}
+              <div
+                className={cn(
+                  "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+                  isFeedbackSidebarClosing ? "opacity-0" : "opacity-100"
+                )}
+                onClick={handleCloseFeedbackSidebar}
+              />
+
+              {/* Sidebar Panel */}
+              <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex sm:pl-16">
+                <div
+                  className={cn(
+                    "w-screen max-w-2xl bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform relative",
+                    isFeedbackSidebarClosing ? "translate-x-full" : "translate-x-0 animate-in slide-in-from-right"
+                  )}
+                >
+                  {/* Floating Collapse Pull-tab on the left vertical center edge */}
+                  <button
+                    type="button"
+                    onClick={handleCloseFeedbackSidebar}
+                    className="absolute top-1/2 -left-10 -translate-y-1/2 w-10 h-20 bg-white border border-r-0 border-[#EFEAE2] shadow-[-6px_0_15px_rgba(0,0,0,0.06)] rounded-l-2xl flex items-center justify-center text-gray-400 hover:text-[var(--primary-color)] hover:bg-gray-50 transition active:scale-95 cursor-pointer z-50 group"
+                    title="Thu gọn Sidebar"
+                  >
+                    <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                  
+                  {/* Header */}
+                  <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
+                    <div className="flex items-center gap-3">
+                      {feedbackProduct.imageUrl ? (
+                        <img
+                          src={feedbackProduct.imageUrl}
+                          alt={feedbackProduct.name}
+                          className="size-12 object-cover rounded-xl border border-gray-200 shadow-sm"
+                        />
+                      ) : (
+                        <div className="size-12 rounded-xl bg-gray-100 flex items-center justify-center border border-gray-200 text-gray-400">
+                          <Package className="size-5" />
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[10px] bg-[var(--primary-color)]/10 text-[var(--primary-color)] font-black uppercase tracking-wider px-2 py-0.5 rounded">
+                          {dynamicCategoryMap[feedbackProduct.category] || CATEGORY_MAP[feedbackProduct.category] || feedbackProduct.category}
+                        </span>
+                        <h3 className="text-base font-black text-[var(--text-main)] mt-1 line-clamp-1">
+                          {feedbackProduct.name}
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+                    {feedbackLoading ? (
+                      <div className="flex h-60 flex-col items-center justify-center gap-2">
+                        <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
+                        <span className="text-xs font-bold text-gray-500">Đang tải toàn bộ đánh giá...</span>
+                      </div>
+                    ) : feedbacks.length > 0 ? (
+                      <div className="space-y-6">
+                        {/* Rating Statistics Summary card */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 rounded-2xl bg-orange-50/40 border border-orange-100/60 p-5 items-center">
+                          <div className="text-center md:border-r md:border-orange-100/80">
+                            <div className="text-4xl font-black text-orange-600">
+                              {(feedbacks.reduce((sum, f) => sum + f.rating, 0) / feedbacks.length).toFixed(1)}
+                            </div>
+                            <div className="flex items-center justify-center mt-1 text-orange-400 text-sm">
+                              {"★".repeat(Math.round(feedbacks.reduce((sum, f) => sum + f.rating, 0) / feedbacks.length))}
+                              {"☆".repeat(5 - Math.round(feedbacks.reduce((sum, f) => sum + f.rating, 0) / feedbacks.length))}
+                            </div>
+                            <span className="text-[11px] text-gray-400 font-extrabold block mt-1.5">{feedbacks.length} đánh giá khách hàng</span>
+                          </div>
+                          
+                          <div className="md:col-span-2 text-xs text-gray-500 space-y-1.5 font-bold">
+                            {[5, 4, 3, 2, 1].map((stars) => {
+                              const count = feedbacks.filter((f) => f.rating === stars).length;
+                              const pct = feedbacks.length > 0 ? (count / feedbacks.length) * 100 : 0;
+                              return (
+                                <div key={stars} className="flex items-center gap-3">
+                                  <span className="w-10 text-right text-gray-600">{stars} sao</span>
+                                  <div className="h-2 flex-1 rounded bg-gray-100 overflow-hidden">
+                                    <div className="h-full bg-orange-500 rounded" style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <span className="w-8 text-left font-black text-gray-700">{count}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Reviews list */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-black text-[#8A8980] uppercase tracking-wider">
+                            Chi tiết đánh giá ({feedbacks.length})
+                          </h4>
+                          <div className="divide-y divide-[#EFEAE2]">
+                            {feedbacks.map((item) => (
+                              <div key={item.id} className="py-4 first:pt-0 last:pb-0 space-y-2.5">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center gap-3">
+                                    {item.user?.avatarUrl ? (
+                                      <img
+                                        src={item.user.avatarUrl}
+                                        alt={item.user.name}
+                                        className="size-9 rounded-full object-cover border border-gray-200"
+                                      />
+                                    ) : (
+                                      <div className="flex size-9 items-center justify-center rounded-full bg-[var(--primary-color)]/5 border border-[var(--primary-color)]/10 text-xs font-black text-[var(--primary-color)]">
+                                        {item.user?.name ? item.user.name.charAt(0).toUpperCase() : '?'}
+                                      </div>
+                                    )}
+                                    <div>
+                                      <h5 className="text-xs font-black text-[var(--text-main)]">
+                                        {item.user?.name || 'Khách hàng PetMatching'}
+                                      </h5>
+                                      <div className="flex items-center text-orange-400 text-[10px] mt-0.5">
+                                        {"★".repeat(item.rating)}
+                                        {"☆".repeat(5 - item.rating)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] font-black text-gray-400">
+                                    {new Date(item.createdAt).toLocaleDateString('vi-VN')}
+                                  </span>
+                                </div>
+                                <p className="text-xs font-semibold text-gray-700 pl-12 leading-relaxed">
+                                  {item.comment ? (
+                                    item.comment
+                                  ) : (
+                                    <span className="italic text-gray-400">Khách hàng không viết nhận xét bằng văn bản.</span>
+                                  )}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-20 text-center space-y-3">
+                        <span className="text-5xl animate-bounce">💬</span>
+                        <div>
+                          <h4 className="text-sm font-black text-gray-700">Chưa có đánh giá nào</h4>
+                          <p className="text-xs text-gray-400 mt-1 max-w-sm">
+                            Sản phẩm này chưa nhận được lượt đánh giá hoặc feedback nào từ người mua hàng.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
 
@@ -829,13 +1066,57 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           </div>
 
+          {/* Bulk Action Bar */}
+          {selectedOrderIds.length > 0 && (
+            <div className="flex items-center justify-between bg-[#0F766E]/10 border border-[#0F766E]/30 rounded-xl px-4 py-3 animate-in fade-in duration-150">
+              <div className="text-xs font-bold text-[#0F766E] flex items-center gap-2">
+                <span>Đã chọn <strong>{selectedOrderIds.length}</strong> đơn hàng chưa gửi GHN</span>
+              </div>
+              <button
+                type="button"
+                disabled={isBulkShipping}
+                onClick={handleBulkSendToGhn}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-extrabold text-white bg-[#0F766E] hover:bg-[#115E59] rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
+              >
+                {isBulkShipping ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" /> Đang gửi GHN...
+                  </>
+                ) : (
+                  <>
+                    🚚 Gửi {selectedOrderIds.length} đơn sang GHN
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border border-[#EFEAE2] bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#EFEAE2] bg-[#F9F8F6] text-xs font-black uppercase text-[#8A8980]">
-                    <th className="px-6 py-4 text-center w-12"></th>
+                    <th className="px-4 py-4 text-center w-10">
+                      <input
+                        type="checkbox"
+                        disabled={eligibleOrdersForGhn.length === 0}
+                        checked={
+                          eligibleOrdersForGhn.length > 0 &&
+                          eligibleOrdersForGhn.every((o) => selectedOrderIds.includes(o.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedOrderIds(eligibleOrdersForGhn.map((o) => o.id));
+                          } else {
+                            setSelectedOrderIds([]);
+                          }
+                        }}
+                        className="size-4 accent-[#0F766E] rounded cursor-pointer disabled:cursor-not-allowed"
+                        title="Chọn tất cả đơn chưa gửi GHN"
+                      />
+                    </th>
+
                     <th className="px-6 py-4">Mã đơn</th>
                     <th className="px-6 py-4">Khách hàng</th>
                     <th className="px-6 py-4">SĐT</th>
@@ -851,16 +1132,26 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     filteredOrders.map((o) => {
                       const shippingInfo = parseShippingAddress(o.shippingAddress);
                       return (
-                        <tr key={o.id} className="transition hover:bg-[#FDFDFD]">
-                          <td className="px-6 py-4 text-center">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedOrderDetails(o)}
-                              className="p-1 text-gray-500 hover:text-[var(--primary-color)] transition active:scale-95 cursor-pointer"
-                              title="Xem chi tiết đơn hàng"
-                            >
-                              <Eye className="size-4" />
-                            </button>
+                        <tr
+                          key={o.id}
+                          onClick={() => setSelectedOrderDetails(o)}
+                          className="transition hover:bg-gray-50 cursor-pointer"
+                        >
+                          <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            {!o.ghnOrderCode && o.status !== 'CANCELLED' && o.status !== 'SHIPPED' ? (
+                              <input
+                                type="checkbox"
+                                checked={selectedOrderIds.includes(o.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedOrderIds((prev) => [...prev, o.id]);
+                                  } else {
+                                    setSelectedOrderIds((prev) => prev.filter((id) => id !== o.id));
+                                  }
+                                }}
+                                className="size-4 accent-[#0F766E] rounded cursor-pointer"
+                              />
+                            ) : null}
                           </td>
                           <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]" title={o.id}>
                             {o.id.length > 15 ? o.id.slice(0, 12) + '...' : o.id}
@@ -887,25 +1178,28 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             {new Date(o.createdAt).toLocaleDateString('vi-VN')}
                           </td>
                           <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(o.totalAmount)}</td>
-                          <td className="px-6 py-4 text-center">
-                            <select
-                              value={o.status}
-                              onChange={(e) => handleOrderStatusChange(o.id, e.target.value)}
-                              className={cn(
-                                'rounded-full px-2 py-1 text-xs font-black border text-center focus:outline-none cursor-pointer',
-                                o.status === 'DELIVERED' && 'bg-green-50 border-green-200 text-green-700',
-                                o.status === 'PENDING' && 'bg-yellow-50 border-yellow-200 text-yellow-700',
-                                o.status === 'PROCESSING' && 'bg-blue-50 border-blue-200 text-blue-700',
-                                o.status === 'SHIPPED' && 'bg-purple-50 border-purple-200 text-purple-700',
-                                o.status === 'CANCELLED' && 'bg-red-50 border-red-200 text-red-700',
-                              )}
-                            >
-                              {Object.keys(ORDER_STATUS_MAP).map((status) => (
-                                <option key={status} value={status} className="bg-white text-gray-800 font-semibold">
-                                  {ORDER_STATUS_MAP[status]}
-                                </option>
-                              ))}
-                            </select>
+                          <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            {o.status === 'CANCELLED' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-red-50 border border-red-200 text-red-700 shadow-sm">
+                                ❌ Đã hủy
+                              </span>
+                            ) : o.ghnOrderCode || o.status === 'SHIPPED' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-blue-50 text-blue-700 border border-blue-200 shadow-sm">
+                                Đã gửi GHN {o.ghnOrderCode ? `(${o.ghnOrderCode})` : ''}
+                              </span>
+                            ) : o.status === 'DELIVERED' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm">
+                                🎉 Đã hoàn thành
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOrderStatusChange(o.id, 'SHIPPED')}
+                                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-black text-white bg-[#0F766E] rounded-xl hover:bg-[#115E59] shadow-md transition active:scale-95 cursor-pointer"
+                              >
+                                🚚 Gửi GHN
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );

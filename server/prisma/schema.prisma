@@ -332,6 +332,9 @@ model Address {
   district      String
   ward          String
   detail        String
+  provinceId    Int?
+  districtId    Int?
+  wardCode      String?
   isDefault     Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -346,7 +349,12 @@ model Order {
   userId          String
   status          OrderStatus @default(PENDING)
   totalAmount     Float
+  shippingFee     Float       @default(0)
   shippingAddress String
+  districtId      Int?
+  wardCode        String?
+  ghnOrderCode    String?
+  shippingStatus  String?
   storeId         String?
   paymentMethod   String      @default("COD")
   orderCode       Int?        @unique

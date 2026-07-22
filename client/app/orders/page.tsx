@@ -39,9 +39,12 @@ interface Order {
   id: string;
   status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   totalAmount: number;
+  shippingFee?: number;
   shippingAddress: string;
   paymentMethod?: string;
   paymentUrl?: string | null;
+  ghnOrderCode?: string | null;
+  shippingStatus?: string | null;
   createdAt: string;
   items: OrderItem[];
 }
@@ -298,7 +301,7 @@ export default function OrdersPage() {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700">
             <Truck className="size-3.5" />
-            Đang vận chuyển
+            Đã gửi bên giao hàng
           </span>
         );
       case 'CANCELLED':
@@ -422,6 +425,12 @@ export default function OrdersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
+                    {order.ghnOrderCode && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 border border-teal-200 px-2 py-1 text-xs font-extrabold text-teal-800">
+                        <Truck className="size-3.5 text-teal-600" />
+                        GHN: {order.ghnOrderCode}
+                      </span>
+                    )}
                     {getStatusBadge(order.status)}
                     {getPaymentStatusBadge(order)}
                     

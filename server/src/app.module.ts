@@ -12,6 +12,7 @@ import { WishlistModule } from './modules/wishlist/wishlist.module';
 import { ManagerModule } from './modules/manager/manager.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { ShippingModule } from './modules/shipping/shipping.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
@@ -31,6 +32,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     ManagerModule,
     PaymentModule,
     ChatModule,
+    ShippingModule,
     UploadsModule,
   ],
 })

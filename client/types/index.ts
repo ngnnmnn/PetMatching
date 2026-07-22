@@ -27,6 +27,9 @@ export interface Address {
   district: string;
   ward: string;
   detail: string;
+  provinceId?: number | null;
+  districtId?: number | null;
+  wardCode?: string | null;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -50,7 +53,15 @@ export interface Order {
   userId: string;
   status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   totalAmount: number;
+  shippingFee?: number;
   shippingAddress: string;
+  districtId?: number | null;
+  wardCode?: string | null;
+  ghnOrderCode?: string | null;
+  shippingStatus?: string | null;
+  paymentMethod?: string;
+  orderCode?: number | null;
+  paymentUrl?: string | null;
   items: OrderItem[];
   createdAt: string;
   updatedAt: string;

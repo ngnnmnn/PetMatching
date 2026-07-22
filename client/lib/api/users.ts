@@ -24,7 +24,10 @@ export const usersApi = {
   getOrders: () => api.get<any[]>('/users/orders'),
   createOrder: (data: {
     totalAmount: number;
+    shippingFee?: number;
     shippingAddress: string;
+    districtId?: number;
+    wardCode?: string;
     paymentMethod?: string;
     items: { productId: string; quantity: number; price: number }[];
   }) => api.post<any>('/users/orders', data),

@@ -16,8 +16,20 @@ export class CreateOrderDto {
   @IsNumber()
   totalAmount: number;
 
+  @IsNumber()
+  @IsOptional()
+  shippingFee?: number;
+
   @IsString()
   shippingAddress: string;
+
+  @IsNumber()
+  @IsOptional()
+  districtId?: number;
+
+  @IsString()
+  @IsOptional()
+  wardCode?: string;
 
   @IsString()
   @IsOptional()

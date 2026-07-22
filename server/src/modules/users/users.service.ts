@@ -458,6 +458,8 @@ export class UsersService {
 
     if (pendingQrOrders.length > 0) {
       let needsReload = false;
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+
       for (const order of pendingQrOrders) {
         if (!order.orderCode) continue;
         const paymentInfo = await this.paymentService.getPaymentLinkInformation(
@@ -469,11 +471,18 @@ export class UsersService {
             data: { status: 'PROCESSING' },
           });
           needsReload = true;
+        } else if (
+          order.createdAt < fifteenMinsAgo ||
+          (paymentInfo && paymentInfo.status === 'CANCELLED')
+        ) {
+          // Xóa bỏ đơn hàng QR quá hạn 15 phút hoặc bị hủy trên PayOS
+          await this.cancelOrder(userId, order.id);
+          needsReload = true;
         }
       }
 
       if (needsReload) {
-        return this.prisma.order.findMany({
+        const reloadedOrders = await this.prisma.order.findMany({
           where: { userId },
           orderBy: { createdAt: 'desc' },
           include: {
@@ -490,10 +499,15 @@ export class UsersService {
             },
           },
         });
+        return reloadedOrders.filter(
+          (o) => !(o.status === 'PENDING' && o.paymentMethod === 'QR'),
+        );
       }
     }
 
-    return orders;
+    return orders.filter(
+      (o) => !(o.status === 'PENDING' && o.paymentMethod === 'QR'),
+    );
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -578,7 +592,10 @@ export class UsersService {
           userId,
           storeId: store.id,
           totalAmount: dto.totalAmount,
+          shippingFee: dto.shippingFee || 0,
           shippingAddress: dto.shippingAddress,
+          districtId: dto.districtId,
+          wardCode: dto.wardCode,
           status: 'PENDING',
           paymentMethod: dto.paymentMethod || 'COD',
           orderCode,
@@ -624,9 +641,21 @@ export class UsersService {
           data: { paymentUrl: paymentLink.checkoutUrl },
         });
 
+        const qrImageUrl = `https://img.vietqr.io/image/${paymentLink.bin}-${paymentLink.accountNumber}-compact2.png?amount=${paymentLink.amount}&addInfo=${encodeURIComponent(paymentLink.description)}&accountName=${encodeURIComponent(paymentLink.accountName)}`;
+
         return {
           ...order,
           checkoutUrl: paymentLink.checkoutUrl,
+          qrData: {
+            orderCode: paymentLink.orderCode,
+            accountNumber: paymentLink.accountNumber,
+            accountName: paymentLink.accountName,
+            bin: paymentLink.bin,
+            amount: paymentLink.amount,
+            description: paymentLink.description,
+            qrCode: paymentLink.qrCode,
+            qrImageUrl,
+          },
         };
       } catch (error) {
         console.error('PayOS integration failed, rolling back order...', error);
@@ -677,6 +706,12 @@ export class UsersService {
               increment: item.quantity,
             },
           },
+        });
+      }
+
+      if (order.paymentMethod === 'QR') {
+        return tx.order.delete({
+          where: { id: orderId },
         });
       }
 

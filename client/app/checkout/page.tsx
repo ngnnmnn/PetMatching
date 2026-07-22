@@ -24,6 +24,7 @@ import { useCart } from '@/context/CartContext';
 import { usersApi } from '@/lib/api/users';
 import { Address } from '@/types';
 import AddressFormModal from '@/components/checkout/AddressFormModal';
+import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 function formatCurrency(value: number) {
@@ -79,9 +80,16 @@ function CheckoutPageContent() {
   const [selectedProvinceName, setSelectedProvinceName] = useState('');
   const [selectedDistrictName, setSelectedDistrictName] = useState('');
   const [selectedWardName, setSelectedWardName] = useState('');
+  const [selectedProvinceId, setSelectedProvinceId] = useState<number | undefined>(undefined);
+  const [selectedDistrictId, setSelectedDistrictId] = useState<number | undefined>(undefined);
+  const [selectedWardCode, setSelectedWardCode] = useState<string | undefined>(undefined);
 
   // Payment Method
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'QR'>('COD');
+
+  // PayOS QR Modal State
+  const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
 
   // Checkout Success Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -89,6 +97,36 @@ function CheckoutPageContent() {
   const [finalAddressStr, setFinalAddressStr] = useState('');
   const [recipientNameStr, setRecipientNameStr] = useState('');
   const [recipientPhoneStr, setRecipientPhoneStr] = useState('');
+
+  const handleQRPaymentSuccess = async (orderId: string) => {
+    setIsQRModalOpen(false);
+    if (directCheckoutItem) {
+      localStorage.removeItem('petmatch_direct_checkout_item');
+    } else {
+      if (selectedItemIds.length > 0) {
+        if (selectedItemIds.length === cartItems.length) {
+          await clearCart();
+        } else {
+          for (const id of selectedItemIds) {
+            await removeFromCart(id);
+          }
+        }
+      } else {
+        await clearCart();
+      }
+      localStorage.removeItem('petmatch_selected_cart_items');
+    }
+    router.push('/orders?status=success');
+  };
+
+  const handleCancelQROrder = async (orderId: string) => {
+    try {
+      await usersApi.cancelOrder(orderId);
+      toast.info('Đã hủy giao dịch thanh toán QR. Đơn hàng chưa được lưu.');
+    } catch (err) {
+      console.error('Failed to cancel QR order', err);
+    }
+  };
 
   // Load selected items and direct checkout item from localStorage
   useEffect(() => {
@@ -170,7 +208,54 @@ function CheckoutPageContent() {
 
   const checkoutCount = checkoutItems.reduce((acc, item) => acc + item.quantity, 0);
 
-  const shippingFee = checkoutTotal > 500000 || checkoutTotal === 0 ? 0 : 30000;
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  const [calculatedShippingFee, setCalculatedShippingFee] = useState<number>(30000);
+  const [calculatingFee, setCalculatingFee] = useState<boolean>(false);
+
+  // Auto calculate GHN shipping fee when selected address changes
+  useEffect(() => {
+    let targetDistrictId: number | undefined;
+    let targetWardCode: string | undefined;
+
+    if (selectedAddressId === 'new' || !selectedAddressId) {
+      targetDistrictId = selectedDistrictId;
+      targetWardCode = selectedWardCode;
+    } else {
+      const addr = savedAddresses.find((a) => a.id === selectedAddressId);
+      if (addr) {
+        targetDistrictId = addr.districtId ?? undefined;
+        targetWardCode = addr.wardCode ?? undefined;
+      }
+    }
+
+    if (targetDistrictId && targetWardCode) {
+      const fetchFee = async () => {
+        setCalculatingFee(true);
+        try {
+          const res = await fetch(`${apiBaseUrl}/shipping/calculate-fee`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              toDistrictId: targetDistrictId,
+              toWardCode: targetWardCode,
+              weight: 500,
+            }),
+          });
+          const data = await res.json();
+          if (data.total && typeof data.total === 'number') {
+            setCalculatedShippingFee(data.total);
+          }
+        } catch (err) {
+          console.error('Failed to calculate GHN fee', err);
+        } finally {
+          setCalculatingFee(false);
+        }
+      };
+      fetchFee();
+    }
+  }, [selectedAddressId, savedAddresses, selectedDistrictId, selectedWardCode, apiBaseUrl]);
+
+  const shippingFee = checkoutTotal > 500000 || checkoutTotal === 0 ? 0 : calculatedShippingFee;
   const discountVal = (checkoutTotal * discountPercent) / 100 + discountAmount;
   const finalTotal = Math.max(0, checkoutTotal + shippingFee - discountVal);
 
@@ -250,9 +335,12 @@ function CheckoutPageContent() {
     setSelectedProvinceName(data.provinceName);
     setSelectedDistrictName(data.districtName);
     setSelectedWardName(data.wardName);
+    setSelectedProvinceId(data.provinceId);
+    setSelectedDistrictId(data.districtId);
+    setSelectedWardCode(data.wardCode);
     setSaveAddressToDb(data.saveAddressToDb);
     setSetAsDefault(data.setAsDefault);
-    
+
     if (data.saveAddressToDb) {
       setLoading(true);
       try {
@@ -263,17 +351,20 @@ function CheckoutPageContent() {
           district: data.districtName,
           ward: data.wardName,
           detail: data.detail,
-          isDefault: data.setAsDefault
+          provinceId: data.provinceId,
+          districtId: data.districtId,
+          wardCode: data.wardCode,
+          isDefault: data.setAsDefault,
         });
-        
+
         // Reload addresses from DB
         const addressesRes = await usersApi.getAddresses();
         const updatedList = addressesRes.data || [];
         setSavedAddresses(updatedList);
-        
+
         // Select the newly created address
         const newAddr = updatedList.find(
-          (a) => a.receiverName === data.receiverName && a.detail === data.detail
+          (a) => a.receiverName === data.receiverName && a.detail === data.detail,
         );
         if (newAddr) {
           setSelectedAddressId(newAddr.id);
@@ -308,7 +399,10 @@ function CheckoutPageContent() {
           district: data.districtName,
           ward: data.wardName,
           detail: data.detail,
-          isDefault: data.setAsDefault
+          provinceId: data.provinceId,
+          districtId: data.districtId,
+          wardCode: data.wardCode,
+          isDefault: data.setAsDefault,
         });
         toast.success('Đã cập nhật thông tin địa chỉ thành công.');
         await loadAddresses();
@@ -334,13 +428,22 @@ function CheckoutPageContent() {
     let finalAddress = '';
     let name = '';
     let phoneStr = '';
+    let targetDistrictId: number | undefined = undefined;
+    let targetWardCode: string | undefined = undefined;
 
     setSubmitting(true);
 
     try {
       if (selectedAddressId === 'new' || selectedAddressId === '') {
         // Validate new address fields in state
-        if (!receiverName || !receiverPhone || !detail || !selectedProvinceName || !selectedDistrictName || !selectedWardName) {
+        if (
+          !receiverName ||
+          !receiverPhone ||
+          !detail ||
+          !selectedProvinceName ||
+          !selectedDistrictName ||
+          !selectedWardName
+        ) {
           toast.error('Vui lòng điền thông tin địa chỉ mới bằng cách nhấn vào Sử dụng địa chỉ mới!');
           setSubmitting(false);
           setIsAddressModalOpen(true);
@@ -350,6 +453,8 @@ function CheckoutPageContent() {
         name = receiverName.trim();
         phoneStr = receiverPhone.trim();
         finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${detail.trim()}, ${selectedWardName}, ${selectedDistrictName}, ${selectedProvinceName}`;
+        targetDistrictId = selectedDistrictId;
+        targetWardCode = selectedWardCode;
       } else {
         // Use saved address
         const addr = savedAddresses.find((a) => a.id === selectedAddressId);
@@ -361,6 +466,8 @@ function CheckoutPageContent() {
         name = addr.receiverName;
         phoneStr = addr.receiverPhone;
         finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
+        targetDistrictId = addr.districtId ?? undefined;
+        targetWardCode = addr.wardCode ?? undefined;
       }
 
       if (userNote.trim()) {
@@ -371,40 +478,39 @@ function CheckoutPageContent() {
       const orderItems = checkoutItems.map((item) => ({
         productId: item.product.id,
         quantity: Number(item.quantity),
-        price: Number(item.product.salePrice ?? item.product.originalPrice)
+        price: Number(item.product.salePrice ?? item.product.originalPrice),
       }));
 
       // Create Order in DB
       const res = await usersApi.createOrder({
         totalAmount: Number(finalTotal),
+        shippingFee: Number(shippingFee),
         shippingAddress: finalAddress,
+        districtId: targetDistrictId,
+        wardCode: targetWardCode,
         paymentMethod: paymentMethod,
-        items: orderItems
+        items: orderItems,
       });
 
       const orderData = res.data;
 
-      if (paymentMethod === 'QR' && orderData.checkoutUrl) {
-        // Clear cart immediately for QR since we redirect away from the site
-        if (directCheckoutItem) {
-          localStorage.removeItem('petmatch_direct_checkout_item');
-        } else {
-          if (selectedItemIds.length > 0) {
-            if (selectedItemIds.length === cartItems.length) {
-              await clearCart();
-            } else {
-              for (const id of selectedItemIds) {
-                await removeFromCart(id);
-              }
-            }
-          } else {
-            await clearCart();
-          }
-          localStorage.removeItem('petmatch_selected_cart_items');
-        }
-
-        toast.success('Đặt hàng thành công! Đang chuyển hướng sang cổng thanh toán PayOS...');
-        window.location.href = orderData.checkoutUrl;
+      if (paymentMethod === 'QR' && (orderData.qrData || orderData.checkoutUrl)) {
+        setPayOSQRData(
+          orderData.qrData
+            ? { ...orderData.qrData, orderId: orderData.id }
+            : {
+                orderId: orderData.id,
+                orderCode: orderData.orderCode,
+                accountNumber: '970422',
+                accountName: 'PETMATCHING',
+                bin: '970422',
+                amount: Number(finalTotal),
+                description: `PM${orderData.orderCode}`,
+                checkoutUrl: orderData.checkoutUrl,
+              },
+        );
+        setIsQRModalOpen(true);
+        toast.success('Vui lòng quét mã QR để hoàn tất thanh toán trong 15 phút.');
         return;
       }
 
@@ -966,6 +1072,15 @@ function CheckoutPageContent() {
           </div>
         </div>
       )}
+
+      {/* PayOS QR Payment Overlay Modal */}
+      <PayOSQRModal
+        isOpen={isQRModalOpen}
+        onClose={() => setIsQRModalOpen(false)}
+        onSuccess={handleQRPaymentSuccess}
+        onCancelOrder={handleCancelQROrder}
+        qrData={payOSQRData}
+      />
     </main>
   );
 }

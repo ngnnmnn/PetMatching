@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateAddressDto {
   @IsString()
@@ -24,6 +24,18 @@ export class CreateAddressDto {
   @IsString()
   @MaxLength(160)
   detail: string;
+
+  @IsOptional()
+  @IsNumber()
+  provinceId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  districtId?: number;
+
+  @IsOptional()
+  @IsString()
+  wardCode?: string;
 
   @IsOptional()
   @IsBoolean()
