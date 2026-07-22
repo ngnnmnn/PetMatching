@@ -1,4 +1,6 @@
 declare module 'multer' {
+  export function memoryStorage(): unknown;
+
   export function diskStorage(options: {
     destination: (
       req: unknown,

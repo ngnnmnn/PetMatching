@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import api from "@/lib/axios"
 import { breedingOptions, catBreeds, dogBreeds, provinces } from "@/lib/pet-options"
 import { cn } from "@/lib/utils"
+import { uploadImages, type UploadPurpose } from "@/lib/api/uploads"
 
 interface PetProfileFormProps {
   onComplete?: () => void
@@ -40,29 +41,47 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [vaccinePhoto, setVaccinePhoto] = useState<string | null>(null)
   const [pedigreePhoto, setPedigreePhoto] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [submitError, setSubmitError] = useState("")
 
   const breeds = formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : []
 
-  const readFileAsDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(file)
-    })
-
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
+  const handleImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    setter: (url: string) => void,
+    purpose: UploadPurpose,
+  ) => {
     const file = event.target.files?.[0]
-    if (file) {
-      setter(await readFileAsDataUrl(file))
+    if (!file) return
+
+    setIsUploading(true)
+    setSubmitError("")
+    try {
+      const [image] = await uploadImages([file], purpose)
+      setter(image.url)
+    } catch {
+      setSubmitError("Không tải được ảnh. Chỉ chấp nhận JPEG, PNG hoặc WebP, tối đa 5MB.")
+    } finally {
+      setIsUploading(false)
+      event.target.value = ""
     }
   }
 
   const handleGalleryUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
-    const newImages = await Promise.all(files.slice(0, 6 - gallery.length).map(readFileAsDataUrl))
-    setGallery([...gallery, ...newImages])
+    if (!files.length) return
+
+    setIsUploading(true)
+    setSubmitError("")
+    try {
+      const uploaded = await uploadImages(files.slice(0, 6 - gallery.length), "pet-gallery")
+      setGallery((current) => [...current, ...uploaded.map((image) => image.url)])
+    } catch {
+      setSubmitError("Không tải được thư viện ảnh. Mỗi ảnh phải nhỏ hơn 5MB.")
+    } finally {
+      setIsUploading(false)
+      event.target.value = ""
+    }
   }
 
   const removeGalleryImage = (index: number) => {
@@ -95,7 +114,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   }
 
   const handleSubmit = async () => {
-    if (isSubmitting) return
+    if (isSubmitting || isUploading) return
 
     if (formData.isVaccinated && !vaccinePhoto) {
       setSubmitError("Vui lòng tải ảnh sổ tiêm phòng để gửi xác minh.")
@@ -204,7 +223,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   <div className="absolute bottom-0 right-0 flex size-10 items-center justify-center rounded-full bg-primary shadow-lg">
                     <Camera className="size-5 text-primary-foreground" />
                   </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={(event) => handleImageUpload(event, setAvatar)} />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={isUploading} onChange={(event) => handleImageUpload(event, setAvatar, "pet-avatar")} />
                 </label>
               </div>
 
@@ -364,7 +383,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     image={vaccinePhoto}
                     imageAlt="Sổ tiêm phòng"
                     onRemove={() => setVaccinePhoto(null)}
-                    onUpload={(event) => handleImageUpload(event, setVaccinePhoto)}
+                    onUpload={(event) => handleImageUpload(event, setVaccinePhoto, "vaccine-document")}
                   />
                 )}
               </div>
@@ -399,7 +418,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                       image={pedigreePhoto}
                       imageAlt="Giấy tờ phả hệ"
                       onRemove={() => setPedigreePhoto(null)}
-                      onUpload={(event) => handleImageUpload(event, setPedigreePhoto)}
+                      onUpload={(event) => handleImageUpload(event, setPedigreePhoto, "pedigree-document")}
                     />
                   </div>
                 )}
@@ -433,7 +452,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                         <Plus className="mx-auto mb-1 size-8" />
                         <span className="text-xs">Thêm ảnh</span>
                       </div>
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} />
+                      <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" disabled={isUploading} onChange={handleGalleryUpload} />
                     </label>
                   )}
                 </div>
@@ -497,14 +516,14 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               Quay lại
             </Button>
             {step < 3 ? (
-              <Button type="button" onClick={() => setStep(step + 1)} disabled={!canProceed()} className="gap-2">
+              <Button type="button" onClick={() => setStep(step + 1)} disabled={!canProceed() || isUploading} className="gap-2">
                 Tiếp tục
                 <ChevronRight className="size-4" />
               </Button>
             ) : (
-              <Button type="button" onClick={handleSubmit} disabled={isSubmitting} className="gap-2">
+              <Button type="button" onClick={handleSubmit} disabled={isSubmitting || isUploading} className="gap-2">
                 <Check className="size-4" />
-                {isSubmitting ? "Đang tạo..." : "Hoàn thành"}
+                {isUploading ? "Đang tải ảnh..." : isSubmitting ? "Đang tạo..." : "Hoàn thành"}
               </Button>
             )}
           </div>
