@@ -110,6 +110,16 @@ function SpaBookingWizard() {
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Protect booking wizard: redirect to login if not authenticated
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để thực hiện đặt lịch Spa.');
+      const currentUrl = window.location.pathname + window.location.search;
+      router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
+    }
+  }, [router]);
+
   // Loaded database records
   const [mainServices, setMainServices] = useState<SpaServiceType[]>([]);
   const [subServices, setSubServices] = useState<SpaServiceType[]>([]);

@@ -38,8 +38,13 @@ export default function LoginForm() {
         localStorage.setItem('accessToken', response.data.accessToken);
         localStorage.setItem('user', JSON.stringify(response.data.user));
         window.dispatchEvent(new Event('auth-change'));
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectUrl = searchParams.get('redirect');
+
         const role = response.data.user?.role;
-        if (role === 'ADMIN') {
+        if (redirectUrl) {
+          router.push(redirectUrl);
+        } else if (role === 'ADMIN') {
           router.push('/admin');
         } else if (role === 'SPA_STAFF') {
           router.push('/spa/staff');
