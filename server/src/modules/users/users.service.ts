@@ -13,6 +13,7 @@ import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaymentService } from '../payment/payment.service';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 
 type User = {
   id: string;
@@ -56,6 +57,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private paymentService: PaymentService,
+    private cloudinary: CloudinaryService,
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -250,6 +252,13 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const previous =
+      dto.avatarUrl !== undefined
+        ? await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { avatarUrl: true },
+          })
+        : null;
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -259,11 +268,41 @@ export class UsersService {
       },
     });
 
+    if (
+      previous?.avatarUrl &&
+      previous.avatarUrl !== user.avatarUrl
+    ) {
+      await this.cloudinary.destroyByUrl(previous.avatarUrl);
+    }
+
     return this.withoutPassword(user);
   }
 
   async deleteAccount(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        avatarUrl: true,
+        pets: {
+          select: {
+            avatarUrl: true,
+            gallery: true,
+            documents: { select: { imageUrls: true } },
+          },
+        },
+      },
+    });
     await this.prisma.user.delete({ where: { id: userId } });
+
+    const urls = [
+      user?.avatarUrl,
+      ...(user?.pets.flatMap((pet) => [
+        pet.avatarUrl,
+        ...pet.gallery,
+        ...pet.documents.flatMap((document) => document.imageUrls),
+      ]) ?? []),
+    ];
+    await Promise.all(urls.map((url) => this.cloudinary.destroyByUrl(url)));
     return { success: true };
   }
 

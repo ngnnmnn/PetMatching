@@ -12,10 +12,13 @@ import { WishlistModule } from './modules/wishlist/wishlist.module';
 import { ManagerModule } from './modules/manager/manager.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
     PrismaModule,
+    CloudinaryModule,
     AuthModule,
     UsersModule,
     ProductsModule,
@@ -28,6 +31,7 @@ import { ChatModule } from './modules/chat/chat.module';
     ManagerModule,
     PaymentModule,
     ChatModule,
+    UploadsModule,
   ],
 })
 export class AppModule {}

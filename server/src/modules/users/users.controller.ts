@@ -14,9 +14,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { existsSync, mkdirSync } from 'fs';
-import { extname, join } from 'path';
+import { memoryStorage } from 'multer';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -32,7 +31,8 @@ type AuthenticatedRequest = {
 };
 
 type UploadedAvatar = {
-  filename: string;
+  buffer: Buffer;
+  mimetype: string;
 };
 
 type UploadFileMeta = {
@@ -43,7 +43,10 @@ type UploadFileMeta = {
 @Controller('api/users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   @Get('profile')
   getProfile(@Req() req: AuthenticatedRequest) {
@@ -66,27 +69,7 @@ export class UsersController {
   @Post('avatar')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (
-          _req: unknown,
-          _file: UploadFileMeta,
-          cb: (error: Error | null, destination: string) => void,
-        ) => {
-          const uploadPath = join(process.cwd(), 'uploads');
-          if (!existsSync(uploadPath)) {
-            mkdirSync(uploadPath, { recursive: true });
-          }
-          cb(null, uploadPath);
-        },
-        filename: (
-          _req: unknown,
-          file: UploadFileMeta,
-          cb: (error: Error | null, filename: string) => void,
-        ) => {
-          const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
       fileFilter: (
         _req: unknown,
         file: UploadFileMeta,
@@ -102,16 +85,30 @@ export class UsersController {
         }
         cb(null, true);
       },
-      limits: { fileSize: 2 * 1024 * 1024 },
+      limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  uploadAvatar(@UploadedFile() file?: UploadedAvatar) {
+  async uploadAvatar(
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file?: UploadedAvatar,
+  ) {
     if (!file) {
       throw new BadRequestException('Khong tim thay file anh tai len.');
     }
 
-    const baseUrl = process.env.API_PUBLIC_URL || 'http://localhost:5000';
-    return { avatarUrl: `${baseUrl}/uploads/${file.filename}` };
+    const image = await this.cloudinary.uploadBuffer(
+      file.buffer,
+      `petmatching/users/${req.user.id}/avatars`,
+      {
+        quality: 'auto:good',
+        fetch_format: 'auto',
+        transformation: [
+          { width: 800, height: 800, crop: 'fill', gravity: 'auto' },
+        ],
+      },
+    );
+    await this.usersService.updateProfile(req.user.id, { avatarUrl: image.url });
+    return { avatarUrl: image.url, publicId: image.publicId };
   }
 
   @Post('change-password')

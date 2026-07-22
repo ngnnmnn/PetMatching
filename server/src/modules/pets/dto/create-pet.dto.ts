@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { BreedingOption, Gender, PetStatus, Species } from '@prisma/client';
 
 export class CreatePetDto {
@@ -24,11 +24,14 @@ export class CreatePetDto {
   location!: string;
 
   @IsOptional()
-  @IsString()
+  @IsUrl({ require_tld: false })
+  @MaxLength(2048)
   avatarUrl?: string;
 
   @IsOptional()
+  @IsArray()
   @IsString({ each: true })
+  @MaxLength(2048, { each: true })
   gallery?: string[];
 
   @IsOptional()
@@ -50,6 +53,7 @@ export class CreatePetDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @MaxLength(2048, { each: true })
   vaccineDocumentUrls?: string[];
 
   @IsOptional()
@@ -59,6 +63,7 @@ export class CreatePetDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @MaxLength(2048, { each: true })
   pedigreeDocumentUrls?: string[];
 
   @IsOptional()
