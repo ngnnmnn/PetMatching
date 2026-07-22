@@ -6,8 +6,6 @@ import {
   UserRole,
 } from '@prisma/client';
 import {
-  ArrayMinSize,
-  IsArray,
   IsBoolean,
   IsEnum,
   IsIn,
@@ -27,11 +25,6 @@ export class UpdateAccountStatusDto {
 }
 
 export class GrantSpaManagerDto {
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsString({ each: true })
-  branchIds!: string[];
-
   @IsOptional()
   @IsBoolean()
   allowReassignment?: boolean;

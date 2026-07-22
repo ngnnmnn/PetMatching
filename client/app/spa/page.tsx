@@ -94,7 +94,7 @@ export default function SpaHomePage() {
       id: service.id,
       name: service.name,
       price: service.price,
-      branchId: service.branchId,
+      branchId: service.branchId ?? service.brandId,
       branchName: service.branch?.name || 'Chi nhánh Spa',
     });
     setBookingDialogOpen(true);

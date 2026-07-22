@@ -192,7 +192,7 @@ export interface SpaBookingType {
   petName: string | null;
   petId?: string | null;
   scheduledAt: string;
-  status: 'PENDING' | 'CONFIRMED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+  status: 'PENDING' | 'CONFIRMED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' | 'LATE';
   priceSnapshot: number | null;
   note: string | null;
   petConditionAfter?: string | null;

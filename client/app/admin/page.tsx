@@ -126,11 +126,11 @@ export default function AdminDashboardPage() {
       {
         label: 'Khiếu nại cửa hàng',
         value: data.stats.store.pendingComplaints,
-        href: '/admin/store-complaints',
+        href: '/admin/reports?type=STORE&status=PENDING',
         tone: 'red',
       },
       {
-        label: 'Chi nhánh spa chờ duyệt',
+        label: 'Spa cần kích hoạt',
         value: data.stats.spa.pendingBranches,
         href: '/admin/spas',
         tone: 'teal',
@@ -138,7 +138,7 @@ export default function AdminDashboardPage() {
       {
         label: 'Khiếu nại spa',
         value: data.stats.spa.pendingComplaints,
-        href: '/admin/spa-complaints',
+        href: '/admin/reports?type=SPA&status=PENDING',
         tone: 'red',
       },
     ];
@@ -215,7 +215,7 @@ export default function AdminDashboardPage() {
             <PulseRow
               icon={Stethoscope}
               label="Spa"
-              value={`${data.stats.spa.activeBranches} đang hoạt động / ${data.stats.spa.pendingBranches} chờ duyệt`}
+              value={data.stats.spa.activeBranches ? 'Đang nhận lịch' : 'Tạm ngừng nhận lịch'}
               meta={`${data.stats.spa.totalServices} dịch vụ, ${data.stats.spa.totalBookings} lịch đặt`}
             />
             <PulseRow
@@ -246,15 +246,15 @@ export default function AdminDashboardPage() {
           />
           <OperationCard
             icon={Stethoscope}
-            title="Hệ thống Spa"
+            title="PetMatching Spa"
             href="/admin/spa-bookings"
             tone="violet"
             revenue={data.stats.spa.revenue}
             metrics={[
               { label: 'Lịch đặt', value: data.stats.spa.totalBookings },
-              { label: 'Chi nhánh hoạt động', value: data.stats.spa.activeBranches },
+              { label: 'Trạng thái nhận lịch', value: data.stats.spa.activeBranches ? 'Đang mở' : 'Tạm ngừng' },
               { label: 'Dịch vụ', value: data.stats.spa.totalServices },
-              { label: 'Chờ duyệt', value: data.stats.spa.pendingBranches },
+              { label: 'Khiếu nại chờ xử lý', value: data.stats.spa.pendingComplaints },
             ]}
           />
         </div>
@@ -451,7 +451,7 @@ function OperationCard({
   href: string;
   tone: 'teal' | 'violet';
   revenue: number;
-  metrics: Array<{ label: string; value: number }>;
+  metrics: Array<{ label: string; value: string | number }>;
 }) {
   const styles = tone === 'teal'
     ? { icon: 'bg-[#E7F3F1] text-[#0F766E]', line: 'bg-[#0F766E]', revenue: 'text-[#0F766E]' }

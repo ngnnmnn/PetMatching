@@ -29,8 +29,8 @@ export const adminApi = {
   dashboard: () => api.get('/admin/dashboard'),
   users: () => api.get('/admin/users'),
   updateUserRole: (id: string, role: AdminRole) => api.patch(`/admin/users/${id}/role`, { role }),
-  grantSpaManager: (id: string, branchIds: string[], allowReassignment = false) =>
-    api.patch(`/admin/users/${id}/spa-manager/grant`, { branchIds, allowReassignment }),
+  grantSpaManager: (id: string, allowReassignment = false) =>
+    api.patch(`/admin/users/${id}/spa-manager/grant`, { allowReassignment }),
   revokeSpaManager: (id: string, mode: 'UNASSIGN' | 'TRANSFER', newManagerId?: string) =>
     api.patch(`/admin/users/${id}/spa-manager/revoke`, { mode, newManagerId }),
   updateAccountStatus: (id: string, accountStatus: AccountStatus) =>
@@ -47,11 +47,17 @@ export const adminApi = {
   matchingReports: () => api.get('/admin/matching-reports'),
   resolveMatchingReport: (id: string) => api.patch(`/admin/matching-reports/${id}/resolve`),
   stores: () => api.get('/admin/stores'),
+  storeDashboard: () => api.get('/admin/store-dashboard'),
   updateStoreSettings: (data: { name: string; phone?: string; address?: string; description?: string }) =>
     api.put('/admin/store-settings', data),
   storeProducts: () => api.get('/admin/store-products'),
   storeOrders: () => api.get('/admin/store-orders'),
   spas: () => api.get('/admin/spas'),
+  spaDashboard: () => api.get('/admin/spa-dashboard'),
+  spaServices: () => api.get('/admin/spa-services'),
+  spaStaffSchedule: () => api.get('/admin/spa-staff-schedule'),
+  updateSpaSettings: (data: { name: string; phone?: string; address: string; description?: string; status: ApprovalStatus }) =>
+    api.put('/admin/spa-settings', data),
   updateSpaStatus: (id: string, status: ApprovalStatus) => api.patch(`/admin/spas/${id}/status`, { status }),
   spaBookings: () => api.get('/admin/spa-bookings'),
   complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),

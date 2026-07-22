@@ -525,11 +525,19 @@ export class UsersService {
         randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
       }
       const generatedId = `PM-${year}${month}${date}-${randomChars}`;
+      const store = await tx.store.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (!store) {
+        throw new NotFoundException('Cửa hàng chưa được cấu hình.');
+      }
 
       return tx.order.create({
         data: {
           id: generatedId,
           userId,
+          storeId: store.id,
           totalAmount: dto.totalAmount,
           shippingAddress: dto.shippingAddress,
           status: 'PENDING',

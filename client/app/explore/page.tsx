@@ -82,6 +82,7 @@ type Pet = {
     isCompatible: boolean;
   };
   ownerName?: string;
+  ownerAvatar?: string | null;
 };
 
 type MatchingRequest = {
@@ -861,7 +862,7 @@ export default function UnifiedMatchingHubPage() {
                   <div className="rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/50 p-4 flex flex-col items-center justify-center text-center space-y-1">
                     <span className="text-2xl">🧬</span>
                     <span className="text-xs text-muted-foreground font-bold uppercase text-emerald-600 dark:text-emerald-400">Thuần chủng</span>
-                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">{selectedCandidateDetail.isPurebred ? 'Có' : 'Không'}</span>
+                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">{selectedCandidateDetail.hasPedigree ? 'Có' : 'Không'}</span>
                   </div>
                   <div className="rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/50 p-4 flex flex-col items-center justify-center text-center space-y-1">
                     <span className="text-2xl">💉</span>
