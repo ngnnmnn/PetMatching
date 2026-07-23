@@ -114,7 +114,7 @@ export default function AdminDashboardPage() {
       {
         label: 'Báo cáo ghép đôi',
         value: data.stats.matching.pendingReports,
-        href: '/admin/matching-reports',
+        href: '/admin/reports?type=MATCHING&status=PENDING',
         tone: 'red',
       },
       {

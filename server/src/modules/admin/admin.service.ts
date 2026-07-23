@@ -10,6 +10,7 @@ import {
   OrderStatus,
   PetStatus,
   Prisma,
+  Species,
   SpaBookingStatus,
   UserRole,
   VerificationBadge,
@@ -17,6 +18,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   GrantSpaManagerDto,
+  CreateBreedRuleDto,
   HidePetDto,
   RevokeSpaManagerDto,
   RestorePetDto,
@@ -25,6 +27,7 @@ import {
   UpdateAccountStatusDto,
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
+  UpdateBreedRuleDto,
 } from './dto/admin-actions.dto';
 
 type AdminActor = {
@@ -606,6 +609,62 @@ export class AdminService {
     return report;
   }
 
+  getBreedRules(query: { species?: Species; active?: string; search?: string }) {
+    const search = query.search?.trim();
+    const active =
+      query.active === 'true' ? true : query.active === 'false' ? false : undefined;
+
+    return this.prisma.breedRule.findMany({
+      where: {
+        ...(query.species ? { species: query.species } : {}),
+        ...(active === undefined ? {} : { isActive: active }),
+        ...(search
+          ? {
+              OR: [
+                { breedA: { contains: search, mode: 'insensitive' } },
+                { breedB: { contains: search, mode: 'insensitive' } },
+                { offspringName: { contains: search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ species: 'asc' }, { breedA: 'asc' }, { breedB: 'asc' }],
+    });
+  }
+
+  async createBreedRule(actor: AdminActor, dto: CreateBreedRuleDto) {
+    const data = this.normalizeBreedRule(dto);
+    await this.ensureBreedRulePairAvailable(data.species, data.breedA, data.breedB);
+
+    const rule = await this.prisma.breedRule.create({ data });
+    await this.audit(actor.id, 'ADMIN_CREATE_BREED_RULE', 'BreedRule', rule.id, data);
+    return rule;
+  }
+
+  async updateBreedRule(actor: AdminActor, ruleId: string, dto: UpdateBreedRuleDto) {
+    await this.ensureBreedRuleExists(ruleId);
+    const data = this.normalizeBreedRule(dto);
+    await this.ensureBreedRulePairAvailable(data.species, data.breedA, data.breedB, ruleId);
+
+    const rule = await this.prisma.breedRule.update({
+      where: { id: ruleId },
+      data,
+    });
+    await this.audit(actor.id, 'ADMIN_UPDATE_BREED_RULE', 'BreedRule', ruleId, data);
+    return rule;
+  }
+
+  async deleteBreedRule(actor: AdminActor, ruleId: string) {
+    const rule = await this.ensureBreedRuleExists(ruleId);
+    await this.prisma.breedRule.delete({ where: { id: ruleId } });
+    await this.audit(actor.id, 'ADMIN_DELETE_BREED_RULE', 'BreedRule', ruleId, {
+      species: rule.species,
+      breedA: rule.breedA,
+      breedB: rule.breedB,
+    });
+    return { success: true };
+  }
+
   async getStores(_query: { status?: ApprovalStatus }) {
     const [store, totalProducts, totalOrders] = await this.prisma.$transaction([
       this.prisma.store.findFirst({
@@ -912,6 +971,63 @@ export class AdminService {
     if (action === ComplaintAction.DISMISS) return ComplaintStatus.DISMISSED;
     if (action === ComplaintAction.ESCALATE) return ComplaintStatus.ESCALATED;
     return ComplaintStatus.RESOLVED;
+  }
+
+  private normalizeBreedRule(dto: CreateBreedRuleDto | UpdateBreedRuleDto) {
+    const first = dto.breedA.trim().replace(/\s+/g, ' ');
+    const second = dto.breedB.trim().replace(/\s+/g, ' ');
+    if (first.localeCompare(second, 'vi', { sensitivity: 'base' }) === 0) {
+      throw new BadRequestException('Hai giống trong một quy tắc phải khác nhau.');
+    }
+
+    const [breedA, breedB] =
+      first.localeCompare(second, 'vi', { sensitivity: 'base' }) <= 0
+        ? [first, second]
+        : [second, first];
+
+    return {
+      species: dto.species,
+      breedA,
+      breedB,
+      isCompatible: dto.isCompatible,
+      offspringName: dto.offspringName?.trim() || null,
+      warningNote: dto.warningNote?.trim() || null,
+      isActive: dto.isActive ?? true,
+    };
+  }
+
+  private async ensureBreedRuleExists(ruleId: string) {
+    const rule = await this.prisma.breedRule.findUnique({ where: { id: ruleId } });
+    if (!rule) throw new NotFoundException('Không tìm thấy quy tắc giống.');
+    return rule;
+  }
+
+  private async ensureBreedRulePairAvailable(
+    species: Species,
+    breedA: string,
+    breedB: string,
+    excludeId?: string,
+  ) {
+    const duplicate = await this.prisma.breedRule.findFirst({
+      where: {
+        species,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+        OR: [
+          {
+            breedA: { equals: breedA, mode: 'insensitive' },
+            breedB: { equals: breedB, mode: 'insensitive' },
+          },
+          {
+            breedA: { equals: breedB, mode: 'insensitive' },
+            breedB: { equals: breedA, mode: 'insensitive' },
+          },
+        ],
+      },
+    });
+
+    if (duplicate) {
+      throw new BadRequestException('Cặp giống này đã có quy tắc trong hệ thống.');
+    }
   }
 
   private async ensureManagedUser(userId: string) {

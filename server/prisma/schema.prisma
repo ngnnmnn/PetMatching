@@ -206,7 +206,7 @@ model Message {
 }
 
 model BreedRule {
-  id            String  @id @default(cuid())
+  id            String   @id @default(cuid())
   species       Species
   /// Giống A
   breedA        String
@@ -214,13 +214,18 @@ model BreedRule {
   breedB        String
   /// true  = tương thích tốt (cross-breed compatible, +20 điểm)
   /// false = không khuyến nghị (genetic risk, -10 điểm)
-  isCompatible  Boolean @default(true)
+  isCompatible  Boolean  @default(true)
   /// Tên giống con dự kiến nếu lai (vd: "Corgi Gold", "F1 Hybrid")
   offspringName String?
   /// Ghi chú cảnh báo nếu có rủi ro di truyền
   warningNote   String?
+  /// Cho phép tạm ngưng quy tắc mà không cần xóa dữ liệu
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([breedA, breedB, species])
+  @@index([species, isActive])
   @@map("breed_rules")
 }
 
