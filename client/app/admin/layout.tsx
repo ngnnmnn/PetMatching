@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   ShoppingBag,
+  SlidersHorizontal,
   Stethoscope,
   UsersRound,
 } from 'lucide-react';
@@ -35,7 +36,7 @@ const navGroups = [
     items: [
       { label: 'Thú cưng', href: '/admin/pets', icon: PawPrint },
       { label: 'Xác minh thú cưng', href: '/admin/pet-verifications', icon: ClipboardCheck },
-      { label: 'Báo cáo ghép đôi', href: '/admin/matching-reports', icon: FileWarning },
+      { label: 'Quy tắc giống', href: '/admin/breed-rules', icon: SlidersHorizontal },
     ],
   },
   {

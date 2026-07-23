@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -41,6 +41,7 @@ const complaintTargetOptions = [
   ['ALL', 'Tất cả đối tượng'],
   ['ORDER', 'Đơn hàng'],
   ['PRODUCT', 'Sản phẩm'],
+  ['PET', 'Thú cưng'],
 ] as const;
 const complaintStatusOptions = [
   ['ALL', 'Tất cả trạng thái'],
@@ -219,13 +220,14 @@ const sectionConfig: Record<string, {
   reports: {
     title: 'Báo cáo & khiếu nại',
     description: 'Hàng chờ kiểm duyệt tập trung cho mọi loại báo cáo và khiếu nại.',
-    loader: () => adminApi.complaints(),
+    loader: loadAllReports,
     columns: complaintColumns(),
   },
 };
 
 export default function AdminSectionPage() {
   const params = useParams<{ section: string }>();
+  const router = useRouter();
   const section = params.section;
   const config = sectionConfig[section] ?? sectionConfig.reports;
   const hasActions = !readOnlySections.has(section);
@@ -249,8 +251,12 @@ export default function AdminSectionPage() {
   }, [config, section]);
 
   useEffect(() => {
+    if (section === 'matching-reports') {
+      router.replace('/admin/reports?type=MATCHING');
+      return;
+    }
     load();
-  }, [load]);
+  }, [load, router, section]);
 
   useEffect(() => {
     if (section !== 'reports') return;
@@ -1461,6 +1467,14 @@ function ActionGroup({
   }
 
   if (section === 'reports' && row.status === 'PENDING') {
+    if (row.reportSource === 'MATCHING') {
+      return (
+        <div className="flex justify-end">
+          <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveMatchingReport(row.id), 'Đã xử lý báo cáo ghép đôi.')} />
+        </div>
+      );
+    }
+
     return (
       <div className="flex justify-end gap-2">
         <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveComplaint(row.id, 'RESOLVE'), 'Đã xử lý khiếu nại.')} />
@@ -1554,10 +1568,41 @@ function complaintColumns() {
     { key: 'title', label: 'Tiêu đề' },
     { key: 'type', label: 'Nhóm', render: (row: Row) => formatComplaintType(row.type) },
     { key: 'targetType', label: 'Đối tượng', render: (row: Row) => formatComplaintTarget(row.targetType) },
+    { key: 'reporterId', label: 'Người báo cáo' },
+    { key: 'detail', label: 'Chi tiết' },
     { key: 'status', label: 'Trạng thái' },
     { key: 'actionTaken', label: 'Hành động', render: (row: Row) => row.actionTaken ? formatStatus(row.actionTaken) : '-' },
     { key: 'createdAt', label: 'Ngày tạo', render: dateCell },
   ];
+}
+
+async function loadAllReports(): Promise<{ data: Row[] }> {
+  const [complaintsResponse, matchingReportsResponse] = await Promise.all([
+    adminApi.complaints(),
+    adminApi.matchingReports(),
+  ]);
+
+  const complaints = Array.isArray(complaintsResponse.data) ? complaintsResponse.data : [];
+  const matchingReports = Array.isArray(matchingReportsResponse.data)
+    ? matchingReportsResponse.data.map((report: Row) => ({
+        ...report,
+        reportSource: 'MATCHING',
+        type: 'MATCHING',
+        status: report.isResolved ? 'RESOLVED' : 'PENDING',
+        title: report.reason,
+        reporterId: report.userId,
+        targetType: 'PET',
+        targetId: report.petId,
+        actionTaken: report.isResolved ? 'RESOLVE' : null,
+      }))
+    : [];
+
+  return {
+    data: [...complaints, ...matchingReports].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    ),
+  };
 }
 
 function normalizeRows(section: string, data: Row[] | Row): Row[] {
@@ -1605,7 +1650,11 @@ function formatComplaintType(type?: string) {
 }
 
 function formatComplaintTarget(target?: string) {
-  const labels: Record<string, string> = { ORDER: 'Đơn hàng', PRODUCT: 'Sản phẩm' };
+  const labels: Record<string, string> = {
+    ORDER: 'Đơn hàng',
+    PRODUCT: 'Sản phẩm',
+    PET: 'Thú cưng',
+  };
   return target ? labels[target] ?? target : '-';
 }
 

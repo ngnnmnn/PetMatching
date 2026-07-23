@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -6,6 +6,7 @@ import {
   ComplaintType,
   DocumentStatus,
   PetStatus,
+  Species,
   UserRole,
 } from '@prisma/client';
 import { AdminGuard } from '../../common/auth/admin.guard';
@@ -14,6 +15,7 @@ import type { AuthenticatedRequest } from '../../common/auth/authenticated-reque
 import { AdminService } from './admin.service';
 import {
   GrantSpaManagerDto,
+  CreateBreedRuleDto,
   HidePetDto,
   RevokeSpaManagerDto,
   RestorePetDto,
@@ -22,6 +24,7 @@ import {
   UpdateAccountStatusDto,
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
+  UpdateBreedRuleDto,
 } from './dto/admin-actions.dto';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -133,6 +136,40 @@ export class AdminController {
   @Get('matching-reports')
   getMatchingReports() {
     return this.adminService.getMatchingReports();
+  }
+
+  @Get('breed-rules')
+  getBreedRules(
+    @Query('species') species?: Species,
+    @Query('active') active?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getBreedRules({ species, active, search });
+  }
+
+  @Post('breed-rules')
+  createBreedRule(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: CreateBreedRuleDto,
+  ) {
+    return this.adminService.createBreedRule(request.user, dto);
+  }
+
+  @Patch('breed-rules/:id')
+  updateBreedRule(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateBreedRuleDto,
+  ) {
+    return this.adminService.updateBreedRule(request.user, id, dto);
+  }
+
+  @Delete('breed-rules/:id')
+  deleteBreedRule(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.deleteBreedRule(request.user, id);
   }
 
   @Patch('matching-reports/:id/resolve')

@@ -3,14 +3,17 @@ import {
   ApprovalStatus,
   ComplaintAction,
   DocumentStatus,
+  Species,
   UserRole,
 } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
   IsIn,
+  IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateIf,
 } from 'class-validator';
 
@@ -96,3 +99,37 @@ export class ResolveComplaintDto {
   @IsString()
   adminNote?: string;
 }
+
+export class CreateBreedRuleDto {
+  @IsEnum(Species)
+  species!: Species;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  breedA!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  breedB!: string;
+
+  @IsBoolean()
+  isCompatible!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  offspringName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  warningNote?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateBreedRuleDto extends CreateBreedRuleDto {}

@@ -533,6 +533,7 @@ export class MatchingService {
     return this.prisma.breedRule.findFirst({
       where: {
         species,
+        isActive: true,
         OR: [
           { breedA, breedB },
           { breedA: breedB, breedB: breedA },

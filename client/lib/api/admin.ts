@@ -25,6 +25,29 @@ export type RestorePetReason =
   | 'ADMIN_REVIEW'
   | 'OTHER';
 
+export type Species = 'DOG' | 'CAT';
+
+export interface BreedRule {
+  id: string;
+  species: Species;
+  breedA: string;
+  breedB: string;
+  isCompatible: boolean;
+  offspringName: string | null;
+  warningNote: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BreedRulePayload = Pick<
+  BreedRule,
+  'species' | 'breedA' | 'breedB' | 'isCompatible' | 'isActive'
+> & {
+  offspringName?: string;
+  warningNote?: string;
+};
+
 export const adminApi = {
   dashboard: () => api.get('/admin/dashboard'),
   users: () => api.get('/admin/users'),
@@ -46,6 +69,12 @@ export const adminApi = {
     api.patch(`/admin/pet-verifications/${id}/review`, { status, reviewNote }),
   matchingReports: () => api.get('/admin/matching-reports'),
   resolveMatchingReport: (id: string) => api.patch(`/admin/matching-reports/${id}/resolve`),
+  breedRules: (params?: { species?: Species; active?: string; search?: string }) =>
+    api.get<BreedRule[]>('/admin/breed-rules', { params }),
+  createBreedRule: (data: BreedRulePayload) => api.post<BreedRule>('/admin/breed-rules', data),
+  updateBreedRule: (id: string, data: BreedRulePayload) =>
+    api.patch<BreedRule>(`/admin/breed-rules/${id}`, data),
+  deleteBreedRule: (id: string) => api.delete(`/admin/breed-rules/${id}`),
   stores: () => api.get('/admin/stores'),
   storeDashboard: () => api.get('/admin/store-dashboard'),
   updateStoreSettings: (data: { name: string; phone?: string; address?: string; description?: string }) =>
