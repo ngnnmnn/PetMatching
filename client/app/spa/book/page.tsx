@@ -407,93 +407,56 @@ function SpaBookingWizard() {
                     <label className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
                       <PawPrint className="size-4 text-primary" /> Chọn thú cưng *
                     </label>
-                    {pets.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {pets.map((pet) => (
-                          <div
-                            key={pet.id}
-                            onClick={() => setSelectedPetId(pet.id)}
-                            className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
-                              selectedPetId === pet.id
-                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                                : 'border-gray-200 bg-white'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="pet"
-                              checked={selectedPetId === pet.id}
-                              onChange={() => setSelectedPetId(pet.id)}
-                              className="accent-primary size-4"
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {pets.map((pet) => (
+                        <div
+                          key={pet.id}
+                          onClick={() => setSelectedPetId(pet.id)}
+                          className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
+                            selectedPetId === pet.id
+                              ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="pet"
+                            checked={selectedPetId === pet.id}
+                            onChange={() => setSelectedPetId(pet.id)}
+                            className="accent-primary size-4"
+                          />
+                          {pet.avatarUrl ? (
+                            <img
+                              src={pet.avatarUrl}
+                              alt={pet.name}
+                              className="size-10 rounded-full object-cover border"
                             />
-                            {pet.avatarUrl ? (
-                              <img
-                                src={pet.avatarUrl}
-                                alt={pet.name}
-                                className="size-10 rounded-full object-cover border"
-                              />
-                            ) : (
-                              <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center border font-bold text-sm text-purple-700">
-                                {pet.species === 'CAT' ? '🐱' : '🐶'}
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-extrabold text-sm text-gray-900 leading-none">{pet.name}</p>
-                              <span className="text-[10px] text-gray-500 font-bold block mt-0.5">
-                                {pet.breed} • {pet.species === 'CAT' ? 'Mèo' : 'Chó'} ({pet.weight}kg)
-                              </span>
+                          ) : (
+                            <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center border font-bold text-sm text-purple-700">
+                              {pet.species === 'CAT' ? '🐱' : '🐶'}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="space-y-4 p-5 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl shadow-2xs">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-purple-100">
+                          )}
                           <div>
-                            <p className="text-sm font-black text-purple-950">Bạn chưa tạo hồ sơ thú cưng?</p>
-                            <p className="text-xs text-purple-700 font-medium mt-1">Tạo hồ sơ giúp bạn theo dõi lịch sử chăm sóc và đặt lịch nhanh hơn.</p>
-                          </div>
-                          <Link href="/my-pets/new">
-                            <Button type="button" className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-black text-xs px-4 h-9 shadow-md shrink-0 flex items-center gap-1.5 rounded-xl">
-                              <Plus className="size-4" />
-                              Tạo hồ sơ thú cưng
-                            </Button>
-                          </Link>
-                        </div>
-                        
-                        <div className="space-y-3">
-                          <p className="text-xs text-purple-900 font-bold flex items-center gap-1.5">
-                            <span className="inline-block size-2 rounded-full bg-purple-600 animate-pulse"></span>
-                            Hoặc tự nhập thông tin để xem giá dịch vụ tạm thời:
-                          </p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <span className="text-[11px] font-bold text-gray-600 block mb-1">Loài *</span>
-                              <select
-                                value={customSpecies}
-                                onChange={(e) => setCustomSpecies(e.target.value as 'DOG' | 'CAT')}
-                                className="w-full text-xs font-bold p-2 border rounded-lg bg-white"
-                              >
-                                <option value="DOG">🐕 Chó</option>
-                                <option value="CAT">🐱 Mèo</option>
-                              </select>
-                            </div>
-                            <div>
-                              <span className="text-[11px] font-bold text-gray-600 block mb-1">Cân nặng (kg) *</span>
-                              <input
-                                type="number"
-                                min="0.5"
-                                max="50"
-                                step="0.5"
-                                value={customWeight}
-                                onChange={(e) => setCustomWeight(parseFloat(e.target.value) || 1)}
-                                className="w-full text-xs font-bold p-2 border rounded-lg bg-white"
-                              />
-                            </div>
+                            <p className="font-extrabold text-sm text-gray-900 leading-none">{pet.name}</p>
+                            <span className="text-[10px] text-gray-500 font-bold block mt-0.5">
+                              {pet.breed} • {pet.species === 'CAT' ? 'Mèo' : 'Chó'} ({pet.weight}kg)
+                            </span>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      ))}
+
+                      {/* Card styled like pet selection option with '+' icon inside */}
+                      <Link href="/my-pets/new">
+                        <div className="flex items-center gap-3 p-3 border border-dashed border-primary/50 rounded-xl cursor-pointer bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all h-full min-h-[62px]">
+                          <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-primary shrink-0">
+                            <Plus className="size-5 font-bold" />
+                          </div>
+                          <div>
+                            <p className="font-extrabold text-sm text-primary leading-none">Thêm thú cưng</p>
+                          </div>
+                        </div>
+                      </Link>
+                    </div>
                   </div>
 
                   {/* Select Address */}

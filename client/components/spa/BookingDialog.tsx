@@ -18,7 +18,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon, Clock, PawPrint } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarIcon, Clock, PawPrint, Plus } from 'lucide-react';
 
 interface BookingDialogProps {
   isOpen: boolean;
@@ -170,23 +171,56 @@ export default function BookingDialog({
             </Label>
             {fetchingPets ? (
               <div className="h-10 animate-pulse rounded-md bg-muted" />
-            ) : pets.length > 0 ? (
-              <Select value={selectedPetId} onValueChange={setSelectedPetId}>
-                <SelectTrigger id="pet-select" className="bg-background border-input">
-                  <SelectValue placeholder="Chọn thú cưng của bạn" />
-                </SelectTrigger>
-                <SelectContent>
-                  {pets.map((pet) => (
-                    <SelectItem key={pet.id} value={pet.id}>
-                      {pet.name} ({pet.breed})
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="custom">Thú cưng khác (Nhập tên bên dưới)</SelectItem>
-                </SelectContent>
-              </Select>
             ) : (
-              <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded border border-dashed">
-                Bạn chưa thêm thú cưng nào. Vui lòng nhập tên thú cưng ở ô phía dưới.
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {pets.map((pet) => (
+                  <div
+                    key={pet.id}
+                    onClick={() => setSelectedPetId(pet.id)}
+                    className={`flex items-center gap-2.5 p-2.5 border rounded-xl cursor-pointer hover:bg-accent/50 transition-all ${
+                      selectedPetId === pet.id
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : 'border-border bg-card'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pet-dialog"
+                      checked={selectedPetId === pet.id}
+                      onChange={() => setSelectedPetId(pet.id)}
+                      className="accent-primary size-3.5"
+                    />
+                    {pet.avatarUrl ? (
+                      <img
+                        src={pet.avatarUrl}
+                        alt={pet.name}
+                        className="size-8 rounded-full object-cover border shrink-0"
+                      />
+                    ) : (
+                      <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center border font-bold text-xs text-primary shrink-0">
+                        🐾
+                      </div>
+                    )}
+                    <div className="overflow-hidden">
+                      <p className="font-bold text-xs text-foreground truncate">{pet.name}</p>
+                      <span className="text-[10px] text-muted-foreground truncate block">
+                        {pet.breed}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Card styled like pet selection option with '+' icon inside */}
+                <Link href="/my-pets/new" onClick={onClose} className="block">
+                  <div className="flex items-center gap-2.5 p-2.5 border border-dashed border-primary/50 rounded-xl cursor-pointer bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all h-full min-h-[48px]">
+                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-primary shrink-0">
+                      <Plus className="size-4 font-bold" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-xs text-primary">Thêm thú cưng</p>
+                    </div>
+                  </div>
+                </Link>
               </div>
             )}
           </div>
