@@ -87,11 +87,29 @@ export class ProductsService {
   }
 
   async getFeaturedProducts() {
-    return this.prisma.product.findMany({
-      where: { isFeatured: true, isActive: true },
-      orderBy: { reviewCount: 'desc' },
-      take: 4,
+    const products = await this.prisma.product.findMany({
+      where: {
+        isFeatured: true,
+        isActive: true,
+        stock: { gt: 0 },
+      },
+      include: {
+        orderItems: {
+          select: {
+            quantity: true,
+          },
+        },
+      },
     });
+
+    const sorted = products
+      .map((p) => {
+        const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+        return { ...p, sales };
+      })
+      .sort((a, b) => b.sales - a.sales);
+
+    return sorted.slice(0, 4).map(({ orderItems, sales, ...p }) => p);
   }
 
   async getProductById(id: string) {

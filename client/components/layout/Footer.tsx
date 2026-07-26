@@ -6,7 +6,7 @@ import Link from 'next/link';
 export default function Footer() {
   return (
     <footer className="bg-[var(--text-main)] text-[var(--bg-page)] mt-16 rounded-t-3xl overflow-hidden">
-      <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
+      <div className="mx-auto max-w-[1440px] px-4 py-14 md:px-6 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--primary-color)] text-white shadow-md">
@@ -76,7 +76,7 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-white/10 bg-black/10">
-        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 text-xs text-[var(--bg-page)]/50 flex flex-wrap items-center justify-between gap-4">
+        <div className="mx-auto max-w-[1440px] px-4 py-5 md:px-6 text-xs text-[var(--bg-page)]/50 flex flex-wrap items-center justify-between gap-4">
           <span>© {new Date().getFullYear()} PetMatchAndStore. Mọi quyền được bảo lưu.</span>
           <span>Made with ♥ for pets</span>
         </div>

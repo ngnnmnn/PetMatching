@@ -56,7 +56,7 @@ export default function Hero() {
   };
 
   return (
-    <section className="relative overflow-hidden rounded-2xl min-h-[500px] sm:min-h-[560px] md:min-h-[620px] lg:min-h-[680px] flex items-center shadow-[var(--shadow-soft)] bg-neutral-950 group">
+    <section className="relative overflow-hidden w-full min-h-[520px] sm:min-h-[600px] md:min-h-[660px] lg:min-h-[720px] flex items-center bg-neutral-950 group">
       {/* Background Image Carousel */}
       <div className="absolute inset-0 z-0">
         <AnimatePresence mode="wait">
@@ -73,18 +73,18 @@ export default function Hero() {
               alt={SLIDES[currentIdx].title}
               fill
               priority
-              className="object-cover filter blur-[3px]"
+              className="object-cover filter blur-[2px]"
               sizes="100vw"
             />
             {/* Lớp phủ chuyển sắc tối để tăng độ tương phản đọc chữ */}
-            <div className="absolute inset-0 bg-gradient-to-r from-neutral-950/85 via-neutral-900/60 to-transparent" />
-            <div className="absolute inset-0 bg-black/30" />
+            <div className="absolute inset-0 bg-gradient-to-r from-neutral-950/90 via-neutral-900/65 to-transparent" />
+            <div className="absolute inset-0 bg-black/25" />
           </motion.div>
         </AnimatePresence>
       </div>
 
       {/* Slide Content */}
-      <div className="container mx-auto px-6 sm:px-12 md:px-20 relative z-10 py-20 sm:py-24 md:py-28">
+      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 relative z-10 py-24 sm:py-28 md:py-32">
         <div className="max-w-3xl text-left text-white">
           <AnimatePresence mode="wait">
             <motion.div

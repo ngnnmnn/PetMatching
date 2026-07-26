@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
+import Footer from '@/components/layout/Footer';
 import { productsApi } from '@/lib/api/products';
 import { Product, ProductCategory, ProductReview } from '@/types';
 import ProductCard from '@/components/home/ProductCard';
@@ -755,6 +756,7 @@ export default function ProductDetailPage() {
         )}
 
       </main>
+      <Footer />
     </div>
   );
 }

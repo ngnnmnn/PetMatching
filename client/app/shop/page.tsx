@@ -9,8 +9,28 @@ import ProductFilterSidebar from '@/components/home/ProductFilterSidebar';
 import ProductGrid from '@/components/home/ProductGrid';
 import SearchFilterBar from '@/components/home/SearchFilterBar';
 import Footer from '@/components/layout/Footer';
+import { cn } from '@/lib/utils';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 
 type SortKey = 'popular' | 'newest' | 'price_asc' | 'price_desc';
+
+const QUICK_CATEGORIES = [
+  { name: 'Thức ăn cho Chó', category: 'DOG_FOOD', icon: '🐶', desc: 'Dinh dưỡng cân bằng' },
+  { name: 'Thức ăn cho Mèo', category: 'CAT_FOOD', icon: '🐱', desc: 'Hương vị yêu thích' },
+  { name: 'Đồ chơi thú cưng', category: 'TOY', icon: '⚽', desc: 'Giải trí vui nhộn' },
+  { name: 'Phụ kiện làm đẹp', category: 'ACCESSORY', icon: '🎒', desc: 'Thời trang cao cấp' },
+  { name: 'Lồng & Đệm nằm', category: 'CAGE_BED', icon: '🛏️', desc: 'Ấm áp êm ái' },
+  { name: 'Dây dắt & Vòng cổ', category: 'LEASH_COLLAR', icon: '🎗️', desc: 'An toàn đi dạo' },
+];
+
+const ITEMS_PER_PAGE = 12; // 3 rows, 4 products per row
 
 function ShopPageContent() {
   const router = useRouter();
@@ -23,6 +43,7 @@ function ShopPageContent() {
   });
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPrices, setSelectedPrices] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Apply category from URL query parameters (useful when clicking quick categories from Homepage)
   useEffect(() => {
@@ -35,6 +56,19 @@ function ShopPageContent() {
       }
     }
   }, [initialCategory]);
+
+  const initialSearch = searchParams.get('search');
+  // Synchronize URL search parameters to product filters
+  useEffect(() => {
+    if (initialSearch !== null) {
+      setFilters((previous) => ({ ...previous, search: initialSearch || undefined, page: 1 }));
+    }
+  }, [initialSearch, setFilters]);
+
+  // Reset page to 1 when filters or selectedCategories/Prices change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategories, selectedPrices, filters.search, filters.targetSpecies]);
 
   const handleSearch = useCallback(
     (searchValue: string) => {
@@ -80,6 +114,12 @@ function ShopPageContent() {
     return matchesPrice;
   });
 
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+  const paginatedProducts = filteredProducts.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div
       className="min-h-screen text-[var(--text-main)] flex flex-col justify-between animate-in fade-in duration-300"
@@ -92,6 +132,43 @@ function ShopPageContent() {
         <AppHeader sectionLabel="Cửa hàng" />
 
         <main id="shop-main-grid" className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6">
+          {/* Quick Categories Section */}
+          <section className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {QUICK_CATEGORIES.map((cat, idx) => {
+                const isActive = selectedCategories.includes(cat.category);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (isActive) {
+                        setSelectedCategories([]);
+                      } else {
+                        setSelectedCategories([cat.category]);
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col items-center p-5 rounded-2xl border-2 transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer group shadow-2xs",
+                      isActive
+                        ? "border-[var(--primary-color)] bg-orange-50/30 shadow-xs"
+                        : "border-[#EFEAE2]/80 bg-[#FAF9F7] hover:bg-white hover:border-[var(--primary-color)] hover:shadow-xs"
+                    )}
+                  >
+                    <span className="text-3xl mb-2.5 filter drop-shadow-xs group-hover:scale-110 transition-transform duration-300">
+                      {cat.icon}
+                    </span>
+                    <span className="text-xs font-black text-[var(--text-main)] text-center">
+                      {cat.name}
+                    </span>
+                    <span className="text-[9px] text-[var(--text-muted)] font-extrabold mt-1 text-center">
+                      {cat.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -135,7 +212,60 @@ function ShopPageContent() {
                   </div>
                 )}
 
-                <ProductGrid products={filteredProducts} loading={loading} />
+                <ProductGrid products={paginatedProducts} loading={loading} />
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center pt-8 border-t border-[var(--border-color)]">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            onClick={() => {
+                              setCurrentPage((prev) => Math.max(prev - 1, 1));
+                              document.getElementById('shop-main-grid')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className={cn(
+                              "cursor-pointer",
+                              currentPage === 1 && "pointer-events-none opacity-40"
+                            )}
+                          />
+                        </PaginationItem>
+
+                        {Array.from({ length: totalPages }).map((_, idx) => {
+                          const pageNum = idx + 1;
+                          return (
+                            <PaginationItem key={pageNum}>
+                              <PaginationLink
+                                isActive={pageNum === currentPage}
+                                onClick={() => {
+                                  setCurrentPage(pageNum);
+                                  document.getElementById('shop-main-grid')?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="cursor-pointer font-bold"
+                              >
+                                {pageNum}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        })}
+
+                        <PaginationItem>
+                          <PaginationNext
+                            onClick={() => {
+                              setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+                              document.getElementById('shop-main-grid')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className={cn(
+                              "cursor-pointer",
+                              currentPage === totalPages && "pointer-events-none opacity-40"
+                            )}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
               </div>
             </div>
           </section>

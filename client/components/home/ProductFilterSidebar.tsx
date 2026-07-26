@@ -35,6 +35,17 @@ const PRICE_RANGES = [
   { value: 'over_1m', label: 'Trên 1.000.000đ' },
 ];
 
+const CATEGORY_SPECIES: Record<ProductCategory, 'DOG' | 'CAT' | 'BOTH'> = {
+  DOG_FOOD: 'DOG',
+  CAT_FOOD: 'CAT',
+  TOY: 'BOTH',
+  ACCESSORY: 'BOTH',
+  GROOMING: 'BOTH',
+  CAGE_BED: 'BOTH',
+  LEASH_COLLAR: 'BOTH',
+  MEDICAL: 'BOTH',
+};
+
 export default function ProductFilterSidebar({
   species,
   selectedCategories,
@@ -107,6 +118,21 @@ export default function ProductFilterSidebar({
     onPricesChange([]);
   };
 
+  // Determine species disabled state based on selected categories
+  const isDogSpeciesDisabled = localCategories.some(
+    (cat) => CATEGORY_SPECIES[cat as ProductCategory] === 'CAT'
+  );
+  const isCatSpeciesDisabled = localCategories.some(
+    (cat) => CATEGORY_SPECIES[cat as ProductCategory] === 'DOG'
+  );
+
+  // Determine category disabled state based on selected species
+  const isCategoryDisabled = (catValue: ProductCategory) => {
+    if (localSpecies === 'DOG' && CATEGORY_SPECIES[catValue] === 'CAT') return true;
+    if (localSpecies === 'CAT' && CATEGORY_SPECIES[catValue] === 'DOG') return true;
+    return false;
+  };
+
   return (
     <aside className="rounded-xl border border-[var(--border-color)] bg-white p-5 shadow-[0_8px_24px_rgba(26,26,26,0.03)] space-y-6 select-none sticky top-24">
       {/* Header */}
@@ -126,22 +152,32 @@ export default function ProductFilterSidebar({
           ].map((item) => {
             const isSelected = localSpecies === item.value;
             const Icon = item.icon;
+            const isSpeciesBtnDisabled =
+              item.value === 'DOG'
+                ? isDogSpeciesDisabled
+                : item.value === 'CAT'
+                  ? isCatSpeciesDisabled
+                  : false;
+
             return (
               <button
                 key={item.value}
                 type="button"
+                disabled={isSpeciesBtnDisabled}
                 onClick={() => handleSpeciesToggle(item.value)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold transition text-left cursor-pointer ${
-                  isSelected
-                    ? 'bg-[#FFF6F0] text-[var(--primary-color)]'
-                    : 'text-[var(--text-main)] hover:bg-[#FAF9F5]'
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold transition text-left ${
+                  isSpeciesBtnDisabled
+                    ? 'opacity-40 bg-gray-100/50 text-gray-400 cursor-not-allowed'
+                    : isSelected
+                      ? 'bg-[#FFF6F0] text-[var(--primary-color)] cursor-pointer'
+                      : 'text-[var(--text-main)] hover:bg-[#FAF9F5] cursor-pointer'
                 }`}
               >
                 <span className="flex items-center gap-2">
                   <Icon className="size-4 text-[#0F766E]" />
                   {item.label}
                 </span>
-                {isSelected && <Check className="size-3.5" />}
+                {isSelected && !isSpeciesBtnDisabled && <Check className="size-3.5" />}
               </button>
             );
           })}
@@ -168,16 +204,25 @@ export default function ProductFilterSidebar({
           {CATEGORIES.map((cat) => {
             const isChecked = localCategories.includes(cat.value);
             const Icon = cat.icon;
+            const isCatInputDisabled = isCategoryDisabled(cat.value);
+
             return (
               <label
                 key={cat.value}
-                className="flex items-center gap-2.5 px-1 py-0.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer transition duration-150"
+                className={`flex items-center gap-2.5 px-1 py-0.5 text-xs font-medium transition duration-150 ${
+                  isCatInputDisabled
+                    ? 'opacity-40 text-gray-400 cursor-not-allowed'
+                    : isChecked
+                      ? 'text-[var(--text-main)] font-semibold cursor-pointer'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer'
+                }`}
               >
                 <input
                   type="checkbox"
-                  checked={isChecked}
+                  checked={isChecked && !isCatInputDisabled}
+                  disabled={isCatInputDisabled}
                   onChange={() => handleCategoryToggle(cat.value)}
-                  className="rounded border-[#DCDAD4] text-[#E45D1C] focus:ring-[#E45D1C]/20 size-4 cursor-pointer accent-[#E45D1C]"
+                  className="rounded border-[#DCDAD4] text-[#E45D1C] focus:ring-[#E45D1C]/20 size-4 cursor-pointer accent-[#E45D1C] disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <span className="flex items-center gap-2">
                   <Icon className="size-3.5 shrink-0" />
