@@ -14,7 +14,7 @@ const SLIDES = [
     title: 'Phụ Kiện Chất Lượng Cho Thú Cưng',
     description: 'Khám phá hàng nghìn sản phẩm chính hãng — từ thức ăn, đồ chơi đến phụ kiện cao cấp. Mọi thứ thú cưng cần, gói gọn trong một cửa hàng.',
     buttonText: 'Mua sắm ngay',
-    link: '#search-filter-section',
+    link: '/shop',
   },
   {
     image: '/hero-spa.jpg',

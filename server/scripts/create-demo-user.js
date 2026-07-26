@@ -208,7 +208,7 @@ async function main() {
   const storeManagerEmail = 'managerstore@petmatch.com';
   const storeManagerPasswordHash = await bcrypt.hash('123456', 10);
 
-  await prisma.user.upsert({
+  const storeManager = await prisma.user.upsert({
     where: { email: storeManagerEmail },
     update: {
       passwordHash: storeManagerPasswordHash,
@@ -224,6 +224,28 @@ async function main() {
       phone: '0922222222',
       role: UserRole.STORE_MANAGER,
       isVerified: true,
+    },
+  });
+
+  // Seed default Store
+  await prisma.store.upsert({
+    where: { id: 'default-store-id' },
+    update: {
+      name: 'Cửa hàng PetMatching Quận 1',
+      description: 'Chi nhánh chính cung cấp phụ kiện và thức ăn thú cưng',
+      address: '123 Nguyễn Huệ, Quận 1, TP. HCM',
+      phone: '0922222222',
+      status: ApprovalStatus.ACTIVE,
+      managerId: storeManager.id,
+    },
+    create: {
+      id: 'default-store-id',
+      name: 'Cửa hàng PetMatching Quận 1',
+      description: 'Chi nhánh chính cung cấp phụ kiện và thức ăn thú cưng',
+      address: '123 Nguyễn Huệ, Quận 1, TP. HCM',
+      phone: '0922222222',
+      status: ApprovalStatus.ACTIVE,
+      managerId: storeManager.id,
     },
   });
 
@@ -488,6 +510,24 @@ async function main() {
       totalPrice: demoPrice,
       note: 'Luna thích được massage nhẹ khi sấy',
     }
+  });
+
+  // Seeding Free Ship Voucher
+  await prisma.voucher.upsert({
+    where: { code: 'FREESHIP100' },
+    update: {
+      type: 'FREE_SHIP',
+      value: 100,
+      isActive: true,
+      maxUsage: 1000,
+    },
+    create: {
+      code: 'FREESHIP100',
+      type: 'FREE_SHIP',
+      value: 100,
+      isActive: true,
+      maxUsage: 1000,
+    },
   });
 
   console.log('Demo account is ready:');

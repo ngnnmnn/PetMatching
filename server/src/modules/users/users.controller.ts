@@ -183,4 +183,12 @@ export class UsersController {
   ) {
     return this.usersService.updateOrderShipping(req.user.id, id, body);
   }
+
+  @Post('orders/:id/retry-payment')
+  retryPayment(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.retryPayment(req.user.id, id);
+  }
 }

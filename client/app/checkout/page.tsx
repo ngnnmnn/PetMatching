@@ -58,6 +58,7 @@ function CheckoutPageContent() {
   const [appliedCode, setAppliedCode] = useState('');
   const [discountPercent, setDiscountPercent] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [appliedVoucher, setAppliedVoucher] = useState<any | null>(null);
 
   // Addresses from DB
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
@@ -216,7 +217,7 @@ function CheckoutPageContent() {
     }
   }, [searchParams]);
 
-  const handleApplyPromoCode = (e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent) => {
+  const handleApplyPromoCode = async (e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent) => {
     if (e) e.preventDefault();
     if (!promoCode.trim()) return;
 
@@ -224,15 +225,37 @@ function CheckoutPageContent() {
     if (code === 'PETMATCH10') {
       setDiscountPercent(10);
       setDiscountAmount(0);
+      setAppliedVoucher(null);
       setAppliedCode(code);
       toast.success('Áp dụng mã PETMATCH10 thành công! Giảm 10% tổng hóa đơn.');
-    } else if (code === 'HELLOWORLD') {
+      setPromoCode('');
+      return;
+    } 
+    
+    if (code === 'HELLOWORLD') {
       setDiscountPercent(0);
       setDiscountAmount(50000);
+      setAppliedVoucher(null);
       setAppliedCode(code);
       toast.success('Áp dụng mã HELLOWORLD thành công! Giảm 50.000đ.');
-    } else {
-      toast.error('Mã giảm giá không hợp lệ hoặc đã hết hạn.');
+      setPromoCode('');
+      return;
+    }
+
+    try {
+      const response = await usersApi.applyVoucher(code, checkoutTotal);
+      if (response.data.success) {
+        const voucher = response.data;
+        setAppliedVoucher(voucher);
+        setAppliedCode(voucher.code);
+        setDiscountPercent(0);
+        setDiscountAmount(0);
+        toast.success(voucher.message || 'Áp dụng mã giảm giá thành công!');
+      }
+    } catch (err: any) {
+      console.error('Failed to apply voucher', err);
+      const errMsg = err.response?.data?.message || 'Mã giảm giá không hợp lệ hoặc đã hết hạn.';
+      toast.error(errMsg);
     }
     setPromoCode('');
   };
@@ -240,6 +263,7 @@ function CheckoutPageContent() {
   const handleRemovePromo = () => {
     setDiscountPercent(0);
     setDiscountAmount(0);
+    setAppliedVoucher(null);
     setAppliedCode('');
     toast.message('Đã hủy áp dụng mã giảm giá');
   };
@@ -313,9 +337,11 @@ function CheckoutPageContent() {
   }, [selectedAddressId, savedAddresses, selectedDistrictId, selectedWardCode, apiBaseUrl]);
 
   const hasItems = !!directCheckoutItem || selectedItemIds.length > 0;
-  const shippingFee = (hasItems && checkoutTotal > 500000) ? 0 : calculatedShippingFee;
-  const discountVal = (checkoutTotal * discountPercent) / 100 + discountAmount;
-  const finalTotal = Math.max(0, checkoutTotal + shippingFee - discountVal);
+  const baseShippingFee = (hasItems && checkoutTotal > 500000) ? 0 : calculatedShippingFee;
+  const isFreeShip = appliedVoucher?.type === 'FREE_SHIP';
+  const shippingFee = isFreeShip ? 0 : baseShippingFee;
+  const discountVal = (checkoutTotal * discountPercent) / 100 + discountAmount + (isFreeShip ? baseShippingFee : 0);
+  const finalTotal = Math.max(0, checkoutTotal + baseShippingFee - discountVal);
 
   const loadAddresses = async () => {
     try {
@@ -561,35 +587,43 @@ function CheckoutPageContent() {
 
       // Create Order in DB
       const res = await usersApi.createOrder({
-        totalAmount: Number(finalTotal),
-        shippingFee: Number(shippingFee),
+        totalAmount: appliedVoucher
+          ? Number(finalTotal) + Number(discountVal)
+          : Number(finalTotal),
+        shippingFee: Number(baseShippingFee),
         shippingAddress: finalAddress,
         districtId: targetDistrictId,
         wardCode: targetWardCode,
         paymentMethod: paymentMethod,
+        voucherCode: appliedVoucher ? appliedVoucher.code : undefined,
         items: orderItems,
       });
 
       const orderData = res.data;
 
-      if (paymentMethod === 'QR' && (orderData.qrData || orderData.checkoutUrl)) {
-        setPayOSQRData(
-          orderData.qrData
-            ? { ...orderData.qrData, orderId: orderData.id }
-            : {
-                orderId: orderData.id,
-                orderCode: orderData.orderCode,
-                accountNumber: '970422',
-                accountName: 'PETMATCHING',
-                bin: '970422',
-                amount: Number(finalTotal),
-                description: `PM${orderData.orderCode}`,
-                checkoutUrl: orderData.checkoutUrl,
-              },
-        );
-        setIsQRModalOpen(true);
-        toast.success('Vui lòng quét mã QR để hoàn tất thanh toán trong 15 phút.');
-        return;
+      if (paymentMethod === 'QR') {
+        if (orderData.status === 'PAYMENT_ERROR' || (!orderData.qrData && !orderData.checkoutUrl)) {
+          toast.warning('Đơn hàng đã được tạo thành công nhưng không thể khởi tạo liên kết thanh toán vào lúc này. Vui lòng thử lại trong mục Đơn hàng.');
+          // Vẫn cho phép tạo success modal và dọn dẹp giỏ hàng
+        } else {
+          setPayOSQRData(
+            orderData.qrData
+              ? { ...orderData.qrData, orderId: orderData.id }
+              : {
+                  orderId: orderData.id,
+                  orderCode: orderData.orderCode,
+                  accountNumber: '970422',
+                  accountName: 'PETMATCHING',
+                  bin: '970422',
+                  amount: Number(finalTotal),
+                  description: `PM${orderData.orderCode}`,
+                  checkoutUrl: orderData.checkoutUrl,
+                },
+          );
+          setIsQRModalOpen(true);
+          toast.success('Vui lòng quét mã QR để hoàn tất thanh toán trong 15 phút.');
+          return;
+        }
       }
 
       setCreatedOrderId(orderData.id);
@@ -1056,8 +1090,12 @@ function CheckoutPageContent() {
                     </span>
                   </div>
                   {appliedCode && (
-                    <div className="flex justify-between text-green-600">
-                      <span>Giảm giá ({appliedCode})</span>
+                    <div className="flex justify-between text-green-600 animate-in fade-in duration-200">
+                      <span>
+                        {appliedVoucher?.type === 'FREE_SHIP' 
+                          ? `Miễn phí vận chuyển (${appliedCode})` 
+                          : `Giảm giá (${appliedCode})`}
+                      </span>
                       <span>-{formatCurrency(discountVal)}</span>
                     </div>
                   )}

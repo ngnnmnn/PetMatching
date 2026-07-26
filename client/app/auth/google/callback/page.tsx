@@ -63,8 +63,15 @@ export default function GoogleCallbackPage() {
         const redirectUrl = params.get('redirect') || localStorage.getItem('login_redirect_url');
         localStorage.removeItem('login_redirect_url');
 
-        console.log('Redirecting to target URL:', redirectUrl || '/home');
-        if (redirectUrl) {
+        const role = data.user?.role;
+        console.log('Redirecting user based on role:', role);
+        if (role === 'ADMIN') {
+          router.replace('/admin');
+        } else if (role === 'STORE_MANAGER' || role === 'SPA_MANAGER') {
+          router.replace('/manager');
+        } else if (role === 'SPA_STAFF') {
+          router.replace('/spa/staff');
+        } else if (redirectUrl) {
           if (redirectUrl.startsWith('http://') || redirectUrl.startsWith('https://')) {
             window.location.replace(redirectUrl);
           } else {

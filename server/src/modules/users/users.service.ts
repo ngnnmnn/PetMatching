@@ -473,10 +473,25 @@ export class UsersService {
           needsReload = true;
         } else if (
           order.createdAt < fifteenMinsAgo ||
-          (paymentInfo && paymentInfo.status === 'CANCELLED')
+          (paymentInfo && (paymentInfo.status === 'CANCELLED' || paymentInfo.status === 'EXPIRED'))
         ) {
-          // Xóa bỏ đơn hàng QR quá hạn 15 phút hoặc bị hủy trên PayOS
-          await this.cancelOrder(userId, order.id);
+          // Cập nhật trạng thái thành EXPIRED và hoàn stock thay vì xóa đơn hàng
+          await this.prisma.$transaction(async (tx) => {
+            await tx.order.update({
+              where: { id: order.id },
+              data: { status: 'EXPIRED' },
+            });
+            for (const item of order.items) {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: {
+                  stock: {
+                    increment: item.quantity,
+                  },
+                },
+              });
+            }
+          });
           needsReload = true;
         }
       }
@@ -567,7 +582,50 @@ export class UsersService {
         }
       }
 
-      // 4. Create the order
+      // 4. Validate and apply Voucher
+      let discountAmount = 0;
+      let appliedVoucherCode: string | null = null;
+
+      if (dto.voucherCode) {
+        const codeUpper = dto.voucherCode.trim().toUpperCase();
+        const voucher = await tx.voucher.findUnique({
+          where: { code: codeUpper },
+        });
+
+        if (!voucher) {
+          throw new BadRequestException('Mã giảm giá không tồn tại.');
+        }
+
+        if (!voucher.isActive) {
+          throw new BadRequestException('Mã giảm giá đã bị vô hiệu hóa.');
+        }
+
+        if (voucher.expiredAt && voucher.expiredAt < new Date()) {
+          throw new BadRequestException('Mã giảm giá đã hết hạn sử dụng.');
+        }
+
+        if (voucher.maxUsage && voucher.usedCount >= voucher.maxUsage) {
+          throw new BadRequestException('Mã giảm giá đã hết lượt sử dụng.');
+        }
+
+        if (voucher.type === 'FREE_SHIP') {
+          discountAmount = dto.shippingFee || 0;
+        }
+
+        appliedVoucherCode = voucher.code;
+
+        // Increment used count for the voucher
+        await tx.voucher.update({
+          where: { id: voucher.id },
+          data: {
+            usedCount: {
+              increment: 1,
+            },
+          },
+        });
+      }
+
+      // 5. Create the order
       const now = new Date();
       const year = String(now.getFullYear()).slice(-2);
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -591,8 +649,10 @@ export class UsersService {
           id: generatedId,
           userId,
           storeId: store.id,
-          totalAmount: dto.totalAmount,
+          totalAmount: Math.max(0, dto.totalAmount - discountAmount),
           shippingFee: dto.shippingFee || 0,
+          discountAmount,
+          voucherCode: appliedVoucherCode,
           shippingAddress: dto.shippingAddress,
           districtId: dto.districtId,
           wardCode: dto.wardCode,
@@ -658,26 +718,30 @@ export class UsersService {
           },
         };
       } catch (error) {
-        console.error('PayOS integration failed, rolling back order...', error);
-        // Rollback stock and delete order in database
-        await this.prisma.$transaction(async (tx) => {
-          for (const item of dto.items) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: {
-                stock: {
-                  increment: item.quantity,
+        console.error('PayOS integration failed, setting order status to PAYMENT_ERROR:', error);
+        // Không xóa order và không hoàn stock. Cập nhật trạng thái thành PAYMENT_ERROR.
+        const updatedOrder = await this.prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'PAYMENT_ERROR' },
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    imageUrl: true,
+                  },
                 },
               },
-            });
-          }
-          await tx.order.delete({
-            where: { id: order.id },
-          });
+            },
+          },
         });
-        throw new BadRequestException(
-          'Không thể khởi tạo liên kết thanh toán với PayOS. Vui lòng thử lại.',
-        );
+        return {
+          ...updatedOrder,
+          checkoutUrl: null,
+          qrData: null,
+        };
       }
     }
 
@@ -709,12 +773,7 @@ export class UsersService {
         });
       }
 
-      if (order.paymentMethod === 'QR') {
-        return tx.order.delete({
-          where: { id: orderId },
-        });
-      }
-
+      // Đơn hàng QR hay COD đều chuyển sang CANCELLED thay vì delete
       return tx.order.update({
         where: { id: orderId },
         data: { status: 'CANCELLED' },
@@ -736,6 +795,109 @@ export class UsersService {
       where: { id: orderId },
       data: { shippingAddress: data.shippingAddress },
     });
+  }
+
+  async retryPayment(userId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    if (order.status !== 'PENDING' && order.status !== 'PAYMENT_ERROR' && order.status !== 'EXPIRED') {
+      throw new BadRequestException('Đơn hàng không ở trạng thái có thể thanh toán.');
+    }
+
+    if (order.paymentMethod !== 'QR') {
+      throw new BadRequestException('Phương thức thanh toán của đơn hàng không phải là chuyển khoản QR.');
+    }
+
+    // Sinh orderCode mới để tránh bị trùng lặp trên PayOS nếu orderCode cũ bị lỗi hoặc hết hạn
+    let orderCode = order.orderCode;
+    if (!orderCode || order.status === 'EXPIRED' || order.status === 'PAYMENT_ERROR') {
+      let codeExists = true;
+      while (codeExists) {
+        orderCode = Math.floor(100000000 + Math.random() * 900000000);
+        const existingOrder = await this.prisma.order.findUnique({
+          where: { orderCode },
+        });
+        if (!existingOrder) {
+          codeExists = false;
+        }
+      }
+    }
+
+    const payosItems = order.items.map((item) => ({
+      name: cleanItemNameForPayOS(item.product.name),
+      quantity: item.quantity,
+      price: Math.round(item.price),
+    }));
+
+    try {
+      const paymentLink = await this.paymentService.createPaymentLink({
+        orderCode: orderCode!,
+        amount: Math.round(order.totalAmount),
+        description: `PM${orderCode}`,
+        returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders?status=success`,
+        cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel&orderId=${order.id}`,
+        items: payosItems,
+      });
+
+      const updatedOrder = await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paymentUrl: paymentLink.checkoutUrl,
+          orderCode,
+          status: 'PENDING',
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const qrImageUrl = `https://img.vietqr.io/image/${paymentLink.bin}-${paymentLink.accountNumber}-compact2.png?amount=${paymentLink.amount}&addInfo=${encodeURIComponent(paymentLink.description)}&accountName=${encodeURIComponent(paymentLink.accountName)}`;
+
+      return {
+        ...updatedOrder,
+        checkoutUrl: paymentLink.checkoutUrl,
+        qrData: {
+          orderCode: paymentLink.orderCode,
+          accountNumber: paymentLink.accountNumber,
+          accountName: paymentLink.accountName,
+          bin: paymentLink.bin,
+          amount: paymentLink.amount,
+          description: paymentLink.description,
+          qrCode: paymentLink.qrCode,
+          qrImageUrl,
+        },
+      };
+    } catch (error) {
+      console.error('Failed to retry PayOS payment link creation:', error);
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'PAYMENT_ERROR' },
+      });
+      throw new BadRequestException('Không thể tạo lại liên kết thanh toán PayOS. Vui lòng thử lại sau.');
+    }
   }
 }
 

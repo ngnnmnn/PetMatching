@@ -29,10 +29,14 @@ export const usersApi = {
     districtId?: number;
     wardCode?: string;
     paymentMethod?: string;
+    voucherCode?: string;
     items: { productId: string; quantity: number; price: number }[];
   }) => api.post<any>('/users/orders', data),
   cancelOrder: (id: string) => api.patch<any>(`/users/orders/${id}/cancel`),
   updateOrderShipping: (id: string, shippingAddress: string) =>
     api.put<any>(`/users/orders/${id}/shipping`, { shippingAddress }),
+  retryPayment: (id: string) => api.post<any>(`/users/orders/${id}/retry-payment`),
+  applyVoucher: (code: string, totalAmount: number) =>
+    api.post<{ success: boolean; code: string; type: string; value: number; message: string }>('/vouchers/apply', { code, totalAmount }),
 };
 

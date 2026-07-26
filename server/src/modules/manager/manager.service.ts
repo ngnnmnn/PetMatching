@@ -281,7 +281,16 @@ export class ManagerService {
       where: { role: 'USER' },
       include: {
         orders: {
-          select: { totalAmount: true, status: true },
+          include: {
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
         },
       },
     });
@@ -293,6 +302,8 @@ export class ManagerService {
       const totalOrders = completedOrders.length;
       const totalCancelled = cancelledOrders.length;
       const spent = completedOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+      const isNewCustomer = u.orders.length === 0;
+
       return {
         id: u.id,
         name: u.name,
@@ -301,6 +312,19 @@ export class ManagerService {
         totalOrders,
         totalCancelled,
         spent,
+        isNewCustomer,
+        orders: u.orders.map((o) => ({
+          id: o.id,
+          status: o.status,
+          totalAmount: o.totalAmount,
+          createdAt: o.createdAt.toISOString(),
+          items: o.items.map((item) => ({
+            id: item.id,
+            productName: item.product.name,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+        })),
       };
     });
   }
@@ -424,6 +448,75 @@ export class ManagerService {
     }
 
     return this.prisma.category.delete({
+      where: { id },
+    });
+  }
+
+  async getProductUnits() {
+    return this.prisma.productUnit.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createProductUnit(dto: { name: string }) {
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Tên đơn vị tính không được để trống.');
+    }
+    const name = dto.name.trim();
+    const existing = await this.prisma.productUnit.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
+    if (existing) {
+      throw new BadRequestException('Đơn vị tính này đã tồn tại.');
+    }
+    return this.prisma.productUnit.create({
+      data: { name },
+    });
+  }
+
+  async updateProductUnit(id: string, dto: { name: string }) {
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Tên đơn vị tính không được để trống.');
+    }
+    const unit = await this.prisma.productUnit.findUnique({
+      where: { id },
+    });
+    if (!unit) {
+      throw new NotFoundException('Không tìm thấy đơn vị tính.');
+    }
+    const name = dto.name.trim();
+    const existing = await this.prisma.productUnit.findFirst({
+      where: {
+        id: { not: id },
+        name: { equals: name, mode: 'insensitive' },
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('Đơn vị tính này đã tồn tại.');
+    }
+
+    return this.prisma.productUnit.update({
+      where: { id },
+      data: { name },
+    });
+  }
+
+  async deleteProductUnit(id: string) {
+    const unit = await this.prisma.productUnit.findUnique({
+      where: { id },
+    });
+    if (!unit) {
+      throw new NotFoundException('Không tìm thấy đơn vị tính.');
+    }
+
+    const productCount = await this.prisma.product.count({
+      where: { unit: unit.name },
+    });
+    if (productCount > 0) {
+      throw new BadRequestException('Không thể xóa đơn vị tính này vì đang có sản phẩm sử dụng.');
+    }
+
+    return this.prisma.productUnit.delete({
       where: { id },
     });
   }

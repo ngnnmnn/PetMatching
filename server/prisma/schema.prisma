@@ -222,7 +222,7 @@ model BreedRule {
   /// Cho phép tạm ngưng quy tắc mà không cần xóa dữ liệu
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  updatedAt     DateTime @default(now()) @updatedAt
 
   @@unique([breedA, breedB, species])
   @@index([species, isActive])
@@ -355,6 +355,8 @@ model Order {
   status          OrderStatus @default(PENDING)
   totalAmount     Float
   shippingFee     Float       @default(0)
+  discountAmount  Float       @default(0)
+  voucherCode     String?
   shippingAddress String
   districtId      Int?
   wardCode        String?
@@ -680,6 +682,8 @@ enum OrderStatus {
   SHIPPED
   DELIVERED
   CANCELLED
+  EXPIRED
+  PAYMENT_ERROR
 }
 
 /// Loại giấy tờ cần duyệt:
@@ -758,4 +762,28 @@ enum VerificationBadge {
   NONE
   PENDING
   VERIFIED
+}
+
+model Voucher {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  type        String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
+  value       Float     @default(0)           // Số tiền hoặc % giảm (100 đối với 100% ship)
+  maxUsage    Int?                            // Số lần sử dụng tối đa
+  usedCount   Int       @default(0)
+  isActive    Boolean   @default(true)
+  expiredAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("vouchers")
+}
+
+model ProductUnit {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("product_units")
 }

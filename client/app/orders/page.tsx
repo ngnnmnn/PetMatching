@@ -23,6 +23,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import { usersApi } from '@/lib/api/users';
 import AddressFormModal from '@/components/checkout/AddressFormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 
 interface OrderItem {
   id: string;
@@ -37,7 +38,7 @@ interface OrderItem {
 
 interface Order {
   id: string;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
   shippingFee?: number;
   shippingAddress: string;
@@ -164,6 +165,60 @@ export default function OrdersPage() {
   
   const [showAddressConfirmModal, setShowAddressConfirmModal] = useState(false);
   const [updatingAddress, setUpdatingAddress] = useState(false);
+
+  // PayOS QR Modal State
+  const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [retryLoadingId, setRetryLoadingId] = useState<string | null>(null);
+
+  const handleRetryPayment = async (order: Order) => {
+    setRetryLoadingId(order.id);
+    try {
+      const res = await usersApi.retryPayment(order.id);
+      const data = res.data;
+      if (data.qrData || data.checkoutUrl) {
+        setPayOSQRData(
+          data.qrData
+            ? { ...data.qrData, orderId: data.id }
+            : {
+                orderId: data.id,
+                orderCode: data.orderCode,
+                accountNumber: '970422',
+                accountName: 'PETMATCHING',
+                bin: '970422',
+                amount: Number(data.totalAmount),
+                description: `PM${data.orderCode}`,
+                checkoutUrl: data.checkoutUrl,
+              },
+        );
+        setIsQRModalOpen(true);
+      } else {
+        toast.error('Không thể tạo mã QR thanh toán vào lúc này. Vui lòng thử lại sau.');
+      }
+    } catch (err: any) {
+      console.error('Failed to retry payment', err);
+      const errMsg = err.response?.data?.message || 'Lỗi khi kết nối đến cổng thanh toán PayOS.';
+      toast.error(errMsg);
+    } finally {
+      setRetryLoadingId(null);
+    }
+  };
+
+  const handleCancelQROrder = async (orderId: string) => {
+    try {
+      await usersApi.cancelOrder(orderId);
+      loadOrders();
+      toast.info('Đã hủy thanh toán.');
+    } catch (err) {
+      console.error('Failed to cancel order:', err);
+    }
+  };
+
+  const handleQRSuccess = (orderId: string) => {
+    setIsQRModalOpen(false);
+    setPayOSQRData(null);
+    loadOrders();
+  };
 
   const loadOrders = async () => {
     try {
@@ -311,6 +366,20 @@ export default function OrdersPage() {
             Đã hủy đơn
           </span>
         );
+      case 'EXPIRED':
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2.5 py-1 text-xs font-extrabold text-gray-600 border border-gray-200">
+            <Clock className="size-3.5" />
+            Hết hạn thanh toán
+          </span>
+        );
+      case 'PAYMENT_ERROR':
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-600 border border-red-200">
+            <AlertTriangle className="size-3.5" />
+            Lỗi thanh toán
+          </span>
+        );
       case 'PENDING':
       default:
         return (
@@ -334,6 +403,18 @@ export default function OrdersPage() {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-700 border border-red-200">
             Đã hủy
+          </span>
+        );
+      } else if (order.status === 'EXPIRED') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2.5 py-1 text-xs font-extrabold text-gray-500 border border-gray-200">
+            Hết hạn QR
+          </span>
+        );
+      } else if (order.status === 'PAYMENT_ERROR') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-600 border border-red-200">
+            Lỗi thanh toán QR
           </span>
         );
       } else {
@@ -434,19 +515,67 @@ export default function OrdersPage() {
                     {getStatusBadge(order.status)}
                     {getPaymentStatusBadge(order)}
                     
-                    {/* Action buttons for PENDING orders */}
-                    {order.status === 'PENDING' && (
+                    {/* Action buttons for PENDING / PAYMENT_ERROR / EXPIRED orders */}
+                    {(order.status === 'PENDING' || order.status === 'PAYMENT_ERROR' || order.status === 'EXPIRED') && (
                       <div className="flex flex-wrap items-center gap-2">
-                        {order.paymentMethod === 'QR' && order.paymentUrl && (
-                          <a
-                            href={order.paymentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-lg border border-[#0F766E] bg-[#0F766E] text-white px-2.5 py-1 text-xs font-bold hover:bg-[#115E59] transition shadow-sm cursor-pointer"
-                          >
-                            <QrCode className="size-3 text-white" />
-                            Thanh toán ngay
-                          </a>
+                        {order.paymentMethod === 'QR' && (
+                          <>
+                            {(order.status === 'PAYMENT_ERROR' || order.status === 'EXPIRED') ? (
+                              <button
+                                type="button"
+                                disabled={retryLoadingId === order.id}
+                                onClick={() => handleRetryPayment(order)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-[#0F766E] bg-[#0F766E] text-white px-2.5 py-1 text-xs font-bold hover:bg-[#115E59] transition shadow-sm cursor-pointer disabled:opacity-50"
+                              >
+                                {retryLoadingId === order.id ? (
+                                  <Loader2 className="size-3 animate-spin text-white" />
+                                ) : (
+                                  <QrCode className="size-3 text-white" />
+                                )}
+                                Thanh toán lại
+                              </button>
+                            ) : (
+                              // PENDING state
+                              order.paymentUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Mở lại modal QR bằng data order đã lưu
+                                    setPayOSQRData({
+                                      orderId: order.id,
+                                      orderCode: order.orderCode || 0,
+                                      accountNumber: '970422',
+                                      accountName: 'PETMATCHING',
+                                      bin: '970422',
+                                      amount: Number(order.totalAmount),
+                                      description: `PM${order.orderCode}`,
+                                      checkoutUrl: order.paymentUrl,
+                                    });
+                                    setIsQRModalOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-[#0F766E] bg-[#0F766E] text-white px-2.5 py-1 text-xs font-bold hover:bg-[#115E59] transition shadow-sm cursor-pointer"
+                                >
+                                  <QrCode className="size-3 text-white" />
+                                  Thanh toán ngay
+                                </button>
+                              ) : (
+                                // QR payment but somehow failed to generate url initially, allow retry
+                                <button
+                                  type="button"
+                                  disabled={retryLoadingId === order.id}
+                                  onClick={() => handleRetryPayment(order)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-[#0F766E] bg-[#0F766E] text-white px-2.5 py-1 text-xs font-bold hover:bg-[#115E59] transition shadow-sm cursor-pointer disabled:opacity-50"
+                                >
+                                  {retryLoadingId === order.id ? (
+                                    <Loader2 className="size-3 animate-spin text-white" />
+                                  ) : (
+                                    <QrCode className="size-3 text-white" />
+                                  )}
+                                  Tạo mã thanh toán
+                                </button>
+                              )
+                            )}
+                          </>
                         )}
                         <button
                           type="button"
@@ -617,6 +746,17 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+      {/* PayOS QR Payment Overlay Modal */}
+      <PayOSQRModal
+        isOpen={isQRModalOpen}
+        onClose={() => {
+          setIsQRModalOpen(false);
+          setPayOSQRData(null);
+        }}
+        onSuccess={handleQRSuccess}
+        onCancelOrder={handleCancelQROrder}
+        qrData={payOSQRData}
+      />
     </main>
   );
 }

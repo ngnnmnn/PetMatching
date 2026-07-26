@@ -29,12 +29,20 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats } from '@/lib/api/manager';
+import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats, ProductUnit } from '@/lib/api/manager';
 import { productsApi } from '@/lib/api/products';
 import { spaApi } from '@/lib/api/spa';
 import { Category } from '@/types';
 import { uploadImages } from '@/lib/api/uploads';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 
 // Currency Formatter
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
@@ -130,6 +138,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [sortBy, setSortBy] = useState('DEFAULT');
+  const [productsPage, setProductsPage] = useState<number>(1);
+  const [ordersPage, setOrdersPage] = useState<number>(1);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerSortBy, setCustomerSortBy] = useState('none');
+  const [customerFilterNew, setCustomerFilterNew] = useState('all');
+  const [customersPage, setCustomersPage] = useState<number>(1);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isCategorySidebarOpen, setIsCategorySidebarOpen] = useState(false);
   const [isCategorySidebarClosing, setIsCategorySidebarClosing] = useState(false);
@@ -138,6 +152,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+  const [units, setUnits] = useState<ProductUnit[]>([]);
+  const [isUnitSidebarOpen, setIsUnitSidebarOpen] = useState(false);
+  const [isUnitSidebarClosing, setIsUnitSidebarClosing] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const [editingUnitName, setEditingUnitName] = useState('');
+  const [specList, setSpecList] = useState<{ key: string; value: string }[]>([]);
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
     title: string;
@@ -161,6 +182,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState<boolean>(false);
   const [isFeedbackSidebarClosing, setIsFeedbackSidebarClosing] = useState<boolean>(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<ManagerCustomer | null>(null);
+  const [isCustomerOrdersSidebarOpen, setIsCustomerOrdersSidebarOpen] = useState<boolean>(false);
+  const [isCustomerOrdersSidebarClosing, setIsCustomerOrdersSidebarClosing] = useState<boolean>(false);
 
   const dynamicCategoryMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -193,13 +217,14 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes] = await Promise.all([
+      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, unitsRes] = await Promise.all([
         managerApi.getDashboardStats(),
         managerApi.getProducts(),
         managerApi.getOrders(),
         managerApi.getCustomers(),
         managerApi.getStoreSettings(),
         productsApi.getCategories(),
+        managerApi.getProductUnits(),
       ]);
       setStats(statsRes.data);
       setProducts(productsRes.data);
@@ -207,6 +232,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       setCustomers(customersRes.data);
       setStoreInfo(settingsRes.data);
       setCategories(categoriesRes.data);
+      setUnits(unitsRes.data);
     } catch (error) {
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
@@ -260,6 +286,66 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchQuery, filterStatus]);
+
+  const filteredCustomers = useMemo(() => {
+    let result = [...customers];
+    
+    // 1. Filter new customers (0 total orders, even if cancelled)
+    if (customerFilterNew === 'new') {
+      result = result.filter(c => c.isNewCustomer);
+    }
+
+    // 2. Search query (name, email, phone)
+    if (customerSearch.trim()) {
+      const query = customerSearch.toLowerCase();
+      result = result.filter(c => 
+        c.name.toLowerCase().includes(query) ||
+        c.email.toLowerCase().includes(query) ||
+        c.phone.includes(query)
+      );
+    }
+
+    // 3. Sorting
+    if (customerSortBy === 'spent_desc') {
+      result.sort((a, b) => b.spent - a.spent);
+    } else if (customerSortBy === 'spent_asc') {
+      result.sort((a, b) => a.spent - b.spent);
+    } else if (customerSortBy === 'orders_desc') {
+      result.sort((a, b) => b.totalOrders - a.totalOrders);
+    } else if (customerSortBy === 'cancelled_desc') {
+      result.sort((a, b) => b.totalCancelled - a.totalCancelled);
+    }
+
+    return result;
+  }, [customers, customerSortBy, customerFilterNew, customerSearch]);
+
+  const paginatedCustomers = useMemo(() => {
+    const start = (customersPage - 1) * 10;
+    return filteredCustomers.slice(start, start + 10);
+  }, [filteredCustomers, customersPage]);
+
+  const paginatedOrders = useMemo(() => {
+    const start = (ordersPage - 1) * 10;
+    return filteredOrders.slice(start, start + 10);
+  }, [filteredOrders, ordersPage]);
+
+  const paginatedProducts = useMemo(() => {
+    const start = (productsPage - 1) * 10;
+    return filteredProducts.slice(start, start + 10);
+  }, [filteredProducts, productsPage]);
+
+  // Page resetting on filter changes
+  useEffect(() => {
+    setOrdersPage(1);
+  }, [searchQuery, filterStatus]);
+
+  useEffect(() => {
+    setCustomersPage(1);
+  }, [customerSearch, customerSortBy, customerFilterNew]);
+
+  useEffect(() => {
+    setProductsPage(1);
+  }, [searchQuery, filterStatus, filterCategory, sortBy]);
 
   const eligibleOrdersForGhn = useMemo(() => {
     return filteredOrders.filter(
@@ -336,6 +422,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const handleAddClick = () => {
     setEditingProduct(null);
+    setSpecList([{ key: '', value: '' }, { key: '', value: '' }]);
     setProductForm({
       name: '',
       category: categories[0]?.slug || 'ACCESSORY',
@@ -355,6 +442,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const handleEditClick = (product: ManagerProduct) => {
     setEditingProduct(product);
+    if (product.specifications) {
+      try {
+        const specs = typeof product.specifications === 'string' 
+          ? JSON.parse(product.specifications) 
+          : product.specifications;
+        const list = Object.entries(specs).map(([key, val]) => ({
+          key,
+          value: String(val),
+        }));
+        setSpecList(list.length > 0 ? list : [{ key: '', value: '' }, { key: '', value: '' }]);
+      } catch (e) {
+        console.error('Failed to parse specifications', e);
+        setSpecList([{ key: '', value: '' }, { key: '', value: '' }]);
+      }
+    } else {
+      setSpecList([{ key: '', value: '' }, { key: '', value: '' }]);
+    }
     setProductForm({
       name: product.name,
       category: product.category,
@@ -410,6 +514,20 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }, 300);
   };
 
+  const handleViewCustomerOrders = (customer: ManagerCustomer) => {
+    setSelectedCustomer(customer);
+    setIsCustomerOrdersSidebarOpen(true);
+  };
+
+  const handleCloseCustomerOrdersSidebar = () => {
+    setIsCustomerOrdersSidebarClosing(true);
+    setTimeout(() => {
+      setIsCustomerOrdersSidebarOpen(false);
+      setSelectedCustomer(null);
+      setIsCustomerOrdersSidebarClosing(false);
+    }, 300);
+  };
+
   const handleCloseCategorySidebar = () => {
     setIsCategorySidebarClosing(true);
     setTimeout(() => {
@@ -417,6 +535,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       setIsCategorySidebarClosing(false);
       setNewCategoryName('');
       setEditingCategoryId(null);
+    }, 300);
+  };
+
+  const handleCloseUnitSidebar = () => {
+    setIsUnitSidebarClosing(true);
+    setTimeout(() => {
+      setIsUnitSidebarOpen(false);
+      setIsUnitSidebarClosing(false);
+      setNewUnitName('');
+      setEditingUnitId(null);
     }, 300);
   };
 
@@ -428,6 +556,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
     setSubmittingProduct(true);
     try {
+      const specifications: Record<string, string> = {};
+      specList.forEach((spec) => {
+        if (spec.key.trim() && spec.value.trim()) {
+          specifications[spec.key.trim()] = spec.value.trim();
+        }
+      });
+
       const data: Partial<ManagerProduct> = {
         name: productForm.name.trim(),
         category: productForm.category,
@@ -441,6 +576,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         description: productForm.description.trim() || undefined,
         isFeatured: productForm.isFeatured,
         isActive: productForm.isActive,
+        specifications: Object.keys(specifications).length > 0 ? specifications : null,
       };
 
       if (editingProduct) {
@@ -482,8 +618,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => setIsUnitSidebarOpen(true)}
+                className="flex items-center gap-2 rounded-xl border border-[var(--primary-color)] text-[var(--primary-color)] bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-[var(--primary-color)]/5 cursor-pointer text-xs"
+              >
+                <Plus className="size-4" />
+                Quản lý đơn vị tính
+              </button>
+              <button
+                type="button"
                 onClick={() => setIsCategorySidebarOpen(true)}
-                className="flex items-center gap-2 rounded-xl border border-[var(--primary-color)] text-[var(--primary-color)] bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-[var(--primary-color)]/5 cursor-pointer"
+                className="flex items-center gap-2 rounded-xl border border-[var(--primary-color)] text-[var(--primary-color)] bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-[var(--primary-color)]/5 cursor-pointer text-xs"
               >
                 <Plus className="size-4" />
                 Thêm danh mục mới
@@ -577,8 +721,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEAE2]">
-                  {filteredProducts.length > 0 ? (
-                    filteredProducts.map((p) => {
+                  {paginatedProducts.length > 0 ? (
+                    paginatedProducts.map((p) => {
                       const stockVal = p.stock ?? 0;
                       const statusStr = stockVal === 0 ? 'Hết hàng' : stockVal <= 10 ? 'Sắp hết hàng' : 'Còn hàng';
                       return (
@@ -645,6 +789,60 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </table>
             </div>
           </div>
+
+          {/* Products Pagination Controls */}
+          {filteredProducts.length > 10 && (
+            <div className="flex items-center justify-between border-t border-[#EFEAE2] bg-white px-4 py-3 sm:px-6 mt-4 rounded-2xl shadow-sm">
+              <div className="hidden sm:block">
+                <p className="text-xs text-gray-500 font-bold">
+                  Hiển thị từ <span className="font-black text-[var(--primary-color)]">{(productsPage - 1) * 10 + 1}</span> tới{' '}
+                  <span className="font-black text-[var(--primary-color)]">
+                    {Math.min(productsPage * 10, filteredProducts.length)}
+                  </span>{' '}
+                  trong tổng số <span className="font-black text-[var(--primary-color)]">{filteredProducts.length}</span> sản phẩm
+                </p>
+              </div>
+              <Pagination className="w-auto mx-0">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (productsPage > 1) setProductsPage(productsPage - 1);
+                      }}
+                      className={productsPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.ceil(filteredProducts.length / 10) }).map((_, idx) => (
+                    <PaginationItem key={idx}>
+                      <PaginationLink
+                        href="#"
+                        isActive={productsPage === idx + 1}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setProductsPage(idx + 1);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        {idx + 1}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (productsPage < Math.ceil(filteredProducts.length / 10)) setProductsPage(productsPage + 1);
+                      }}
+                      className={productsPage === Math.ceil(filteredProducts.length / 10) ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
 
           {/* Product Modal */}
           {isProductModalOpen && (
@@ -744,16 +942,22 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1">Đơn vị tính</label>
-                      <input
-                        type="text"
-                        placeholder="Ví dụ: Bao 3kg, Cái"
-                        value={productForm.unit}
-                        onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
-                        className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
-                      />
-                    </div>
+                     <div>
+                       <label className="block text-xs font-bold mb-1">Đơn vị tính *</label>
+                       <select
+                         required
+                         value={productForm.unit || ''}
+                         onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
+                         className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
+                       >
+                         <option value="">-- Chọn đơn vị tính --</option>
+                         {units.map((u) => (
+                           <option key={u.id} value={u.name}>
+                             {u.name}
+                           </option>
+                         ))}
+                       </select>
+                     </div>
                   </div>
 
                   <div>
@@ -834,6 +1038,64 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
                   </div>
 
+                  {/* Specifications Editor */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-[var(--text-main)]">Thông số kỹ thuật sản phẩm (Tùy chọn)</label>
+                      <button
+                        type="button"
+                        onClick={() => setSpecList([...specList, { key: '', value: '' }])}
+                        className="text-xs font-bold text-[var(--primary-color)] hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="size-3" /> Thêm dòng mới
+                      </button>
+                    </div>
+
+                    {specList.length > 0 ? (
+                      <div className="space-y-2 max-h-48 overflow-y-auto p-1 border border-dashed border-gray-200 rounded-xl bg-[#F9F8F6]/50">
+                        {specList.map((spec, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              placeholder="Tên thông số (ví dụ: Chiều dài)"
+                              value={spec.key}
+                              onChange={(e) => {
+                                const newList = [...specList];
+                                newList[idx].key = e.target.value;
+                                setSpecList(newList);
+                              }}
+                              className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3.5 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] text-xs font-semibold"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Giá trị (ví dụ: 100cm)"
+                              value={spec.value}
+                              onChange={(e) => {
+                                const newList = [...specList];
+                                newList[idx].value = e.target.value;
+                                setSpecList(newList);
+                              }}
+                              className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3.5 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] text-xs font-semibold"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newList = specList.filter((_, sIdx) => sIdx !== idx);
+                                setSpecList(newList.length > 0 ? newList : [{ key: '', value: '' }, { key: '', value: '' }]);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-red-600 transition cursor-pointer"
+                              title="Xóa thông số này"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-450 italic">Chưa có thông số kỹ thuật nào. Click "Thêm dòng mới" để tạo.</p>
+                    )}
+                  </div>
+
                   <div>
                     <label className="block text-xs font-bold mb-1">Mô tả sản phẩm</label>
                     <textarea
@@ -884,6 +1146,214 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* Unit Sidebar */}
+          {isUnitSidebarOpen && (
+            <div className="fixed inset-0 z-50 overflow-hidden font-semibold text-xs">
+              {/* Backdrop Overlay */}
+              <div
+                className={cn(
+                  "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+                  isUnitSidebarClosing ? "opacity-0" : "opacity-100"
+                )}
+                onClick={handleCloseUnitSidebar}
+              />
+
+              {/* Sidebar Panel */}
+              <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex sm:pl-16">
+                <div
+                  className={cn(
+                    "w-screen max-w-xl bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform relative",
+                    isUnitSidebarClosing ? "translate-x-full" : "translate-x-0 animate-in slide-in-from-right"
+                  )}
+                >
+                  {/* Floating Collapse Pull-tab */}
+                  <button
+                    type="button"
+                    onClick={handleCloseUnitSidebar}
+                    className="absolute top-1/2 -left-10 -translate-y-1/2 w-10 h-20 bg-white border border-r-0 border-[#EFEAE2] shadow-[-6px_0_15px_rgba(0,0,0,0.06)] rounded-l-2xl flex items-center justify-center text-gray-400 hover:text-[var(--primary-color)] hover:bg-gray-50 transition active:scale-95 cursor-pointer z-50 group"
+                    title="Thu gọn Sidebar"
+                  >
+                    <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Header */}
+                  <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
+                    <div className="flex items-center gap-3">
+                      <div className="size-10 rounded-xl bg-[var(--primary-color)]/10 flex items-center justify-center border border-[var(--primary-color)]/20 text-[var(--primary-color)]">
+                        <Award className="size-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-[var(--text-main)]">Quản lý Đơn vị tính</h3>
+                        <p className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5">
+                          Tạo hoặc cập nhật các đơn vị tính sản phẩm (bao, hộp, kg, cái...).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+                    {/* Units Table */}
+                    <div className="rounded-2xl border border-[#EFEAE2] overflow-hidden bg-white shadow-xs">
+                      <table className="w-full text-left text-xs font-semibold">
+                        <thead>
+                          <tr className="border-b border-[#EFEAE2] bg-[#FAF9F7] text-gray-500 font-extrabold">
+                            <th className="px-4 py-3">Tên đơn vị tính</th>
+                            <th className="px-4 py-3 text-right">Hành động</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EFEAE2]">
+                          {units.map((unit) => {
+                            const isEditing = editingUnitId === unit.id;
+                            return (
+                              <tr key={unit.id} className="hover:bg-gray-50/50 transition">
+                                <td className="px-4 py-3 font-bold">
+                                  {isEditing ? (
+                                    <input
+                                      type="text"
+                                      value={editingUnitName}
+                                      onChange={(e) => setEditingUnitName(e.target.value)}
+                                      className="rounded-xl border border-[#EFEAE2] bg-white px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] w-full text-xs font-bold"
+                                    />
+                                  ) : (
+                                    unit.name
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {isEditing ? (
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          if (!editingUnitName.trim()) return;
+                                          try {
+                                            await managerApi.updateProductUnit(unit.id, { name: editingUnitName });
+                                            toast.success('Cập nhật đơn vị tính thành công!');
+                                            setEditingUnitId(null);
+                                            // Refresh units list
+                                            const res = await managerApi.getProductUnits();
+                                            setUnits(res.data);
+                                          } catch (err: any) {
+                                            toast.error(err.response?.data?.message || 'Lỗi khi cập nhật đơn vị tính.');
+                                          }
+                                        }}
+                                        className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition cursor-pointer"
+                                        title="Lưu"
+                                      >
+                                        <Check className="size-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingUnitId(null)}
+                                        className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition cursor-pointer"
+                                        title="Hủy"
+                                      >
+                                        <X className="size-4" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingUnitId(unit.id);
+                                          setEditingUnitName(unit.name);
+                                        }}
+                                        className="p-1.5 rounded-lg text-[#0F766E] hover:bg-teal-50 transition cursor-pointer"
+                                        title="Sửa"
+                                      >
+                                        <Edit2 className="size-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setConfirmState({
+                                            isOpen: true,
+                                            title: 'Xóa đơn vị tính',
+                                            message: `Bạn có chắc chắn muốn xóa đơn vị tính "${unit.name}"? Hành động này không thể hoàn tác.`,
+                                            confirmText: 'Xóa',
+                                            isDanger: true,
+                                            loading: false,
+                                            onConfirm: async () => {
+                                              setConfirmState((prev) => ({ ...prev, loading: true }));
+                                              try {
+                                                await managerApi.deleteProductUnit(unit.id);
+                                                toast.success('Xóa đơn vị tính thành công!');
+                                                const res = await managerApi.getProductUnits();
+                                                setUnits(res.data);
+                                              } catch (err: any) {
+                                                toast.error(err.response?.data?.message || 'Không thể xóa đơn vị tính.');
+                                              } finally {
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                              }
+                                            }
+                                          });
+                                        }}
+                                        className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition cursor-pointer"
+                                        title="Xóa"
+                                      >
+                                        <Trash2 className="size-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {units.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-8 text-center text-gray-400">
+                                Chưa có đơn vị tính nào được thêm.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Add New Unit Section */}
+                    <div className="rounded-2xl border border-[#EFEAE2] p-5 space-y-3 bg-[#FAF9F7]">
+                      <h4 className="text-xs font-bold text-[var(--text-main)] uppercase tracking-wider">Thêm đơn vị tính mới</h4>
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!newUnitName.trim()) return;
+                          try {
+                            await managerApi.createProductUnit({ name: newUnitName });
+                            toast.success('Thêm đơn vị tính mới thành công!');
+                            setNewUnitName('');
+                            const res = await managerApi.getProductUnits();
+                            setUnits(res.data);
+                          } catch (err: any) {
+                            toast.error(err.response?.data?.message || 'Lỗi khi tạo đơn vị tính.');
+                          }
+                        }}
+                        className="flex gap-2 text-xs font-semibold"
+                      >
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ví dụ: Lon, Bao 5kg, Tuýp"
+                          value={newUnitName}
+                          onChange={(e) => setNewUnitName(e.target.value)}
+                          className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3.5 py-2.5 focus:outline-none text-xs focus:ring-1 focus:ring-[var(--primary-color)]"
+                        />
+                        <button
+                          type="submit"
+                          className="rounded-xl bg-[#0F766E] px-4 py-2.5 font-bold text-white hover:bg-[#115E59] transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+                        >
+                          <Plus className="size-4" />
+                          Thêm
+                        </button>
+                      </form>
+                    </div>
+
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1394,8 +1864,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEAE2]">
-                  {filteredOrders.length > 0 ? (
-                    filteredOrders.map((o) => {
+                  {paginatedOrders.length > 0 ? (
+                    paginatedOrders.map((o) => {
                       const shippingInfo = parseShippingAddress(o.shippingAddress);
                       return (
                         <tr
@@ -1479,6 +1949,60 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </table>
             </div>
           </div>
+
+          {/* Orders Pagination Controls */}
+          {filteredOrders.length > 10 && (
+            <div className="flex items-center justify-between border-t border-[#EFEAE2] bg-white px-4 py-3 sm:px-6 mt-4 rounded-2xl shadow-sm">
+              <div className="hidden sm:block">
+                <p className="text-xs text-gray-500 font-bold">
+                  Hiển thị từ <span className="font-black text-[var(--primary-color)]">{(ordersPage - 1) * 10 + 1}</span> tới{' '}
+                  <span className="font-black text-[var(--primary-color)]">
+                    {Math.min(ordersPage * 10, filteredOrders.length)}
+                  </span>{' '}
+                  trong tổng số <span className="font-black text-[var(--primary-color)]">{filteredOrders.length}</span> đơn hàng
+                </p>
+              </div>
+              <Pagination className="w-auto mx-0">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (ordersPage > 1) setOrdersPage(ordersPage - 1);
+                      }}
+                      className={ordersPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.ceil(filteredOrders.length / 10) }).map((_, idx) => (
+                    <PaginationItem key={idx}>
+                      <PaginationLink
+                        href="#"
+                        isActive={ordersPage === idx + 1}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setOrdersPage(idx + 1);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        {idx + 1}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (ordersPage < Math.ceil(filteredOrders.length / 10)) setOrdersPage(ordersPage + 1);
+                      }}
+                      className={ordersPage === Math.ceil(filteredOrders.length / 10) ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
 
           {selectedOrderDetails && (
             <div
@@ -1600,6 +2124,61 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             <p className="text-sm font-semibold text-[var(--text-muted)]">Danh sách khách hàng thực tế đăng ký tài khoản trên hệ thống.</p>
           </div>
 
+          {/* Filters & Statistics */}
+          <div className="flex flex-col gap-4 rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#B0B0B0]" />
+                <input
+                  type="text"
+                  placeholder="Tìm theo tên, email hoặc số điện thoại khách hàng..."
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-4 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              {/* Sort By */}
+              <div className="flex items-center gap-2">
+                <Filter className="size-4 text-[#B0B0B0]" />
+                <select
+                  value={customerSortBy}
+                  onChange={(e) => setCustomerSortBy(e.target.value)}
+                  className="rounded-xl border border-[#EFEAE2] bg-white px-3 py-2.5 text-sm font-bold text-[var(--text-main)] focus:outline-none"
+                >
+                  <option value="none">Sắp xếp mặc định</option>
+                  <option value="spent_desc">Chi tiêu: Cao nhất</option>
+                  <option value="spent_asc">Chi tiêu: Thấp nhất</option>
+                  <option value="orders_desc">Số đơn thành công: Nhiều nhất</option>
+                  <option value="cancelled_desc">Số đơn đã hủy: Nhiều nhất</option>
+                </select>
+              </div>
+
+              {/* Filter New Customer */}
+              <div>
+                <select
+                  value={customerFilterNew}
+                  onChange={(e) => setCustomerFilterNew(e.target.value)}
+                  className="rounded-xl border border-[#EFEAE2] bg-white px-3 py-2.5 text-sm font-bold text-[var(--text-main)] focus:outline-none w-full"
+                >
+                  <option value="all">Tất cả khách hàng</option>
+                  <option value="new">Chỉ khách hàng mới</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Total count badge */}
+            <div className="flex items-center justify-between text-xs font-bold text-[var(--text-muted)] border-t border-[#F4EFE6] pt-3">
+              <span>
+                Tìm thấy <strong className="text-[var(--primary-color)]">{filteredCustomers.length}</strong> khách hàng phù hợp
+              </span>
+              <span>
+                Tổng số: <strong className="text-gray-700">{customers.length}</strong> khách hàng • Mới: <strong className="text-green-600">{customers.filter(c => c.isNewCustomer).length}</strong>
+              </span>
+            </div>
+          </div>
+
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border border-[#EFEAE2] bg-white shadow-sm">
             <div className="overflow-x-auto">
@@ -1616,11 +2195,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEAE2]">
-                  {customers.length > 0 ? (
-                    customers.map((c) => (
-                      <tr key={c.id} className="transition hover:bg-[#FDFDFD]">
+                  {paginatedCustomers.length > 0 ? (
+                    paginatedCustomers.map((c) => (
+                      <tr
+                        key={c.id}
+                        className="transition hover:bg-[#F9F8F6] cursor-pointer"
+                        onClick={() => handleViewCustomerOrders(c)}
+                        title="Click để xem chi tiết các đơn hàng"
+                      >
                         <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]">{c.id.slice(0, 8)}...</td>
-                        <td className="px-6 py-4 font-bold text-[var(--text-main)]">{c.name}</td>
+                        <td className="px-6 py-4 font-bold text-[var(--text-main)]">
+                          {c.name}
+                          {c.isNewCustomer && (
+                            <span className="text-[10px] bg-green-50 text-green-700 border border-green-100 font-extrabold px-2 py-0.5 rounded-full ml-2">
+                              (Mới)
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-[#5C5B52]">{c.email}</td>
                         <td className="px-6 py-4 font-mono text-[#5C5B52]">{c.phone}</td>
                         <td className="px-6 py-4 text-center font-bold text-[#0F766E]">{c.totalOrders} đơn</td>
@@ -1637,6 +2228,221 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </table>
             </div>
           </div>
+
+          {/* Customers Pagination Controls */}
+          {filteredCustomers.length > 10 && (
+            <div className="flex items-center justify-between border-t border-[#EFEAE2] bg-white px-4 py-3 sm:px-6 mt-4 rounded-2xl shadow-sm">
+              <div className="hidden sm:block">
+                <p className="text-xs text-gray-500 font-bold">
+                  Hiển thị từ <span className="font-black text-[var(--primary-color)]">{(customersPage - 1) * 10 + 1}</span> tới{' '}
+                  <span className="font-black text-[var(--primary-color)]">
+                    {Math.min(customersPage * 10, filteredCustomers.length)}
+                  </span>{' '}
+                  trong tổng số <span className="font-black text-[var(--primary-color)]">{filteredCustomers.length}</span> khách hàng
+                </p>
+              </div>
+              <Pagination className="w-auto mx-0">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (customersPage > 1) setCustomersPage(customersPage - 1);
+                      }}
+                      className={customersPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.ceil(filteredCustomers.length / 10) }).map((_, idx) => (
+                    <PaginationItem key={idx}>
+                      <PaginationLink
+                        href="#"
+                        isActive={customersPage === idx + 1}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCustomersPage(idx + 1);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        {idx + 1}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (customersPage < Math.ceil(filteredCustomers.length / 10)) setCustomersPage(customersPage + 1);
+                      }}
+                      className={customersPage === Math.ceil(filteredCustomers.length / 10) ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+
+          {/* Customer Orders Right Sidebar */}
+          {isCustomerOrdersSidebarOpen && selectedCustomer && (
+            <div className="fixed inset-0 z-50 overflow-hidden">
+              {/* Backdrop Overlay */}
+              <div
+                className={cn(
+                  "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+                  isCustomerOrdersSidebarClosing ? "opacity-0" : "opacity-100"
+                )}
+                onClick={handleCloseCustomerOrdersSidebar}
+              />
+
+              {/* Sidebar Panel */}
+              <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex sm:pl-16">
+                <div
+                  className={cn(
+                    "w-screen max-w-2xl bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform relative",
+                    isCustomerOrdersSidebarClosing ? "translate-x-full" : "translate-x-0 animate-in slide-in-from-right"
+                  )}
+                >
+                  {/* Floating Collapse Pull-tab */}
+                  <button
+                    type="button"
+                    onClick={handleCloseCustomerOrdersSidebar}
+                    className="absolute top-1/2 -left-10 -translate-y-1/2 w-10 h-20 bg-white border border-r-0 border-[#EFEAE2] shadow-[-6px_0_15px_rgba(0,0,0,0.06)] rounded-l-2xl flex items-center justify-center text-gray-400 hover:text-[var(--primary-color)] hover:bg-gray-50 transition active:scale-95 cursor-pointer z-50 group"
+                    title="Thu gọn Sidebar"
+                  >
+                    <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                  
+                  {/* Header */}
+                  <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
+                    <div className="flex items-center gap-3">
+                      <div className="size-12 rounded-xl bg-[var(--primary-color)]/10 flex items-center justify-center border border-[var(--primary-color)]/20 text-[var(--primary-color)]">
+                        <Users className="size-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="text-base font-black text-[var(--text-main)]">
+                            {selectedCustomer.name}
+                          </h3>
+                          {selectedCustomer.isNewCustomer && (
+                            <span className="text-[10px] bg-green-50 text-green-700 border border-green-100 font-extrabold px-2 py-0.5 rounded-full">
+                              Khách hàng mới
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[var(--text-muted)] font-semibold mt-0.5">
+                          {selectedCustomer.email} • {selectedCustomer.phone}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+                    {/* Stats Card */}
+                    <div className="grid grid-cols-3 gap-4 rounded-2xl bg-[#FAF9F5] border border-[#EFEAE2] p-4 text-center">
+                      <div>
+                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-wider block">Tổng chi tiêu</span>
+                        <span className="text-base font-black text-[var(--primary-color)] mt-1 block">
+                          {currency.format(selectedCustomer.spent)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-wider block">Đơn thành công</span>
+                        <span className="text-base font-black text-[#0F766E] mt-1 block">
+                          {selectedCustomer.totalOrders} đơn
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-wider block">Đơn đã hủy</span>
+                        <span className="text-base font-black text-red-600 mt-1 block">
+                          {selectedCustomer.totalCancelled} đơn
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Orders list */}
+                    <div className="space-y-4">
+                      <h4 className="text-xs font-black text-[#8A8980] uppercase tracking-wider">
+                        Lịch sử đơn hàng ({selectedCustomer.orders?.length || 0})
+                      </h4>
+                      
+                      {selectedCustomer.orders && selectedCustomer.orders.length > 0 ? (
+                        <div className="space-y-4">
+                          {selectedCustomer.orders.map((order: any) => (
+                            <div key={order.id} className="rounded-xl border border-[#EFEAE2] p-4 bg-white shadow-sm space-y-3">
+                              <div className="flex items-center justify-between border-b border-[#F4EFE6] pb-2">
+                                <div>
+                                  <span className="text-xs font-black text-[var(--text-main)] block">
+                                    Đơn hàng #{order.id.slice(0, 8).toUpperCase()}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400 font-bold mt-0.5 block flex items-center gap-1">
+                                    <Calendar className="size-3" />
+                                    {new Date(order.createdAt).toLocaleDateString('vi-VN', {
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className={cn(
+                                    "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
+                                    order.status === 'DELIVERED' ? "bg-green-50 text-green-700 border-green-100" :
+                                    order.status === 'CANCELLED' ? "bg-red-50 text-red-700 border-red-100" :
+                                    order.status === 'PROCESSING' ? "bg-blue-50 text-blue-700 border-blue-100" :
+                                    order.status === 'SHIPPED' ? "bg-purple-50 text-purple-700 border-purple-100" :
+                                    "bg-gray-50 text-gray-700 border-gray-100"
+                                  )}>
+                                    {order.status === 'DELIVERED' ? 'Hoàn thành' :
+                                     order.status === 'CANCELLED' ? 'Đã hủy' :
+                                     order.status === 'PROCESSING' ? 'Đang xử lý' :
+                                     order.status === 'SHIPPED' ? 'Đang giao' :
+                                     order.status === 'EXPIRED' ? 'Hết hạn' :
+                                     order.status === 'PAYMENT_ERROR' ? 'Lỗi thanh toán' :
+                                     order.status === 'PENDING' ? 'Chờ thanh toán' :
+                                     order.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Items */}
+                              <div className="space-y-2">
+                                {order.items.map((item: any) => (
+                                  <div key={item.id} className="flex justify-between items-start text-xs font-semibold">
+                                    <div className="text-[var(--text-main)] flex-1 pr-4 line-clamp-1">
+                                      {item.productName} <span className="text-gray-400 ml-1">x {item.quantity}</span>
+                                    </div>
+                                    <div className="text-right font-black text-gray-700 shrink-0">
+                                      {currency.format(item.price * item.quantity)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="flex justify-between items-center pt-2 border-t border-[#F4EFE6] text-xs">
+                                <span className="font-extrabold text-gray-400">Thành tiền</span>
+                                <span className="font-black text-[var(--primary-color)]">
+                                  {currency.format(order.totalAmount)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex h-32 flex-col items-center justify-center gap-1 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                          <ShoppingBag className="size-6 text-gray-300" />
+                          <span className="text-xs font-bold text-gray-400">Chưa có đơn hàng nào được đặt.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
 

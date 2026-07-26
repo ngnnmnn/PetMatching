@@ -51,7 +51,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   userId: string;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
   shippingFee?: number;
   shippingAddress: string;

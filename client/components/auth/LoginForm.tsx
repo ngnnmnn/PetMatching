@@ -56,12 +56,14 @@ export default function LoginForm() {
         localStorage.removeItem('login_redirect_url');
 
         const role = response.data.user?.role;
-        if (redirectUrl) {
-          router.push(redirectUrl);
-        } else if (role === 'ADMIN') {
+        if (role === 'ADMIN') {
           router.push('/admin');
+        } else if (role === 'STORE_MANAGER' || role === 'SPA_MANAGER') {
+          router.push('/manager');
         } else if (role === 'SPA_STAFF') {
           router.push('/spa/staff');
+        } else if (redirectUrl) {
+          router.push(redirectUrl);
         } else {
           router.push('/home');
         }

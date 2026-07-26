@@ -35,6 +35,10 @@ export class CreateOrderDto {
   @IsOptional()
   paymentMethod?: string;
 
+  @IsString()
+  @IsOptional()
+  voucherCode?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)

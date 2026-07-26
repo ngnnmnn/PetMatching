@@ -73,6 +73,14 @@ export class PaymentController {
       return { success: false, message: 'Không tìm thấy đơn hàng tương ứng.' };
     }
 
+    // Idempotent check: Only update status if the order is currently PENDING or PAYMENT_ERROR
+    if (order.status !== 'PENDING' && order.status !== 'PAYMENT_ERROR') {
+      console.log(
+        `Order ${order.id} is already in status ${order.status}. Ignoring webhook to prevent status regression.`,
+      );
+      return { success: true, message: `Đơn hàng đã được xử lý (trạng thái: ${order.status}).` };
+    }
+
     // PayOS success code is "00"
     if (body.data?.code === '00') {
       await this.prisma.order.update({

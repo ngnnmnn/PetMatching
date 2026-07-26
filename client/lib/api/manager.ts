@@ -68,6 +68,19 @@ export interface ManagerCustomer {
   totalOrders: number;
   totalCancelled: number;
   spent: number;
+  isNewCustomer?: boolean;
+  orders?: {
+    id: string;
+    status: string;
+    totalAmount: number;
+    createdAt: string;
+    items: {
+      id: string;
+      productName: string;
+      quantity: number;
+      price: number;
+    }[];
+  }[];
 }
 
 export interface StoreSettings {
@@ -76,6 +89,13 @@ export interface StoreSettings {
   phone: string;
   address: string;
   description?: string;
+}
+
+export interface ProductUnit {
+  id: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export const managerApi = {
@@ -97,4 +117,9 @@ export const managerApi = {
   createCategory: (data: { name: string }) => api.post<Category>('/manager/categories', data),
   updateCategory: (id: string, data: { name: string }) => api.put<Category>(`/manager/categories/${id}`, data),
   deleteCategory: (id: string) => api.delete(`/manager/categories/${id}`),
+
+  getProductUnits: () => api.get<ProductUnit[]>('/manager/units'),
+  createProductUnit: (data: { name: string }) => api.post<ProductUnit>('/manager/units', data),
+  updateProductUnit: (id: string, data: { name: string }) => api.put<ProductUnit>(`/manager/units/${id}`, data),
+  deleteProductUnit: (id: string) => api.delete(`/manager/units/${id}`),
 };
