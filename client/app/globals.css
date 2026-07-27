@@ -173,3 +173,42 @@
     @apply inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--border-color)] bg-white px-3 text-sm font-bold text-[var(--text-main)] transition hover:bg-[var(--bg-page)];
   }
 }
+
+/* Sonner Toast Custom Close Button Styling */
+[data-sonner-toast] {
+  padding-right: 48px !important;
+  position: relative !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: auto !important;
+  transform: none !important;
+  height: 100% !important;
+  width: 44px !important;
+  border-radius: 0 !important;
+  border: none !important;
+  border-left: 1px solid var(--border, oklch(0.9 0.01 80)) !important;
+  background: rgba(0, 0, 0, 0.02) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background-color 0.2s ease, opacity 0.2s ease !important;
+  opacity: 1 !important;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Adjust close button svg alignment */
+[data-sonner-toast] [data-close-button] svg {
+  margin: 0 !important;
+  position: static !important;
+  display: block !important;
+  width: 14px !important;
+  height: 14px !important;
+}
+

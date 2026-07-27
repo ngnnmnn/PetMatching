@@ -652,8 +652,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 placeholder="Tìm kiếm sản phẩm theo tên, thương hiệu hoặc mã..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-4 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
+                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-10 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Filter className="size-4 text-[#B0B0B0]" />
@@ -1784,8 +1793,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 placeholder="Tìm theo khách hàng hoặc mã đơn..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-4 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
+                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-10 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Filter className="size-4 text-[#B0B0B0]" />
@@ -2135,8 +2153,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   placeholder="Tìm theo tên, email hoặc số điện thoại khách hàng..."
                   value={customerSearch}
                   onChange={(e) => setCustomerSearch(e.target.value)}
-                  className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-4 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
+                  className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-10 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
                 />
+                {customerSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomerSearch('')}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
               </div>
 
               {/* Sort By */}
@@ -3434,8 +3461,17 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     placeholder="Tìm kiếm theo tên khách hàng, tên dịch vụ hoặc mã..."
                     value={bookingSearch}
                     onChange={(e) => setBookingSearch(e.target.value)}
-                    className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-4 text-sm focus:border-primary focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-10 text-sm focus:border-primary focus:bg-white focus:outline-none"
                   />
+                  {bookingSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setBookingSearch('')}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Filter className="size-4 text-gray-400" />

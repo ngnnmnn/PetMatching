@@ -50,7 +50,7 @@ export default function RootLayout({
           </CartProvider>
         </WishlistProvider>
         <Chatbot />
-        <Toaster richColors position="top-right" />
+        <Toaster richColors position="bottom-center" closeButton />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

@@ -94,6 +94,7 @@ function CheckoutPageContent() {
 
   // Checkout Success Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [orderPlaced, setOrderPlaced] = useState(false);
   const [createdOrderId, setCreatedOrderId] = useState('');
   const [finalAddressStr, setFinalAddressStr] = useState('');
   const [recipientNameStr, setRecipientNameStr] = useState('');
@@ -275,12 +276,12 @@ function CheckoutPageContent() {
     ? cartItems.filter((item) => selectedItemIds.includes(item.id))
     : cartItems;
 
-  // Redirect to cart if empty and not loading
+  // Redirect to cart if empty and not loading, unless order has been placed successfully
   useEffect(() => {
-    if (!loading && checkoutItems.length === 0) {
+    if (!loading && checkoutItems.length === 0 && !orderPlaced) {
       router.push('/cart');
     }
-  }, [loading, checkoutItems, router]);
+  }, [loading, checkoutItems, router, orderPlaced]);
 
   const checkoutTotal = checkoutItems.reduce((acc, item) => {
     const price = item.product.salePrice ?? item.product.originalPrice;
@@ -600,6 +601,7 @@ function CheckoutPageContent() {
       });
 
       const orderData = res.data;
+      setOrderPlaced(true);
 
       if (paymentMethod === 'QR') {
         if (orderData.status === 'PAYMENT_ERROR' || (!orderData.qrData && !orderData.checkoutUrl)) {

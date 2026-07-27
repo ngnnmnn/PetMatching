@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AccountStatus,
@@ -288,8 +288,8 @@ export default function AdminSectionPage() {
     const active = section === 'spa-services'
       ? rows.filter((row) => row.isActive).length
       : section === 'reports'
-      ? rows.filter((row) => row.status === 'RESOLVED').length
-      : rows.filter((row) => row.status === 'ACTIVE' || row.accountStatus === 'ACTIVE').length;
+        ? rows.filter((row) => row.status === 'RESOLVED').length
+        : rows.filter((row) => row.status === 'ACTIVE' || row.accountStatus === 'ACTIVE').length;
     if (section === 'store-products') {
       return {
         total: rows.length,
@@ -508,14 +508,23 @@ function UserManagementPanel({
       </div>
 
       <div className="grid gap-3 border-b border-[#E5EAF0] p-4 lg:grid-cols-[minmax(300px,1fr)_220px_220px]">
-        <label className="relative">
+        <label className="relative block">
           <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Tìm theo tên, email hoặc mã người dùng..."
-            className="h-11 w-full rounded-lg border border-[#D8E0EA] bg-white pl-10 pr-3 text-sm font-semibold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+            className="h-11 w-full rounded-lg border border-[#D8E0EA] bg-white pl-10 pr-10 text-sm font-semibold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+            >
+              <X className="size-4" />
+            </button>
+          )}
         </label>
         <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
           <option value="ALL">Tất cả vai trò</option>
@@ -1129,7 +1138,7 @@ function SpaManagerRoleDialog({
                           Đang do {spa.manager?.name ?? 'một Manager khác'} quản lý; thao tác này sẽ chuyển quyền.
                         </span>
                       )}
-                      </span>
+                    </span>
                   </div>
                 )}
               </div>
@@ -1585,16 +1594,16 @@ async function loadAllReports(): Promise<{ data: Row[] }> {
   const complaints = Array.isArray(complaintsResponse.data) ? complaintsResponse.data : [];
   const matchingReports = Array.isArray(matchingReportsResponse.data)
     ? matchingReportsResponse.data.map((report: Row) => ({
-        ...report,
-        reportSource: 'MATCHING',
-        type: 'MATCHING',
-        status: report.isResolved ? 'RESOLVED' : 'PENDING',
-        title: report.reason,
-        reporterId: report.userId,
-        targetType: 'PET',
-        targetId: report.petId,
-        actionTaken: report.isResolved ? 'RESOLVE' : null,
-      }))
+      ...report,
+      reportSource: 'MATCHING',
+      type: 'MATCHING',
+      status: report.isResolved ? 'RESOLVED' : 'PENDING',
+      title: report.reason,
+      reporterId: report.userId,
+      targetType: 'PET',
+      targetId: report.petId,
+      actionTaken: report.isResolved ? 'RESOLVE' : null,
+    }))
     : [];
 
   return {

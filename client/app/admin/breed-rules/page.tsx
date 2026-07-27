@@ -12,6 +12,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -204,14 +205,23 @@ export default function BreedRulesPage() {
 
       <section className="overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-[#E5EAF0] bg-[#FAFBFC] p-4 md:flex-row">
-          <label className="relative flex-1">
+          <label className="relative flex-1 block">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Tìm theo tên giống hoặc tên con lai..."
-              className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white pl-10 pr-3 text-sm font-semibold outline-none focus:border-[#0F766E] focus:ring-2 focus:ring-[#0F766E]/10"
+              className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white pl-10 pr-10 text-sm font-semibold outline-none focus:border-[#0F766E] focus:ring-2 focus:ring-[#0F766E]/10"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="size-4" />
+              </button>
+            )}
           </label>
           <FilterSelect value={species} onChange={(value) => setSpecies(value as typeof species)}>
             <option value="ALL">Tất cả loài</option>

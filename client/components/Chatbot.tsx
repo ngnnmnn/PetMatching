@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { MessageCircle, X, Send, Sparkles, RefreshCw, AlertCircle, ShoppingBag } from 'lucide-react';
 import api from '@/lib/axios';
 import { Product } from '@/types';
@@ -31,6 +32,12 @@ function formatCurrency(value: number) {
 }
 
 export default function Chatbot() {
+  const pathname = usePathname();
+  const hiddenRoutes = ['/login', '/register', '/admin', '/verify-email'];
+  const shouldHide = hiddenRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -225,6 +232,8 @@ export default function Chatbot() {
       setHasNewMessage(false);
     }
   };
+
+  if (shouldHide) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end font-sans">

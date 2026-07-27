@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -14,11 +14,16 @@ import {
   Search,
   ShoppingCart,
   Store,
+  Loader2,
+  ShoppingBag,
+  X,
 } from 'lucide-react';
 import { BrandMark } from '@/components/auth/AuthShell';
 import UserDropdown from '@/components/home/UserDropdown';
 import { cn } from '@/lib/utils';
 import { useCart } from '@/context/CartContext';
+import { productsApi } from '@/lib/api/products';
+import { Product } from '@/types';
 
 const MotionLink = motion(Link);
 
@@ -39,18 +44,104 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
   const router = useRouter();
   const { cartCount } = useCart();
   const [searchVal, setSearchVal] = useState('');
+  const [suggestions, setSuggestions] = useState<Product[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  // Reset activeIndex when suggestions change
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [suggestions]);
+
+  // Debounced fetch search suggestions
+  useEffect(() => {
+    if (!searchVal.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setLoadingSuggestions(true);
+      try {
+        const res = await productsApi.getList({
+          search: searchVal.trim(),
+          limit: 5,
+        });
+        if (res.data && res.data.data) {
+          setSuggestions(res.data.data);
+          setShowSuggestions(true);
+        }
+      } catch (err) {
+        console.error('Failed to fetch search suggestions', err);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchVal]);
+
+  // Click outside to close suggestions list
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.search-form-container')) {
+        setShowSuggestions(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
 
   const isHome = pathname === '/home';
   const isShop = pathname === '/shop';
   const isProduct = pathname.startsWith('/home/product/');
-  const isStoreSection = isHome || isShop || isProduct;
+  const isCart = pathname === '/cart';
+  const isCheckout = pathname === '/checkout';
+  const isOrders = pathname.startsWith('/orders');
+  const isStoreSection = isHome || isShop || isProduct || isCart || isCheckout || isOrders;
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuggestions(false);
     if (searchVal.trim()) {
       router.push(`/shop?search=${encodeURIComponent(searchVal.trim())}`);
     } else {
       router.push('/shop');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((prevIndex) =>
+        prevIndex < suggestions.length - 1 ? prevIndex + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((prevIndex) =>
+        prevIndex > 0 ? prevIndex - 1 : suggestions.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      if (activeIndex >= 0 && activeIndex < suggestions.length) {
+        e.preventDefault();
+        const selectedProduct = suggestions[activeIndex];
+        setShowSuggestions(false);
+        setSearchVal('');
+        router.push(`/home/product/${selectedProduct.id}`);
+      }
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
     }
   };
 
@@ -109,15 +200,96 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
 
         {/* 2. Màn SHOP & PRODUCT DETAIL: Có thanh search ở giữa */}
         {(isShop || isProduct) && (
-          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-md mx-auto relative hidden md:block">
+          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-xl mx-auto relative hidden md:block search-form-container">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
             <input
               type="text"
               placeholder="Tìm kiếm phụ kiện, thức ăn thú cưng..."
               value={searchVal}
               onChange={(e) => setSearchVal(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-xs font-semibold rounded-xl border border-[#EFEAE2] bg-[#FAF9F7] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] transition"
+              onKeyDown={handleKeyDown}
+              className="w-full pl-10 pr-10 py-2.5 text-xs font-semibold rounded-xl border border-[var(--primary-color)] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] transition"
             />
+
+            {searchVal && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchVal('');
+                  setSuggestions([]);
+                  setShowSuggestions(false);
+                }}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+
+            {showSuggestions && (suggestions.length > 0 || loadingSuggestions) && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 max-h-80 overflow-y-auto rounded-xl border border-[#EFEAE2] bg-white p-2 shadow-xl animate-in slide-in-from-top-2 duration-200">
+                {loadingSuggestions && (
+                  <div className="flex items-center justify-center p-4 text-xs font-bold text-[var(--text-muted)] gap-2">
+                    <Loader2 className="size-4 animate-spin text-[var(--primary-color)]" />
+                    Đang tìm kiếm...
+                  </div>
+                )}
+
+                {!loadingSuggestions && suggestions.length === 0 && (
+                  <div className="p-4 text-center text-xs font-bold text-[var(--text-muted)]">
+                    Không tìm thấy sản phẩm nào
+                  </div>
+                )}
+
+                {!loadingSuggestions && suggestions.map((product, index) => {
+                  const price = product.salePrice ?? product.originalPrice;
+                  const isActive = index === activeIndex;
+                  return (
+                    <div
+                      key={product.id}
+                      onClick={() => {
+                        setShowSuggestions(false);
+                        setSearchVal('');
+                        router.push(`/home/product/${product.id}`);
+                      }}
+                      className={cn(
+                        "flex items-center gap-3 p-2.5 hover:bg-[#FAF9F6] transition cursor-pointer text-left border-b border-[#EFEAE2]/60 last:border-b-0 first:rounded-t-lg last:rounded-b-lg",
+                        isActive && "bg-orange-50/70 border-l-2 border-[var(--primary-color)] pl-2"
+                      )}
+                    >
+                      <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center">
+                        {product.imageUrl ? (
+                          <img
+                            src={product.imageUrl}
+                            alt={product.name}
+                            className="size-full object-cover"
+                          />
+                        ) : (
+                          <ShoppingBag className="size-5 text-gray-300" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-xs font-bold text-[var(--text-main)]">
+                          {product.name}
+                        </h4>
+                        <p className="truncate text-[10px] font-semibold text-[var(--text-muted)] mt-0.5">
+                          {product.brand || 'Thương hiệu khác'}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-black text-[var(--primary-color)]">
+                          {formatCurrency(price)}
+                        </span>
+                        {product.salePrice && (
+                          <span className="block text-[10px] font-semibold text-[var(--text-muted)] line-through">
+                            {formatCurrency(product.originalPrice)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </form>
         )}
 
@@ -146,9 +318,9 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
           </div>
         )}
 
-        {/* Phần bên phải: Spa & Match (nếu ở Shop/Product) + Cart & Profile */}
+        {/* Phần bên phải: Spa & Match (nếu ở Shop/Product/Cart/Checkout/Orders) + Cart & Profile */}
         <div className="flex items-center gap-2.5">
-          {(isShop || isProduct) && (
+          {(isShop || isProduct || isCart || isCheckout || isOrders) && (
             <>
               <MotionLink
                 layoutId="header-nav-spa"

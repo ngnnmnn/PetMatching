@@ -65,12 +65,6 @@ function ManagerNavigation() {
         { label: 'Khách hàng', id: 'customers', href: '/manager?tab=customers', icon: Users },
       ],
     },
-    {
-      label: 'Hệ thống',
-      items: [
-        { label: 'Cấu hình cửa hàng', id: 'settings', href: '/manager?tab=settings', icon: Settings },
-      ],
-    },
   ];
 
   return (
