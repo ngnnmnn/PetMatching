@@ -507,7 +507,15 @@ QUY TẮC BẢO MẬT HỆ THỐNG VÀ QUYỀN RIÊNG TƯ (BẮT BUỘC TUÂN TH
         take: 12,
       });
 
-      // 5. Build system instructions
+      // ==========================================
+      // ĐỊNH HÌNH HÀNH VI AI (SYSTEM INSTRUCTION / SYSTEM PROMPT)
+      // Đây là file/đoạn code chính dùng để "dạy" (train) AI cách cư xử, luật bảo mật,
+      // định dạng trả lời và cung cấp ngữ cảnh thông tin cửa hàng.
+      // Thay đổi nội dung chuỗi `systemInstruction` dưới đây nếu bạn muốn:
+      //  - Thay đổi tính cách, giọng điệu trò chuyện của AI.
+      //  - Thêm/bớt quy tắc bảo mật.
+      //  - Thay đổi cách giới thiệu sản phẩm.
+      // ==========================================
       const systemInstruction = `
 Bạn là Trợ lý Ảo PetMatch (PetMatch Assistant), một chuyên gia tư vấn sản phẩm và dịch vụ chăm sóc thú cưng thân thiện, chu đáo và nhiệt tình của cửa hàng PetMatch.
 Nhiệm vụ của bạn là:
