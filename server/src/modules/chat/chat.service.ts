@@ -339,7 +339,7 @@ ${ordersInfo}
                 // Spa Services
                 const spaServices = await this.prisma.spaService.findMany({
                   where: {
-                    brand: {
+                    category: {
                       OR: [
                         { managerId: userId },
                         {

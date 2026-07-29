@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
 import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -102,9 +102,37 @@ export class SpaController {
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Get('manager/categories')
+  getManagerCategories(@Req() req: AuthenticatedRequest) {
+    return this.spaService.getManagerCategories(req.user?.id);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Post('manager/categories')
+  createManagerCategory(@Req() req: AuthenticatedRequest, @Body() dto: any) {
+    return this.spaService.createManagerCategory(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/categories/:id')
+  updateManagerCategory(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') categoryId: string,
+    @Body() dto: any,
+  ) {
+    return this.spaService.updateManagerCategory(req.user.id, categoryId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Delete('manager/categories/:id')
+  deleteManagerCategory(@Req() req: AuthenticatedRequest, @Param('id') categoryId: string) {
+    return this.spaService.deleteManagerCategory(req.user.id, categoryId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/brands')
   getManagerBrands(@Req() req: AuthenticatedRequest) {
-    return this.spaService.getManagerBrands(req.user.id);
+    return this.spaService.getManagerCategories(req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)

@@ -48,6 +48,30 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [isManagerOrStaff, setIsManagerOrStaff] = useState(false);
+
+  useEffect(() => {
+    const checkUserRole = () => {
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        try {
+          const user = JSON.parse(stored);
+          const role = user?.role;
+          if (role === 'ADMIN' || role === 'STORE_MANAGER' || role === 'SPA_MANAGER' || role === 'SPA_STAFF') {
+            setIsManagerOrStaff(true);
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to parse user in AppHeader', e);
+        }
+      }
+      setIsManagerOrStaff(false);
+    };
+
+    checkUserRole();
+    window.addEventListener('auth-change', checkUserRole);
+    return () => window.removeEventListener('auth-change', checkUserRole);
+  }, []);
 
   // Reset activeIndex when suggestions change
   useEffect(() => {
@@ -144,6 +168,10 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
       setShowSuggestions(false);
     }
   };
+
+  if (isManagerOrStaff) {
+    return null;
+  }
 
   return (
     <nav className="sticky top-0 z-40 border-b border-[var(--border-color)] bg-card/95 shadow-sm backdrop-blur">

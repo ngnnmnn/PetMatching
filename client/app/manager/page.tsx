@@ -2756,12 +2756,28 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const [slotsData, setSlotsData] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
 
-  // Assignment states
+  // Assignment & Detail states
+  const [selectedBookingDetail, setSelectedBookingDetail] = useState<any | null>(null);
+  const [managerStaffs, setManagerStaffs] = useState<any[]>([]);
   const [availableStaffsMap, setAvailableStaffsMap] = useState<Record<string, any[]>>({});
   const [selectedAssignStaffMap, setSelectedAssignStaffMap] = useState<Record<string, string>>({});
   const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
   const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
   const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
+
+  // Helper to resolve subServices for any booking in Manager view
+  const getManagerBookingSubServices = (b: any) => {
+    if (!b) return [];
+    if (b.subServices && b.subServices.length > 0) {
+      return b.subServices;
+    }
+    if (b.subServiceIds && b.subServiceIds.length > 0 && services.length > 0) {
+      return b.subServiceIds
+        .map((id: string) => services.find((s: any) => s.id === id))
+        .filter(Boolean);
+    }
+    return [];
+  };
 
   // Reschedule states
   const [rescheduleBooking, setRescheduleBooking] = useState<any | null>(null);
@@ -2793,22 +2809,73 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const [bookingSearch, setBookingSearch] = useState<string>('');
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('ALL');
 
+  // Service filters
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>('ALL');
+  const [serviceBrandFilter, setServiceBrandFilter] = useState<string>('ALL');
+
+  // Category modal & filter states
+  const [categoryModalOpen, setCategoryModalOpen] = useState<boolean>(false);
+  const [editingCategory, setEditingCategory] = useState<any | null>(null);
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    isMain: true,
+    status: 'ACTIVE' as 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED'
+  });
+  const [submittingCategory, setSubmittingCategory] = useState<boolean>(false);
+  const [categoryTypeFilter, setCategoryTypeFilter] = useState<string>('ALL');
+
+  const filteredServices = useMemo(() => {
+    return services.filter((s: any) => {
+      if (serviceTypeFilter === 'MAIN' && !s.isMain) return false;
+      if (serviceTypeFilter === 'SUB' && s.isMain) return false;
+      if (serviceBrandFilter !== 'ALL' && (s.categoryId || s.brandId) !== serviceBrandFilter) return false;
+      return true;
+    });
+  }, [services, serviceTypeFilter, serviceBrandFilter]);
+
+  // Filter SpaBrand options in form based on selected classification (isMain)
+  const filteredBrandsForForm = useMemo(() => {
+    return managerBrands.filter((b: any) => {
+      if (serviceForm.isMain) {
+        return b.isMain !== false;
+      } else {
+        return b.isMain === false;
+      }
+    });
+  }, [managerBrands, serviceForm.isMain]);
+
+  const handleClassificationChange = (isMainSelected: boolean) => {
+    const matchingBrands = managerBrands.filter((b: any) =>
+      isMainSelected ? b.isMain !== false : b.isMain === false
+    );
+
+    const currentBrandValid = matchingBrands.some((b: any) => b.id === serviceForm.brandId);
+    const newBrandId = currentBrandValid ? serviceForm.brandId : (matchingBrands[0]?.id || '');
+
+    setServiceForm((prev) => ({
+      ...prev,
+      isMain: isMainSelected,
+      brandId: newBrandId,
+    }));
+  };
+
   useEffect(() => {
     // Set default slot date to today
     setSlotDate(new Date().toISOString().split('T')[0]);
   }, []);
 
-  // Fetch branches and brands managed by this manager
+  // Fetch branches and categories managed by this manager
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [branchesRes, brandsRes] = await Promise.all([
+        const [branchesRes, categoriesRes] = await Promise.all([
           spaApi.getManagerBranches(),
-          spaApi.getManagerBrands(),
+          spaApi.getManagerCategories(),
         ]);
         const bData = branchesRes.data || [];
         setBranches(bData);
-        setManagerBrands(brandsRes.data || []);
+        setManagerBrands(categoriesRes.data || []);
         if (bData.length > 0) {
           setSelectedBranchId(bData[0].id);
         } else {
@@ -2824,7 +2891,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
 
   // Fetch data based on active tab and selected branch
   const refreshData = async () => {
-    if (!selectedBranchId) return;
+    // For tabs that don't need a branch (categories, services), don't block on selectedBranchId
+    const needsBranch = ['dashboard', 'bookings', 'staffs', 'slots'].includes(currentTab);
+    if (needsBranch && !selectedBranchId) return;
     setLoading(true);
     try {
       if (currentTab === 'dashboard') {
@@ -2846,11 +2915,20 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
         setAvailableStaffsMap(staffMap);
 
       } else if (currentTab === 'bookings') {
-        const bookingsRes = await spaApi.getManagerBookings(selectedBranchId);
+        const [bookingsRes, staffsRes, servicesRes] = await Promise.all([
+          spaApi.getManagerBookings(selectedBranchId),
+          spaApi.getManagerStaffs(selectedBranchId).catch(() => ({ data: [] })),
+          spaApi.getServices().catch(() => ({ data: [] })),
+        ]);
         setBookings(bookingsRes.data || []);
+        setManagerStaffs(staffsRes.data || []);
+        if (servicesRes.data) setServices(servicesRes.data);
       } else if (currentTab === 'services') {
         const servicesRes = await spaApi.getManagerServices();
         setServices(servicesRes.data || []);
+      } else if (currentTab === 'categories') {
+        const categoriesRes = await spaApi.getManagerCategories();
+        setManagerBrands(categoriesRes.data || []);
       } else if (currentTab === 'staffs') {
         const staffsRes = await spaApi.getManagerStaffs(selectedBranchId);
         setStaffs(staffsRes.data || []);
@@ -2966,26 +3044,102 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     }
   };
 
-  // Service submit
-  const handleServiceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!serviceForm.name || !serviceForm.price || !serviceForm.durationMin || !serviceForm.brandId) {
-      toast.error('Vui lòng nhập đầy đủ thông tin bắt buộc và chọn Thương hiệu Spa.');
+  // Weight change handlers with instant validation and auto-adjust
+  const handleMinWeightChange = (val: string) => {
+    if (val === '') {
+      setServiceForm((prev) => ({ ...prev, petWeightMin: '' }));
       return;
     }
+    const minNum = parseFloat(val);
+    const maxNum = parseFloat(serviceForm.petWeightMax);
+
+    if (!isNaN(minNum) && !isNaN(maxNum) && minNum > maxNum) {
+      toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn cân nặng tối đa (max)! Đã tự động điều chỉnh max = min');
+      setServiceForm((prev) => ({
+        ...prev,
+        petWeightMin: val,
+        petWeightMax: val,
+      }));
+      return;
+    }
+
+    setServiceForm((prev) => ({ ...prev, petWeightMin: val }));
+  };
+
+  const handleMaxWeightChange = (val: string) => {
+    if (val === '') {
+      setServiceForm((prev) => ({ ...prev, petWeightMax: '' }));
+      return;
+    }
+    const maxNum = parseFloat(val);
+    const minNum = parseFloat(serviceForm.petWeightMin);
+
+    if (!isNaN(minNum) && !isNaN(maxNum) && maxNum < minNum) {
+      toast.error(`Cân nặng tối đa (${maxNum}kg) phải lớn hơn hoặc bằng cân nặng tối thiểu (${minNum}kg)!`);
+      setServiceForm((prev) => ({ ...prev, petWeightMax: String(minNum) }));
+      return;
+    }
+
+    setServiceForm((prev) => ({ ...prev, petWeightMax: val }));
+  };
+
+  // Service submit with complete field validation
+  const handleServiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // 1. Validate Brand
+    if (!serviceForm.brandId) {
+      toast.error('Vui lòng chọn Thương hiệu Spa!');
+      return;
+    }
+
+    // 2. Validate Service Name
+    if (!serviceForm.name || serviceForm.name.trim().length < 2) {
+      toast.error('Vui lòng nhập Tên dịch vụ (tối thiểu 2 ký tự)!');
+      return;
+    }
+
+    // 3. Validate Price
+    const priceNum = Number(serviceForm.price);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast.error('Vui lòng nhập Giá dịch vụ hợp lệ (lớn hơn 0đ)!');
+      return;
+    }
+
+    // 4. Validate Single Duration
+    const durationNum = Number(serviceForm.durationMin);
+    if (isNaN(durationNum) || durationNum < 10) {
+      toast.error('Thời gian thực hiện phải từ 10 phút trở lên!');
+      return;
+    }
+
+    // 5. Validate Weight Range
+    const weightMinNum = serviceForm.petWeightMin ? Number(serviceForm.petWeightMin) : null;
+    const weightMaxNum = serviceForm.petWeightMax ? Number(serviceForm.petWeightMax) : null;
+
+    if (weightMinNum !== null && weightMinNum < 0) {
+      toast.error('Cân nặng tối thiểu không được nhỏ hơn 0kg!');
+      return;
+    }
+
+    if (weightMinNum !== null && weightMaxNum !== null && weightMinNum > weightMaxNum) {
+      toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn hoặc bằng cân nặng tối đa (max)!');
+      return;
+    }
+
     setSubmittingService(true);
     try {
       const data = {
         brandId: serviceForm.brandId,
-        name: serviceForm.name,
-        description: serviceForm.description,
-        price: Number(serviceForm.price),
-        durationMin: Number(serviceForm.durationMin),
-        durationMax: serviceForm.durationMax ? Number(serviceForm.durationMax) : undefined,
+        name: serviceForm.name.trim(),
+        description: serviceForm.description ? serviceForm.description.trim() : undefined,
+        price: priceNum,
+        durationMin: durationNum,
+        durationMax: durationNum,
         isMain: serviceForm.isMain,
         species: serviceForm.species === 'ALL' ? undefined : serviceForm.species,
-        petWeightMin: serviceForm.petWeightMin ? Number(serviceForm.petWeightMin) : undefined,
-        petWeightMax: serviceForm.petWeightMax ? Number(serviceForm.petWeightMax) : undefined,
+        petWeightMin: weightMinNum !== null ? weightMinNum : undefined,
+        petWeightMax: weightMaxNum !== null ? weightMaxNum : undefined,
         isActive: serviceForm.isActive
       };
 
@@ -3028,14 +3182,15 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   // Open add service modal
   const handleAddServiceClick = () => {
     setEditingService(null);
-    let brandId = managerBrands.length > 0 ? managerBrands[0].id : '';
+    const defaultMainBrand = managerBrands.find((b: any) => b.isMain !== false);
+    const brandId = defaultMainBrand ? defaultMainBrand.id : (managerBrands[0]?.id || '');
     setServiceForm({
       brandId,
       name: '',
       description: '',
       price: '',
       durationMin: '60',
-      durationMax: '',
+      durationMax: '60',
       isMain: true,
       species: 'ALL',
       petWeightMin: '',
@@ -3043,6 +3198,80 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
       isActive: true
     });
     setServiceModalOpen(true);
+  };
+
+  // Category Handlers
+  const handleAddCategoryClick = () => {
+    setEditingCategory(null);
+    setCategoryForm({
+      name: '',
+      description: '',
+      isMain: true,
+      status: 'ACTIVE',
+    });
+    setCategoryModalOpen(true);
+  };
+
+  const handleEditCategoryClick = (cat: any) => {
+    setEditingCategory(cat);
+    setCategoryForm({
+      name: cat.name || '',
+      description: cat.description || '',
+      isMain: cat.isMain ?? true,
+      status: cat.status || 'ACTIVE',
+    });
+    setCategoryModalOpen(true);
+  };
+
+  const handleCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryForm.name || categoryForm.name.trim().length < 2) {
+      toast.error('Vui lòng nhập Tên danh mục (tối thiểu 2 ký tự)!');
+      return;
+    }
+
+    setSubmittingCategory(true);
+    try {
+      const data = {
+        name: categoryForm.name.trim(),
+        description: categoryForm.description ? categoryForm.description.trim() : undefined,
+        isMain: categoryForm.isMain,
+        status: categoryForm.status,
+      };
+
+      if (editingCategory) {
+        await spaApi.updateManagerCategory(editingCategory.id, data);
+        toast.success('Cập nhật danh mục thành công!');
+      } else {
+        await spaApi.createManagerCategory(data);
+        toast.success('Thêm danh mục mới thành công!');
+      }
+      setCategoryModalOpen(false);
+      setEditingCategory(null);
+      const res = await spaApi.getManagerCategories();
+      setManagerBrands(res.data || []);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi lưu danh mục.');
+    } finally {
+      setSubmittingCategory(false);
+    }
+  };
+
+  const handleDeleteCategoryClick = async (cat: any) => {
+    if (cat._count?.services > 0) {
+      toast.error(`Không thể xóa danh mục đang có ${cat._count.services} dịch vụ!`);
+      return;
+    }
+    if (!confirm(`Bạn có chắc chắn muốn xóa danh mục "${cat.name}"?`)) return;
+
+    try {
+      await spaApi.deleteManagerCategory(cat.id);
+      toast.success('Xóa danh mục thành công!');
+      const res = await spaApi.getManagerCategories();
+      setManagerBrands(res.data || []);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể xóa danh mục.');
+    }
   };
 
   // Filter bookings list
@@ -3115,11 +3344,29 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Metric 1 */}
                 <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Lịch hẹn hôm nay</span>
-                    <p className="text-2xl font-black text-gray-900 mt-1">{stats.todayBookingsCount}</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black uppercase text-[#8A8980]">Lịch hẹn hôm nay</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-2xl font-black text-gray-900">{stats.todayBookingsCount}</p>
+                      {stats.unconfirmedBookingsCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('tab', 'bookings');
+                            window.history.pushState({}, '', url.toString());
+                            window.dispatchEvent(new Event('popstate'));
+                          }}
+                          className="text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded-full shadow-2xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          🚨 {stats.unconfirmedBookingsCount} cần xác nhận ➔
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="size-10 rounded-full bg-orange-55 shadow-inner flex items-center justify-center text-primary">
+                  <div className="size-10 rounded-full bg-orange-55 shadow-inner flex items-center justify-center text-primary shrink-0">
                     <Calendar className="size-5" />
                   </div>
                 </div>
@@ -3234,8 +3481,23 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
 
               {/* Today's Booking table */}
               <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-gray-150">
+                <div className="p-5 border-b border-gray-150 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Lịch hẹn hôm nay ({stats.todayBookings?.length || 0})</h3>
+                  {stats.unconfirmedBookingsCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('tab', 'bookings');
+                        window.history.pushState({}, '', url.toString());
+                        window.dispatchEvent(new Event('popstate'));
+                      }}
+                      className="text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                    >
+                      <AlertCircle className="size-3.5 text-amber-600" />
+                      {stats.unconfirmedBookingsCount} lịch hẹn cần xác nhận (Chuyển qua trang lịch hẹn ➔)
+                    </button>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
@@ -3367,6 +3629,41 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 </button>
               </div>
 
+              {/* Filter Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Filter className="size-4 text-gray-400" />
+                    <span className="text-xs font-bold text-gray-500">Phân loại dịch vụ:</span>
+                    <select
+                      value={serviceTypeFilter}
+                      onChange={(e) => setServiceTypeFilter(e.target.value)}
+                      className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                    >
+                      <option value="ALL">🌐 Tất cả dịch vụ ({services.length})</option>
+                      <option value="MAIN">★ Chỉ gói dịch vụ chính ({services.filter((s: any) => s.isMain).length})</option>
+                      <option value="SUB">✦ Chỉ dịch vụ lẻ chọn thêm ({services.filter((s: any) => !s.isMain).length})</option>
+                    </select>
+                  </div>
+
+                  {managerBrands.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-500">Thương hiệu Spa:</span>
+                      <select
+                        value={serviceBrandFilter}
+                        onChange={(e) => setServiceBrandFilter(e.target.value)}
+                        className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                      >
+                        <option value="ALL">Tất cả thương hiệu</option>
+                        {managerBrands.map((b: any) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Services Table */}
               <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
@@ -3384,8 +3681,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {services.length > 0 ? (
-                        services.map((s: any) => {
+                      {filteredServices.length > 0 ? (
+                        filteredServices.map((s: any) => {
                           const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
                           const weightText = s.petWeightMin !== null && s.petWeightMax !== null
                             ? `${s.petWeightMin}kg - ${s.petWeightMax}kg`
@@ -3403,7 +3700,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               </td>
                               <td className="px-6 py-4">
                                 <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                  {s.brand?.name || 'Grooming Spa'}
+                                  {s.category?.name || s.brand?.name || 'Grooming Spa'}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-xs font-semibold text-gray-700 space-y-0.5">
@@ -3437,6 +3734,115 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                           <td colSpan={8} className="px-6 py-12 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
                         </tr>
                       )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTENT: CATEGORIES */}
+          {currentTab === 'categories' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-gray-900">Quản lý Danh mục Spa</h2>
+                  <p className="text-sm font-semibold text-gray-500">Thêm, chỉnh sửa và thiết lập phân loại danh mục (Gói chính / Dịch vụ lẻ).</p>
+                </div>
+                <button
+                  onClick={handleAddCategoryClick}
+                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017]"
+                >
+                  <Plus className="size-4" /> Thêm danh mục
+                </button>
+              </div>
+
+              {/* Filter Toolbar */}
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Filter className="size-4 text-gray-400" />
+                  <span className="text-xs font-bold text-gray-500">Phân loại danh mục:</span>
+                  <select
+                    value={categoryTypeFilter}
+                    onChange={(e) => setCategoryTypeFilter(e.target.value)}
+                    className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                  >
+                    <option value="ALL">🌐 Tất cả danh mục ({managerBrands.length})</option>
+                    <option value="MAIN">★ Chỉ gói dịch vụ chính ({managerBrands.filter((c: any) => c.isMain).length})</option>
+                    <option value="SUB">✦ Chỉ dịch vụ lẻ chọn thêm ({managerBrands.filter((c: any) => !c.isMain).length})</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Categories Table */}
+              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
+                        <th className="px-6 py-4">Tên danh mục & Phân loại</th>
+                        <th className="px-6 py-4">Mô tả</th>
+                        <th className="px-6 py-4 text-center">Số dịch vụ</th>
+                        <th className="px-6 py-4 text-center">Số lượt đặt</th>
+                        <th className="px-6 py-4 text-center">Trạng thái</th>
+                        <th className="px-6 py-4 text-center">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {managerBrands
+                        .filter((c: any) => {
+                          if (categoryTypeFilter === 'MAIN' && !c.isMain) return false;
+                          if (categoryTypeFilter === 'SUB' && c.isMain) return false;
+                          return true;
+                        })
+                        .map((c: any) => (
+                          <tr key={c.id} className="hover:bg-gray-50/30 transition">
+                            <td className="px-6 py-4 space-y-1">
+                              <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
+                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${
+                                c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}>
+                                {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-semibold text-gray-600 max-w-[250px] truncate" title={c.description || 'Chưa có mô tả'}>
+                              {c.description || <span className="italic text-gray-400">Không có mô tả</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center font-bold text-gray-800">
+                              <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
+                                {c._count?.services || 0} dịch vụ
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center font-extrabold text-purple-700">
+                              {c._count?.bookings || 0} lượt
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
+                                c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                              }`}>
+                                {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => handleEditCategoryClick(c)}
+                                  className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
+                                  title="Chỉnh sửa danh mục"
+                                >
+                                  <Edit2 className="size-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCategoryClick(c)}
+                                  className="p-1.5 rounded-lg border text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                                  title="Xóa danh mục"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -3532,7 +3938,11 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                           const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
 
                           return (
-                            <tr key={b.id} className="hover:bg-gray-50/30 transition">
+                            <tr
+                              key={b.id}
+                              onClick={() => setSelectedBookingDetail(b)}
+                              className="hover:bg-gray-50/70 transition cursor-pointer"
+                            >
                               <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
                               <td className="px-6 py-4">
                                 <span className="font-extrabold text-gray-900 block">{timeStr}</span>
@@ -3547,30 +3957,55 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               <td className="px-6 py-4">
                                 <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
                                 <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
+                                {(() => {
+                                  const subList = getManagerBookingSubServices(b);
+                                  if (subList.length === 0) return null;
+                                  return (
+                                    <div className="text-[10px] text-purple-700 font-bold pt-0.5 line-clamp-1" title={subList.map((s: any) => s.name).join(', ')}>
+                                      + {subList.length} dịch vụ lẻ
+                                    </div>
+                                  );
+                                })()}
                                 {b.discountAmount ? (
                                   <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
                                 ) : null}
                               </td>
                               <td className="px-6 py-4 font-semibold text-xs text-gray-700">
-                                {b.staff ? `✨ ${b.staff.name}` : <span className="text-gray-400 italic">Chưa phân công</span>}
+                                {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
                               </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status}
+                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-center">
+                              <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex flex-col items-center gap-1.5">
+                                  <button
+                                    onClick={() => setSelectedBookingDetail(b)}
+                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                  >
+                                    <Eye className="size-3.5" /> Xem chi tiết
+                                  </button>
+
+                                  {b.status === 'PENDING' && (
+                                    <button
+                                      onClick={() => setSelectedBookingDetail(b)}
+                                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                    >
+                                      ✓ Xác nhận & Gán NV
+                                    </button>
+                                  )}
+
                                   {canReschedule && (
                                     <button
                                       onClick={() => {
                                         setRescheduleBooking(b);
-                                        setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]); // tomorrow
+                                        setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
                                         setSelectedRescheduleSlot('');
                                       }}
                                       className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
                                     >
-                                      <Calendar className="size-3.5" /> Đổi lịch hẹn
+                                      <Calendar className="size-3.5" /> Đổi lịch
                                     </button>
                                   )}
 
@@ -3580,12 +4015,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                       className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
                                       title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
                                     >
-                                      🎁 Giảm 10% (Trễ 30p)
+                                      🎁 Giảm 10%
                                     </button>
-                                  )}
-
-                                  {!canReschedule && !isLateOfferable && (
-                                    <span className="text-gray-400 text-xs italic">—</span>
                                   )}
                                 </div>
                               </td>
@@ -3916,12 +4347,12 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     required
                     value={serviceForm.brandId}
                     onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
                   >
                     <option value="">-- Chọn thương hiệu --</option>
-                    {managerBrands.map((b: any) => (
+                    {filteredBrandsForForm.map((b: any) => (
                       <option key={b.id} value={b.id}>
-                        {b.name} {b.isMain === false ? '(Dịch vụ lẻ)' : '(Gói chính)'}
+                        {b.name}
                       </option>
                     ))}
                   </select>
@@ -3931,11 +4362,11 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại dịch vụ *</label>
                   <select
                     value={serviceForm.isMain ? 'MAIN' : 'SUB'}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, isMain: e.target.value === 'MAIN' }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                    onChange={(e) => handleClassificationChange(e.target.value === 'MAIN')}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
                   >
-                    <option value="MAIN">★ Gói dịch vụ chính (bắt buộc chọn 1)</option>
-                    <option value="SUB">✦ Dịch vụ lẻ (chọn thêm tùy chọn)</option>
+                    <option value="MAIN">Dịch vụ chính</option>
+                    <option value="SUB">Dịch vụ lẻ</option>
                   </select>
                 </div>
               </div>
@@ -3974,7 +4405,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     step="0.1"
                     min={0}
                     value={serviceForm.petWeightMin}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, petWeightMin: e.target.value }))}
+                    onChange={(e) => handleMinWeightChange(e.target.value)}
                     className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
                     placeholder="Ví dụ: 1.5"
                   />
@@ -3986,7 +4417,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     step="0.1"
                     min={0}
                     value={serviceForm.petWeightMax}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, petWeightMax: e.target.value }))}
+                    onChange={(e) => handleMaxWeightChange(e.target.value)}
                     className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
                     placeholder="Ví dụ: 3.0"
                   />
@@ -4005,8 +4436,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
               </div>
 
               {/* Price & Duration */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1 col-span-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
                   <label className="text-[11px] text-gray-500 font-extrabold uppercase">Giá dịch vụ (đ) *</label>
                   <input
                     type="number"
@@ -4019,26 +4450,15 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian tối thiểu (phút) *</label>
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
                   <input
                     type="number"
                     required
                     min={10}
                     value={serviceForm.durationMin}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMin: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMin: e.target.value, durationMax: e.target.value }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
                     placeholder="60"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian tối đa (phút)</label>
-                  <input
-                    type="number"
-                    min={10}
-                    value={serviceForm.durationMax}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMax: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
-                    placeholder="90"
                   />
                 </div>
               </div>
@@ -4068,6 +4488,313 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer"
                 >
                   {submittingService ? 'Đang lưu...' : 'Lưu dịch vụ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Booking Detail & Management Modal */}
+      {selectedBookingDetail && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <span className="text-[10px] font-mono text-gray-400 block font-bold">MÃ LỊCH: #{selectedBookingDetail.id.slice(-6).toUpperCase()}</span>
+                <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
+                  <Scissors className="size-5 text-primary" /> Chi Tiết Lịch Hẹn Spa
+                </h3>
+              </div>
+              <button onClick={() => setSelectedBookingDetail(null)} className="rounded-full p-1 text-gray-400 hover:text-gray-600">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Customer & Pet Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-gray-50 p-3.5 rounded-xl border border-gray-150">
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-gray-400 block uppercase">Khách hàng</span>
+                <p className="font-extrabold text-gray-900">{selectedBookingDetail.user?.name || 'Khách hàng'}</p>
+                {selectedBookingDetail.user?.phone && (
+                  <p className="text-gray-600 font-semibold">📞 SĐT: {selectedBookingDetail.user.phone}</p>
+                )}
+                {selectedBookingDetail.user?.email && (
+                  <p className="text-gray-500 font-medium truncate">{selectedBookingDetail.user.email}</p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-gray-400 block uppercase">Thú cưng</span>
+                <p className="font-extrabold text-purple-950">🐾 {selectedBookingDetail.petName || selectedBookingDetail.pet?.name || 'Thú cưng'}</p>
+                <p className="text-gray-600 font-semibold">
+                  {selectedBookingDetail.petSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {selectedBookingDetail.petWeight || 3}kg
+                </p>
+              </div>
+            </div>
+
+            {/* Date & Time */}
+            <div className="p-3.5 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between text-xs">
+              <div>
+                <span className="text-[10px] font-bold text-purple-800 uppercase block">Thời gian hẹn</span>
+                <span className="font-black text-sm text-purple-950">
+                  {new Date(selectedBookingDetail.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedBookingDetail.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </span>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${
+                {
+                  PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
+                  CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
+                  ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+                  IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
+                  COMPLETED: 'bg-green-100 text-green-800 border-green-300',
+                  CANCELLED: 'bg-red-100 text-red-800 border-red-300',
+                  NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
+                  LATE: 'bg-rose-100 text-rose-800 border-rose-300',
+                }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
+              }`}>
+                {selectedBookingDetail.status === 'PENDING' ? '🚨 Chờ xác nhận' : selectedBookingDetail.status}
+              </span>
+            </div>
+
+            {/* Services List */}
+            <div className="space-y-2 text-xs">
+              <span className="font-extrabold text-gray-800 uppercase text-[10px] tracking-wider block">Dịch vụ chính & Dịch vụ phụ:</span>
+              <div className="p-3 bg-white border border-gray-200 rounded-xl space-y-2">
+                <div className="flex justify-between items-center font-black text-gray-900">
+                  <span>✂️ Dịch vụ chính: {selectedBookingDetail.service?.name || 'Gói Chăm Sóc Spa'}</span>
+                  <span>{(selectedBookingDetail.service?.price || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
+                </div>
+
+                {(() => {
+                  const subList = getManagerBookingSubServices(selectedBookingDetail);
+                  if (subList.length === 0) {
+                    return <p className="text-[11px] text-gray-400 italic pt-1.5 border-t border-gray-150">Không có dịch vụ lẻ đi kèm.</p>;
+                  }
+                  return (
+                    <div className="space-y-1.5 pt-2 border-t border-gray-150">
+                      <span className="text-[10px] font-extrabold text-purple-900 block uppercase">
+                        Dịch vụ lẻ chọn thêm ({subList.length}):
+                      </span>
+                      <div className="space-y-1">
+                        {subList.map((sub: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center bg-green-50/70 p-2 rounded-lg border border-green-150 text-xs">
+                            <span className="font-extrabold text-gray-900 flex items-center gap-1.5">
+                              <span className="size-1.5 rounded-full bg-green-600 shrink-0" />
+                              {sub.name}
+                            </span>
+                            <span className="text-green-700 font-black">+ {(sub.price || 0).toLocaleString('vi-VN')}đ</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="pt-2 border-t border-gray-200 flex justify-between items-center font-black text-sm text-purple-950">
+                  <span>Tổng thanh toán:</span>
+                  <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Staff Assignment Section inside Modal */}
+            <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2 text-xs">
+              <span className="font-extrabold text-gray-800 block text-[10px] uppercase">Nhân viên phụ trách:</span>
+              {selectedBookingDetail.staff ? (
+                <div className="flex items-center gap-2 font-bold text-gray-900 bg-white p-2 rounded-lg border">
+                  <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
+                    {selectedBookingDetail.staff.name.slice(0, 1)}
+                  </span>
+                  <div>
+                    <p>{selectedBookingDetail.staff.name}</p>
+                    <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-amber-800 font-bold italic text-[11px]">⚠️ Đơn chưa được phân công nhân viên phụ trách ca làm.</p>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedAssignStaffMap[selectedBookingDetail.id] || ''}
+                      onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
+                      className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
+                    >
+                      <option value="">-- Chọn nhân viên phụ trách --</option>
+                      {managerStaffs.map((st: any) => (
+                        <option key={st.id} value={st.id}>
+                          👤 {st.user?.name || st.name} ({st.user?.phone || 'NV Spa'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t">
+              {selectedBookingDetail.status === 'PENDING' && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await spaApi.confirmBooking(selectedBookingDetail.id);
+                      const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
+                      if (staffIdToAssign) {
+                        await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
+                        toast.success('Đã xác nhận đơn hàng và phân công nhân viên!');
+                      } else {
+                        toast.success('Đã xác nhận đơn hàng thành công!');
+                      }
+                      setSelectedBookingDetail(null);
+                      refreshData();
+                    } catch (err: any) {
+                      toast.error(err.response?.data?.message || 'Lỗi xác nhận.');
+                    }
+                  }}
+                  className="bg-primary hover:bg-primary/90 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
+                >
+                  ✓ Xác nhận đơn & Phân công
+                </button>
+              )}
+
+              {selectedBookingDetail.status === 'CONFIRMED' && !selectedBookingDetail.staffId && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
+                    if (!staffIdToAssign) {
+                      toast.error('Vui lòng chọn nhân viên trước khi xác nhận.');
+                      return;
+                    }
+                    try {
+                      await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
+                      toast.success('Đã phân công nhân viên thành công!');
+                      setSelectedBookingDetail(null);
+                      refreshData();
+                    } catch (err: any) {
+                      toast.error(err.response?.data?.message || 'Lỗi phân công.');
+                    }
+                  }}
+                  disabled={!selectedAssignStaffMap[selectedBookingDetail.id]}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
+                >
+                  👤 Phân công Nhân viên
+                </button>
+              )}
+
+              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(selectedBookingDetail.status) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = selectedBookingDetail;
+                    setSelectedBookingDetail(null);
+                    setRescheduleBooking(b);
+                    setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                    setSelectedRescheduleSlot('');
+                  }}
+                  className="border border-purple-300 text-purple-800 hover:bg-purple-50 font-black text-xs h-9 px-3 gap-1 rounded-lg transition cursor-pointer flex items-center"
+                >
+                  <Calendar className="size-3.5 mr-1" /> Đổi lịch hẹn
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setSelectedBookingDetail(null)}
+                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CATEGORY MODAL (ADD / EDIT) */}
+      {categoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setCategoryModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="size-5" />
+            </button>
+
+            <div>
+              <h3 className="text-base font-black text-gray-900">{editingCategory ? 'Chỉnh sửa danh mục Spa' : 'Thêm danh mục Spa mới'}</h3>
+              <p className="text-xs text-gray-450 mt-1 font-semibold">Tạo nhóm phân loại cho các gói dịch vụ chính hoặc dịch vụ lẻ.</p>
+            </div>
+
+            <form onSubmit={handleCategorySubmit} className="space-y-4">
+              {/* Name */}
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Tên danh mục *</label>
+                <input
+                  type="text"
+                  required
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
+                  placeholder="Ví dụ: Tắm & Sấy, Cắt tỉa lông..."
+                />
+              </div>
+
+              {/* Classification */}
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại danh mục *</label>
+                <select
+                  value={categoryForm.isMain ? 'MAIN' : 'SUB'}
+                  onChange={(e) => setCategoryForm(prev => ({ ...prev, isMain: e.target.value === 'MAIN' }))}
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  <option value="MAIN">Dịch vụ chính</option>
+                  <option value="SUB">Dịch vụ lẻ</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả danh mục</label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full min-h-[60px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
+                  placeholder="Mô tả nhóm danh mục..."
+                />
+              </div>
+
+              {/* Active Toggle */}
+              <div className="flex items-center gap-2 pt-1.5">
+                <input
+                  type="checkbox"
+                  id="catIsActive"
+                  checked={categoryForm.status === 'ACTIVE'}
+                  onChange={(e) => setCategoryForm(prev => ({ ...prev, status: e.target.checked ? 'ACTIVE' : 'SUSPENDED' }))}
+                  className="rounded border-gray-300 text-primary focus:ring-primary size-4"
+                />
+                <label htmlFor="catIsActive" className="text-xs font-bold text-gray-700 cursor-pointer">
+                  Danh mục đang hoạt động khả dụng
+                </label>
+              </div>
+
+              {/* Submit buttons */}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setCategoryModalOpen(false)}
+                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingCategory}
+                  className="px-5 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] disabled:opacity-50"
+                >
+                  {submittingCategory ? 'Đang lưu...' : (editingCategory ? 'Cập nhật' : 'Lưu danh mục')}
                 </button>
               </div>
             </form>

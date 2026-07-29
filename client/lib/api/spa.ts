@@ -46,6 +46,10 @@ export const spaApi = {
 
   // Spa Manager API Methods
   getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),
+  getManagerCategories: () => api.get<any[]>('/spa/manager/categories'),
+  createManagerCategory: (data: any) => api.post<any>('/spa/manager/categories', data),
+  updateManagerCategory: (id: string, data: any) => api.patch<any>(`/spa/manager/categories/${id}`, data),
+  deleteManagerCategory: (id: string) => api.delete<any>(`/spa/manager/categories/${id}`),
   getManagerBrands: () => api.get<any[]>('/spa/manager/brands'),
   getManagerDashboardStats: (branchId: string) => api.get<any>(`/spa/manager/dashboard-stats?branchId=${branchId}`),
   getManagerServices: () => api.get<any[]>('/spa/manager/services'),

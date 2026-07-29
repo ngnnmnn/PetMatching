@@ -377,43 +377,29 @@ async function main() {
   });
 
   // Clear and seed AddressSpa records
+  // Clear old AddressSpa records except Q1 if present, then ensure Q1 exists
   await prisma.addressSpa.deleteMany({
     where: {
-      id: { in: ['petmatch-spa-q1', 'petmatch-spa-bt', 'petmatch-spa-hk'] }
+      id: { not: 'petmatch-spa-q1' }
     }
   });
 
-  const addressQ1 = await prisma.addressSpa.create({
-    data: {
-      id: 'petmatch-spa-q1',
+  const addressQ1 = await prisma.addressSpa.upsert({
+    where: { id: 'petmatch-spa-q1' },
+    update: {
       name: 'PetMatch Spa – Quận 1',
       description: 'Trung tâm chăm sóc sắc đẹp chính tại TP. HCM',
       address: '123 Nguyễn Huệ, Phường Bến Nghé, Quận 1',
       phone: '02899998888',
       status: ApprovalStatus.ACTIVE,
       managerId: managerUser.id,
-    }
-  });
-
-  await prisma.addressSpa.create({
-    data: {
-      id: 'petmatch-spa-bt',
-      name: 'PetMatch Spa – Bình Thạnh',
-      description: 'Chi nhánh chăm sóc thú cưng tại Bình Thạnh',
-      address: '45 Xô Viết Nghệ Tĩnh, Phường 21, Bình Thạnh',
-      phone: '02899997777',
-      status: ApprovalStatus.ACTIVE,
-      managerId: managerUser.id,
-    }
-  });
-
-  await prisma.addressSpa.create({
-    data: {
-      id: 'petmatch-spa-hk',
-      name: 'PetMatch Spa – Hoàn Kiếm',
-      description: 'Chi nhánh spa cao cấp tại Hà Nội',
-      address: '78 Hàng Bông, Hoàn Kiếm',
-      phone: '02499998888',
+    },
+    create: {
+      id: 'petmatch-spa-q1',
+      name: 'PetMatch Spa – Quận 1',
+      description: 'Trung tâm chăm sóc sắc đẹp chính tại TP. HCM',
+      address: '123 Nguyễn Huệ, Phường Bến Nghé, Quận 1',
+      phone: '02899998888',
       status: ApprovalStatus.ACTIVE,
       managerId: managerUser.id,
     }
