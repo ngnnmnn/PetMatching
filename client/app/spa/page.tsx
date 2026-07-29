@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Calendar, MapPin, Phone, Search, Sparkles, Star } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
+import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -55,7 +56,7 @@ export default function SpaHomePage() {
   const [activeTab, setActiveTab] = useState<'services' | 'branches'>('services');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  
+
   const [branches, setBranches] = useState<AddressSpaType[]>([]);
   const [services, setServices] = useState<SpaServiceType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -95,21 +96,26 @@ export default function SpaHomePage() {
       id: service.id,
       name: service.name,
       price: service.price,
-      branchId: service.branchId ?? service.brandId,
+      branchId: service.branchId ?? service.categoryId ?? service.brandId ?? '',
       branchName: service.branch?.name || 'Chi nhánh Spa',
     });
     setBookingDialogOpen(true);
   };
 
-  const handleBookClick = (serviceId: string) => {
+  const handleBookClick = (serviceId: string, title?: string, brandId?: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    const queryParams = new URLSearchParams();
+    if (serviceId) queryParams.set('serviceId', serviceId);
+    if (title) queryParams.set('title', title);
+    if (brandId) queryParams.set('brandId', brandId);
+
+    const targetUrl = `/spa/book?${queryParams.toString()}`;
     if (!token) {
       toast.error('Vui lòng đăng nhập để thực hiện đặt lịch Spa.');
-      const targetUrl = `/spa/book?serviceId=${serviceId}`;
       router.push(`/login?redirect=${encodeURIComponent(targetUrl)}`);
       return;
     }
-    router.push(`/spa/book?serviceId=${serviceId}`);
+    router.push(targetUrl);
   };
 
   const safeServices = Array.isArray(services) ? services : [];
@@ -148,16 +154,19 @@ export default function SpaHomePage() {
       <section className="relative overflow-hidden bg-[#E45D1C] py-16 text-white text-center">
         {/* Abstract shapes for background styling */}
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent pointer-events-none" />
-        
+
         <div className="container mx-auto px-4 relative z-10 max-w-4xl space-y-6">
           <div className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur-sm">
             <Sparkles className="size-3.5 text-yellow-300 fill-yellow-300" />
             Dịch vụ chăm sóc cao cấp
           </div>
-          
+
           <h1 className="text-4xl md:text-5xl font-black tracking-tight drop-shadow-sm">PetMatch Spa</h1>
           <p className="text-white/80 font-medium text-sm md:text-base max-w-xl mx-auto">
-            Chăm sóc thú cưng chuyên nghiệp, tận tâm. {branches.length || 5} chi nhánh trên toàn quốc.
+            Chăm sóc thú cưng chuyên nghiệp, tận tâm.
+          </p>
+          <p className="text-white/80 font-medium text-sm md:text-base max-w-xl mx-auto">
+            Chi nhánh: 123 Nguyễn Huệ, Quận 1, TP. HCM.
           </p>
 
           {/* Search bar inside Hero */}
@@ -165,7 +174,7 @@ export default function SpaHomePage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
             <Input
               type="text"
-              placeholder="Tìm dịch vụ hoặc chi nhánh..."
+              placeholder="Tìm dịch vụ Spa..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-12 w-full pl-12 pr-6 rounded-full border-0 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-2 focus-visible:ring-primary/20 text-sm focus:outline-none"
@@ -176,33 +185,8 @@ export default function SpaHomePage() {
 
       {/* Main Controls Section */}
       <section className="container mx-auto max-w-7xl px-4 py-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-6 mb-6">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 bg-muted p-1 rounded-lg w-fit">
-            <button
-              onClick={() => {
-                setActiveTab('services');
-                setSelectedCategory('all');
-              }}
-              className={`px-4 py-2 text-sm font-semibold rounded-md transition ${
-                activeTab === 'services'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Dịch vụ
-            </button>
-            <button
-              onClick={() => setActiveTab('branches')}
-              className={`px-4 py-2 text-sm font-semibold rounded-md transition ${
-                activeTab === 'branches'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Chi nhánh
-            </button>
-          </div>
+        <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] pb-6 mb-6">
+          <h2 className="text-xl font-black text-gray-900">Danh Sách Dịch Vụ Spa</h2>
 
           {/* My Appointments Button */}
           <Button asChild variant="outline" className="border-primary/30 text-primary hover:bg-primary/5 font-semibold gap-2 w-fit">
@@ -213,24 +197,21 @@ export default function SpaHomePage() {
           </Button>
         </div>
 
-        {/* Categories Bar (Only for Services Tab) */}
-        {activeTab === 'services' && (
-          <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => setSelectedCategory(cat.value)}
-                className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${
-                  selectedCategory === cat.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
+        {/* Categories Bar */}
+        <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.value}
+              onClick={() => setSelectedCategory(cat.value)}
+              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${selectedCategory === cat.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
                 }`}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-        )}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
 
         {/* Content Grids */}
         {loading ? (
@@ -238,11 +219,12 @@ export default function SpaHomePage() {
             <div className="inline-block size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             <p className="mt-4 font-semibold text-sm">Đang tải dữ liệu Spa...</p>
           </div>
-        ) : activeTab === 'services' ? (
+        ) : (
           // SERVICES GRID - GROUPED BY BRAND / BASE TITLE (ONLY 1 CARD PER SERVICE TYPE)
           (() => {
             const brandMap = new Map<string, {
               id: string;
+              brandId?: string;
               title: string;
               description: string;
               minPrice: number;
@@ -266,6 +248,7 @@ export default function SpaHomePage() {
               if (!brandMap.has(cleanTitle)) {
                 brandMap.set(cleanTitle, {
                   id: service.id,
+                  brandId: service.brandId,
                   title: cleanTitle,
                   description: service.description || 'Dịch vụ chăm sóc chuyên sâu dành cho thú cưng theo mốc cân nặng.',
                   minPrice: service.price,
@@ -328,7 +311,7 @@ export default function SpaHomePage() {
                           <p className="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
                             {card.description}
                           </p>
-                          
+
                           <div className="flex items-center gap-1 text-amber-500 font-bold text-xs pt-1">
                             <Star className="size-3.5 fill-current" />
                             <span>{ratingInfo.rating.toFixed(1)}</span>
@@ -345,7 +328,7 @@ export default function SpaHomePage() {
                           </div>
                           <Button
                             type="button"
-                            onClick={() => handleBookClick(card.id)}
+                            onClick={() => handleBookClick(card.id, card.title, card.brandId)}
                             className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl cursor-pointer"
                           >
                             Đặt lịch
@@ -358,57 +341,6 @@ export default function SpaHomePage() {
               </div>
             );
           })()
-        ) : (
-          // BRANCHES GRID
-          filteredBranches.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl border border-[var(--border-color)] p-8">
-              <p className="text-muted-foreground text-sm">Không tìm thấy chi nhánh nào.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBranches.map((branch) => (
-                <div
-                  key={branch.id}
-                  className="rounded-xl border border-[var(--border-color)] bg-card p-6 shadow-sm flex flex-col justify-between h-full"
-                >
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-primary font-bold uppercase tracking-wider">Chi nhánh Spa</span>
-                      <h3 className="text-xl font-bold text-[var(--text-main)]">{branch.name}</h3>
-                    </div>
-                    <p className="text-xs text-[var(--text-muted)] line-clamp-3">
-                      {branch.description || 'Chi nhánh chăm sóc sắc đẹp và vệ sinh chuyên sâu của PetMatch.'}
-                    </p>
-                    
-                    <div className="space-y-2 pt-2 text-xs text-[var(--text-muted)] border-t border-[var(--border-color)]">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="size-4 text-primary shrink-0 mt-0.5" />
-                        <span>{branch.address || 'Hệ thống chi nhánh PetMatch toàn quốc'}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Phone className="size-4 text-primary shrink-0" />
-                        <span>{branch.phone || '092-222-2000'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-5 mt-auto">
-                    <Button
-                      variant="outline"
-                      className="w-full text-xs font-bold border-primary/20 text-primary hover:bg-primary/5"
-                      onClick={() => {
-                        // Switch back to services and filter by this branch name
-                        setActiveTab('services');
-                        setSelectedCategory(branch.name);
-                      }}
-                    >
-                      Xem dịch vụ chi nhánh
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
         )}
       </section>
 
@@ -424,6 +356,8 @@ export default function SpaHomePage() {
           price={selectedService.price}
         />
       )}
+
+      <Footer />
     </main>
   );
 }

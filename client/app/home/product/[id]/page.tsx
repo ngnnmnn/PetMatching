@@ -97,48 +97,32 @@ export default function ProductDetailPage() {
         const data = response.data;
         setProduct(data);
         setActiveImage(data.imageUrl || '/placeholder.svg');
+        setLoading(false); // Show main product details immediately!
 
-        // Fetch reviews
-        try {
-          const reviewsRes = await productsApi.getReviews(productId);
-          setReviews(reviewsRes.data);
-        } catch (err) {
-          console.error('Failed to load reviews', err);
-        }
-
-        // Fetch can-review eligibility if token exists
+        // Fetch secondary data concurrently in parallel (non-blocking)
         const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-        if (token) {
-          try {
-            const eligibilityRes = await productsApi.canReview(productId);
-            setCanUserReview(eligibilityRes.data);
-          } catch (err) {
-            console.error('Failed to load review eligibility', err);
-          }
-        }
-
-        // Fetch related products (same category)
         setRelatedLoading(true);
-        try {
-          const relatedResponse = await productsApi.getList({
-            category: data.category,
-            limit: 5,
-          });
-          // Filter out current product
-          const filtered = (relatedResponse.data.data || []).filter(
-            (p) => p.id !== data.id
-          );
-          setRelatedProducts(filtered.slice(0, 4));
-        } catch (err) {
-          console.error('Failed to load related products', err);
-        } finally {
-          setRelatedLoading(false);
-        }
 
+        const [reviewsRes, eligibilityRes, relatedRes] = await Promise.allSettled([
+          productsApi.getReviews(productId),
+          token ? productsApi.canReview(productId) : Promise.resolve({ data: false }),
+          productsApi.getList({ category: data.category, limit: 5 }),
+        ]);
+
+        if (reviewsRes.status === 'fulfilled') {
+          setReviews(reviewsRes.value.data);
+        }
+        if (eligibilityRes.status === 'fulfilled') {
+          setCanUserReview(eligibilityRes.value.data);
+        }
+        if (relatedRes.status === 'fulfilled') {
+          const filtered = (relatedRes.value.data.data || []).filter((p: any) => p.id !== data.id);
+          setRelatedProducts(filtered.slice(0, 4));
+        }
+        setRelatedLoading(false);
       } catch (err) {
         console.error(err);
         setError('Không tìm thấy sản phẩm hoặc xảy ra lỗi kết nối.');
-      } finally {
         setLoading(false);
       }
     };

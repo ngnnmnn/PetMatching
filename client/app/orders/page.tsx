@@ -38,6 +38,7 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  orderCode?: number | null;
   status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
   shippingFee?: number;
@@ -548,8 +549,8 @@ export default function OrdersPage() {
                                       accountName: 'PETMATCHING',
                                       bin: '970422',
                                       amount: Number(order.totalAmount),
-                                      description: `PM${order.orderCode}`,
-                                      checkoutUrl: order.paymentUrl,
+                                      description: `PM${order.orderCode || ''}`,
+                                      checkoutUrl: order.paymentUrl || undefined,
                                     });
                                     setIsQRModalOpen(true);
                                   }}

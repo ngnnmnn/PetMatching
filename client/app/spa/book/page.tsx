@@ -17,6 +17,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
+import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -105,6 +106,8 @@ function SpaBookingWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialServiceId = searchParams.get('serviceId');
+  const initialBrandId = searchParams.get('brandId');
+  const initialTitle = searchParams.get('title');
 
   const [step, setStep] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
@@ -161,15 +164,55 @@ function SpaBookingWizard() {
         setMainServices(mains);
         setSubServices(subs);
 
-        if (initialServiceId && mains.some((m) => m.id === initialServiceId)) {
-          setSelectedMainServiceId(initialServiceId);
+        // Auto select service passed from query params
+        if (initialServiceId || initialBrandId || initialTitle) {
+          let matched = mains.find(
+            (m) =>
+              (initialServiceId && m.id === initialServiceId) ||
+              (initialBrandId && m.brandId === initialBrandId)
+          );
+
+          if (!matched && initialTitle) {
+            const targetTitle = initialTitle.toLowerCase().trim();
+            matched = mains.find((m) => {
+              const name = (m.name || '').toLowerCase();
+              const brandName = (m.brand?.name || '').toLowerCase();
+              return name.includes(targetTitle) || brandName.includes(targetTitle) || targetTitle.includes(brandName);
+            });
+          }
+
+          if (!matched && initialServiceId) {
+            const targetIdStr = initialServiceId.toLowerCase().trim();
+            matched = mains.find((m) => {
+              const name = (m.name || '').toLowerCase();
+              const brandName = (m.brand?.name || '').toLowerCase();
+              return name.includes(targetIdStr) || brandName.includes(targetIdStr);
+            });
+          }
+
+          if (matched) {
+            setSelectedMainServiceId(matched.id);
+          } else {
+            let matchedSub = subs.find(
+              (s) =>
+                (initialServiceId && s.id === initialServiceId) ||
+                (initialBrandId && s.brandId === initialBrandId)
+            );
+            if (!matchedSub && initialTitle) {
+              const targetTitle = initialTitle.toLowerCase().trim();
+              matchedSub = subs.find((s) => (s.name || '').toLowerCase().includes(targetTitle));
+            }
+            if (matchedSub) {
+              setSelectedSubServiceIds([matchedSub.id]);
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to load filtered services', err);
       }
     };
     fetchFilteredServices();
-  }, [activeSpecies, activeWeight, initialServiceId]);
+  }, [activeSpecies, activeWeight, initialServiceId, initialBrandId, initialTitle]);
 
   const carouselDays = useMemo(() => {
     if (!bookingDate) return [];
@@ -193,18 +236,35 @@ function SpaBookingWizard() {
     return days;
   }, [bookingDate]);
 
+  const totalDurationMinutes = useMemo(() => {
+    const selectedMain = mainServices.find((x) => x.id === selectedMainServiceId);
+    const selectedSubs = subServices.filter((x) => selectedSubServiceIds.includes(x.id));
+    const durationMain = selectedMain ? (selectedMain.durationMax || selectedMain.durationMin || 30) : 0;
+    const durationSubs = selectedSubs.reduce((sum, s) => sum + (s.durationMax || s.durationMin || 15), 0);
+    return Math.max(15, durationMain + durationSubs);
+  }, [selectedMainServiceId, selectedSubServiceIds, mainServices, subServices]);
+
+  const filteredValidSlots = useMemo(() => {
+    return availableSlots.filter((slot) => {
+      // 1. Hide slot if no staff is available during this window
+      if (!slot.isAvailable || slot.remainingSlots <= 0) {
+        return false;
+      }
+
+      // 2. Hide slot if completion time exceeds 18:00
+      const [h, m] = slot.time.split(':').map(Number);
+      const startMins = h * 60 + m;
+      const endMins = startMins + totalDurationMinutes;
+      return startMins >= 9 * 60 && endMins <= 18 * 60;
+    });
+  }, [availableSlots, totalDurationMinutes]);
+
   useEffect(() => {
     const fetchSlots = async () => {
       if (!selectedAddressSpaId || !bookingDate || (!selectedMainServiceId && selectedSubServiceIds.length === 0)) return;
       setLoadingSlots(true);
       try {
-        const selectedMain = mainServices.find((x) => x.id === selectedMainServiceId);
-        const selectedSubs = subServices.filter((x) => selectedSubServiceIds.includes(x.id));
-        const durationMain = selectedMain ? (selectedMain.durationMax || selectedMain.durationMin || 30) : 0;
-        const durationSubs = selectedSubs.reduce((sum, s) => sum + (s.durationMax || s.durationMin || 15), 0);
-        const totalDuration = durationMain + durationSubs;
-
-        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, totalDuration);
+        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, totalDurationMinutes);
         setAvailableSlots(res.data || []);
       } catch (err) {
         console.error('Failed to fetch available slots', err);
@@ -213,7 +273,7 @@ function SpaBookingWizard() {
       }
     };
     fetchSlots();
-  }, [bookingDate, selectedAddressSpaId, selectedMainServiceId, selectedSubServiceIds, mainServices, subServices]);
+  }, [bookingDate, selectedAddressSpaId, totalDurationMinutes]);
 
   // Fetch initial data
   useEffect(() => {
@@ -459,38 +519,6 @@ function SpaBookingWizard() {
                     </div>
                   </div>
 
-                  {/* Select Address */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn chi nhánh Spa *</label>
-                    <div className="grid grid-cols-1 gap-3">
-                      {addresses.map((addr) => (
-                        <div
-                          key={addr.id}
-                          onClick={() => setSelectedAddressSpaId(addr.id)}
-                          className={`flex items-start gap-3 p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
-                            selectedAddressSpaId === addr.id
-                              ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                              : 'border-gray-200 bg-white'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="addressSpa"
-                            checked={selectedAddressSpaId === addr.id}
-                            onChange={() => setSelectedAddressSpaId(addr.id)}
-                            className="accent-primary size-4 mt-0.5"
-                          />
-                          <div>
-                            <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
-                              <MapPin className="size-4 text-primary shrink-0" />
-                              {addr.address}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                   {/* DYNAMIC CALCULATED PRICE NOTICE BANNER */}
                   <div className="p-4 bg-gradient-to-r from-purple-50 via-amber-50 to-orange-50 border border-purple-200 rounded-2xl space-y-2 shadow-2xs">
                     <div className="flex items-center justify-between">
@@ -598,32 +626,43 @@ function SpaBookingWizard() {
                         Gói bạn chọn đã bao gồm đầy đủ các dịch vụ chăm sóc cơ bản. Không có dịch vụ lẻ cần chọn thêm.
                       </p>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="flex flex-col space-y-2.5">
                         {availableSubServices.map((sub) => {
                           const isChecked = selectedSubServiceIds.includes(sub.id);
                           return (
                             <div
                               key={sub.id}
                               onClick={() => handleSubServiceToggle(sub.id)}
-                              className={`p-3 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${
+                              className={`p-3.5 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${
                                 isChecked
-                                  ? 'border-green-500 bg-green-50/60 ring-1 ring-green-400'
-                                  : 'border-gray-200 bg-white hover:bg-gray-50'
+                                  ? 'border-green-600 bg-green-50/80 ring-1 ring-green-500/30'
+                                  : 'border-gray-200 bg-white hover:border-green-200 hover:bg-gray-50'
                               }`}
                             >
-                              <div className="flex items-center gap-2.5">
+                              <div className="flex items-start gap-3">
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
                                   onChange={() => handleSubServiceToggle(sub.id)}
-                                  className="accent-green-600 size-4 rounded"
+                                  className="accent-green-600 size-4 rounded mt-0.5"
                                 />
-                                <div>
-                                  <span className="font-bold text-xs text-gray-900 block leading-tight">{sub.name}</span>
-                                  <span className="text-[10px] text-gray-400 font-medium">⏱ {sub.durationMin} phút</span>
+                                <div className="space-y-0.5">
+                                  <span className="font-extrabold text-xs sm:text-sm text-gray-900 block leading-tight">
+                                    {sub.name}
+                                  </span>
+                                  {sub.description && (
+                                    <p className="text-[11px] text-gray-500 line-clamp-1">{sub.description}</p>
+                                  )}
+                                  <span className="text-[10px] text-gray-400 font-medium block">
+                                    ⏱ Thời gian: {sub.durationMin} phút
+                                  </span>
                                 </div>
                               </div>
-                              <span className="font-black text-xs text-green-700">{formatPrice(sub.price)}</span>
+                              <div className="text-right shrink-0 ml-3">
+                                <span className="font-black text-xs sm:text-sm text-green-700 bg-green-100/60 px-2.5 py-1 rounded-lg border border-green-200 block">
+                                  + {formatPrice(sub.price)}
+                                </span>
+                              </div>
                             </div>
                           );
                         })}
@@ -696,7 +735,16 @@ function SpaBookingWizard() {
                   </div>
 
                   <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider">
+                    <div className="p-3 bg-purple-50/80 border border-purple-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between text-xs text-purple-950 font-bold gap-2">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="size-4 text-purple-600" /> Thời gian dịch vụ dự kiến: <strong>{totalDurationMinutes} phút</strong>
+                      </span>
+                      <span className="text-[11px] text-purple-800 bg-purple-100/70 px-2.5 py-0.5 rounded border border-purple-200">
+                        Giờ mở cửa: 09:00 - 18:00 (Liên tục)
+                      </span>
+                    </div>
+
+                    <label className="text-xs font-black uppercase text-gray-800 tracking-wider block pt-1">
                       Chọn giờ hẹn ({new Date(bookingDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}) *
                     </label>
                     {loadingSlots ? (
@@ -704,9 +752,9 @@ function SpaBookingWizard() {
                         <div className="inline-block size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <p className="text-xs text-gray-400 font-semibold mt-2">Đang tìm khung giờ khả dụng...</p>
                       </div>
-                    ) : availableSlots.length > 0 ? (
+                    ) : filteredValidSlots.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {availableSlots.map((slot) => {
+                        {filteredValidSlots.map((slot) => {
                           const isSelected = bookingTime === slot.time;
                           const hasChuyen = slot.isAvailable;
                           return (
@@ -736,7 +784,12 @@ function SpaBookingWizard() {
                         })}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-450 italic">Vui lòng chọn ngày để xem giờ hẹn khả dụng.</p>
+                      <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-900 space-y-1">
+                        <p className="font-extrabold">⚠️ Không có khung giờ khả dụng cho gói dịch vụ này ({totalDurationMinutes} phút)!</p>
+                        <p className="text-[11px] text-orange-800 leading-relaxed">
+                          Các khung giờ muộn đã bị ẩn tự động do thời gian hoàn thành vượt quá giờ đóng cửa của Spa (18:00). Vui lòng chọn ngày khác hoặc giảm bớt dịch vụ chọn kèm.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -834,6 +887,7 @@ function SpaBookingWizard() {
           )}
         </div>
       </div>
+      <Footer />
     </main>
   );
 }

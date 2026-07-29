@@ -41,15 +41,18 @@ export default function Footer() {
         </div>
 
         <div>
-          <h4 className="text-sm font-bold uppercase tracking-wider text-white mb-4">Liên hệ</h4>
-          <ul className="space-y-3.5 text-sm text-[var(--bg-page)]/75">
+          <h4 className="text-sm font-bold uppercase tracking-wider text-white mb-4">Liên hệ & Chi nhánh Spa</h4>
+          <ul className="space-y-3 text-sm text-[var(--bg-page)]/75">
             <li className="flex items-start gap-2.5">
               <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--primary-color)]" />
-              <span>ĐH FPT Hà Nội</span>
+              <div>
+                <span className="font-bold text-white block">PetMatch Spa – Quận 1</span>
+                <span className="text-xs">123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. HCM</span>
+              </div>
             </li>
             <li className="flex items-center gap-2.5">
               <Phone className="h-4 w-4 shrink-0 text-[var(--primary-color)]" />
-              <span>+84 123456789</span>
+              <span>028 9999 8888 • 092 222 2222</span>
             </li>
             <li className="flex items-center gap-2.5">
               <Mail className="h-4 w-4 shrink-0 text-[var(--primary-color)]" />

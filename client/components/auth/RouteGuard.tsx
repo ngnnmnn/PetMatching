@@ -18,6 +18,8 @@ const PRIVATE_ROUTES = [
   '/manager',
 ];
 
+const AUTH_ROUTES = ['/login', '/register', '/verify-email', '/auth/google/callback'];
+
 export default function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -26,6 +28,38 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     const checkAuth = () => {
       const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const storedUser = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+      let user: { role?: string } | null = null;
+      if (storedUser) {
+        try {
+          user = JSON.parse(storedUser);
+        } catch (e) {
+          user = null;
+        }
+      }
+
+      // If logged in as staff, manager, or admin, keep them within their role console
+      if (token && user?.role) {
+        const isAuthRoute = AUTH_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`));
+        if (!isAuthRoute) {
+          if (user.role === 'ADMIN' && !pathname.startsWith('/admin')) {
+            setAuthorized(false);
+            router.replace('/admin');
+            return;
+          }
+          if ((user.role === 'STORE_MANAGER' || user.role === 'SPA_MANAGER') && !pathname.startsWith('/manager')) {
+            setAuthorized(false);
+            router.replace('/manager');
+            return;
+          }
+          if (user.role === 'SPA_STAFF' && !pathname.startsWith('/spa/staff')) {
+            setAuthorized(false);
+            router.replace('/spa/staff');
+            return;
+          }
+        }
+      }
+
       const isPrivateRoute = PRIVATE_ROUTES.some(
         (route) => pathname === route || pathname.startsWith(`${route}/`)
       );

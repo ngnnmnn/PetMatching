@@ -8,7 +8,7 @@ export class SpaService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getBranches() {
-    return this.prisma.spaBrand.findMany({
+    return this.prisma.spaCategory.findMany({
       where: {
         status: ApprovalStatus.ACTIVE,
       },
@@ -28,7 +28,7 @@ export class SpaService {
         isActive: true,
       },
       include: {
-        brand: {
+        category: {
           select: {
             id: true,
             name: true,
@@ -135,7 +135,7 @@ export class SpaService {
     }
 
     const firstService = mainService || subServices[0];
-    const brandId = dto.branchId || (firstService ? firstService.brandId : null);
+    const categoryId = dto.branchId || (firstService ? (firstService.categoryId || (firstService as any).brandId) : null);
     const bookingTime = new Date(dto.scheduledAt);
 
     if (isNaN(bookingTime.getTime())) {
@@ -158,12 +158,26 @@ export class SpaService {
     const timeStartExpected = bookingTime;
     const timeEndExpected = new Date(bookingTime.getTime() + totalDurationMinutes * 60 * 1000);
 
+    // Validate operating hours: 09:00 - 18:00
+    const startHour = bookingTime.getHours();
+    const startMin = bookingTime.getMinutes();
+    const startMinsFromMidnight = startHour * 60 + startMin;
+    const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
+
+    const isValidOperatingHours = startMinsFromMidnight >= 9 * 60 && endMinsFromMidnight <= 18 * 60;
+
+    if (!isValidOperatingHours) {
+      throw new BadRequestException(
+        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
+      );
+    }
+
     const bookingStatus = validStaffId ? SpaBookingStatus.ASSIGNED : SpaBookingStatus.PENDING;
 
     return this.prisma.spaBooking.create({
       data: {
         userId,
-        brandId,
+        categoryId: categoryId,
         addressSpaId: validAddressSpaId,
         serviceId: mainServiceId,
         mainServiceId: mainServiceId,
@@ -183,7 +197,7 @@ export class SpaService {
         note: dto.note,
       },
       include: {
-        brand: {
+        category: {
           select: { name: true },
         },
         addressSpa: {
@@ -198,12 +212,12 @@ export class SpaService {
 
   async getMyBookings(userId: string) {
     await this.autoUpdateBookingStatuses();
-    return this.prisma.spaBooking.findMany({
+    const bookings = await this.prisma.spaBooking.findMany({
       where: {
         userId,
       },
       include: {
-        brand: {
+        category: {
           select: {
             name: true,
           },
@@ -217,8 +231,10 @@ export class SpaService {
         },
         service: {
           select: {
+            id: true,
             name: true,
             description: true,
+            price: true,
           },
         },
         pet: true,
@@ -232,6 +248,37 @@ export class SpaService {
       orderBy: {
         scheduledAt: 'desc',
       },
+    });
+
+    const allSubServiceIds = Array.from(
+      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+    );
+
+    const subServicesList =
+      allSubServiceIds.length > 0
+        ? await this.prisma.spaService.findMany({
+            where: { id: { in: allSubServiceIds } },
+            select: { id: true, name: true, price: true, description: true },
+          })
+        : [];
+
+    const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
+
+    return bookings.map((b) => {
+      const subServices = (b.subServiceIds || [])
+        .map((id) => subServicesMap.get(id))
+        .filter(Boolean);
+
+      const mainPrice = b.priceSnapshot || b.service?.price || 0;
+      const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
+      const computedTotalPrice = Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+
+      return {
+        ...b,
+        priceSnapshot: mainPrice,
+        totalPrice: computedTotalPrice,
+        subServices,
+      };
     });
   }
 
@@ -274,20 +321,12 @@ export class SpaService {
   async getStaffBookings(staffId: string) {
     await this.autoUpdateBookingStatuses();
 
-    const staffProfile = await this.prisma.spaStaff.findUnique({
-      where: { userId: staffId },
-    });
-    const branchId = staffProfile?.addressSpaId;
-
-    return this.prisma.spaBooking.findMany({
+    const bookings = await this.prisma.spaBooking.findMany({
       where: {
-        OR: [
-          { staffId },
-          ...(branchId ? [{ addressSpaId: branchId }] : []),
-        ],
+        staffId: staffId,
       },
       include: {
-        brand: {
+        category: {
           select: {
             name: true,
           },
@@ -301,8 +340,10 @@ export class SpaService {
         },
         service: {
           select: {
+            id: true,
             name: true,
             description: true,
+            price: true,
           },
         },
         user: {
@@ -318,6 +359,37 @@ export class SpaService {
       orderBy: {
         scheduledAt: 'asc',
       },
+    });
+
+    const allSubServiceIds = Array.from(
+      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+    );
+
+    const subServicesList =
+      allSubServiceIds.length > 0
+        ? await this.prisma.spaService.findMany({
+            where: { id: { in: allSubServiceIds } },
+            select: { id: true, name: true, price: true, description: true },
+          })
+        : [];
+
+    const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
+
+    return bookings.map((b) => {
+      const subServices = (b.subServiceIds || [])
+        .map((id) => subServicesMap.get(id))
+        .filter(Boolean);
+
+      const mainPrice = b.priceSnapshot || b.service?.price || 0;
+      const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
+      const computedTotalPrice = Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+
+      return {
+        ...b,
+        priceSnapshot: mainPrice,
+        totalPrice: computedTotalPrice,
+        subServices,
+      };
     });
   }
 
@@ -428,7 +500,7 @@ export class SpaService {
       where: { id: bookingId },
       data: updatedData,
       include: {
-        brand: {
+        category: {
           select: {
             name: true,
           },
@@ -502,33 +574,40 @@ export class SpaService {
 
   async autoUpdateBookingStatuses() {
     const now = new Date();
+    const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
 
-    // 1. ASSIGNED -> LATE if scheduledAt in past and not yet in progress
-    const lateBookings = await this.prisma.spaBooking.findMany({
-      where: {
-        status: SpaBookingStatus.ASSIGNED,
-        scheduledAt: { lt: now },
-      },
-    });
-    if (lateBookings.length > 0) {
-      await this.prisma.spaBooking.updateMany({
-        where: { id: { in: lateBookings.map((b) => b.id) } },
-        data: { status: SpaBookingStatus.LATE },
-      });
-    }
-
-    // 2. LATE -> NO_SHOW if 15 minutes past scheduledAt without check-in
-    const fifteenMinsAgo = new Date(now.getTime() - 15 * 60 * 1000);
+    // 1. Any booking 30+ minutes past scheduledAt without check-in -> NO_SHOW automatically
     const noShowBookings = await this.prisma.spaBooking.findMany({
       where: {
-        status: SpaBookingStatus.LATE,
-        scheduledAt: { lt: fifteenMinsAgo },
+        status: {
+          in: [
+            SpaBookingStatus.PENDING,
+            SpaBookingStatus.CONFIRMED,
+            SpaBookingStatus.ASSIGNED,
+            SpaBookingStatus.LATE,
+          ],
+        },
+        scheduledAt: { lt: thirtyMinsAgo },
       },
     });
     if (noShowBookings.length > 0) {
       await this.prisma.spaBooking.updateMany({
         where: { id: { in: noShowBookings.map((b) => b.id) } },
         data: { status: SpaBookingStatus.NO_SHOW },
+      });
+    }
+
+    // 2. ASSIGNED -> LATE if scheduledAt in past (0 to 30 mins ago) and not yet in progress
+    const lateBookings = await this.prisma.spaBooking.findMany({
+      where: {
+        status: SpaBookingStatus.ASSIGNED,
+        scheduledAt: { lt: now, gte: thirtyMinsAgo },
+      },
+    });
+    if (lateBookings.length > 0) {
+      await this.prisma.spaBooking.updateMany({
+        where: { id: { in: lateBookings.map((b) => b.id) } },
+        data: { status: SpaBookingStatus.LATE },
       });
     }
   }
@@ -590,8 +669,13 @@ export class SpaService {
     });
     const statusDistribution = Object.entries(statusCountMap).map(([status, value]) => ({ status, value }));
 
+    const unconfirmedBookingsCount = bookings.filter(
+      (b) => b.status === SpaBookingStatus.PENDING
+    ).length;
+
     return {
       todayBookingsCount: todayBookings.length,
+      unconfirmedBookingsCount,
       completedBookingsCount: completedBookings.length,
       totalRevenue,
       staffCount,
@@ -614,38 +698,184 @@ export class SpaService {
   }
 
   async getManagerServices(managerId: string) {
-    const services = await this.prisma.spaService.findMany({
-      include: {
+    const [services, allBookings] = await Promise.all([
+      this.prisma.spaService.findMany({
+        include: {
+          category: {
+            select: { name: true },
+          },
+        },
+      }),
+      this.prisma.spaBooking.findMany({
+        select: { serviceId: true, subServiceIds: true },
+      }),
+    ]);
+
+    // Compute exact booking counts including main service & sub-services (subServiceIds)
+    const bookingCountsMap: Record<string, number> = {};
+    for (const b of allBookings) {
+      if (b.serviceId) {
+        bookingCountsMap[b.serviceId] = (bookingCountsMap[b.serviceId] || 0) + 1;
+      }
+      if (Array.isArray(b.subServiceIds)) {
+        for (const subId of b.subServiceIds) {
+          bookingCountsMap[subId] = (bookingCountsMap[subId] || 0) + 1;
+        }
+      }
+    }
+
+    const servicesWithCount = services.map((s) => ({
+      ...s,
+      _count: {
+        bookings: bookingCountsMap[s.id] || 0,
+      },
+    }));
+
+    return servicesWithCount.sort((a, b) => b._count.bookings - a._count.bookings);
+  }
+
+  async getManagerCategories(managerId: string) {
+    const [categories, allBookings] = await Promise.all([
+      this.prisma.spaCategory.findMany({
+        where: {
+          OR: [
+            { managerId },
+            { managerId: null },
+          ],
+        },
+        include: {
+          services: {
+            select: { id: true },
+          },
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+      this.prisma.spaBooking.findMany({
+        select: { categoryId: true, serviceId: true, subServiceIds: true },
+      }),
+    ]);
+
+    return categories.map((c) => {
+      const serviceIds = c.services.map((s) => s.id);
+      let catBookingCount = 0;
+
+      for (const b of allBookings) {
+        const isDirectCat = b.categoryId === c.id;
+        const isMainInCat = b.serviceId ? serviceIds.includes(b.serviceId) : false;
+        const isSubInCat = Array.isArray(b.subServiceIds)
+          ? b.subServiceIds.some((id) => serviceIds.includes(id))
+          : false;
+
+        if (isDirectCat || isMainInCat || isSubInCat) {
+          catBookingCount++;
+        }
+      }
+
+      return {
+        ...c,
         _count: {
-          select: { bookings: true },
+          services: c.services.length,
+          bookings: catBookingCount,
         },
-        brand: {
-          select: { name: true },
-        },
+      };
+    });
+  }
+
+  async createManagerCategory(
+    managerId: string,
+    dto: {
+      name: string;
+      description?: string;
+      isMain?: boolean;
+      status?: ApprovalStatus;
+    },
+  ) {
+    if (!dto.name || dto.name.trim().length < 2) {
+      throw new BadRequestException('Tên danh mục phải có ít nhất 2 ký tự.');
+    }
+
+    return this.prisma.spaCategory.create({
+      data: {
+        name: dto.name.trim(),
+        description: dto.description ? dto.description.trim() : null,
+        isMain: dto.isMain ?? true,
+        status: dto.status || ApprovalStatus.ACTIVE,
+        managerId,
+      },
+    });
+  }
+
+  async updateManagerCategory(
+    managerId: string,
+    categoryId: string,
+    dto: {
+      name?: string;
+      description?: string;
+      isMain?: boolean;
+      status?: ApprovalStatus;
+    },
+  ) {
+    const existing = await this.prisma.spaCategory.findUnique({
+      where: { id: categoryId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Danh mục không tồn tại.');
+    }
+
+    if (existing.managerId && existing.managerId !== managerId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa danh mục này.');
+    }
+
+    const data: any = {};
+    if (dto.name !== undefined) {
+      if (!dto.name || dto.name.trim().length < 2) {
+        throw new BadRequestException('Tên danh mục phải có ít nhất 2 ký tự.');
+      }
+      data.name = dto.name.trim();
+    }
+    if (dto.description !== undefined) data.description = dto.description ? dto.description.trim() : null;
+    if (dto.isMain !== undefined) data.isMain = dto.isMain;
+    if (dto.status !== undefined) data.status = dto.status;
+
+    return this.prisma.spaCategory.update({
+      where: { id: categoryId },
+      data,
+    });
+  }
+
+  async deleteManagerCategory(managerId: string, categoryId: string) {
+    const existing = await this.prisma.spaCategory.findUnique({
+      where: { id: categoryId },
+      include: {
+        _count: { select: { services: true } },
       },
     });
 
-    return services.sort((a, b) => b._count.bookings - a._count.bookings);
-  }
+    if (!existing) {
+      throw new NotFoundException('Danh mục không tồn tại.');
+    }
 
-  async getManagerBrands(managerId: string) {
-    return this.prisma.spaBrand.findMany({
-      where: {
-        OR: [
-          { managerId },
-          { managerId: null },
-        ],
-      },
-      orderBy: {
-        name: 'asc',
-      },
+    if (existing.managerId && existing.managerId !== managerId) {
+      throw new ForbiddenException('Bạn không có quyền xóa danh mục này.');
+    }
+
+    if (existing._count.services > 0) {
+      throw new BadRequestException(`Không thể xóa danh mục đang chứa ${existing._count.services} dịch vụ!`);
+    }
+
+    return this.prisma.spaCategory.delete({
+      where: { id: categoryId },
     });
   }
 
   async createManagerService(
     managerId: string,
     dto: {
-      brandId: string;
+      brandId?: string;
+      categoryId?: string;
       name: string;
       description?: string;
       price: number;
@@ -657,22 +887,23 @@ export class SpaService {
       isMain?: boolean;
     },
   ) {
-    const brand = await this.prisma.spaBrand.findFirst({
+    const catId = dto.categoryId || dto.brandId;
+    const category = await this.prisma.spaCategory.findFirst({
       where: {
-        id: dto.brandId,
+        id: catId,
         OR: [
           { managerId },
           { managerId: null },
         ],
       },
     });
-    if (!brand) {
-      throw new ForbiddenException('Thương hiệu Spa không tồn tại hoặc bạn không có quyền.');
+    if (!category) {
+      throw new ForbiddenException('Danh mục Spa không tồn tại hoặc bạn không có quyền.');
     }
 
     return this.prisma.spaService.create({
       data: {
-        brandId: dto.brandId,
+        categoryId: catId!,
         name: dto.name,
         description: dto.description || null,
         price: Number(dto.price),
@@ -692,6 +923,7 @@ export class SpaService {
     serviceId: string,
     dto: {
       brandId?: string;
+      categoryId?: string;
       name?: string;
       description?: string;
       price?: number;
@@ -706,19 +938,20 @@ export class SpaService {
   ) {
     const service = await this.prisma.spaService.findUnique({
       where: { id: serviceId },
-      include: { brand: true },
+      include: { category: true },
     });
 
     if (!service) {
       throw new NotFoundException('Dịch vụ không tồn tại.');
     }
 
-    if (service.brand.managerId && service.brand.managerId !== managerId) {
+    if (service.category.managerId && service.category.managerId !== managerId) {
       throw new ForbiddenException('Bạn không quản lý dịch vụ này.');
     }
 
     const data: any = {};
-    if (dto.brandId !== undefined) data.brandId = dto.brandId;
+    const catId = dto.categoryId || dto.brandId;
+    if (catId !== undefined) data.categoryId = catId;
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.price !== undefined) data.price = Number(dto.price);
@@ -746,23 +979,66 @@ export class SpaService {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
     }
 
-    return this.prisma.spaBooking.findMany({
+    const bookings = await this.prisma.spaBooking.findMany({
       where: { addressSpaId: branchId },
       include: {
         service: {
-          select: { name: true, price: true, durationMin: true },
+          select: { id: true, name: true, price: true, durationMin: true, description: true },
         },
         user: {
-          select: { name: true, email: true, phone: true, avatarUrl: true },
+          select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
         },
         pet: true,
         staff: {
-          select: { name: true, email: true, avatarUrl: true },
+          select: { id: true, name: true, email: true, avatarUrl: true },
         },
       },
-      orderBy: {
-        scheduledAt: 'desc',
-      },
+    });
+
+    const allSubServiceIds = Array.from(
+      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+    );
+
+    const subServicesList =
+      allSubServiceIds.length > 0
+        ? await this.prisma.spaService.findMany({
+            where: { id: { in: allSubServiceIds } },
+            select: { id: true, name: true, price: true, description: true },
+          })
+        : [];
+
+    const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
+
+    const mappedBookings = bookings.map((b) => {
+      const subServices = (b.subServiceIds || [])
+        .map((id) => subServicesMap.get(id))
+        .filter(Boolean);
+
+      const mainPrice = b.priceSnapshot || b.service?.price || 0;
+      const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
+      const computedTotalPrice = Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+
+      return {
+        ...b,
+        priceSnapshot: mainPrice,
+        totalPrice: computedTotalPrice,
+        subServices,
+      };
+    });
+
+    // Priority Sort: 1. PENDING (unconfirmed), 2. CONFIRMED without staff, 3. Chronological by scheduledAt asc
+    return mappedBookings.sort((a, b) => {
+      const getPriority = (item: any) => {
+        if (item.status === SpaBookingStatus.PENDING) return 1;
+        if (item.status === SpaBookingStatus.CONFIRMED && !item.staffId) return 2;
+        return 3;
+      };
+
+      const prioA = getPriority(a);
+      const prioB = getPriority(b);
+
+      if (prioA !== prioB) return prioA - prioB;
+      return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
     });
   }
 
@@ -1198,14 +1474,25 @@ export class SpaService {
 
     const timeSlots = [
       '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-      '17:00', '17:30',
+      '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+      '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
     ];
 
     const result = [];
 
     for (const timeStr of timeSlots) {
       const [hours, minutes] = timeStr.split(':').map(Number);
+      const startMins = hours * 60 + minutes;
+      const endMins = startMins + durationMin;
+
+      // Filter out slots that start before 09:00 or end after 18:00
+      const isValidOperatingHours = startMins >= 9 * 60 && endMins <= 18 * 60;
+
+      // Hide time slot if it extends past 18:00
+      if (!isValidOperatingHours) {
+        continue;
+      }
+
       const slotStart = new Date(
         targetDate.getFullYear(),
         targetDate.getMonth(),
@@ -1248,22 +1535,23 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
   for (const b of staffBookings) {
     if (
       b.status === SpaBookingStatus.CANCELLED ||
-      b.status === SpaBookingStatus.NO_SHOW ||
-      b.status === SpaBookingStatus.COMPLETED
+      b.status === SpaBookingStatus.NO_SHOW
     ) {
       continue;
     }
     let start = new Date(b.timeStartExpected || b.scheduledAt);
-    const duration = b.service?.durationMin || 30;
-    let end = new Date(b.timeEndExpected || start.getTime() + duration * 60 * 1000);
+    const duration = b.service ? (b.service.durationMax || b.service.durationMin || 30) : 30;
+    let end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
 
     if (b.status === SpaBookingStatus.IN_PROGRESS && b.timeStartReal) {
       start = new Date(b.timeStartReal);
       end = new Date(start.getTime() + duration * 60 * 1000);
+    } else if (b.status === SpaBookingStatus.COMPLETED && b.timeEndReal) {
+      end = new Date(b.timeEndReal);
     }
 
     if (start < candidateEnd && end > candidateStart) {
-      return true; // Overlaps
+      return true; // Overlaps - staff is busy
     }
   }
   return false;

@@ -161,7 +161,8 @@ export interface PaginatedResponse<T> {
 
 export interface SpaServiceType {
   id: string;
-  brandId: string;
+  categoryId?: string;
+  brandId?: string;
   branchId?: string;
   name: string;
   description: string | null;
@@ -175,6 +176,11 @@ export interface SpaServiceType {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  category?: {
+    id?: string;
+    name: string;
+    isMain?: boolean;
+  };
   brand?: {
     id: string;
     name: string;
@@ -201,6 +207,7 @@ export interface SpaBranchType {
 
 export interface SpaBookingType {
   id: string;
+  categoryId?: string | null;
   brandId?: string | null;
   branchId?: string | null;
   serviceId: string | null;
@@ -228,6 +235,9 @@ export interface SpaBookingType {
   issueReported?: string | null;
   createdAt: string;
   updatedAt: string;
+  category?: {
+    name: string;
+  } | null;
   brand?: {
     name: string;
   } | null;
@@ -235,9 +245,17 @@ export interface SpaBookingType {
     name: string;
   } | null;
   service?: {
+    id?: string;
     name: string;
     description: string | null;
+    price?: number;
   } | null;
+  subServices?: Array<{
+    id: string;
+    name: string;
+    price: number;
+    description?: string | null;
+  }>;
   user?: User | null;
   pet?: any | null;
   staff?: {

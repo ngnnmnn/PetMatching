@@ -15,9 +15,15 @@ import {
   RefreshCw,
   Phone,
   Plus,
-  UserCheck
+  UserCheck,
+  LogOut,
+  Sparkles,
+  X,
+  History,
+  Search,
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -46,6 +52,18 @@ export default function SpaStaffPage() {
   const [addingSubServicesForId, setAddingSubServicesForId] = useState<string | null>(null);
   const [allSubServices, setAllSubServices] = useState<SpaServiceType[]>([]);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // History modal state
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('user');
+    window.dispatchEvent(new Event('auth-change'));
+    router.replace('/login');
+  };
 
   // States for the inline forms per booking
   const [editStates, setEditStates] = useState<Record<string, {
@@ -54,6 +72,63 @@ export default function SpaStaffPage() {
     photoAfter: string;
     issueReported: string;
   }>>({});
+
+  // Helper to resolve subServices for a booking
+  const getBookingSubServices = (booking: SpaBookingType) => {
+    if (booking.subServices && booking.subServices.length > 0) {
+      return booking.subServices;
+    }
+    if (booking.subServiceIds && booking.subServiceIds.length > 0) {
+      return booking.subServiceIds
+        .map((id) => allSubServices.find((s) => s.id === id))
+        .filter((s): s is SpaServiceType => Boolean(s));
+    }
+    return [];
+  };
+
+  // Helper to get available addons for staff to add
+  const getAvailableAddonsForBooking = (booking: SpaBookingType) => {
+    if (!booking) return [];
+
+    const petSpecies = booking.petSpecies || booking.pet?.species || null;
+    const petWeight = booking.petWeight || booking.pet?.weight || null;
+    const numWeight = petWeight ? Number(petWeight) : 0;
+
+    // Already selected subService IDs
+    const existingSubServiceIds = new Set(booking.subServiceIds || []);
+
+    // Main service name and description
+    const mainServiceName = (booking.service?.name || '').toLowerCase();
+    const mainServiceDesc = (booking.service?.description || '').toLowerCase();
+
+    return allSubServices.filter((sub) => {
+      // 1. Exclude if already chosen
+      if (existingSubServiceIds.has(sub.id)) return false;
+
+      // 2. Exclude if sub-service is already included in main combo package
+      const subNameClean = sub.name.replace(/\s*\([^)]*\)/g, '').toLowerCase().trim();
+      if (mainServiceName.includes(subNameClean) || mainServiceDesc.includes(subNameClean)) {
+        return false;
+      }
+
+      // 3. Filter by pet species if specified
+      if (sub.species && petSpecies && sub.species !== petSpecies) {
+        return false;
+      }
+
+      // 4. Filter by pet weight bracket if specified
+      if (sub.petWeightMin !== null || sub.petWeightMax !== null) {
+        const minW = sub.petWeightMin ?? 0;
+        const maxW = sub.petWeightMax ?? 999;
+
+        if (numWeight < minW || (numWeight >= maxW && maxW !== 100)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -299,7 +374,33 @@ export default function SpaStaffPage() {
 
   return (
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-16">
-      <AppHeader sectionLabel="Spa Staff" />
+      {/* Staff Top Header Bar */}
+      <header className="sticky top-0 z-30 border-b border-[#EFEAE2] bg-white/95 backdrop-blur-sm px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-[#6D28D9] text-white shadow-sm">
+            <Scissors className="size-5" />
+          </div>
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#6D28D9]">PetMatching Spa Staff</span>
+            <h1 className="text-sm font-black text-[var(--text-main)]">Trang Làm Việc Nhân Viên</h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:block text-right">
+            <p className="text-xs font-black text-[var(--text-main)]">{currentUser?.name || 'Nhân viên Spa'}</p>
+            <p className="text-[10px] text-[var(--text-muted)] font-bold">{currentUser?.email}</p>
+          </div>
+          <Button
+            onClick={() => setShowLogoutConfirm(true)}
+            variant="outline"
+            size="sm"
+            className="border-purple-200 text-purple-700 hover:bg-purple-50 font-bold gap-2 text-xs h-9"
+          >
+            <LogOut className="size-3.5" />
+            Đăng xuất
+          </Button>
+        </div>
+      </header>
 
       {/* Purple banner */}
       <section className="bg-[#6D28D9] text-white py-8 px-4 shadow-md">
@@ -342,10 +443,11 @@ export default function SpaStaffPage() {
         
         {/* Controls: Date Picker & Filters */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               type="date"
               value={selectedDate}
+              min={todayStr}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="h-10 rounded-lg border border-[var(--border-color)] bg-white px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-700"
             />
@@ -358,6 +460,15 @@ export default function SpaStaffPage() {
                 Hôm nay
               </Button>
             )}
+
+            <Button
+              onClick={() => setHistoryModalOpen(true)}
+              variant="outline"
+              className="h-10 border-purple-300 text-purple-800 hover:bg-purple-50 font-extrabold gap-2 text-xs rounded-lg shadow-2xs"
+            >
+              <History className="size-4 text-purple-600" />
+              Lịch Sử Đơn Cũ ({bookings.filter((b) => b.status === 'COMPLETED').length})
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 bg-gray-100 p-1 rounded-lg border">
@@ -383,6 +494,142 @@ export default function SpaStaffPage() {
             ))}
           </div>
         </div>
+
+        {/* History Modal for Completed Bookings */}
+      {historyModalOpen && (() => {
+        const completedBookings = bookings.filter((b) => b.status === 'COMPLETED');
+        const filteredHistory = completedBookings.filter((b) => {
+          if (!historySearchQuery.trim()) return true;
+          const q = historySearchQuery.toLowerCase().trim();
+          return (
+            (b.petName && b.petName.toLowerCase().includes(q)) ||
+            (b.user?.name && b.user.name.toLowerCase().includes(q)) ||
+            (b.service?.name && b.service.name.toLowerCase().includes(q)) ||
+            b.id.toLowerCase().includes(q)
+          );
+        });
+
+        const totalRevenue = completedBookings.reduce(
+          (sum, b) => sum + (b.totalPrice || b.priceSnapshot || 0),
+          0
+        );
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-3xl w-full p-6 space-y-5 shadow-2xl border border-gray-200 max-h-[85vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-lg text-purple-950 flex items-center gap-2">
+                      <History className="size-5 text-purple-600" /> Lịch Sử Đơn Cũ Đã Hoàn Thành
+                    </h3>
+                    <span className="text-xs font-bold bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full border border-green-200">
+                      {completedBookings.length} ca đã làm
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Tổng doanh thu dịch vụ đã xử lý: <strong className="text-purple-800">{totalRevenue.toLocaleString('vi-VN')}đ</strong>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setHistoryModalOpen(false)}
+                  className="rounded-full p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Tìm theo tên thú cưng, tên khách hàng hoặc mã đơn..."
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  className="pl-10 h-10 text-xs bg-gray-50/80 border-gray-200"
+                />
+              </div>
+
+              {/* History items list */}
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[250px]">
+                {filteredHistory.length === 0 ? (
+                  <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed text-gray-400">
+                    <p className="text-xs font-semibold">Chưa tìm thấy đơn hoàn thành nào phù hợp.</p>
+                  </div>
+                ) : (
+                  filteredHistory.map((b) => {
+                    const subList = getBookingSubServices(b);
+                    return (
+                      <div
+                        key={b.id}
+                        className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-2xs hover:border-purple-300 transition"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-gray-800">
+                              📅 {formatDateVietnamese(b.scheduledAt.split('T')[0])} ({formatTimeSlot(b.scheduledAt)})
+                            </span>
+                            <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border">
+                              #{b.id.slice(-6).toUpperCase()}
+                            </span>
+                          </div>
+                          <span className="text-xs font-black text-purple-800">
+                            {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          {/* Pet & Customer */}
+                          <div className="space-y-1">
+                            <p className="font-extrabold text-purple-950 flex items-center gap-1.5">
+                              🐾 {b.petName} ({b.petSpecies === 'CAT' ? 'Mèo' : 'Chó'} • {b.petWeight || 3}kg)
+                            </p>
+                            <p className="text-gray-500 flex items-center gap-1">
+                              <UserIcon className="size-3 text-gray-400" /> Khách: {b.user?.name || 'Khách hàng'}
+                            </p>
+                          </div>
+
+                          {/* Services */}
+                          <div className="space-y-1">
+                            <p className="font-bold text-gray-900">✂️ Gói chính: {b.service?.name || 'Chăm sóc Spa'}</p>
+                            {subList.length > 0 && (
+                              <div className="text-[11px] text-green-700 font-semibold space-y-0.5">
+                                {subList.map((sub, i) => (
+                                  <span key={i} className="block">+ {sub.name} ({(sub.price || 0).toLocaleString('vi-VN')}đ)</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Condition report after grooming */}
+                        {b.petConditionAfter && (
+                          <div className="p-2.5 bg-green-50/60 border border-green-200 rounded-lg text-xs text-green-950 space-y-1">
+                            <span className="font-bold text-green-800 block text-[11px]">Báo cáo kết quả:</span>
+                            <p className="text-[11px] leading-relaxed">{b.petConditionAfter}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex justify-end pt-3 border-t">
+                <Button
+                  onClick={() => setHistoryModalOpen(false)}
+                  className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-extrabold px-6"
+                >
+                  Đóng
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
         {/* Dashboard Bookings Listing */}
         {filteredBookings.length === 0 ? (
@@ -494,32 +741,67 @@ export default function SpaStaffPage() {
                         </div>
                       </div>
 
-                      {/* Service Package & Addons */}
-                      <div className="rounded-xl bg-orange-50/70 border border-orange-100 px-4 py-3 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-orange-600 block uppercase font-extrabold tracking-wider">Gói Dịch Vụ</span>
-                          <Button
-                            variant="ghost"
-                            onClick={() => {
-                              setAddingSubServicesForId(booking.id);
-                              setSelectedAddonIds([]);
-                            }}
-                            className="text-[10px] text-purple-700 hover:text-purple-900 font-bold p-0 h-auto"
-                          >
-                            + Thêm dịch vụ lẻ
-                          </Button>
+                      {/* Service Package & All Sub Services */}
+                      <div className="rounded-xl bg-orange-50/70 border border-orange-200 p-4 space-y-3">
+                        <div className="flex items-center justify-between border-b border-orange-200/80 pb-2">
+                          <span className="text-[10px] text-orange-700 block uppercase font-black tracking-wider">⚡ Chi Tiết Dịch Vụ</span>
+                          {(booking.status === 'ASSIGNED' || booking.status === 'CHECK_IN' || booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED') && (
+                            <Button
+                              variant="ghost"
+                              onClick={() => {
+                                setAddingSubServicesForId(booking.id);
+                                setSelectedAddonIds([]);
+                              }}
+                              className="text-[11px] text-purple-700 hover:text-purple-900 font-extrabold p-0 h-auto cursor-pointer"
+                            >
+                              + Thêm dịch vụ lẻ
+                            </Button>
+                          )}
                         </div>
-                        <span className="font-black text-sm text-orange-950 block">
-                          {booking.service?.name || 'Gói Chăm Sóc Spa'}
-                        </span>
-                        {booking.subServiceIds && booking.subServiceIds.length > 0 && (
-                          <div className="text-[11px] text-orange-800 font-medium pt-1">
-                            <span className="font-bold">Dịch vụ lẻ đi kèm:</span> {booking.subServiceIds.length} dịch vụ
+
+                        {/* Main Service */}
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wider block">Dịch vụ chính:</span>
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-sm text-gray-900">
+                              {booking.service?.name || 'Gói Chăm Sóc Spa'}
+                            </span>
+                            <span className="text-xs font-bold text-gray-700">
+                              {(booking.service?.price || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                            </span>
                           </div>
-                        )}
-                        <div className="text-xs text-orange-800 font-black pt-1 flex items-center justify-between">
-                          <span>Tổng chi phí:</span>
-                          <span className="text-sm font-black text-purple-800">
+                        </div>
+
+                        {/* Sub Services (Originally chosen + Added by staff) */}
+                        {(() => {
+                          const subList = getBookingSubServices(booking);
+                          if (subList.length === 0) return null;
+                          return (
+                            <div className="space-y-1.5 pt-2 border-t border-orange-200/80">
+                              <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wider block">
+                                Dịch vụ lẻ ({subList.length} dịch vụ đã chọn & thêm):
+                              </span>
+                              <div className="space-y-1">
+                                {subList.map((sub, idx) => (
+                                  <div key={sub.id || idx} className="flex items-center justify-between text-xs bg-white/80 p-2 rounded-lg border border-orange-100">
+                                    <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                                      <span className="size-1.5 rounded-full bg-green-500 shrink-0" />
+                                      {sub.name}
+                                    </span>
+                                    <span className="font-extrabold text-green-700">
+                                      + {(sub.price || 0).toLocaleString('vi-VN')}đ
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Total Price */}
+                        <div className="text-xs text-gray-900 font-black pt-2 border-t border-orange-200 flex items-center justify-between">
+                          <span>Tổng chi phí đơn:</span>
+                          <span className="text-base font-black text-purple-800">
                             {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
                           </span>
                         </div>
@@ -649,51 +931,103 @@ export default function SpaStaffPage() {
       </div>
 
       {/* Modal for adding sub services by staff */}
-      {addingSubServicesForId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
-            <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
-              <Plus className="size-5 text-purple-600" /> Thêm Dịch Vụ Lẻ Cho Khách Hang
-            </h3>
-            <p className="text-xs text-gray-500">
-              Chọn các dịch vụ lẻ phát sinh trực tiếp tại cửa hàng để cập nhật vào đơn hàng.
-            </p>
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {allSubServices.map((sub) => {
-                const isSelected = selectedAddonIds.includes(sub.id);
-                return (
-                  <div
-                    key={sub.id}
-                    onClick={() =>
-                      setSelectedAddonIds((prev) =>
-                        prev.includes(sub.id) ? prev.filter((i) => i !== sub.id) : [...prev, sub.id]
-                      )
-                    }
-                    className={`p-3 border rounded-xl cursor-pointer flex items-center justify-between text-xs ${
-                      isSelected ? 'border-purple-600 bg-purple-50 font-bold' : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>{sub.name}</span>
-                    <span className="font-black text-purple-700">{sub.price.toLocaleString('vi-VN')}đ</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button variant="outline" onClick={() => setAddingSubServicesForId(null)} className="text-xs">
-                Hủy
-              </Button>
-              <Button
-                onClick={handleAddSubServices}
-                disabled={selectedAddonIds.length === 0 || !!actionLoading}
-                className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold"
-              >
-                Xác nhận thêm ({selectedAddonIds.length})
-              </Button>
+      {addingSubServicesForId && (() => {
+        const currentBooking = bookings.find((b) => b.id === addingSubServicesForId);
+        const availableAddons = currentBooking ? getAvailableAddonsForBooking(currentBooking) : [];
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-gray-200">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div>
+                  <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
+                    <Plus className="size-5 text-purple-600" /> Thêm Dịch Vụ Lẻ Cho Khách Hàng
+                  </h3>
+                  {currentBooking && (
+                    <p className="text-xs text-purple-700 font-bold mt-0.5">
+                      Bé: {currentBooking.petName} ({currentBooking.petSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {currentBooking.petWeight || 3}kg)
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setAddingSubServicesForId(null)}
+                  className="text-gray-400 hover:text-gray-600 rounded-full p-1"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Dưới đây là các dịch vụ lẻ chưa chọn phù hợp với cân nặng ({currentBooking?.petWeight || 3}kg) và chưa có trong gói:
+              </p>
+
+              {availableAddons.length === 0 ? (
+                <div className="p-6 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                  <p className="text-xs text-gray-500 font-medium">
+                    Không có dịch vụ lẻ khả dụng nào chưa chọn phù hợp với bé này.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {availableAddons.map((sub) => {
+                    const isSelected = selectedAddonIds.includes(sub.id);
+                    return (
+                      <div
+                        key={sub.id}
+                        onClick={() =>
+                          setSelectedAddonIds((prev) =>
+                            prev.includes(sub.id) ? prev.filter((i) => i !== sub.id) : [...prev, sub.id]
+                          )
+                        }
+                        className={`p-3 border rounded-xl cursor-pointer flex items-center justify-between transition ${
+                          isSelected
+                            ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-500/30'
+                            : 'border-gray-200 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="space-y-0.5">
+                          <span className="font-extrabold text-xs text-gray-900 block">{sub.name}</span>
+                          {sub.description && (
+                            <p className="text-[11px] text-gray-500 line-clamp-1">{sub.description}</p>
+                          )}
+                        </div>
+                        <span className="font-black text-xs text-purple-700 shrink-0 ml-2">
+                          + {sub.price.toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <Button variant="outline" onClick={() => setAddingSubServicesForId(null)} className="text-xs font-bold">
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handleAddSubServices}
+                  disabled={selectedAddonIds.length === 0 || !!actionLoading}
+                  className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-black px-4"
+                >
+                  {actionLoading ? 'Đang thêm...' : `Xác nhận thêm (${selectedAddonIds.length})`}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Logout Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
+        title="Xác nhận đăng xuất"
+        message="Bạn có chắc chắn muốn đăng xuất khỏi tài khoản nhân viên không?"
+        confirmText="Đăng xuất"
+        cancelText="Hủy bỏ"
+        isDanger={true}
+      />
     </main>
   );
 }

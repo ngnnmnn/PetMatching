@@ -15,6 +15,8 @@ export default function HomeRoute() {
       router.replace('/admin');
     } else if (user?.role === 'STORE_MANAGER' || user?.role === 'SPA_MANAGER') {
       router.replace('/manager');
+    } else if (user?.role === 'SPA_STAFF') {
+      router.replace('/spa/staff');
     }
   }, [router]);
 

@@ -805,7 +805,7 @@ export class AdminService {
   getSpaServices() {
     return this.prisma.spaService.findMany({
       orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
-      include: { brand: { select: { name: true } }, _count: { select: { bookings: true } } },
+      include: { category: { select: { name: true } }, _count: { select: { bookings: true } } },
     });
   }
 
@@ -894,14 +894,14 @@ export class AdminService {
     return branch;
   }
 
-  getSpaBookings(brandId?: string) {
+  getSpaBookings(categoryId?: string) {
     return this.prisma.spaBooking.findMany({
-      where: brandId ? { brandId } : undefined,
+      where: categoryId ? { categoryId } : undefined,
       orderBy: { scheduledAt: 'desc' },
       include: {
         user: { select: { id: true, name: true, email: true } },
         staff: { select: { id: true, name: true, email: true } },
-        brand: { select: { id: true, name: true, status: true } },
+        category: { select: { id: true, name: true, status: true } },
         service: { select: { id: true, name: true, price: true, durationMin: true } },
       },
     });

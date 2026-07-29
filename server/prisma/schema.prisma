@@ -42,7 +42,7 @@ model User {
   reviews             ProductReview[]
   assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
   spaBookings         SpaBooking[]
-  managedSpaBrands    SpaBrand[]        @relation("SpaManager")
+  managedSpaCategories SpaCategory[]        @relation("SpaCategoryManager")
   spaStaffProfile     SpaStaff?         @relation("UserSpaStaffProfile")
   managedStores       Store[]           @relation("StoreManager")
   wishlistItems       WishlistItem[]
@@ -390,7 +390,7 @@ model OrderItem {
   @@map("order_items")
 }
 
-model SpaBrand {
+model SpaCategory {
   id          String         @id @default(cuid())
   name        String
   description String?
@@ -402,17 +402,17 @@ model SpaBrand {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   bookings    SpaBooking[]
-  manager     User?          @relation("SpaManager", fields: [managerId], references: [id])
+  manager     User?          @relation("SpaCategoryManager", fields: [managerId], references: [id])
   services    SpaService[]
 
   @@index([status])
   @@index([managerId])
-  @@map("spa_brands")
+  @@map("spa_categories")
 }
 
 model SpaService {
   id           String       @id @default(cuid())
-  brandId      String
+  categoryId   String       @map("category_id")
   name         String
   description  String?
   species      Species?
@@ -426,15 +426,15 @@ model SpaService {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   bookings     SpaBooking[]
-  brand        SpaBrand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  category     SpaCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  @@index([brandId, isActive])
+  @@index([categoryId, isActive])
   @@map("spa_services")
 }
 
 model SpaBooking {
   id                    String           @id @default(cuid())
-  brandId               String?
+  categoryId            String?          @map("category_id")
   serviceId             String?
   mainServiceId         String?
   subServiceIds         String[]         @default([])
@@ -462,13 +462,13 @@ model SpaBooking {
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
   addressSpa            AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
-  brand                 SpaBrand?        @relation(fields: [brandId], references: [id])
+  category              SpaCategory?     @relation(fields: [categoryId], references: [id])
   pet                   Pet?             @relation(fields: [petId], references: [id])
   service               SpaService?      @relation(fields: [serviceId], references: [id])
   staff                 User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
   user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([brandId, status])
+  @@index([categoryId, status])
   @@index([userId])
   @@index([staffId])
   @@map("spa_bookings")

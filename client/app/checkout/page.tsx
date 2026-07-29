@@ -49,7 +49,7 @@ function CheckoutPageContent() {
   const [isMounted, setIsMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
+
   // Selection and promo code state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [directCheckoutItem, setDirectCheckoutItem] = useState<any | null>(null);
@@ -77,7 +77,7 @@ function CheckoutPageContent() {
   const [userNote, setUserNote] = useState('');
   const [saveAddressToDb, setSaveAddressToDb] = useState(true);
   const [setAsDefault, setSetAsDefault] = useState(false);
-  
+
   const [selectedProvinceName, setSelectedProvinceName] = useState('');
   const [selectedDistrictName, setSelectedDistrictName] = useState('');
   const [selectedWardName, setSelectedWardName] = useState('');
@@ -101,6 +101,7 @@ function CheckoutPageContent() {
   const [recipientPhoneStr, setRecipientPhoneStr] = useState('');
 
   const handleQRPaymentSuccess = async (orderId: string) => {
+    setOrderPlaced(true);
     setIsQRModalOpen(false);
     if (directCheckoutItem) {
       localStorage.removeItem('petmatch_direct_checkout_item');
@@ -180,7 +181,7 @@ function CheckoutPageContent() {
     } else {
       // Exclude from checkout list, DO NOT remove from cart database/state!
       let updatedSelectedIds: string[] = [];
-      
+
       if (selectedItemIds.length > 0) {
         updatedSelectedIds = selectedItemIds.filter((id) => id !== item.id);
       } else {
@@ -188,11 +189,11 @@ function CheckoutPageContent() {
         // we initialize it with all cart item IDs except the removed one
         updatedSelectedIds = cartItems.map((i) => i.id).filter((id) => id !== item.id);
       }
-      
+
       setSelectedItemIds(updatedSelectedIds);
       localStorage.setItem('petmatch_selected_cart_items', JSON.stringify(updatedSelectedIds));
       toast.success(`Đã bỏ sản phẩm "${item.product.name}" khỏi danh sách thanh toán.`);
-      
+
       // If no items are left to checkout, redirect to cart page
       if (updatedSelectedIds.length === 0) {
         toast.info('Không còn sản phẩm nào trong thanh toán.');
@@ -273,8 +274,8 @@ function CheckoutPageContent() {
   const checkoutItems = directCheckoutItem
     ? [directCheckoutItem]
     : selectedItemIds.length > 0
-    ? cartItems.filter((item) => selectedItemIds.includes(item.id))
-    : cartItems;
+      ? cartItems.filter((item) => selectedItemIds.includes(item.id))
+      : cartItems;
 
   // Redirect to cart if empty and not loading, unless order has been placed successfully
   useEffect(() => {
@@ -414,7 +415,7 @@ function CheckoutPageContent() {
     try {
       await usersApi.deleteAddress(addressToDeleteId);
       toast.success('Đã xóa địa chỉ thành công.');
-      
+
       const response = await usersApi.getAddresses();
       const data = response.data || [];
       setSavedAddresses(data);
@@ -632,7 +633,8 @@ function CheckoutPageContent() {
       setRecipientNameStr(name);
       setRecipientPhoneStr(phoneStr);
       setFinalAddressStr(finalAddress);
-      
+
+      setOrderPlaced(true);
       setShowSuccessModal(true);
       toast.success('Đã đặt hàng thành công!');
     } catch (err: any) {
@@ -648,6 +650,7 @@ function CheckoutPageContent() {
   };
 
   const handleCloseSuccessModal = async () => {
+    setOrderPlaced(true);
     setShowSuccessModal(false);
     if (directCheckoutItem) {
       // Direct checkout bypassing cart: Do not touch the cart database/state
@@ -703,10 +706,10 @@ function CheckoutPageContent() {
           </div>
         ) : (
           <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
+
             {/* Left side: Address & Payment */}
             <div className="lg:col-span-8 space-y-6">
-              
+
               {/* Shipping Address Box */}
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-sm space-y-4">
                 <h3 className="text-lg font-black text-[var(--text-main)] border-b border-[var(--border-color)] pb-2 flex items-center gap-2">
@@ -723,11 +726,10 @@ function CheckoutPageContent() {
                     ).map((addr) => (
                       <label
                         key={addr.id}
-                        className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${
-                          selectedAddressId === addr.id
+                        className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${selectedAddressId === addr.id
                             ? 'border-primary bg-primary/5 shadow-sm'
                             : 'border-[var(--border-color)] bg-[#FCFCFA] hover:border-gray-300'
-                        }`}
+                          }`}
                       >
                         <input
                           type="radio"
@@ -749,7 +751,7 @@ function CheckoutPageContent() {
                                 <span className="rounded bg-amber-50 text-amber-700 px-1.5 py-0.5 text-[9px] font-bold border border-amber-200">Cần cập nhật vùng nhận</span>
                               )}
                             </div>
-                            
+
                             {/* Action Buttons to Edit or Delete Address */}
                             <div className="flex items-center gap-2">
                               <button
@@ -808,11 +810,10 @@ function CheckoutPageContent() {
                     setEditingAddress(null); // Clear editing state for create
                     setIsAddressModalOpen(true);
                   }}
-                  className={`flex items-center justify-between gap-3 rounded-xl border p-4 cursor-pointer transition ${
-                    selectedAddressId === 'new' || selectedAddressId === ''
+                  className={`flex items-center justify-between gap-3 rounded-xl border p-4 cursor-pointer transition ${selectedAddressId === 'new' || selectedAddressId === ''
                       ? 'border-primary bg-primary/5 shadow-sm'
                       : 'border-[var(--border-color)] bg-[#FCFCFA] hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-2 text-xs font-extrabold text-[var(--text-main)]">
                     <input
@@ -878,11 +879,10 @@ function CheckoutPageContent() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* COD Option */}
                   <label
-                    className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${
-                      paymentMethod === 'COD'
+                    className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${paymentMethod === 'COD'
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-[var(--border-color)] bg-[#FCFCFA] hover:border-gray-300'
-                    }`}
+                      }`}
                   >
                     <input
                       type="radio"
@@ -904,11 +904,10 @@ function CheckoutPageContent() {
 
                   {/* QR Bank Transfer Option */}
                   <label
-                    className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${
-                      paymentMethod === 'QR'
+                    className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${paymentMethod === 'QR'
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-[var(--border-color)] bg-[#FCFCFA] hover:border-gray-300'
-                    }`}
+                      }`}
                   >
                     <input
                       type="radio"
@@ -949,7 +948,7 @@ function CheckoutPageContent() {
 
             {/* Right side: Summary & Submit Button */}
             <div className="lg:col-span-4 space-y-6">
-              
+
               {/* Promo Code Box */}
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-extrabold text-[var(--text-main)] mb-3 flex items-center gap-2">
@@ -1010,7 +1009,7 @@ function CheckoutPageContent() {
               {/* Order Items Summary */}
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-sm space-y-4">
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b border-[var(--border-color)]">Đơn hàng của bạn</h3>
-                
+
                 <div className="divide-y divide-[var(--border-color)] max-h-[30rem] overflow-y-auto pr-1">
                   {checkoutItems.map((item) => {
                     const price = item.product.salePrice ?? item.product.originalPrice;
@@ -1024,13 +1023,13 @@ function CheckoutPageContent() {
                             className="w-full h-full object-cover"
                           />
                         </div>
-                        
+
                         {/* Info & Quantity Selector */}
                         <div className="flex-1 min-w-0 flex flex-col justify-between">
                           <p className="text-xs font-bold text-[var(--text-main)] line-clamp-2 pr-2" title={item.product.name}>
                             {item.product.name}
                           </p>
-                          
+
                           {/* Mini Quantity Selector */}
                           <div className="flex items-center gap-2 mt-2">
                             <div className="flex items-center rounded-lg border border-[var(--border-color)] bg-white p-0.5 shadow-sm">
@@ -1052,7 +1051,7 @@ function CheckoutPageContent() {
                                 +
                               </button>
                             </div>
-                            
+
                             {/* Delete Button */}
                             <button
                               type="button"
@@ -1101,7 +1100,7 @@ function CheckoutPageContent() {
                       <span>-{formatCurrency(discountVal)}</span>
                     </div>
                   )}
-                  
+
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end text-sm">
                     <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
                     <span className="text-base font-black text-[var(--primary-color)]">{formatCurrency(finalTotal)}</span>
@@ -1162,13 +1161,13 @@ function CheckoutPageContent() {
         initialData={
           editingAddress
             ? {
-                receiverName: editingAddress.receiverName,
-                receiverPhone: editingAddress.receiverPhone,
-                province: editingAddress.province,
-                district: editingAddress.district,
-                ward: editingAddress.ward,
-                detail: editingAddress.detail,
-              }
+              receiverName: editingAddress.receiverName,
+              receiverPhone: editingAddress.receiverPhone,
+              province: editingAddress.province,
+              district: editingAddress.district,
+              ward: editingAddress.ward,
+              detail: editingAddress.detail,
+            }
             : undefined
         }
       />
@@ -1192,7 +1191,7 @@ function CheckoutPageContent() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
         >
           <div className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-2xl text-center space-y-5 animate-in zoom-in-95 duration-200 relative">
-            
+
             {/* Close Button X */}
             <button
               type="button"
@@ -1206,7 +1205,7 @@ function CheckoutPageContent() {
             <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-green-50 text-green-500">
               <CheckCircle className="size-10 fill-green-100" />
             </div>
-            
+
             <div className="space-y-2">
               <h2 className="text-xl font-black text-[var(--text-main)]">Đặt hàng thành công!</h2>
               <p className="text-xs text-[var(--text-muted)]">

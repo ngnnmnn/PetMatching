@@ -15,6 +15,8 @@ export default function RootPage() {
       router.replace('/admin');
     } else if (token && (user?.role === 'STORE_MANAGER' || user?.role === 'SPA_MANAGER')) {
       router.replace('/manager');
+    } else if (token && user?.role === 'SPA_STAFF') {
+      router.replace('/spa/staff');
     } else {
       router.replace('/home');
     }
