@@ -688,7 +688,7 @@ export class UsersService {
       try {
         const paymentLink = await this.paymentService.createPaymentLink({
           orderCode: order.orderCode,
-          amount: Math.round(dto.totalAmount),
+          amount: Math.round(order.totalAmount),
           description: `PM${order.orderCode}`,
           returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders?status=success`,
           cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel&orderId=${order.id}`,
@@ -897,6 +897,78 @@ export class UsersService {
         data: { status: 'PAYMENT_ERROR' },
       });
       throw new BadRequestException('Không thể tạo lại liên kết thanh toán PayOS. Vui lòng thử lại sau.');
+    }
+  }
+
+  async requestRefund(
+    userId: string,
+    orderId: string,
+    data: {
+      bankCode: string;
+      accountNumber: string;
+      accountName: string;
+      reason: string;
+    },
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    if (order.status !== 'PROCESSING') {
+      throw new BadRequestException('Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đã thanh toán thành công (đang xử lý).');
+    }
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        refundStatus: 'PENDING',
+        refundBankCode: data.bankCode,
+        refundAccountNumber: data.accountNumber,
+        refundAccountName: data.accountName,
+        refundReason: data.reason,
+      },
+    });
+  }
+
+  async lookupBankAccount(bankCode: string, accountNumber: string) {
+    const clientId = process.env.VIETQR_CLIENT_ID;
+    const apiKey = process.env.VIETQR_API_KEY;
+
+    if (!clientId || !apiKey) {
+      throw new BadRequestException('Chức năng kiểm tra tài khoản chưa được cấu hình khóa API VietQR.');
+    }
+
+    try {
+      const response = await fetch('https://api.vietqr.io/v2/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientId,
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          bin: bankCode,
+          accountNumber,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.code !== '00') {
+        throw new Error(data.desc || 'Tài khoản không hợp lệ hoặc lỗi tra cứu.');
+      }
+
+      return {
+        accountName: data.data.accountName,
+      };
+    } catch (error: any) {
+      console.error('VietQR Lookup failed:', error);
+      throw new BadRequestException(
+        error.message || 'Không thể tra cứu thông tin tài khoản ngân hàng này.',
+      );
     }
   }
 }

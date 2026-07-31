@@ -239,12 +239,12 @@ export default function ProductDetailPage() {
     );
   }
 
-  const discount = product.salePrice && product.originalPrice && product.salePrice < product.originalPrice
-    ? Math.round(((product.originalPrice - product.salePrice) / product.originalPrice) * 100)
+  const discount = product.salePrice && product.sellingPrice && product.salePrice < product.sellingPrice
+    ? Math.round(((product.sellingPrice - product.salePrice) / product.sellingPrice) * 100)
     : null;
 
-  const displayPrice = product.salePrice ?? product.originalPrice;
-  const hasDiscount = !!product.salePrice && product.salePrice < product.originalPrice;
+  const displayPrice = product.salePrice ?? product.sellingPrice;
+  const hasDiscount = !!product.salePrice && product.salePrice < product.sellingPrice;
   const speciesLabel =
     product.targetSpecies === 'DOG'
       ? 'Cho chó'
@@ -412,10 +412,10 @@ export default function ProductDetailPage() {
                   {hasDiscount && (
                     <>
                       <span className="text-base text-[var(--text-muted)] line-through">
-                        {formatCurrency(product.originalPrice)}
+                        {formatCurrency(product.sellingPrice)}
                       </span>
                       <span className="inline-block rounded-md bg-[var(--primary-color)]/10 px-2 py-0.5 text-xs font-black text-[var(--primary-color)]">
-                        Tiết kiệm {Math.round(100 - (displayPrice / product.originalPrice) * 100)}%
+                        Tiết kiệm {Math.round(100 - (displayPrice / product.sellingPrice) * 100)}%
                       </span>
                     </>
                   )}

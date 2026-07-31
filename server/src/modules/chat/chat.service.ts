@@ -496,7 +496,7 @@ QUY TẮC BẢO MẬT HỆ THỐNG VÀ QUYỀN RIÊNG TƯ (BẮT BUỘC TUÂN TH
           brand: true,
           category: true,
           targetSpecies: true,
-          originalPrice: true,
+          sellingPrice: true,
           salePrice: true,
           description: true,
         },

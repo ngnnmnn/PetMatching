@@ -16,7 +16,8 @@ import {
   Loader2,
   X,
   Edit2,
-  QrCode
+  QrCode,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
@@ -47,6 +48,12 @@ interface Order {
   paymentUrl?: string | null;
   ghnOrderCode?: string | null;
   shippingStatus?: string | null;
+  refundStatus?: string | null;
+  refundBankCode?: string | null;
+  refundAccountNumber?: string | null;
+  refundAccountName?: string | null;
+  refundReason?: string | null;
+  refundedAt?: string | null;
   createdAt: string;
   items: OrderItem[];
 }
@@ -172,6 +179,16 @@ export default function OrdersPage() {
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [retryLoadingId, setRetryLoadingId] = useState<string | null>(null);
 
+  // PayOS Payout States
+  const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
+  const [refundBankCode, setRefundBankCode] = useState('');
+  const [refundAccountNumber, setRefundAccountNumber] = useState('');
+  const [isLookingUpAccount, setIsLookingUpAccount] = useState(false);
+  const [refundAccountName, setRefundAccountName] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [submittingRefund, setSubmittingRefund] = useState(false);
+  const [banks, setBanks] = useState<{ bin: string; name: string; shortName: string; logo: string }[]>([]);
+
   const handleRetryPayment = async (order: Order) => {
     setRetryLoadingId(order.id);
     try {
@@ -229,6 +246,77 @@ export default function OrdersPage() {
       console.error('Failed to load orders', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (refundOrderId && banks.length === 0) {
+      fetch('https://api.vietqr.io/v2/banks')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.code === '00') {
+            setBanks(data.data || []);
+          }
+        })
+        .catch((err) => console.error('Failed to fetch banks', err));
+    }
+  }, [refundOrderId, banks.length]);
+
+  useEffect(() => {
+    if (refundBankCode && refundAccountNumber.length >= 6) {
+      const delayDebounceFn = setTimeout(async () => {
+        setIsLookingUpAccount(true);
+        try {
+          const res = await usersApi.lookupBankName(refundBankCode, refundAccountNumber);
+          if (res.data && res.data.accountName) {
+            setRefundAccountName(res.data.accountName);
+            toast.success('Xác thực tài khoản ngân hàng thành công!');
+          } else {
+            setRefundAccountName('');
+            toast.warning('Không tìm thấy tài khoản ngân hàng này. Vui lòng tự nhập tên.');
+          }
+        } catch (error) {
+          console.error('Failed to lookup bank account name', error);
+          setRefundAccountName('');
+          toast.warning('Không tìm thấy tài khoản ngân hàng. Vui lòng tự điền tên.');
+        } finally {
+          setIsLookingUpAccount(false);
+        }
+      }, 800);
+
+      return () => clearTimeout(delayDebounceFn);
+    } else {
+      setRefundAccountName('');
+    }
+  }, [refundBankCode, refundAccountNumber]);
+
+  const handleRefundSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!refundOrderId || !refundBankCode || !refundAccountNumber || !refundAccountName) {
+      toast.error('Vui lòng điền đầy đủ thông tin tài khoản nhận.');
+      return;
+    }
+
+    setSubmittingRefund(true);
+    try {
+      await usersApi.requestRefund(refundOrderId, {
+        bankCode: refundBankCode,
+        accountNumber: refundAccountNumber,
+        accountName: refundAccountName,
+        reason: refundReason,
+      });
+      toast.success('Gửi yêu cầu hoàn tiền thành công! Admin sẽ duyệt yêu cầu của bạn.');
+      setRefundOrderId(null);
+      setRefundBankCode('');
+      setRefundAccountNumber('');
+      setRefundAccountName('');
+      setRefundReason('');
+      await loadOrders();
+    } catch (err: any) {
+      console.error('Failed to submit refund request', err);
+      toast.error(err.response?.data?.message || 'Lỗi gửi yêu cầu hoàn tiền.');
+    } finally {
+      setSubmittingRefund(false);
     }
   };
 
@@ -393,6 +481,28 @@ export default function OrdersPage() {
   };
 
   const getPaymentStatusBadge = (order: Order) => {
+    if (order.refundStatus) {
+      if (order.refundStatus === 'PENDING') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700 border border-amber-200">
+            Đang chờ hoàn tiền
+          </span>
+        );
+      } else if (order.refundStatus === 'REFUNDED') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-extrabold text-green-700 border border-green-200">
+            Đã hoàn tiền
+          </span>
+        );
+      } else if (order.refundStatus === 'FAILED') {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-600 border border-red-200">
+            Hoàn tiền thất bại
+          </span>
+        );
+      }
+    }
+
     if (order.paymentMethod === 'QR') {
       if (order.status === 'PENDING') {
         return (
@@ -596,6 +706,19 @@ export default function OrdersPage() {
                         </button>
                       </div>
                     )}
+
+                    {order.status === 'PROCESSING' && !order.refundStatus && (
+                      <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
+                        <button
+                          type="button"
+                          onClick={() => setRefundOrderId(order.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-2.5 py-1 text-xs font-bold hover:bg-amber-100 transition shadow-sm cursor-pointer"
+                        >
+                          <RefreshCw className="size-3" />
+                          Yêu cầu hoàn tiền
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -758,6 +881,105 @@ export default function OrdersPage() {
         onCancelOrder={handleCancelQROrder}
         qrData={payOSQRData}
       />
+
+      {/* PayOS Payout (Refund) Request Form Modal */}
+      {refundOrderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn">
+          <div className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative text-sm text-[var(--text-main)] font-semibold">
+            <button
+              onClick={() => setRefundOrderId(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition cursor-pointer"
+            >
+              <X className="size-5" />
+            </button>
+            
+            <div className="text-center pb-2 border-b">
+              <h3 className="text-lg font-black text-[var(--text-main)] flex items-center justify-center gap-2">
+                <RefreshCw className="size-5 text-[var(--primary-color)] animate-spin-slow" />
+                Yêu cầu hoàn tiền đơn hàng
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1 font-bold">Mã đơn: #{refundOrderId}</p>
+            </div>
+
+            <form onSubmit={handleRefundSubmit} className="space-y-4 pt-2">
+              <div className="space-y-1">
+                <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Ngân hàng nhận</label>
+                <select
+                  required
+                  value={refundBankCode}
+                  onChange={(e) => setRefundBankCode(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-[#FAF9F5] px-3.5 py-2.5 outline-none focus:border-[var(--primary-color)] font-bold text-xs"
+                >
+                  <option value="">-- Chọn ngân hàng --</option>
+                  {banks.map((bank) => (
+                    <option key={bank.bin} value={bank.bin}>
+                      {bank.shortName} - {bank.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Số tài khoản nhận</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nhập số tài khoản ngân hàng của bạn"
+                  value={refundAccountNumber}
+                  onChange={(e) => setRefundAccountNumber(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-[#FAF9F5] px-3.5 py-2.5 outline-none focus:border-[var(--primary-color)] font-bold text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Tên chủ tài khoản (Tự động)</label>
+                  {isLookingUpAccount && (
+                    <span className="text-[10px] text-amber-600 font-bold animate-pulse">Đang tra cứu...</span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  required
+                  readOnly={true}
+                  placeholder={isLookingUpAccount ? "Đang truy vấn ngân hàng..." : "Tên chủ tài khoản sẽ tự động hiện"}
+                  value={refundAccountName}
+                  className="w-full rounded-xl border border-gray-100 bg-gray-100/80 text-gray-500 cursor-not-allowed border-gray-100 px-3.5 py-2.5 outline-none font-bold text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Lý do hoàn tiền</label>
+                <textarea
+                  placeholder="Nhập lý do hoàn tiền (không bắt buộc)"
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-xl border border-gray-200 bg-[#FAF9F5] px-3.5 py-2.5 outline-none focus:border-[var(--primary-color)] font-bold text-xs resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRefundOrderId(null)}
+                  className="flex-1 rounded-xl border border-gray-200 bg-white py-2.5 text-xs font-black text-gray-700 hover:bg-gray-50 transition cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRefund}
+                  className="flex-1 rounded-xl bg-[var(--primary-color)] py-2.5 text-xs font-black text-white hover:bg-[var(--primary-hover)] transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {submittingRefund && <Loader2 className="size-3 animate-spin text-white" />}
+                  Gửi yêu cầu
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

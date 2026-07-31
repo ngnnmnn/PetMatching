@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 import {
   FileSpreadsheet,
   Filter,
+  Upload,
+  Folder,
   Package,
   Plus,
   Search,
@@ -27,6 +29,9 @@ import {
   Award,
   MessageSquare,
   ChevronsRight,
+  RefreshCw,
+  DollarSign,
+  Percent,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats, ProductUnit } from '@/lib/api/manager';
@@ -199,11 +204,32 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [editingProduct, setEditingProduct] = useState<ManagerProduct | null>(null);
   const [submittingProduct, setSubmittingProduct] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Excel Import & Export State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [exportOnlyPendingGhn, setExportOnlyPendingGhn] = useState(false);
+  const [exportAllTime, setExportAllTime] = useState(false);
+  const [exportingOrders, setExportingOrders] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importImages, setImportImages] = useState<File[]>([]);
+  const [importMode, setImportMode] = useState<'file' | 'folder'>('file');
+  const [isDuplicateFolder, setIsDuplicateFolder] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    success: boolean;
+    updatedCount: number;
+    createdCount: number;
+    errors: string[];
+  } | null>(null);
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'ACCESSORY',
     targetSpecies: 'ALL',
-    originalPrice: '',
+    sellingPrice: '',
+    importPrice: '',
     salePrice: '',
     stock: '',
     brand: '',
@@ -354,7 +380,62 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   }, [filteredOrders]);
 
   const handleExportExcel = () => {
-    toast.success('Xuất danh sách đơn hàng sang Excel thành công!');
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    setExportStartDate(formatDate(firstDay));
+    setExportEndDate(formatDate(now));
+    setExportOnlyPendingGhn(false);
+    setExportAllTime(false);
+    setIsExportModalOpen(true);
+  };
+
+  const executeExportExcel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setExportingOrders(true);
+    try {
+      const res = await managerApi.exportOrders({
+        startDate: exportAllTime ? undefined : (exportStartDate || undefined),
+        endDate: exportAllTime ? undefined : (exportEndDate || undefined),
+        onlyPendingGhn: exportOnlyPendingGhn || undefined,
+      });
+
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      let filename = 'danh_sach_don_hang';
+      if (exportAllTime) {
+        filename += '_toan_bo_thoi_gian';
+      } else if (exportStartDate && exportEndDate) {
+        filename += `_${exportStartDate}_den_${exportEndDate}`;
+      }
+      if (exportOnlyPendingGhn) {
+        filename += '_chua_gui_ghn';
+      }
+      filename += '.xlsx';
+
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Xuất file Excel thành công!');
+      setIsExportModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to export orders to excel', err);
+      toast.error('Lỗi khi xuất file Excel.');
+    } finally {
+      setExportingOrders(false);
+    }
   };
 
   const handleOrderStatusChange = async (orderId: string, newStatus: string) => {
@@ -367,6 +448,44 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     } catch (error) {
       console.error('Failed to update order status', error);
       toast.error('Lỗi khi cập nhật trạng thái đơn hàng.');
+    }
+  };
+
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+
+  const handleApproveRefund = async (orderId: string) => {
+    setRefundingId(orderId);
+    try {
+      await managerApi.approveRefund(orderId);
+      toast.success('Đã duyệt yêu cầu hoàn tiền thành công! Tiền đã được chuyển khoản qua PayOS.');
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+      if (selectedOrderDetails?.id === orderId) {
+        setSelectedOrderDetails(res.data.find((o) => o.id === orderId) || null);
+      }
+    } catch (error: any) {
+      console.error('Failed to approve refund', error);
+      toast.error(error.response?.data?.message || 'Lỗi khi phê duyệt hoàn tiền qua PayOS.');
+    } finally {
+      setRefundingId(null);
+    }
+  };
+
+  const handleRejectRefund = async (orderId: string) => {
+    setRefundingId(orderId);
+    try {
+      await managerApi.rejectRefund(orderId);
+      toast.info('Đã từ chối hoàn tiền cho đơn hàng này.');
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+      if (selectedOrderDetails?.id === orderId) {
+        setSelectedOrderDetails(res.data.find((o) => o.id === orderId) || null);
+      }
+    } catch (error: any) {
+      console.error('Failed to reject refund', error);
+      toast.error('Lỗi khi từ chối yêu cầu hoàn tiền.');
+    } finally {
+      setRefundingId(null);
     }
   };
 
@@ -427,7 +546,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       name: '',
       category: categories[0]?.slug || 'ACCESSORY',
       targetSpecies: 'ALL',
-      originalPrice: '',
+      sellingPrice: '',
+      importPrice: '',
       salePrice: '',
       stock: '',
       brand: '',
@@ -463,7 +583,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       name: product.name,
       category: product.category,
       targetSpecies: product.targetSpecies,
-      originalPrice: String(product.originalPrice),
+      sellingPrice: String(product.sellingPrice),
+      importPrice: product.importPrice ? String(product.importPrice) : '',
       salePrice: product.salePrice ? String(product.salePrice) : '',
       stock: product.stock ? String(product.stock) : '',
       brand: product.brand || '',
@@ -528,6 +649,53 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }, 300);
   };
 
+  const handleImportExcel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) {
+      toast.error('Vui lòng chọn file Excel.');
+      return;
+    }
+
+    let folderName = '';
+    if (importMode === 'folder') {
+      const pathParts = (importFile as any).webkitRelativePath?.split('/');
+      folderName = pathParts && pathParts.length > 0 ? pathParts[0] : '';
+    }
+
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await managerApi.importProducts(importFile, importImages);
+      const result = res.data;
+      setImportResult(result);
+      if (result.success) {
+        toast.success(`Nhập hàng thành công! Đã cập nhật ${result.updatedCount} sản phẩm, tạo mới ${result.createdCount} sản phẩm.`);
+        fetchData();
+        if (result.errors.length === 0) {
+          setIsImportModalOpen(false);
+          setImportFile(null);
+          setImportImages([]);
+          
+          if (folderName) {
+            const importedFolders = JSON.parse(localStorage.getItem('imported_folders') || '[]');
+            if (!importedFolders.includes(folderName)) {
+              importedFolders.push(folderName);
+              localStorage.setItem('imported_folders', JSON.stringify(importedFolders));
+            }
+          }
+        }
+      } else {
+        toast.error('Có lỗi xảy ra khi nhập hàng.');
+      }
+    } catch (err: any) {
+      console.error('Import error', err);
+      const errMsg = err.response?.data?.message || 'Có lỗi xảy ra khi tải file lên.';
+      toast.error(errMsg);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleCloseCategorySidebar = () => {
     setIsCategorySidebarClosing(true);
     setTimeout(() => {
@@ -550,9 +718,43 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productForm.name.trim() || !productForm.originalPrice) {
+    if (!productForm.name.trim() || !productForm.sellingPrice) {
       toast.error('Vui lòng điền đầy đủ các thông tin bắt buộc.');
       return;
+    }
+    const sellingPrice = Number(productForm.sellingPrice);
+    if (isNaN(sellingPrice) || sellingPrice <= 0) {
+      toast.error('Giá bán phải lớn hơn 0.');
+      return;
+    }
+    if (productForm.importPrice) {
+      const importPrice = Number(productForm.importPrice);
+      if (isNaN(importPrice) || importPrice <= 0) {
+        toast.error('Giá nhập phải lớn hơn 0.');
+        return;
+      }
+      if (importPrice > sellingPrice) {
+        toast.error('Giá nhập không được lớn hơn giá bán.');
+        return;
+      }
+    }
+    if (productForm.salePrice) {
+      const salePrice = Number(productForm.salePrice);
+      if (isNaN(salePrice) || salePrice <= 0) {
+        toast.error('Giá khuyến mãi phải lớn hơn 0.');
+        return;
+      }
+      if (salePrice > sellingPrice) {
+        toast.error('Giá khuyến mãi không được lớn hơn giá bán.');
+        return;
+      }
+    }
+    if (productForm.stock) {
+      const stock = Number(productForm.stock);
+      if (isNaN(stock) || stock < 0) {
+        toast.error('Số lượng tồn kho không được âm.');
+        return;
+      }
     }
     setSubmittingProduct(true);
     try {
@@ -567,7 +769,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         name: productForm.name.trim(),
         category: productForm.category,
         targetSpecies: productForm.targetSpecies,
-        originalPrice: Number(productForm.originalPrice),
+        sellingPrice: Number(productForm.sellingPrice),
+        importPrice: productForm.importPrice ? Number(productForm.importPrice) : null,
         salePrice: productForm.salePrice ? Number(productForm.salePrice) : null,
         stock: productForm.stock ? Number(productForm.stock) : null,
         brand: productForm.brand.trim() || undefined,
@@ -634,8 +837,20 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setImportFile(null);
+                  setImportResult(null);
+                  setIsImportModalOpen(true);
+                }}
+                className="flex items-center gap-2 rounded-xl border border-green-600 text-green-700 bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-green-50 cursor-pointer text-xs"
+              >
+                <FileSpreadsheet className="size-4 text-green-600" />
+                Nhập Excel
+              </button>
+              <button
+                type="button"
                 onClick={handleAddClick}
-                className="flex items-center gap-2 rounded-xl bg-[var(--primary-color)] px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017] cursor-pointer"
+                className="flex items-center gap-2 rounded-xl bg-[var(--primary-color)] px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017] cursor-pointer text-xs"
               >
                 <Plus className="size-4" />
                 Thêm sản phẩm mới
@@ -722,7 +937,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     <th className="px-6 py-4">Mã SP</th>
                     <th className="px-6 py-4">Tên sản phẩm</th>
                     <th className="px-6 py-4">Danh mục</th>
-                    <th className="px-6 py-4 text-right">Đơn giá</th>
+                    <th className="px-6 py-4 text-right">Giá bán</th>
+                    <th className="px-6 py-4 text-right">Giá nhập</th>
+                    <th className="px-6 py-4 text-right">Lợi nhuận đơn vị</th>
                     <th className="px-6 py-4 text-center">Tồn kho</th>
                     <th className="px-6 py-4 text-center">Đã bán</th>
                     <th className="px-6 py-4 text-center">Trạng thái</th>
@@ -746,7 +963,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-[#5C5B52]">{dynamicCategoryMap[p.category] || CATEGORY_MAP[p.category] || p.category}</td>
-                          <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(p.salePrice ?? p.originalPrice)}</td>
+                          <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(p.salePrice ?? p.sellingPrice)}</td>
+                          <td className="px-6 py-4 text-right font-semibold text-[#5C5B52]">{p.importPrice ? currency.format(p.importPrice) : '-'}</td>
+                          <td className="px-6 py-4 text-right">
+                            {(() => {
+                              const currentPrice = p.salePrice ?? p.sellingPrice;
+                              const unitProfit = p.importPrice 
+                                ? currentPrice - p.importPrice 
+                                : currentPrice * 0.5;
+                              const margin = ((unitProfit / currentPrice) * 100).toFixed(0) + '%';
+                              return (
+                                <div>
+                                  <div className="font-bold text-green-600">{currency.format(unitProfit)}</div>
+                                  <div className="text-[10px] text-gray-400 font-bold">Biên: {margin}</div>
+                                </div>
+                              );
+                            })()}
+                          </td>
                           <td className="px-6 py-4 text-center font-bold">{stockVal}</td>
                           <td className="px-6 py-4 text-center font-bold text-[#0F766E]">{(p as any).sales ?? 0}</td>
                           <td className="px-6 py-4 text-center">
@@ -906,15 +1139,27 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     <div>
-                      <label className="block text-xs font-bold mb-1">Đơn giá gốc *</label>
+                      <label className="block text-xs font-bold mb-1">Giá nhập</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="VND (khuyên dùng)"
+                        value={productForm.importPrice}
+                        onChange={(e) => setProductForm({ ...productForm, importPrice: e.target.value })}
+                        className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold mb-1">Giá bán *</label>
                       <input
                         type="number"
                         required
+                        min="1"
                         placeholder="VND"
-                        value={productForm.originalPrice}
-                        onChange={(e) => setProductForm({ ...productForm, originalPrice: e.target.value })}
+                        value={productForm.sellingPrice}
+                        onChange={(e) => setProductForm({ ...productForm, sellingPrice: e.target.value })}
                         className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                       />
                     </div>
@@ -922,6 +1167,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <label className="block text-xs font-bold mb-1">Giá khuyến mãi</label>
                       <input
                         type="number"
+                        min="1"
                         placeholder="VND (nếu có)"
                         value={productForm.salePrice}
                         onChange={(e) => setProductForm({ ...productForm, salePrice: e.target.value })}
@@ -932,6 +1178,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <label className="block text-xs font-bold mb-1">Số lượng tồn kho</label>
                       <input
                         type="number"
+                        min="0"
                         placeholder="Hết hàng nếu trống"
                         value={productForm.stock}
                         onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
@@ -1763,6 +2010,220 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </div>
             </div>
           )}
+
+          {/* Excel Import Modal */}
+          {isImportModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-left">
+              <div className="w-full max-w-lg rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl animate-scaleIn">
+                <div className="flex items-center justify-between border-b border-[#EFEAE2] pb-3.5 mb-4">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="size-5 text-green-600" />
+                    <h3 className="text-lg font-black text-gray-800">Nhập hàng bằng file Excel</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(false)}
+                    className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleImportExcel} className="space-y-4">
+                  <div className="rounded-xl bg-orange-50 border border-orange-100 p-4 space-y-2">
+                    <p className="text-xs font-semibold text-orange-800 leading-relaxed">
+                      <strong>Cơ chế nhập hàng:</strong> Hệ thống cộng dồn tồn kho. Tự động tạo sản phẩm mới + tự tạo danh mục và đơn vị nếu chưa có. Để nạp kèm ảnh tự động, chọn tab **Nhập trọn thư mục** và chọn thư mục chứa file Excel + các thư mục con đặt tên theo ID sản phẩm chứa ảnh của sản phẩm đó.
+                    </p>
+                    <a
+                      href="/import_template.xlsx"
+                      download="import_products_template.xlsx"
+                      className="inline-flex items-center gap-1.5 text-xs font-black text-[var(--primary-color)] hover:underline"
+                    >
+                      📥 Tải file Excel mẫu (.xlsx) tại đây
+                    </a>
+                  </div>
+
+                  <div className="flex border-b border-[#EFEAE2] mb-3 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportMode('file');
+                        setImportFile(null);
+                        setImportImages([]);
+                      }}
+                      className={cn(
+                        "flex-1 pb-2 border-b-2 transition-all cursor-pointer text-center",
+                        importMode === 'file' ? "border-[var(--primary-color)] text-[var(--primary-color)]" : "border-transparent text-gray-400"
+                      )}
+                    >
+                      📄 Chỉ nhập file Excel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportMode('folder');
+                        setImportFile(null);
+                        setImportImages([]);
+                      }}
+                      className={cn(
+                        "flex-1 pb-2 border-b-2 transition-all cursor-pointer text-center",
+                        importMode === 'folder' ? "border-[var(--primary-color)] text-[var(--primary-color)]" : "border-transparent text-gray-400"
+                      )}
+                    >
+                      📁 Nhập trọn thư mục (Kèm Ảnh)
+                    </button>
+                  </div>
+
+                  {importMode === 'file' ? (
+                    <div className="space-y-2 animate-fadeIn">
+                      <label className="text-[11px] text-gray-500 font-extrabold uppercase block">Chọn file Excel nhập hàng *</label>
+                      <div className="relative border-2 border-dashed border-[#EFEAE2] hover:border-green-500 rounded-2xl bg-[#F9F8F6] p-6 text-center cursor-pointer transition">
+                        <input
+                          type="file"
+                          accept=".xlsx, .xls"
+                          required
+                          onChange={(e) => {
+                            setImportFile(e.target.files?.[0] || null);
+                            setImportImages([]);
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <div className="space-y-2">
+                          {importFile ? (
+                            <FileSpreadsheet className="size-8 text-green-600 mx-auto" />
+                          ) : (
+                            <Upload className="size-8 text-gray-400 mx-auto animate-bounce" />
+                          )}
+                          <p className="text-sm font-bold text-gray-600">
+                            {importFile ? importFile.name : 'Tải lên file Excel nhập hàng'}
+                          </p>
+                          <p className="text-[10px] text-gray-400 font-medium">Hỗ trợ định dạng .xlsx, .xls tối đa 10MB</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 animate-fadeIn">
+                      <label className="text-[11px] text-gray-500 font-extrabold uppercase block">Chọn thư mục nhà cung cấp *</label>
+                      <div className="relative border-2 border-dashed border-[#EFEAE2] hover:border-green-500 rounded-2xl bg-[#F9F8F6] p-6 text-center cursor-pointer transition">
+                        <input
+                          type="file"
+                          {...{
+                            webkitdirectory: "",
+                            directory: ""
+                          } as any}
+                          multiple
+                          required
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            const excel = files.find(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+                            const images = files.filter(f => f.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name));
+                            
+                            if (!excel) {
+                              toast.error('Không tìm thấy file Excel (.xlsx hoặc .xls) trong thư mục bạn chọn!');
+                              setImportFile(null);
+                              setImportImages([]);
+                              setIsDuplicateFolder(false);
+                              return;
+                            }
+                            setImportFile(excel);
+                            setImportImages(images);
+                            toast.success(`Nhận diện file Excel: ${excel.name} và ${images.length} tệp ảnh sản phẩm.`);
+
+                            const pathParts = excel.webkitRelativePath?.split('/');
+                            const folderName = pathParts && pathParts.length > 0 ? pathParts[0] : '';
+                            if (folderName) {
+                              const importedFolders = JSON.parse(localStorage.getItem('imported_folders') || '[]');
+                              setIsDuplicateFolder(importedFolders.includes(folderName));
+                            } else {
+                              setIsDuplicateFolder(false);
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <div className="space-y-2">
+                          {importFile ? (
+                            <Folder className="size-8 text-green-600 mx-auto" />
+                          ) : (
+                            <Upload className="size-8 text-gray-400 mx-auto animate-bounce" />
+                          )}
+                          <p className="text-sm font-bold text-gray-600">
+                            {importFile 
+                              ? `Thư mục: ${(importFile as any).webkitRelativePath?.split('/')[0] || ''}` 
+                              : 'Tải lên thư mục hóa đơn tương ứng'}
+                          </p>
+                          <p className="text-[10px] text-gray-400 font-medium">
+                            {importImages.length > 0 
+                              ? `Đã nhận diện file Excel: ${importFile?.name} và ${importImages.length} ảnh sản phẩm` 
+                              : 'Chọn thư mục chứa file Excel và các thư mục ảnh con'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {importMode === 'folder' && isDuplicateFolder && (
+                    <div className="rounded-xl bg-red-50 border border-red-100 p-3.5 flex items-start gap-2.5 text-xs font-semibold text-red-800 animate-fadeIn">
+                      <AlertCircle className="size-4.5 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Cảnh báo trùng thư mục:</strong> Thư mục này đã từng được nhập hàng trước đó. Nhập tiếp sẽ tiếp tục cộng dồn số lượng tồn kho của các sản phẩm.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Show errors or results */}
+                  {importResult && (
+                    <div className="rounded-xl border border-gray-100 bg-[#FAF9F6] p-4 max-h-[12rem] overflow-y-auto space-y-2 animate-fadeIn">
+                      <p className="text-xs font-extrabold text-gray-700">Kết quả xử lý:</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                        <div className="bg-green-50 text-green-700 p-2 rounded-lg text-center">
+                          Cập nhật: {importResult.updatedCount} SP
+                        </div>
+                        <div className="bg-blue-50 text-blue-700 p-2 rounded-lg text-center">
+                          Tạo mới: {importResult.createdCount} SP
+                        </div>
+                      </div>
+                      {importResult.errors.length > 0 && (
+                        <div className="space-y-1 pt-2 border-t border-gray-200">
+                          <p className="text-[10px] font-black text-red-600">Một số dòng bị bỏ qua hoặc gặp lỗi:</p>
+                          <ul className="list-disc pl-4 text-[10px] font-bold text-red-500 space-y-0.5">
+                            {importResult.errors.map((err: any, idx: number) => (
+                              <li key={idx}>{err}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-3 border-t">
+                    <button
+                      type="button"
+                      onClick={() => setIsImportModalOpen(false)}
+                      className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={importing || !importFile}
+                      className="px-6 py-2 bg-green-600 text-white rounded-xl font-bold text-xs hover:bg-green-700 cursor-pointer flex items-center gap-1.5"
+                    >
+                      {importing ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Đang nhập hàng...
+                        </>
+                      ) : (
+                        'Bắt đầu nhập'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+
         </div>
       );
 
@@ -2096,6 +2557,47 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </table>
                 </div>
 
+                {/* Refund Details Section */}
+                {selectedOrderDetails.refundStatus && (
+                  <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/60 text-xs space-y-2 animate-fadeIn font-semibold mt-4">
+                    <p className="font-black text-amber-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                      <RefreshCw className="size-3.5 text-amber-700 animate-spin-slow" />
+                      Yêu cầu hoàn tiền từ khách hàng
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 text-[#5C5B52] mt-1 pt-1.5 border-t border-amber-100">
+                      <div>
+                        <span className="text-[10px] text-gray-500 block">Số tài khoản:</span>
+                        <span className="font-bold text-sm text-[var(--text-main)] font-mono">{selectedOrderDetails.refundAccountNumber}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 block">Chủ tài khoản:</span>
+                        <span className="font-bold text-sm text-[var(--text-main)]">{selectedOrderDetails.refundAccountName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 block">Ngân hàng (BIN):</span>
+                        <span className="font-bold text-[var(--text-main)] font-mono">{selectedOrderDetails.refundBankCode}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 block">Trạng thái hoàn:</span>
+                        <span className={cn(
+                          "font-bold uppercase text-[10px] px-1.5 py-0.5 rounded",
+                          selectedOrderDetails.refundStatus === 'PENDING' && 'bg-amber-100 text-amber-800',
+                          selectedOrderDetails.refundStatus === 'REFUNDED' && 'bg-green-100 text-green-800',
+                          selectedOrderDetails.refundStatus === 'FAILED' && 'bg-red-100 text-red-800'
+                        )}>
+                          {selectedOrderDetails.refundStatus === 'PENDING' ? 'Chờ duyệt' : selectedOrderDetails.refundStatus === 'REFUNDED' ? 'Đã hoàn tiền' : 'Thất bại'}
+                        </span>
+                      </div>
+                    </div>
+                    {selectedOrderDetails.refundReason && (
+                      <div className="pt-1.5 border-t border-amber-100 text-xs text-[#5C5B52]">
+                        <span className="text-[10px] text-gray-500 block">Lý do hoàn:</span>
+                        <span className="italic">"{selectedOrderDetails.refundReason}"</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Order Status & Financial Summary */}
                 <div className="flex justify-between items-center pt-2 border-t text-xs font-semibold">
                   <div>
@@ -2119,7 +2621,30 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </div>
                 </div>
                 
-                <div className="flex justify-end pt-2 border-t">
+                <div className="flex justify-between items-center pt-2 border-t">
+                  {selectedOrderDetails.refundStatus === 'PENDING' ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={refundingId === selectedOrderDetails.id}
+                        onClick={() => handleRejectRefund(selectedOrderDetails.id)}
+                        className="rounded-xl border border-red-200 bg-red-50 text-red-600 px-4 py-2 font-bold hover:bg-red-100 transition text-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                      >
+                        Từ chối
+                      </button>
+                      <button
+                        type="button"
+                        disabled={refundingId === selectedOrderDetails.id}
+                        onClick={() => handleApproveRefund(selectedOrderDetails.id)}
+                        className="rounded-xl bg-[var(--primary-color)] text-white px-4 py-2 font-bold hover:bg-[var(--primary-hover)] transition text-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {refundingId === selectedOrderDetails.id && <Loader2 className="size-3 animate-spin text-white" />}
+                        Duyệt & Hoàn tiền (PayOS)
+                      </button>
+                    </div>
+                  ) : (
+                    <div />
+                  )}
                   <button
                     type="button"
                     onClick={() => setSelectedOrderDetails(null)}
@@ -2128,6 +2653,112 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     Đóng
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+          {/* Excel Export Modal */}
+          {isExportModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-left">
+              <div className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl animate-scaleIn">
+                <div className="flex items-center justify-between border-b border-[#EFEAE2] pb-3.5 mb-4">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="size-5 text-[var(--primary-color)]" />
+                    <h3 className="text-lg font-black text-gray-800">Xuất đơn hàng sang Excel</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsExportModalOpen(false)}
+                    className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={executeExportExcel} className="space-y-4 text-xs font-semibold">
+                  <div className="rounded-xl bg-orange-50 border border-orange-100 p-4 space-y-2">
+                    <p className="text-xs font-semibold text-orange-800 leading-relaxed">
+                      <strong>Tính năng:</strong> Trích xuất danh sách hóa đơn bán hàng theo thời gian được lựa chọn. Tự động tính toán chi phí, tổng thanh toán và lợi nhuận bán lẻ thực tế.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={exportAllTime}
+                        onChange={(e) => setExportAllTime(e.target.checked)}
+                        className="size-4 rounded border-gray-300 text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-700 font-bold">
+                        Xuất toàn bộ lịch sử đơn hàng (Không giới hạn ngày)
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className={cn("grid grid-cols-2 gap-4 transition-all duration-300", exportAllTime && "opacity-50 pointer-events-none")}>
+                    <div>
+                      <label className="block text-[11px] text-gray-500 font-extrabold uppercase mb-1">Từ ngày</label>
+                      <input
+                        type="date"
+                        disabled={exportAllTime}
+                        value={exportStartDate}
+                        onChange={(e) => setExportStartDate(e.target.value)}
+                        className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none cursor-pointer disabled:cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-gray-500 font-extrabold uppercase mb-1">Đến ngày</label>
+                      <input
+                        type="date"
+                        disabled={exportAllTime}
+                        value={exportEndDate}
+                        onChange={(e) => setExportEndDate(e.target.value)}
+                        className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none cursor-pointer disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5 pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={exportOnlyPendingGhn}
+                        onChange={(e) => setExportOnlyPendingGhn(e.target.checked)}
+                        className="size-4 rounded border-gray-300 text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-700 font-bold">
+                        Chỉ xuất các đơn hàng chưa gửi cho GHN
+                      </span>
+                    </label>
+                    <p className="text-[10px] text-gray-400 font-medium pl-6 leading-relaxed">
+                      (Bỏ qua các đơn hàng đã bị hủy, đang giao hàng hoặc đã giao hàng thành công bằng đối tác khác).
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t">
+                    <button
+                      type="button"
+                      onClick={() => setIsExportModalOpen(false)}
+                      className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={exportingOrders}
+                      className="px-6 py-2 bg-[var(--primary-color)] text-white rounded-xl font-bold text-xs hover:bg-[var(--primary-color)]/90 cursor-pointer flex items-center gap-1.5"
+                    >
+                      {exportingOrders ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Đang trích xuất...
+                        </>
+                      ) : (
+                        'Tải file Excel'
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
@@ -2582,7 +3213,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
           </section>
 
           {/* Metrics */}
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-[#8A8980]">Tổng doanh thu</span>
@@ -2592,6 +3223,28 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </div>
               <p className="mt-3 text-2xl font-black">{currency.format(stats?.totalRevenue ?? 0)}</p>
               <p className="mt-1 text-xs font-bold text-green-600">Dữ liệu thực từ đơn đặt hàng</p>
+            </div>
+
+            <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase text-[#8A8980]">Tổng lợi nhuận</span>
+                <span className="p-2 rounded-lg bg-green-50 text-green-600">
+                  <DollarSign className="size-4" />
+                </span>
+              </div>
+              <p className="mt-3 text-2xl font-black">{currency.format(stats?.totalProfit ?? 0)}</p>
+              <p className="mt-1 text-xs font-bold text-green-600">Giá bán trừ giá nhập kho</p>
+            </div>
+
+            <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase text-[#8A8980]">Biên lợi nhuận</span>
+                <span className="p-2 rounded-lg bg-purple-50 text-purple-600">
+                  <Percent className="size-4" />
+                </span>
+              </div>
+              <p className="mt-3 text-2xl font-black">{(stats?.profitMargin ?? 0).toFixed(1)}%</p>
+              <p className="mt-1 text-xs font-bold text-purple-600">Tỷ số Lợi nhuận / Doanh thu</p>
             </div>
 
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">

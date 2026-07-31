@@ -138,7 +138,8 @@ const sectionConfig: Record<string, {
       { key: 'name', label: 'Tên sản phẩm' },
       { key: 'category', label: 'Danh mục' },
       { key: 'brand', label: 'Thương hiệu' },
-      { key: 'originalPrice', label: 'Giá bán', render: (row) => moneyCell({ price: row.originalPrice }) },
+      { key: 'sellingPrice', label: 'Giá bán', render: (row) => moneyCell({ price: row.sellingPrice }) },
+      { key: 'importPrice', label: 'Giá nhập', render: (row) => row.importPrice ? moneyCell({ price: row.importPrice }) : '-' },
       { key: 'salePrice', label: 'Giá ưu đãi', render: (row) => row.salePrice ? moneyCell({ price: row.salePrice }) : '-' },
       { key: 'stock', label: 'Tồn kho' },
       { key: 'isActive', label: 'Trạng thái', render: (row) => row.isActive ? 'Đang bán' : 'Ngừng bán' },
@@ -683,7 +684,7 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
         <table className="w-full min-w-[1050px] border-collapse text-left">
           <thead className="bg-[#F7F9FB]">
             <tr>
-              {['Sản phẩm', 'Mã sản phẩm', 'Danh mục', 'Giá bán', 'Tồn kho', 'Trạng thái', 'Cập nhật'].map((label) => (
+              {['Sản phẩm', 'Mã sản phẩm', 'Danh mục', 'Giá bán', 'Giá nhập', 'Tồn kho', 'Trạng thái', 'Cập nhật'].map((label) => (
                 <th key={label} className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]">{label}</th>
               ))}
             </tr>
@@ -708,9 +709,10 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
                   <td className="px-5 py-4"><span className="inline-flex rounded-lg bg-[#E7F3F1] px-3 py-1.5 font-mono text-sm font-black tracking-wider text-[#0F766E]">#{product.id}</span></td>
                   <td className="px-5 py-4 text-sm font-bold text-[#475569]">{formatCategory(product.category)}</td>
                   <td className="px-5 py-4">
-                    <p className="text-sm font-black text-[#172033]">{moneyCell({ price: product.salePrice ?? product.originalPrice })}</p>
-                    {product.salePrice && <p className="mt-1 text-xs font-semibold text-[#94A3B8] line-through">{moneyCell({ price: product.originalPrice })}</p>}
+                    <p className="text-sm font-black text-[#172033]">{moneyCell({ price: product.salePrice ?? product.sellingPrice })}</p>
+                    {product.salePrice && <p className="mt-1 text-xs font-semibold text-[#94A3B8] line-through">{moneyCell({ price: product.sellingPrice })}</p>}
                   </td>
+                  <td className="px-5 py-4 text-sm font-bold text-[#475569]">{product.importPrice ? moneyCell({ price: product.importPrice }) : '-'}</td>
                   <td className="px-5 py-4"><span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-black ${stockTone}`}>{stock} sản phẩm</span></td>
                   <td className="px-5 py-4">
                     <span className={`inline-flex items-center gap-1.5 text-xs font-black ${product.isActive ? 'text-emerald-700' : 'text-[#64748B]'}`}>

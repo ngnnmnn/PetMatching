@@ -1,7 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards, UseInterceptors, UploadedFiles, Query, Res } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ManagerGuard } from '../../common/auth/manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
+import { Response } from 'express';
 import { ManagerService } from './manager.service';
 
 @UseGuards(JwtAuthGuard, ManagerGuard)
@@ -24,6 +27,24 @@ export class ManagerController {
     return this.managerService.createProduct(dto);
   }
 
+  @Post('products/import')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'file', maxCount: 1 },
+      { name: 'images' }
+    ], {
+      storage: memoryStorage(),
+      limits: { fileSize: 30 * 1024 * 1024 }, // Up to 30MB
+    }),
+  )
+  importProducts(
+    @UploadedFiles() files: { file?: Express.Multer.File[], images?: Express.Multer.File[] }
+  ) {
+    const excelFile = files?.file?.[0];
+    const imageFiles = files?.images || [];
+    return this.managerService.importProducts(excelFile as Express.Multer.File, imageFiles);
+  }
+
   @Put('products/:id')
   updateProduct(@Param('id') id: string, @Body() dto: any) {
     return this.managerService.updateProduct(id, dto);
@@ -32,6 +53,26 @@ export class ManagerController {
   @Delete('products/:id')
   deleteProduct(@Param('id') id: string) {
     return this.managerService.deleteProduct(id);
+  }
+
+  @Get('orders/export')
+  async exportOrders(
+    @Res() res: any,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('onlyPendingGhn') onlyPendingGhn?: string,
+  ) {
+    const buffer = await this.managerService.exportOrdersToExcel({
+      startDate,
+      endDate,
+      onlyPendingGhn: onlyPendingGhn === 'true',
+    });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="orders_export.xlsx"',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get('orders')
@@ -92,5 +133,15 @@ export class ManagerController {
   @Delete('units/:id')
   deleteProductUnit(@Param('id') id: string) {
     return this.managerService.deleteProductUnit(id);
+  }
+
+  @Post('orders/:id/approve-refund')
+  approveRefund(@Param('id') id: string) {
+    return this.managerService.approveRefund(id);
+  }
+
+  @Post('orders/:id/reject-refund')
+  rejectRefund(@Param('id') id: string) {
+    return this.managerService.rejectRefund(id);
   }
 }

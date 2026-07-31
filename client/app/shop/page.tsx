@@ -103,7 +103,7 @@ function ShopPageContent() {
     const matchesPrice =
       selectedPrices.length === 0 ||
       selectedPrices.some((range) => {
-        const price = product.salePrice ?? product.originalPrice;
+        const price = product.salePrice ?? product.sellingPrice;
         if (range === 'under_100k') return price < 100000;
         if (range === '100k_500k') return price >= 100000 && price <= 500000;
         if (range === '500k_1m') return price >= 500000 && price <= 1000000;

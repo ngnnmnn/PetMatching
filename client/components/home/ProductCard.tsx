@@ -17,16 +17,16 @@ function formatCurrency(value: number) {
 }
 
 function getDiscountPercent(product: Product) {
-  if (!product.salePrice || product.salePrice >= product.originalPrice) {
+  if (!product.salePrice || product.salePrice >= product.sellingPrice) {
     return null;
   }
 
-  return Math.round(((product.originalPrice - product.salePrice) / product.originalPrice) * 100);
+  return Math.round(((product.sellingPrice - product.salePrice) / product.sellingPrice) * 100);
 }
 
 export default function ProductCard({ product, featured = false }: { product: Product; featured?: boolean }) {
   const router = useRouter();
-  const displayPrice = product.salePrice ?? product.originalPrice;
+  const displayPrice = product.salePrice ?? product.sellingPrice;
   const discount = getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
 
@@ -125,8 +125,8 @@ export default function ProductCard({ product, featured = false }: { product: Pr
 
         <div className="flex min-h-10 flex-wrap items-end gap-x-2 gap-y-1">
           <span className="text-base font-extrabold text-[var(--primary-color)]">{formatCurrency(displayPrice)}</span>
-          {product.salePrice && product.salePrice < product.originalPrice && (
-            <span className="text-xs text-[var(--text-muted)] line-through">{formatCurrency(product.originalPrice)}</span>
+          {product.salePrice && product.salePrice < product.sellingPrice && (
+            <span className="text-xs text-[var(--text-muted)] line-through">{formatCurrency(product.sellingPrice)}</span>
           )}
         </div>
 

@@ -7,6 +7,8 @@ export interface ManagerDashboardStats {
   totalProductsSold: number;
   totalCustomers: number;
   cancellationRate: number;
+  totalProfit?: number;
+  profitMargin?: number;
 }
 
 export interface ManagerProduct {
@@ -19,7 +21,8 @@ export interface ManagerProduct {
   imageUrl?: string;
   images?: string[];
   specifications?: any;
-  originalPrice: number;
+  sellingPrice: number;
+  importPrice?: number | null;
   salePrice?: number | null;
   brand?: string;
   unit?: string;
@@ -58,6 +61,12 @@ export interface ManagerOrder {
     };
   }[];
   ghnOrderCode?: string | null;
+  refundStatus?: string | null;
+  refundBankCode?: string | null;
+  refundAccountNumber?: string | null;
+  refundAccountName?: string | null;
+  refundReason?: string | null;
+  refundedAt?: string | null;
 }
 
 export interface ManagerCustomer {
@@ -108,6 +117,13 @@ export const managerApi = {
 
   getOrders: () => api.get<ManagerOrder[]>('/manager/orders'),
   updateOrderStatus: (id: string, status: string) => api.patch<ManagerOrder>(`/manager/orders/${id}/status`, { status }),
+  approveRefund: (id: string) => api.post<any>(`/manager/orders/${id}/approve-refund`),
+  rejectRefund: (id: string) => api.post<any>(`/manager/orders/${id}/reject-refund`),
+  exportOrders: (params: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean }) =>
+    api.get<Blob>('/manager/orders/export', {
+      params,
+      responseType: 'blob',
+    }),
 
   getCustomers: () => api.get<ManagerCustomer[]>('/manager/customers'),
 
@@ -122,4 +138,21 @@ export const managerApi = {
   createProductUnit: (data: { name: string }) => api.post<ProductUnit>('/manager/units', data),
   updateProductUnit: (id: string, data: { name: string }) => api.put<ProductUnit>(`/manager/units/${id}`, data),
   deleteProductUnit: (id: string) => api.delete(`/manager/units/${id}`),
+
+  importProducts: (file: File, images: File[] = []) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    images.forEach((img) => {
+      const pathParts = (img as any).webkitRelativePath?.split('/');
+      const folderName = pathParts && pathParts.length >= 2 ? pathParts[pathParts.length - 2] : '';
+      if (folderName) {
+        formData.append('images', img, `${folderName}_${img.name}`);
+      } else {
+        formData.append('images', img);
+      }
+    });
+    return api.post<any>('/manager/products/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };

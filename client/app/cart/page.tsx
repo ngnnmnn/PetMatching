@@ -84,7 +84,7 @@ export default function CartPage() {
   const selectedItems = cartItems.filter((item) => selectedItemIds.includes(item.id));
   
   const selectedTotal = selectedItems.reduce((acc, item) => {
-    const price = item.product.salePrice ?? item.product.originalPrice;
+    const price = item.product.salePrice ?? item.product.sellingPrice;
     return acc + price * item.quantity;
   }, 0);
 
@@ -151,9 +151,9 @@ export default function CartPage() {
 
                 <div className="divide-y divide-[var(--border-color)]">
                   {cartItems.map((item) => {
-                    const price = item.product.salePrice ?? item.product.originalPrice;
+                    const price = item.product.salePrice ?? item.product.sellingPrice;
                     const itemSubtotal = price * item.quantity;
-                    const isDiscounted = item.product.salePrice && item.product.salePrice < item.product.originalPrice;
+                    const isDiscounted = item.product.salePrice && item.product.salePrice < item.product.sellingPrice;
 
                     return (
                       <div key={item.id} className="p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
@@ -190,7 +190,7 @@ export default function CartPage() {
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-sm font-bold text-[var(--primary-color)]">{formatCurrency(price)}</span>
                             {isDiscounted && (
-                              <span className="text-xs text-[var(--text-muted)] line-through">{formatCurrency(item.product.originalPrice)}</span>
+                              <span className="text-xs text-[var(--text-muted)] line-through">{formatCurrency(item.product.sellingPrice)}</span>
                             )}
                           </div>
                         </div>

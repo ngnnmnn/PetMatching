@@ -285,7 +285,7 @@ function CheckoutPageContent() {
   }, [loading, checkoutItems, router, orderPlaced]);
 
   const checkoutTotal = checkoutItems.reduce((acc, item) => {
-    const price = item.product.salePrice ?? item.product.originalPrice;
+    const price = item.product.salePrice ?? item.product.sellingPrice;
     return acc + price * item.quantity;
   }, 0);
 
@@ -584,7 +584,7 @@ function CheckoutPageContent() {
       const orderItems = checkoutItems.map((item) => ({
         productId: item.product.id,
         quantity: Number(item.quantity),
-        price: Number(item.product.salePrice ?? item.product.originalPrice),
+        price: Number(item.product.salePrice ?? item.product.sellingPrice),
       }));
 
       // Create Order in DB
@@ -1012,7 +1012,7 @@ function CheckoutPageContent() {
 
                 <div className="divide-y divide-[var(--border-color)] max-h-[30rem] overflow-y-auto pr-1">
                   {checkoutItems.map((item) => {
-                    const price = item.product.salePrice ?? item.product.originalPrice;
+                    const price = item.product.salePrice ?? item.product.sellingPrice;
                     return (
                       <div key={item.id} className="py-4 flex gap-3 items-center border-b border-[var(--border-color)] last:border-b-0">
                         {/* Image */}

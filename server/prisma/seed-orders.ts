@@ -41,7 +41,7 @@ async function main() {
 
   for (const [index, product] of products.entries()) {
     const quantity = index + 1;
-    const price = product.salePrice ?? product.originalPrice;
+    const price = product.salePrice ?? product.sellingPrice;
 
     await prisma.order.create({
       data: {

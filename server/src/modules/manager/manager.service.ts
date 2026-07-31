@@ -1,12 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import * as XLSX from 'xlsx';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ShippingService } from '../shipping/shipping.service';
+import { PaymentService } from '../payment/payment.service';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 
 @Injectable()
 export class ManagerService {
   constructor(
     private prisma: PrismaService,
     private shippingService: ShippingService,
+    private paymentService: PaymentService,
+    private cloudinaryService: CloudinaryService,
   ) {}
 
   private generateSlug(name: string): string {
@@ -85,12 +90,37 @@ export class ManagerService {
       where: { role: 'USER' },
     });
 
+    // Calculate total profit
+    const orderItems = await this.prisma.orderItem.findMany({
+      where: { order: { status: { not: 'CANCELLED' } } },
+      select: {
+        quantity: true,
+        price: true,
+        product: {
+          select: {
+            importPrice: true,
+          },
+        },
+      },
+    });
+
+    let totalProfit = 0;
+    for (const item of orderItems) {
+      const soldPrice = item.price;
+      const importPrice = item.product?.importPrice ?? (soldPrice * 0.5);
+      totalProfit += (soldPrice - importPrice) * item.quantity;
+    }
+
+    const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
     return {
       totalRevenue,
       totalOrders,
       totalProductsSold,
       totalCustomers,
       cancellationRate,
+      totalProfit,
+      profitMargin,
     };
   }
 
@@ -115,6 +145,27 @@ export class ManagerService {
     });
   }
 
+  private validateProductPrices(sellingPrice: number, importPrice?: number | null, salePrice?: number | null, stock?: number) {
+    if (isNaN(sellingPrice) || sellingPrice <= 0) {
+      throw new BadRequestException('Giá bán phải là số lớn hơn 0.');
+    }
+    if (importPrice !== undefined && importPrice !== null && (isNaN(importPrice) || importPrice <= 0)) {
+      throw new BadRequestException('Giá nhập phải là số lớn hơn 0.');
+    }
+    if (salePrice !== undefined && salePrice !== null && (isNaN(salePrice) || salePrice <= 0)) {
+      throw new BadRequestException('Giá khuyến mãi phải là số lớn hơn 0.');
+    }
+    if (importPrice !== undefined && importPrice !== null && importPrice > sellingPrice) {
+      throw new BadRequestException('Giá nhập không được lớn hơn giá bán.');
+    }
+    if (salePrice !== undefined && salePrice !== null && salePrice > sellingPrice) {
+      throw new BadRequestException('Giá khuyến mãi không được lớn hơn giá bán.');
+    }
+    if (stock !== undefined && stock !== null && (isNaN(stock) || stock < 0)) {
+      throw new BadRequestException('Số lượng tồn kho phải là số không âm.');
+    }
+  }
+
   async createProduct(dto: any) {
     const slug = this.generateSlug(dto.name);
     const id = await this.generateProductId();
@@ -125,6 +176,13 @@ export class ManagerService {
     if (!store) {
       throw new BadRequestException('Cửa hàng chưa được cấu hình.');
     }
+
+    const sellingPrice = Number(dto.sellingPrice);
+    const importPrice = dto.importPrice ? Number(dto.importPrice) : null;
+    const salePrice = dto.salePrice ? Number(dto.salePrice) : null;
+    const stock = (dto.stock !== undefined && dto.stock !== null && dto.stock !== '') ? Number(dto.stock) : 0;
+
+    this.validateProductPrices(sellingPrice, importPrice, salePrice, stock);
 
     return this.prisma.product.create({
       data: {
@@ -138,11 +196,12 @@ export class ManagerService {
         imageUrl: dto.imageUrl || '',
         images: dto.images || [],
         specifications: dto.specifications || {},
-        originalPrice: Number(dto.originalPrice),
-        salePrice: dto.salePrice ? Number(dto.salePrice) : null,
+        sellingPrice,
+        importPrice,
+        salePrice,
         brand: dto.brand || '',
         unit: dto.unit || '',
-        stock: (dto.stock !== undefined && dto.stock !== null && dto.stock !== '') ? Number(dto.stock) : undefined,
+        stock,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
         isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : false,
       },
@@ -150,6 +209,21 @@ export class ManagerService {
   }
 
   async updateProduct(id: string, dto: any) {
+    const existing = await this.prisma.product.findUnique({
+      where: { id },
+      select: { sellingPrice: true, importPrice: true, salePrice: true, stock: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Không tìm thấy sản phẩm.');
+    }
+
+    const sellingPrice = dto.sellingPrice !== undefined ? Number(dto.sellingPrice) : existing.sellingPrice;
+    const importPrice = dto.importPrice !== undefined ? (dto.importPrice ? Number(dto.importPrice) : null) : existing.importPrice;
+    const salePrice = dto.salePrice !== undefined ? (dto.salePrice ? Number(dto.salePrice) : null) : existing.salePrice;
+    const stock = dto.stock !== undefined ? (dto.stock !== null && dto.stock !== '' ? Number(dto.stock) : existing.stock) : existing.stock;
+
+    this.validateProductPrices(sellingPrice, importPrice, salePrice, stock);
+
     return this.prisma.product.update({
       where: { id },
       data: {
@@ -160,11 +234,12 @@ export class ManagerService {
         imageUrl: dto.imageUrl,
         images: dto.images,
         specifications: dto.specifications,
-        originalPrice: dto.originalPrice !== undefined ? Number(dto.originalPrice) : undefined,
-        salePrice: dto.salePrice !== undefined ? (dto.salePrice ? Number(dto.salePrice) : null) : undefined,
+        sellingPrice,
+        importPrice,
+        salePrice,
         brand: dto.brand,
         unit: dto.unit,
-        stock: dto.stock !== undefined ? ((dto.stock !== null && dto.stock !== '') ? Number(dto.stock) : undefined) : undefined,
+        stock,
         isActive: dto.isActive,
         isFeatured: dto.isFeatured,
       },
@@ -519,5 +594,406 @@ export class ManagerService {
     return this.prisma.productUnit.delete({
       where: { id },
     });
+  }
+
+  async approveRefund(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    if (order.refundStatus !== 'PENDING') {
+      throw new BadRequestException('Đơn hàng không ở trạng thái chờ hoàn tiền.');
+    }
+
+    if (!order.refundBankCode || !order.refundAccountNumber) {
+      throw new BadRequestException('Thông tin tài khoản nhận tiền hoàn không đầy đủ.');
+    }
+
+    try {
+      // Call PayOS Payout API
+      await this.paymentService.createPayout({
+        referenceId: order.id,
+        amount: Math.round(order.totalAmount),
+        description: `PM Hoan tien don hang ${order.id}`,
+        toBin: order.refundBankCode,
+        toAccountNumber: order.refundAccountNumber,
+      });
+
+      // Update order status and restore stock in transaction
+      return await this.prisma.$transaction(async (tx) => {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                increment: item.quantity,
+              },
+            },
+          });
+        }
+
+        return tx.order.update({
+          where: { id: orderId },
+          data: {
+            status: 'CANCELLED',
+            refundStatus: 'REFUNDED',
+            refundedAt: new Date(),
+          },
+        });
+      });
+    } catch (error) {
+      console.error('PayOS Payout failed:', error);
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          refundStatus: 'FAILED',
+        },
+      });
+      throw new BadRequestException(
+        `Hoàn tiền qua PayOS thất bại: ${error.message || 'Lỗi không xác định'}.`,
+      );
+    }
+  }
+
+  async rejectRefund(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    if (order.refundStatus !== 'PENDING') {
+      throw new BadRequestException('Đơn hàng không ở trạng thái chờ hoàn tiền.');
+    }
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        refundStatus: 'FAILED',
+      },
+    });
+  }
+
+  async importProducts(file: Express.Multer.File, imageFiles: Express.Multer.File[] = []) {
+    if (!file) {
+      throw new BadRequestException('Không tìm thấy file tải lên.');
+    }
+
+    let workbook;
+    try {
+      workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    } catch (e) {
+      throw new BadRequestException('File không đúng định dạng Excel (.xlsx hoặc .xls).');
+    }
+
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+    if (rawRows.length === 0) {
+      throw new BadRequestException('File Excel trống hoặc không chứa dữ liệu.');
+    }
+
+    const store = await this.prisma.store.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!store) {
+      throw new BadRequestException('Cửa hàng chưa được cấu hình.');
+    }
+
+    let updatedCount = 0;
+    let createdCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const rowNum = i + 2; // Dòng thứ i+2 trong Excel do có dòng tiêu đề
+
+      const name = (row['Tên sản phẩm'] ?? row['name'] ?? '').toString().trim();
+      const categoryStr = (row['Danh mục'] ?? row['category'] ?? '').toString().trim();
+      const sellingPriceRaw = row['Giá bán'] ?? row['sellingPrice'];
+      const importPriceRaw = row['Giá nhập'] ?? row['importPrice'];
+      const quantityRaw = row['Số lượng nhập'] ?? row['quantity'] ?? row['stock'] ?? 0;
+      const brand = (row['Thương hiệu'] ?? row['brand'] ?? '').toString().trim() || null;
+      const unit = (row['Đơn vị tính'] ?? row['Đơn vị'] ?? row['unit'] ?? '').toString().trim() || null;
+      const salePriceRaw = row['Giá khuyến mãi'] ?? row['salePrice'];
+      const description = (row['Mô tả'] ?? row['description'] ?? '').toString().trim() || null;
+      const targetSpecies = (row['Loài mục tiêu'] ?? row['targetSpecies'] ?? 'ALL').toString().trim().toUpperCase();
+      const id = row['Mã sản phẩm'] ?? row['id'] ?? null;
+      const specsRaw = row['Thông số kỹ thuật'] ?? row['specifications'] ?? '';
+
+      if (!name) {
+        errors.push(`Dòng ${rowNum}: Tên sản phẩm không được để trống.`);
+        continue;
+      }
+      if (!categoryStr) {
+        errors.push(`Dòng ${rowNum}: Danh mục không được để trống.`);
+        continue;
+      }
+
+      const sellingPrice = Number(sellingPriceRaw);
+      const importPrice = Number(importPriceRaw);
+      const quantity = Number(quantityRaw);
+      const salePrice = salePriceRaw !== undefined && salePriceRaw !== null && salePriceRaw !== '' ? Number(salePriceRaw) : null;
+
+      if (isNaN(sellingPrice) || sellingPrice <= 0) {
+        errors.push(`Dòng ${rowNum}: Giá bán không hợp lệ.`);
+        continue;
+      }
+      if (isNaN(importPrice) || importPrice <= 0) {
+        errors.push(`Dòng ${rowNum}: Giá nhập không hợp lệ.`);
+        continue;
+      }
+      if (isNaN(quantity) || quantity < 0) {
+        errors.push(`Dòng ${rowNum}: Số lượng nhập không hợp lệ.`);
+        continue;
+      }
+      if (importPrice > sellingPrice) {
+        errors.push(`Dòng ${rowNum}: Giá nhập (${importPrice}) không được lớn hơn giá bán (${sellingPrice}).`);
+        continue;
+      }
+
+      const species = ['DOG', 'CAT', 'ALL'].includes(targetSpecies) ? targetSpecies : 'ALL';
+
+      // Parse specifications from comma separated color: blue, size: L
+      let specifications = null;
+      if (specsRaw && specsRaw.toString().trim()) {
+        try {
+          const parts = specsRaw.toString().split(',');
+          const obj: any = {};
+          for (const part of parts) {
+            const [key, val] = part.split(':');
+            if (key && val) {
+              obj[key.trim()] = val.trim();
+            }
+          }
+          specifications = obj;
+        } catch (e) {
+          errors.push(`Dòng ${rowNum}: Cảnh báo: Lỗi định dạng thông số kỹ thuật (Cần dạng: Thuộc tính 1: Giá trị 1, Thuộc tính 2: Giá trị 2).`);
+        }
+      }
+
+      const categorySlug = categoryStr
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[đĐ]/g, 'd')
+        .replace(/[^a-zA-Z0-9\s-_]/g, '')
+        .trim()
+        .replace(/\s+/g, '_')
+        .toUpperCase();
+
+      await this.prisma.category.upsert({
+        where: { slug: categorySlug },
+        update: {},
+        create: {
+          name: categoryStr,
+          slug: categorySlug,
+        },
+      });
+
+      // Auto-create product unit in productUnit table if not exists
+      if (unit) {
+        const unitName = unit.trim();
+        const existingUnit = await this.prisma.productUnit.findFirst({
+          where: { name: { equals: unitName, mode: 'insensitive' } },
+        });
+        if (!existingUnit) {
+          await this.prisma.productUnit.create({
+            data: { name: unitName },
+          });
+        }
+      }
+
+      let product = null;
+      if (id) {
+        product = await this.prisma.product.findUnique({
+          where: { id: id.toString().trim() },
+        });
+      }
+
+      const generatedSlug = this.generateSlug(name);
+      if (!product) {
+        product = await this.prisma.product.findFirst({
+          where: {
+            OR: [
+              { slug: generatedSlug },
+              { name: name }
+            ]
+          }
+        });
+      }
+
+      // Match images for this product (filename starts with product ID or name slug)
+      const cleanIdForImage = id ? id.toString().trim() : '';
+      const matchedImages = imageFiles.filter((img) => {
+        const originalName = img.originalname.toLowerCase();
+        const cleanId = cleanIdForImage.toLowerCase();
+        const cleanSlug = generatedSlug.toLowerCase();
+        return (cleanId && originalName.startsWith(`${cleanId}_`)) || originalName.startsWith(`${cleanSlug}_`);
+      });
+
+      const imageUrls: string[] = [];
+      for (const img of matchedImages) {
+        try {
+          const uploadRes = await this.cloudinaryService.uploadBuffer(img.buffer, 'products');
+          imageUrls.push(uploadRes.url);
+        } catch (err) {
+          errors.push(`Dòng ${rowNum}: Cảnh báo: Lỗi khi tải ảnh ${img.originalname} lên Cloudinary: ${err.message || err}`);
+        }
+      }
+
+      if (product) {
+        const currentStock = product.stock ?? 0;
+        await this.prisma.product.update({
+          where: { id: product.id },
+          data: {
+            sellingPrice,
+            importPrice,
+            salePrice: salePrice || null,
+            stock: currentStock + quantity,
+            brand: brand || product.brand,
+            unit: unit || product.unit,
+            description: description || product.description,
+            category: categorySlug,
+            targetSpecies: species,
+            specifications: specifications || product.specifications,
+            imageUrl: imageUrls.length > 0 ? imageUrls[0] : product.imageUrl,
+            images: imageUrls.length > 0 ? imageUrls : product.images,
+          },
+        });
+        updatedCount++;
+      } else {
+        const newId = id ? id.toString().trim() : await this.generateProductId();
+        await this.prisma.product.create({
+          data: {
+            id: newId,
+            storeId: store.id,
+            name,
+            slug: generatedSlug,
+            category: categorySlug,
+            targetSpecies: species,
+            sellingPrice,
+            importPrice,
+            salePrice: salePrice || null,
+            stock: quantity,
+            brand: brand || '',
+            unit: unit || '',
+            description: description || '',
+            isActive: true,
+            isFeatured: false,
+            specifications: specifications || null,
+            imageUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+            images: imageUrls.length > 0 ? imageUrls : [],
+          },
+        });
+        createdCount++;
+      }
+    }
+
+    return {
+      success: true,
+      updatedCount,
+      createdCount,
+      errors,
+    };
+  }
+
+  async exportOrdersToExcel(filters: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean }) {
+    const where: any = {};
+
+    if (filters.startDate || filters.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) {
+        where.createdAt.gte = new Date(filters.startDate);
+      }
+      if (filters.endDate) {
+        const end = new Date(filters.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
+    }
+
+    if (filters.onlyPendingGhn) {
+      where.ghnOrderCode = null;
+      where.status = { notIn: ['CANCELLED', 'SHIPPED', 'DELIVERED'] };
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: { name: true, email: true, phone: true },
+        },
+        items: {
+          include: {
+            product: {
+              select: { name: true, importPrice: true },
+            },
+          },
+        },
+      },
+    });
+
+    const exportData = orders.map((o) => {
+      let name = o.user?.name || '';
+      let phone = o.user?.phone || '';
+      let address = o.shippingAddress;
+      try {
+        if (o.shippingAddress.startsWith('{')) {
+          const parsed = JSON.parse(o.shippingAddress);
+          name = parsed.name || name;
+          phone = parsed.phone || phone;
+          address = `${parsed.address}, ${parsed.ward}, ${parsed.district}, ${parsed.province}`;
+        }
+      } catch (e) {
+        // use raw address
+      }
+
+      const itemsList = o.items.map((i) => `${i.product?.name || 'Sản phẩm'} (x${i.quantity})`).join(', ');
+      
+      let orderProfit = 0;
+      for (const i of o.items) {
+        const soldPrice = i.price;
+        const importPrice = i.product?.importPrice ?? (soldPrice * 0.5);
+        orderProfit += (soldPrice - importPrice) * i.quantity;
+      }
+
+      const statusLabels: Record<string, string> = {
+        PENDING: 'Đang xử lý',
+        CONFIRMED: 'Đã xác nhận',
+        SHIPPED: 'Đang giao hàng',
+        DELIVERED: 'Đã hoàn thành',
+        CANCELLED: 'Đã hủy',
+      };
+
+      return {
+        'Mã đơn hàng': o.id,
+        'Khách hàng': name,
+        'SĐT': phone,
+        'Địa chỉ giao hàng': address,
+        'Ngày đặt': new Date(o.createdAt).toLocaleDateString('vi-VN'),
+        'Sản phẩm': itemsList,
+        'Tổng thanh toán': o.totalAmount,
+        'Lợi nhuận đơn': orderProfit,
+        'Trạng thái': statusLabels[o.status] || o.status,
+        'Mã vận đơn GHN': o.ghnOrderCode || 'Chưa gửi',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh sách đơn hàng');
+    
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    return buffer;
   }
 }

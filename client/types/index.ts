@@ -136,7 +136,8 @@ export interface Product {
   imageUrl?: string;
   images: string[];
   specifications?: Record<string, string> | null;
-  originalPrice: number;
+  sellingPrice: number;
+  importPrice?: number | null;
   salePrice?: number | null;
   brand?: string;
   unit?: string;

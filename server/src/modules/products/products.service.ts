@@ -51,8 +51,8 @@ export class ProductsService {
 
       const data = allProducts
         .sort((a, b) => {
-          const priceA = a.salePrice ?? a.originalPrice;
-          const priceB = b.salePrice ?? b.originalPrice;
+          const priceA = a.salePrice ?? (a.sellingPrice || 0);
+          const priceB = b.salePrice ?? (b.sellingPrice || 0);
           const priceCompare = sortBy === 'price_asc' ? priceA - priceB : priceB - priceA;
 
           return priceCompare || b.reviewCount - a.reviewCount;

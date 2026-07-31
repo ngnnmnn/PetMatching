@@ -36,6 +36,12 @@ export const usersApi = {
   updateOrderShipping: (id: string, shippingAddress: string) =>
     api.put<any>(`/users/orders/${id}/shipping`, { shippingAddress }),
   retryPayment: (id: string) => api.post<any>(`/users/orders/${id}/retry-payment`),
+  requestRefund: (
+    id: string,
+    data: { bankCode: string; accountNumber: string; accountName: string; reason: string },
+  ) => api.post<any>(`/users/orders/${id}/request-refund`, data),
+  lookupBankName: (bankCode: string, accountNumber: string) =>
+    api.post<{ accountName: string }>('/users/bank-lookup', { bankCode, accountNumber }),
   applyVoucher: (code: string, totalAmount: number) =>
     api.post<{ success: boolean; code: string; type: string; value: number; message: string }>('/vouchers/apply', { code, totalAmount }),
 };

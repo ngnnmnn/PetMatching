@@ -191,4 +191,20 @@ export class UsersController {
   ) {
     return this.usersService.retryPayment(req.user.id, id);
   }
+
+  @Post('orders/:id/request-refund')
+  requestRefund(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: { bankCode: string; accountNumber: string; accountName: string; reason: string },
+  ) {
+    return this.usersService.requestRefund(req.user.id, id, body);
+  }
+
+  @Post('bank-lookup')
+  lookupBankAccount(
+    @Body() body: { bankCode: string; accountNumber: string },
+  ) {
+    return this.usersService.lookupBankAccount(body.bankCode, body.accountNumber);
+  }
 }

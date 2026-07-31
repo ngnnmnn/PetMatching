@@ -320,7 +320,7 @@ export default function Chatbot() {
                               <p className="text-[9px] font-bold text-[var(--text-muted)]">{product.brand || 'PetMatch'}</p>
                               <div className="mt-1 flex items-center justify-between">
                                 <span className="text-[11px] font-black text-[#E45D1C]">
-                                  {formatCurrency(product.salePrice ?? product.originalPrice)}
+                                  {formatCurrency(product.salePrice ?? product.sellingPrice)}
                                 </span>
                               </div>
                             </Link>

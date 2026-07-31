@@ -269,7 +269,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
                 )}
 
                 {!loadingSuggestions && suggestions.map((product, index) => {
-                  const price = product.salePrice ?? product.originalPrice;
+                  const price = product.salePrice ?? product.sellingPrice;
                   const isActive = index === activeIndex;
                   return (
                     <div
@@ -309,7 +309,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
                         </span>
                         {product.salePrice && (
                           <span className="block text-[10px] font-semibold text-[var(--text-muted)] line-through">
-                            {formatCurrency(product.originalPrice)}
+                            {formatCurrency(product.sellingPrice)}
                           </span>
                         )}
                       </div>

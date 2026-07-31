@@ -303,8 +303,9 @@ model Product {
   imageUrl       String?
   images         String[]
   specifications Json?
-  originalPrice  Float
+  sellingPrice   Float
   salePrice      Float?
+  importPrice    Float?
   brand          String?
   unit           String?
   rating         Float           @default(0)
@@ -350,27 +351,33 @@ model Address {
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  userId          String
-  status          OrderStatus @default(PENDING)
-  totalAmount     Float
-  shippingFee     Float       @default(0)
-  discountAmount  Float       @default(0)
-  voucherCode     String?
-  shippingAddress String
-  districtId      Int?
-  wardCode        String?
-  ghnOrderCode    String?
-  shippingStatus  String?
-  storeId         String?
-  paymentMethod   String      @default("COD")
-  orderCode       Int?        @unique
-  paymentUrl      String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  items           OrderItem[]
-  store           Store?      @relation(fields: [storeId], references: [id])
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String      @id @default(cuid())
+  userId              String
+  status              OrderStatus @default(PENDING)
+  totalAmount         Float
+  shippingFee         Float       @default(0)
+  discountAmount      Float       @default(0)
+  voucherCode         String?
+  shippingAddress     String
+  districtId          Int?
+  wardCode            String?
+  ghnOrderCode        String?
+  shippingStatus      String?
+  storeId             String?
+  paymentMethod       String      @default("COD")
+  orderCode           Int?        @unique
+  paymentUrl          String?
+  refundStatus        String?
+  refundBankCode      String?
+  refundAccountNumber String?
+  refundAccountName   String?
+  refundReason        String?
+  refundedAt          DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  items               OrderItem[]
+  store               Store?      @relation(fields: [storeId], references: [id])
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([storeId])

@@ -227,7 +227,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   const cartTotal = cartItems.reduce((acc, item) => {
-    const price = item.product.salePrice ?? item.product.originalPrice;
+    const price = item.product.salePrice ?? item.product.sellingPrice;
     return acc + price * item.quantity;
   }, 0);
 
