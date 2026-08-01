@@ -139,7 +139,7 @@ export default function StorePage() {
                   </div>
                   <div className="pt-4">
                     <Link
-                      href="/pet-matching"
+                      href="/explore"
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#E11D48] px-5 text-xs font-extrabold text-white shadow-sm hover:bg-[#BE123C] active:scale-95 transition cursor-pointer"
                     >
                       Bắt đầu ghép đôi

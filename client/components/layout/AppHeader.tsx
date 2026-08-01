@@ -30,7 +30,6 @@ const MotionLink = motion.create(Link);
 // 4 trang chính của hệ thống được đưa lên thanh điều hướng chính (Top Navigation Bar)
 const MAIN_NAV = [
   { label: 'Khám phá', href: '/explore', icon: Search },
-  { label: 'Yêu cầu', href: '/requests', icon: Inbox },
   { label: 'Tin nhắn', href: '/messages', icon: MessageCircle },
   { label: 'Thú cưng của tôi', href: '/my-pets', icon: PawPrint },
 ];
@@ -217,7 +216,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
             <MotionLink
               layoutId="header-nav-match"
               transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-              href="/pet-matching"
+              href="/explore"
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black bg-[#E11D48] hover:bg-[#BE123C] text-white transition active:scale-95 shadow-xs border border-transparent"
             >
               <Heart className="size-4 text-white fill-white" />
@@ -362,7 +361,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
               <MotionLink
                 layoutId="header-nav-match"
                 transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-                href="/pet-matching"
+                href="/explore"
                 className="hidden h-10 items-center gap-2 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] px-4 text-xs font-black text-white active:scale-95 transition sm:flex shadow-xs"
               >
                 <Heart className="size-4 text-white fill-white" />

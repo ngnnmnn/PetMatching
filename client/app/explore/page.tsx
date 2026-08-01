@@ -654,7 +654,7 @@ export default function UnifiedMatchingHubPage() {
           ) : (
             <div className="text-center py-12">
               <Button asChild className="rounded-xl font-bold">
-                <Link href="/requests">Xem toàn bộ Lịch sử Yêu cầu Đã gửi</Link>
+                <Link href="/messages">Xem toàn bộ Lịch sử Yêu cầu Đã gửi</Link>
               </Button>
             </div>
           )}
