@@ -59,6 +59,7 @@ export default function SpaHomePage() {
 
   const [branches, setBranches] = useState<AddressSpaType[]>([]);
   const [services, setServices] = useState<SpaServiceType[]>([]);
+  const [categoriesList, setCategoriesList] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Booking dialog state
@@ -75,12 +76,14 @@ export default function SpaHomePage() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [branchesRes, servicesRes] = await Promise.all([
+        const [branchesRes, servicesRes, categoriesRes] = await Promise.all([
           spaApi.getSpaAddresses(),
           spaApi.getServices(),
+          spaApi.getCategories().catch(() => ({ data: [] })),
         ]);
         setBranches(branchesRes.data || []);
         setServices(servicesRes.data || []);
+        setCategoriesList(categoriesRes.data || []);
       } catch (error) {
         console.error('Failed to load spa data', error);
       } finally {
@@ -121,20 +124,45 @@ export default function SpaHomePage() {
   const safeServices = Array.isArray(services) ? services : [];
   const safeBranches = Array.isArray(branches) ? branches : [];
 
+  const categoriesToDisplay = React.useMemo(() => {
+    const list = [{ label: 'Tất cả', value: 'all' }];
+    const added = new Set<string>();
+
+    if (categoriesList && categoriesList.length > 0) {
+      categoriesList.forEach((c: any) => {
+        if (c.name && !added.has(c.name)) {
+          added.add(c.name);
+          list.push({ label: c.name, value: c.name });
+        }
+      });
+    }
+
+    safeServices.forEach((s) => {
+      const name = s.category?.name || s.brand?.name;
+      if (name && !added.has(name)) {
+        added.add(name);
+        list.push({ label: name, value: name });
+      }
+    });
+
+    return list;
+  }, [categoriesList, safeServices]);
+
   // Filtering services based on search, tabs and selected sub-categories
   const filteredServices = safeServices.filter((service) => {
     if (!service || !service.name) return false;
+    const catName = service.category?.name || service.brand?.name || '';
     const matchesSearch =
       service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (service.description && service.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (service.brand?.name && service.brand.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      catName.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
 
     // Category filter match
     if (selectedCategory === 'all') return true;
 
-    return service.brand?.name === selectedCategory || service.brand?.name?.includes(selectedCategory);
+    return catName.toLowerCase() === selectedCategory.toLowerCase() || catName.toLowerCase().includes(selectedCategory.toLowerCase());
   });
 
   const filteredBranches = safeBranches.filter((branch) => {
@@ -199,14 +227,15 @@ export default function SpaHomePage() {
 
         {/* Categories Bar */}
         <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
-          {CATEGORIES.map((cat) => (
+          {categoriesToDisplay.map((cat) => (
             <button
               key={cat.value}
               onClick={() => setSelectedCategory(cat.value)}
-              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${selectedCategory === cat.value
+              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${
+                selectedCategory === cat.value
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
-                }`}
+              }`}
             >
               {cat.label}
             </button>
@@ -233,17 +262,11 @@ export default function SpaHomePage() {
             }>();
 
             filteredServices.forEach((service) => {
-              let cleanTitle = service.brand?.name || service.name;
+              let cleanTitle = service.category?.name || service.brand?.name || service.name;
               cleanTitle = cleanTitle.replace(/\s*\([^)]*\)/g, '').trim();
               if (!cleanTitle) cleanTitle = service.name;
 
-              let categoryLabel = 'Grooming Spa';
-              if (cleanTitle.includes('Tắm')) categoryLabel = 'Tắm & Sấy';
-              else if (cleanTitle.includes('tỉa') || cleanTitle.includes('Tỉa')) categoryLabel = 'Cắt tỉa lông';
-              else if (cleanTitle.includes('móng') || cleanTitle.includes('Móng')) categoryLabel = 'Chăm sóc móng';
-              else if (cleanTitle.includes('tai') || cleanTitle.includes('răng')) categoryLabel = 'Vệ sinh tai & răng';
-              else if (cleanTitle.includes('Massage')) categoryLabel = 'Massage';
-              else if (cleanTitle.includes('Gói') || cleanTitle.includes('Combo')) categoryLabel = 'Gói combo';
+              const categoryLabel = service.category?.name || service.brand?.name || 'Dịch vụ Spa';
 
               if (!brandMap.has(cleanTitle)) {
                 brandMap.set(cleanTitle, {

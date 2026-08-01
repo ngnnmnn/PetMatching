@@ -24,8 +24,21 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
         const res = await wishlistApi.getWishlist();
         setWishlistItems(res.data);
         localStorage.removeItem('petmatch_wishlist');
-      } catch (e) {
-        console.error('Failed to load wishlist from backend', e);
+      } catch (e: any) {
+        if (e?.response?.status === 401) {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
+          const stored = localStorage.getItem('petmatch_wishlist');
+          if (stored) {
+            try {
+              setWishlistItems(JSON.parse(stored));
+            } catch {}
+          } else {
+            setWishlistItems([]);
+          }
+        } else {
+          console.error('Failed to load wishlist from backend', e);
+        }
       }
     } else {
       const stored = localStorage.getItem('petmatch_wishlist');

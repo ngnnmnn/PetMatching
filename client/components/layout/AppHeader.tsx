@@ -25,7 +25,7 @@ import { useCart } from '@/context/CartContext';
 import { productsApi } from '@/lib/api/products';
 import { Product } from '@/types';
 
-const MotionLink = motion(Link);
+const MotionLink = motion.create(Link);
 
 // 4 trang chính của hệ thống được đưa lên thanh điều hướng chính (Top Navigation Bar)
 const MAIN_NAV = [

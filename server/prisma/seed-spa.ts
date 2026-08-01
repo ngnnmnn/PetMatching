@@ -18,12 +18,12 @@ async function main() {
   const brandMap: Record<string, string> = {};
 
   for (const b of brandDefs) {
-    let brand = await prisma.spaBrand.findFirst({
+    let brand = await prisma.spaCategory.findFirst({
       where: { name: b.name },
     });
 
     if (!brand) {
-      brand = await prisma.spaBrand.create({
+      brand = await prisma.spaCategory.create({
         data: {
           name: b.name,
           description: b.description,
@@ -32,7 +32,7 @@ async function main() {
         },
       });
     } else {
-      brand = await prisma.spaBrand.update({
+      brand = await prisma.spaCategory.update({
         where: { id: brand.id },
         data: {
           isMain: b.isMain,
@@ -106,7 +106,7 @@ async function main() {
   for (const pkg of dogMainPackages) {
     dogWeightBrackets.forEach((w, index) => {
       servicesToCreate.push({
-        brandId: brandMap[pkg.brand],
+        categoryId: brandMap[pkg.brand],
         name: `${pkg.name} (${w.label})`,
         description: pkg.desc,
         species: Species.DOG,
@@ -168,7 +168,7 @@ async function main() {
   for (const pkg of catMainPackages) {
     catWeightBrackets.forEach((w, index) => {
       servicesToCreate.push({
-        brandId: brandMap[pkg.brand],
+        categoryId: brandMap[pkg.brand],
         name: `${pkg.name} (${w.label})`,
         description: pkg.desc,
         species: Species.CAT,
@@ -268,7 +268,7 @@ async function main() {
 
   for (const s of addonServices) {
     servicesToCreate.push({
-      brandId: addonBrandId,
+      categoryId: addonBrandId,
       name: s.name,
       description: s.desc,
       species: s.species || null,

@@ -15,6 +15,11 @@ export class SpaController {
     return this.spaService.getBranches();
   }
 
+  @Get('categories')
+  getCategories() {
+    return this.spaService.getCategories();
+  }
+
   @Get('services')
   getServices(@Query('species') species?: Species, @Query('weight') weight?: string) {
     return this.spaService.getServices(species, weight ? Number(weight) : undefined);

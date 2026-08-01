@@ -249,67 +249,15 @@ async function main() {
     },
   });
 
-  // Seeding Spa Staff account and bookings
-  // Seeding Spa Brands (Categories)
-  await prisma.spaBrand.deleteMany({
+  // Delete any legacy hardcoded brand/category IDs if they exist
+  await prisma.spaCategory.deleteMany({
     where: {
       id: { in: ['brand-tam-say', 'brand-cat-tia', 'brand-mong', 'brand-tai-rang', 'brand-massage', 'brand-combo'] }
     }
   });
 
-  const brandTamSay = await prisma.spaBrand.create({
-    data: {
-      id: 'brand-tam-say',
-      name: 'Tắm & Sấy',
-      description: 'Dịch vụ tắm gội, sấy khô chuyên nghiệp cho thú cưng',
-      status: ApprovalStatus.ACTIVE,
-    }
-  });
-
-  const brandCatTia = await prisma.spaBrand.create({
-    data: {
-      id: 'brand-cat-tia',
-      name: 'Cắt tỉa lông',
-      description: 'Tạo kiểu lông, làm đẹp phom dáng cho bé cưng',
-      status: ApprovalStatus.ACTIVE,
-    }
-  });
-
-  const brandMong = await prisma.spaBrand.create({
-    data: {
-      id: 'brand-mong',
-      name: 'Chăm sóc móng',
-      description: 'Cắt mài móng vuốt an toàn, dũa nhẵn',
-      status: ApprovalStatus.ACTIVE,
-    }
-  });
-
-  const brandTaiRang = await prisma.spaBrand.create({
-    data: {
-      id: 'brand-tai-rang',
-      name: 'Vệ sinh tai và răng',
-      description: 'Làm sạch tai, đánh răng, xịt thơm miệng chuyên sâu',
-      status: ApprovalStatus.ACTIVE,
-    }
-  });
-
-  const brandMassage = await prisma.spaBrand.create({
-    data: {
-      id: 'brand-massage',
-      name: 'Massage thư giãn',
-      description: 'Massage bấm huyệt giúp giảm căng thẳng',
-      status: ApprovalStatus.ACTIVE,
-    }
-  });
-
-  const brandCombo = await prisma.spaBrand.create({
-    data: {
-      id: 'brand-combo',
-      name: 'gói combo',
-      description: 'Các gói chăm sóc toàn diện siêu tiết kiệm',
-      status: ApprovalStatus.ACTIVE,
-    }
-  });
+  const comboCategory = await prisma.spaCategory.findFirst({ where: { name: 'Combo' } }) || await prisma.spaCategory.findFirst();
+  const tamCategory = await prisma.spaCategory.findFirst({ where: { name: 'Tắm' } }) || await prisma.spaCategory.findFirst();
 
   // Seeding Spa Services
   await prisma.spaService.deleteMany({
@@ -443,7 +391,7 @@ async function main() {
   await prisma.spaBooking.create({
     data: {
       id: 'demo-booking-1',
-      brandId: brandCombo.id,
+      categoryId: comboCategory ? comboCategory.id : null,
       addressSpaId: 'petmatch-spa-q1',
       serviceId: demoServiceId,
       mainServiceId: demoServiceId,
@@ -464,7 +412,7 @@ async function main() {
   await prisma.spaBooking.create({
     data: {
       id: 'demo-booking-2',
-      brandId: brandTamSay.id,
+      categoryId: tamCategory ? tamCategory.id : null,
       addressSpaId: 'petmatch-spa-q1',
       serviceId: demoServiceId,
       mainServiceId: demoServiceId,
@@ -482,7 +430,7 @@ async function main() {
   await prisma.spaBooking.create({
     data: {
       id: 'demo-booking-3',
-      brandId: brandTamSay.id,
+      categoryId: tamCategory ? tamCategory.id : null,
       addressSpaId: 'petmatch-spa-q1',
       serviceId: demoServiceId,
       mainServiceId: demoServiceId,
