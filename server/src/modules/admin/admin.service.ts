@@ -28,6 +28,8 @@ import {
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
   UpdateBreedRuleDto,
+  CreateBreedDto,
+  UpdateBreedDto,
 } from './dto/admin-actions.dto';
 
 type AdminActor = {
@@ -662,6 +664,97 @@ export class AdminService {
       breedA: rule.breedA,
       breedB: rule.breedB,
     });
+    return { success: true };
+  }
+
+  // =============================================================
+  // BREED CATALOG MANAGEMENT
+  // =============================================================
+
+  async getAdminBreeds(query: { species?: Species; search?: string }) {
+    const search = query.search?.trim();
+    const officialBreeds = await this.prisma.breed.findMany({
+      where: {
+        ...(query.species ? { species: query.species } : {}),
+        ...(search
+          ? { name: { contains: search, mode: 'insensitive' } }
+          : {}),
+      },
+      orderBy: [{ species: 'asc' }, { name: 'asc' }],
+    });
+
+    // Detect user-submitted custom breeds not yet in official catalog
+    const userPets = await this.prisma.pet.findMany({
+      where: query.species ? { species: query.species } : {},
+      select: { species: true, breed: true },
+      distinct: ['species', 'breed'],
+    });
+
+    const officialBreedSet = new Set(
+      officialBreeds.map((b) => `${b.species}_${b.name.trim().toLowerCase()}`),
+    );
+
+    const customBreeds = userPets
+      .filter(
+        (p) => !officialBreedSet.has(`${p.species}_${p.breed.trim().toLowerCase()}`),
+      )
+      .map((p) => ({
+        species: p.species,
+        name: p.breed.trim(),
+        isCustom: true,
+      }));
+
+    return {
+      official: officialBreeds,
+      custom: customBreeds,
+    };
+  }
+
+  async createBreed(actor: AdminActor, dto: CreateBreedDto) {
+    const name = dto.name.trim().replace(/\s+/g, ' ');
+    const existing = await this.prisma.breed.findUnique({
+      where: { species_name: { species: dto.species, name } },
+    });
+    if (existing) {
+      throw new BadRequestException('Giống thú cưng này đã tồn tại trong danh mục.');
+    }
+
+    const breed = await this.prisma.breed.create({
+      data: {
+        species: dto.species,
+        name,
+        isActive: dto.isActive ?? true,
+      },
+    });
+
+    await this.audit(actor.id, 'ADMIN_CREATE_BREED', 'Breed', breed.id, { species: dto.species, name });
+    return breed;
+  }
+
+  async updateBreed(actor: AdminActor, id: string, dto: UpdateBreedDto) {
+    const existing = await this.prisma.breed.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Không tìm thấy giống thú cưng.');
+
+    const name = dto.name ? dto.name.trim().replace(/\s+/g, ' ') : existing.name;
+
+    const breed = await this.prisma.breed.update({
+      where: { id },
+      data: {
+        ...(dto.name ? { name } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+
+    await this.audit(actor.id, 'ADMIN_UPDATE_BREED', 'Breed', id, dto);
+    return breed;
+  }
+
+  async deleteBreed(actor: AdminActor, id: string) {
+    const existing = await this.prisma.breed.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Không tìm thấy giống thú cưng.');
+
+    await this.prisma.breed.delete({ where: { id } });
+    await this.audit(actor.id, 'ADMIN_DELETE_BREED', 'Breed', id, { species: existing.species, name: existing.name });
     return { success: true };
   }
 

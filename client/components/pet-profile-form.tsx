@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, Plus, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -44,7 +44,31 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [submitError, setSubmitError] = useState("")
 
-  const breeds = formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : []
+  const [dbBreeds, setDbBreeds] = useState<string[]>([])
+  const [isCustomBreed, setIsCustomBreed] = useState(false)
+  const [customBreedInput, setCustomBreedInput] = useState("")
+
+  useEffect(() => {
+    if (!formData.species) {
+      setDbBreeds([])
+      return
+    }
+    const species = formData.species.toUpperCase()
+    api
+      .get<{ id: string; name: string }[]>('/breeds', { params: { species } })
+      .then((res) => {
+        if (res.data && res.data.length > 0) {
+          setDbBreeds(res.data.map((b) => b.name))
+        } else {
+          setDbBreeds(formData.species === "dog" ? dogBreeds : catBreeds)
+        }
+      })
+      .catch(() => {
+        setDbBreeds(formData.species === "dog" ? dogBreeds : catBreeds)
+      })
+  }, [formData.species])
+
+  const breeds = dbBreeds.length > 0 ? dbBreeds : (formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : [])
 
   const handleImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -105,7 +129,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
   const canProceed = () => {
     if (step === 1) {
-      return formData.name && formData.species && formData.breed && formData.gender
+      const breedValid = isCustomBreed ? customBreedInput.trim().length > 0 : !!formData.breed
+      return formData.name && formData.species && breedValid && formData.gender
     }
     if (step === 2) {
       return formData.birthday && formData.weight && formData.location
@@ -129,6 +154,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
     const species = formData.species === "dog" ? "DOG" : "CAT"
     const gender = formData.gender === "male" ? "MALE" : "FEMALE"
+    const finalBreed = isCustomBreed ? customBreedInput.trim() : formData.breed
+
     const breedingOptionMap: Record<string, string> = {
       cash: "CASH",
       share: "SHARE_LITTER",
@@ -142,7 +169,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       await api.post("/pets", {
         name: formData.name.trim(),
         species,
-        breed: formData.breed,
+        breed: finalBreed,
         gender,
         birthday: formData.birthday,
         weight: Number(formData.weight),
@@ -268,8 +295,16 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               <div className="space-y-2">
                 <Label htmlFor="breed">Giống *</Label>
                 <Select
-                  value={formData.breed}
-                  onValueChange={(value) => setFormData({ ...formData, breed: value })}
+                  value={isCustomBreed ? "OTHER" : formData.breed}
+                  onValueChange={(value) => {
+                    if (value === "OTHER") {
+                      setIsCustomBreed(true)
+                      setFormData({ ...formData, breed: "" })
+                    } else {
+                      setIsCustomBreed(false)
+                      setFormData({ ...formData, breed: value })
+                    }
+                  }}
                   disabled={!formData.species}
                 >
                   <SelectTrigger>
@@ -281,8 +316,22 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                         {breed}
                       </SelectItem>
                     ))}
+                    <SelectItem value="OTHER">✨ Giống khác (Nhập thủ công)</SelectItem>
                   </SelectContent>
                 </Select>
+
+                {isCustomBreed && (
+                  <div className="mt-2 space-y-1">
+                    <Label htmlFor="customBreedInput" className="text-xs font-semibold text-primary">Tên giống của bé</Label>
+                    <Input
+                      id="customBreedInput"
+                      placeholder="Ví dụ: Puggle, Phốc sóc lai..."
+                      value={customBreedInput}
+                      onChange={(e) => setCustomBreedInput(e.target.value)}
+                      className="border-primary/50 focus:border-primary"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

@@ -141,19 +141,22 @@ export class MatchingService {
       return latest.createdAt < latestProfileUpdate;
     });
 
-    // Tính compatibility scores song song
-    const data = await Promise.all(
-      eligibleCandidates.map(async (candidate) => {
-        const compatibility = await this.calculateCompatibilityScore(femalePet, candidate);
-        return {
-          ...this.toPetCard(candidate),
-          compatibilityScore: compatibility.score,
-          matchReasons: compatibility.reasons,
-          breedWarnings: compatibility.warnings,
-          breedInfo: compatibility.breedInfo,
-        };
-      }),
-    );
+    // Batch fetch breed rules để tránh N+1 DB query lên Supabase
+    const breedRules = await this.prisma.breedRule.findMany({
+      where: { species: femalePet.species, isActive: true },
+    });
+
+    // Tính compatibility scores đồng bộ trong bộ nhớ
+    const data = eligibleCandidates.map((candidate) => {
+      const compatibility = this.calculateCompatibilityScoreSync(femalePet, candidate, breedRules);
+      return {
+        ...this.toPetCard(candidate),
+        compatibilityScore: compatibility.score,
+        matchReasons: compatibility.reasons,
+        breedWarnings: compatibility.warnings,
+        breedInfo: compatibility.breedInfo,
+      };
+    });
 
     // Sắp xếp theo điểm giảm dần
     data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
@@ -490,8 +493,59 @@ export class MatchingService {
       reasons.push('similar_weight');
     }
 
-    // BreedRule lookup từ database
     const breedRule = await this.findBreedRule(femalePet.species, femalePet.breed, malePet.breed);
+    return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
+  }
+
+  private calculateCompatibilityScoreSync(
+    femalePet: Pet,
+    malePet: Pet,
+    breedRules: BreedRule[],
+  ): CompatibilityResult {
+    let score = 30;
+    const reasons: string[] = [];
+    const warnings: string[] = [];
+
+    if (femalePet.breed === malePet.breed) {
+      score += 25;
+      reasons.push('same_breed');
+    }
+    if (femalePet.location === malePet.location) {
+      score += 15;
+      reasons.push('same_location');
+    }
+    if (femalePet.hasPedigree && malePet.hasPedigree) {
+      score += 10;
+      reasons.push('both_pedigree');
+    }
+    if (femalePet.vaccineVerified && malePet.vaccineVerified) {
+      score += 5;
+      reasons.push('both_vaccine_verified');
+    }
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 10;
+      reasons.push('both_pedigree_verified');
+    }
+    if (Math.abs(femalePet.weight - malePet.weight) <= 5) {
+      score += 10;
+      reasons.push('similar_weight');
+    }
+
+    const breedRule = breedRules.find(
+      (r) =>
+        (r.breedA === femalePet.breed && r.breedB === malePet.breed) ||
+        (r.breedA === malePet.breed && r.breedB === femalePet.breed),
+    ) || null;
+
+    return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
+  }
+
+  private applyBreedRuleScore(
+    score: number,
+    reasons: string[],
+    warnings: string[],
+    breedRule: BreedRule | null,
+  ): CompatibilityResult {
     let breedInfo: CompatibilityResult['breedInfo'] = undefined;
 
     if (breedRule) {
