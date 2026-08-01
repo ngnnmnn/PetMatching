@@ -145,6 +145,15 @@ export default function LoginForm() {
             </div>
           </div>
 
+          <div className="-mt-2 text-right">
+            <Link
+              href="/forgot-password"
+              className="text-sm font-bold text-[var(--primary-color)] transition hover:text-[#cf5017] hover:underline"
+            >
+              Quên mật khẩu?
+            </Link>
+          </div>
+
           {error && (
             <div className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-600">
               {error}
