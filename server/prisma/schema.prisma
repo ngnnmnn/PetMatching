@@ -65,6 +65,18 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+model Breed {
+  id        String   @id @default(cuid())
+  species   Species
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([species, name])
+  @@map("breeds")
+}
+
 model EmailOtp {
   id         String    @id @default(cuid())
   email      String
