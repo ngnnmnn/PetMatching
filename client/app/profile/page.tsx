@@ -33,7 +33,9 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AppHeader from '@/components/layout/AppHeader';
+import PasswordStrengthMeter from '@/components/auth/PasswordStrengthMeter';
 import { usersApi } from '@/lib/api/users';
+import { getPasswordPolicyError, getPasswordStrength, PASSWORD_MIN_LENGTH } from '@/lib/password-policy';
 import { Address, ProfileResponse } from '@/types';
 import {
   AlertDialog,
@@ -46,13 +48,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type AddressDraft = Omit<Address, 'id' | 'userId' | 'createdAt' | 'updatedAt'>;
 
@@ -71,13 +67,6 @@ type WardOption = {
   name: string;
 };
 
-type PasswordStrength = {
-  level: 0 | 1 | 2 | 3 | 4;
-  label: string;
-  width: string;
-  color: string;
-};
-
 const emptyAddress: AddressDraft = {
   receiverName: '',
   receiverPhone: '',
@@ -89,59 +78,6 @@ const emptyAddress: AddressDraft = {
 };
 
 const VIETNAM_ADMIN_API = 'https://provinces.open-api.vn/api';
-
-const emptyPasswordStrength: PasswordStrength = {
-  level: 0,
-  label: '',
-  width: '0%',
-  color: 'transparent',
-};
-
-function getPasswordStrength(password: string): PasswordStrength {
-  if (!password) {
-    return emptyPasswordStrength;
-  }
-
-  const hasLower = /[a-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasLetter = /[a-zA-Z]/.test(password);
-  const hasNumber = /\d/.test(password);
-  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
-
-  if (hasLower && hasUpper && hasNumber && hasSpecial) {
-    return {
-      level: 4,
-      label: 'Mật khẩu cực mạnh (Rất an toàn)',
-      width: '100%',
-      color: '#10B981',
-    };
-  }
-
-  if (hasLower && hasUpper && hasNumber) {
-    return {
-      level: 3,
-      label: 'Mật khẩu mạnh',
-      width: '75%',
-      color: '#3B82F6',
-    };
-  }
-
-  if (hasLetter && hasNumber) {
-    return {
-      level: 2,
-      label: 'Mật khẩu trung bình',
-      width: '50%',
-      color: '#F59E0B',
-    };
-  }
-
-  return {
-    level: 1,
-    label: 'Mật khẩu yếu',
-    width: '25%',
-    color: '#EF4444',
-  };
-}
 
 const shortcuts = [
   { href: '/my-pets', label: 'Thú cưng của tôi', icon: PawPrint },
@@ -188,26 +124,13 @@ export default function ProfilePage() {
     confirmPassword: '',
   });
 
-  const defaultAddress = useMemo(
-    () => profile?.addresses.find((address) => address.isDefault),
-    [profile?.addresses],
-  );
+  const defaultAddress = useMemo(() => profile?.addresses.find((address) => address.isDefault), [profile?.addresses]);
 
-  const secondaryAddresses = useMemo(
-    () => profile?.addresses.filter((address) => !address.isDefault) ?? [],
-    [profile?.addresses],
-  );
+  const secondaryAddresses = useMemo(() => profile?.addresses.filter((address) => !address.isDefault) ?? [], [profile?.addresses]);
 
-  const passwordStrength = useMemo(
-    () => getPasswordStrength(passwords.newPassword),
-    [passwords.newPassword],
-  );
+  const passwordStrength = useMemo(() => getPasswordStrength(passwords.newPassword), [passwords.newPassword]);
 
-  const canAttemptChangePassword =
-    passwords.currentPassword.length > 0 &&
-    passwords.newPassword.length > 0 &&
-    passwords.confirmPassword.length > 0 &&
-    !passwordSaving;
+  const canAttemptChangePassword = passwords.currentPassword.length > 0 && passwords.newPassword.length > 0 && passwords.confirmPassword.length > 0 && !passwordSaving;
 
   const updatePasswordField = (field: keyof typeof passwords, value: string) => {
     setPasswords((state) => ({ ...state, [field]: value }));
@@ -282,15 +205,13 @@ export default function ProfilePage() {
     return response.data;
   };
 
-  const loadDistricts = async (
-    provinceCode: string,
-    districtNameToSelect?: string,
-    wardNameToSelect?: string,
-  ) => {
+  const loadDistricts = async (provinceCode: string, districtNameToSelect?: string, wardNameToSelect?: string) => {
     setAddressOptionsLoading(true);
     try {
       const response = await fetch(`${VIETNAM_ADMIN_API}/p/${provinceCode}?depth=2`);
-      const data = (await response.json()) as ProvinceOption & { districts: DistrictOption[] };
+      const data = (await response.json()) as ProvinceOption & {
+        districts: DistrictOption[];
+      };
       setSelectedProvinceCode(provinceCode);
       setDistrictOptions(data.districts ?? []);
 
@@ -311,7 +232,9 @@ export default function ProfilePage() {
     setAddressOptionsLoading(true);
     try {
       const response = await fetch(`${VIETNAM_ADMIN_API}/d/${districtCode}?depth=2`);
-      const data = (await response.json()) as DistrictOption & { wards: WardOption[] };
+      const data = (await response.json()) as DistrictOption & {
+        wards: WardOption[];
+      };
       setSelectedDistrictCode(districtCode);
       setWardOptions(data.wards ?? []);
 
@@ -486,13 +409,16 @@ export default function ProfilePage() {
       await usersApi.changePassword({
         currentPassword: passwords.currentPassword,
         newPassword: passwords.newPassword,
+        confirmPassword: passwords.confirmPassword,
       });
-      setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswords({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
       toast.success('Đã đổi mật khẩu.');
     } catch (error: any) {
-      const message =
-        error?.response?.data?.message ||
-        'Không thể đổi mật khẩu. Tài khoản Google sẽ không dùng form này.';
+      const message = error?.response?.data?.message || 'Không thể đổi mật khẩu. Vui lòng thử lại.';
       toast.error(message);
     } finally {
       setPasswordSaving(false);
@@ -503,6 +429,12 @@ export default function ProfilePage() {
     event.preventDefault();
     if (passwords.newPassword !== passwords.confirmPassword) {
       toast.error('Mật khẩu mới không khớp.');
+      return;
+    }
+
+    const policyError = getPasswordPolicyError(passwords.newPassword);
+    if (policyError) {
+      toast.error(policyError);
       return;
     }
 
@@ -545,9 +477,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div
-      className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)]"
-    >
+    <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)]">
       <AppHeader sectionLabel="Profile" />
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
@@ -562,364 +492,338 @@ export default function ProfilePage() {
           </button>
 
           <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-        <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-          <section className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-white shadow-[0_18px_50px_rgba(26,26,26,0.06)]">
-            <div className="h-20 bg-[linear-gradient(135deg,#E45D1C_0%,#0F766E_100%)]" />
-            <div className="flex flex-col items-center text-center">
-              <label className="group relative -mt-12 block size-36 cursor-pointer overflow-hidden rounded-full border-4 border-white bg-white shadow-md ring-1 ring-[var(--border-color)]">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt={name} className="size-full object-cover" />
-                ) : (
-                  <span className="flex size-full items-center justify-center bg-[var(--primary-color)] text-4xl font-extrabold text-white">
-                    {name.charAt(0).toUpperCase()}
-                  </span>
-                )}
-                <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition group-hover:opacity-100">
-                  {uploading ? (
-                    <Loader2 className="size-6 animate-spin text-white" />
-                  ) : (
-                    <Camera className="size-7 text-white" />
-                  )}
-                </span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={handleAvatarChange}
-                  disabled={uploading}
-                />
-              </label>
+            <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+              <section className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-white shadow-[0_18px_50px_rgba(26,26,26,0.06)]">
+                <div className="h-20 bg-[linear-gradient(135deg,#E45D1C_0%,#0F766E_100%)]" />
+                <div className="flex flex-col items-center text-center">
+                  <label className="group relative -mt-12 block size-36 cursor-pointer overflow-hidden rounded-full border-4 border-white bg-white shadow-md ring-1 ring-[var(--border-color)]">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={name} className="size-full object-cover" />
+                    ) : (
+                      <span className="flex size-full items-center justify-center bg-[var(--primary-color)] text-4xl font-extrabold text-white">{name.charAt(0).toUpperCase()}</span>
+                    )}
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition group-hover:opacity-100">
+                      {uploading ? <Loader2 className="size-6 animate-spin text-white" /> : <Camera className="size-7 text-white" />}
+                    </span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleAvatarChange} disabled={uploading} />
+                  </label>
 
-              <h1 className="mt-4 text-xl font-extrabold">{profile.name}</h1>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">{profile.email}</p>
-              <span className="mt-3 rounded-full bg-[var(--bg-demo-box)] px-3 py-1 text-xs font-bold uppercase text-[var(--primary-color)]">
-                {profile.role}
-              </span>
-            </div>
-
-            <div className="px-5 pb-5">
-              <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-                <Stat label="Pets" value={profile.stats.pets} />
-                <Stat label="Orders" value={profile.stats.orders} />
-                <Stat label="Spent" value={currency.format(profile.stats.totalSpent)} />
-              </div>
-              <div className="mt-5 grid gap-2 rounded-lg bg-[#FBFAF7] p-3 text-sm">
-                <InfoLine icon={Mail} label="Email" value={profile.email} />
-                <InfoLine icon={Phone} label="Phone" value={profile.phone || 'Chưa cập nhật'} />
-                <InfoLine icon={ShieldCheck} label="Status" value={profile.isVerified ? 'Đã xác thực' : 'Chưa xác thực'} />
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-[var(--border-color)] bg-white p-4 shadow-[0_18px_50px_rgba(26,26,26,0.04)]">
-            <h2 className="mb-3 text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)]">
-              Tiện ích nhanh
-            </h2>
-            <div className="flex flex-col gap-2">
-              {shortcuts.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="group flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-semibold transition hover:bg-[var(--bg-page)]"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <item.icon className="size-4 text-[var(--primary-color)]" />
-                    {item.label}
-                  </span>
-                  <ChevronRight className="size-4 text-[var(--text-muted)] opacity-0 transition group-hover:opacity-100" />
-                </Link>
-              ))}
-            </div>
-          </section>
-          
-          <section className="rounded-lg border border-red-100 bg-red-50/70 p-4 shadow-[0_18px_50px_rgba(26,26,26,0.04)]">
-            <div className="flex items-start gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-white text-red-600">
-                <ShieldAlert className="size-4" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-extrabold text-red-700">Vùng nguy hiểm</h2>
-                <p className="mt-1 text-xs leading-5 text-red-700/75">
-                  Xóa tài khoản sẽ xóa hồ sơ và dữ liệu liên quan khỏi hệ thống.
-                </p>
-              </div>
-            </div>
-
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <button
-                  type="button"
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 text-sm font-bold text-white transition hover:bg-red-700"
-                >
-                  <Trash2 className="size-4" />
-                  Xóa tài khoản
-                </button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle className="flex items-center gap-2">
-                    <ShieldAlert className="size-5 text-red-600" />
-                    Xóa tài khoản?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Hành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa tài khoản này không?
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Hủy</AlertDialogCancel>
-                  <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={handleDeleteAccount}>
-                    Xóa vĩnh viễn
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </section>
-        </aside>
-
-        <div className="space-y-6">
-          <section className="profile-card">
-            <SectionHeader
-              icon={UserRound}
-              title="Hồ sơ cá nhân"
-              description="Thông tin này được dùng cho đơn hàng, liên hệ và hiển thị trong hệ thống."
-            />
-
-            <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSaveProfile}>
-              <Field label="Họ tên">
-                <input className="profile-input" value={name} onChange={(event) => setName(event.target.value)} />
-              </Field>
-              <Field label="Số điện thoại">
-                <input className="profile-input" value={phone} onChange={(event) => setPhone(event.target.value)} />
-              </Field>
-              <Field label="Email">
-                <input className="profile-input text-[var(--text-muted)]" value={profile.email} readOnly />
-              </Field>
-              <Field label="Vai trò">
-                <input className="profile-input text-[var(--text-muted)]" value={profile.role} readOnly />
-              </Field>
-              <div className="md:col-span-2">
-                <button type="submit" disabled={saving} className="profile-primary-button">
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                  Lưu thay đổi
-                </button>
-              </div>
-            </form>
-
-            <div className="my-4 h-px bg-[#EFEAE2]" />
-
-            <div className="grid gap-4">
-              <SectionHeader
-                icon={Lock}
-                title="Đổi mật khẩu"
-                description="Cập nhật mật khẩu mới để tăng bảo mật cho tài khoản."
-                compact
-              />
-
-              <form className="grid w-full gap-3 md:grid-cols-[170px_minmax(0,420px)] md:items-center" onSubmit={handleChangePassword}>
-                <PasswordRowLabel>Mật khẩu hiện tại</PasswordRowLabel>
-                <PasswordControl
-                  value={passwords.currentPassword}
-                  visible={showPasswords.current}
-                  onToggle={() => togglePasswordVisibility('current')}
-                  onChange={(value) => updatePasswordField('currentPassword', value)}
-                />
-
-                <PasswordRowLabel>Mật khẩu mới</PasswordRowLabel>
-                <div className="grid gap-1.5">
-                  <PasswordControl
-                    value={passwords.newPassword}
-                    visible={showPasswords.next}
-                    inputRef={newPasswordInputRef}
-                    isNewPassword
-                    onToggle={() => togglePasswordVisibility('next')}
-                    onChange={(value) => updatePasswordField('newPassword', value)}
-                  />
-                  <PasswordStrengthMeter strength={passwordStrength} />
+                  <h1 className="mt-4 text-xl font-extrabold">{profile.name}</h1>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">{profile.email}</p>
+                  <span className="mt-3 rounded-full bg-[var(--bg-demo-box)] px-3 py-1 text-xs font-bold uppercase text-[var(--primary-color)]">{profile.role}</span>
                 </div>
 
-                <PasswordRowLabel>Nhập lại mật khẩu</PasswordRowLabel>
-                <PasswordControl
-                  value={passwords.confirmPassword}
-                  visible={showPasswords.confirm}
-                  onToggle={() => togglePasswordVisibility('confirm')}
-                  onChange={(value) => updatePasswordField('confirmPassword', value)}
-                />
+                <div className="px-5 pb-5">
+                  <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+                    <Stat label="Pets" value={profile.stats.pets} />
+                    <Stat label="Orders" value={profile.stats.orders} />
+                    <Stat label="Spent" value={currency.format(profile.stats.totalSpent)} />
+                  </div>
+                  <div className="mt-5 grid gap-2 rounded-lg bg-[#FBFAF7] p-3 text-sm">
+                    <InfoLine icon={Mail} label="Email" value={profile.email} />
+                    <InfoLine icon={Phone} label="Phone" value={profile.phone || 'Chưa cập nhật'} />
+                    <InfoLine icon={ShieldCheck} label="Status" value={profile.isVerified ? 'Đã xác thực' : 'Chưa xác thực'} />
+                  </div>
+                </div>
+              </section>
 
-                <div className="md:col-span-2">
-                  <button type="submit" disabled={!canAttemptChangePassword} className="profile-primary-button">
-                    {passwordSaving ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-                    Cập nhật mật khẩu
+              <section className="rounded-lg border border-[var(--border-color)] bg-white p-4 shadow-[0_18px_50px_rgba(26,26,26,0.04)]">
+                <h2 className="mb-3 text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)]">Tiện ích nhanh</h2>
+                <div className="flex flex-col gap-2">
+                  {shortcuts.map((item) => (
+                    <Link key={item.href} href={item.href} className="group flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-semibold transition hover:bg-[var(--bg-page)]">
+                      <span className="flex items-center gap-2.5">
+                        <item.icon className="size-4 text-[var(--primary-color)]" />
+                        {item.label}
+                      </span>
+                      <ChevronRight className="size-4 text-[var(--text-muted)] opacity-0 transition group-hover:opacity-100" />
+                    </Link>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-red-100 bg-red-50/70 p-4 shadow-[0_18px_50px_rgba(26,26,26,0.04)]">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-white text-red-600">
+                    <ShieldAlert className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-extrabold text-red-700">Vùng nguy hiểm</h2>
+                    <p className="mt-1 text-xs leading-5 text-red-700/75">Xóa tài khoản sẽ xóa hồ sơ và dữ liệu liên quan khỏi hệ thống.</p>
+                  </div>
+                </div>
+
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 text-sm font-bold text-white transition hover:bg-red-700"
+                    >
+                      <Trash2 className="size-4" />
+                      Xóa tài khoản
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="flex items-center gap-2">
+                        <ShieldAlert className="size-5 text-red-600" />
+                        Xóa tài khoản?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>Hành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa tài khoản này không?</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Hủy</AlertDialogCancel>
+                      <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={handleDeleteAccount}>
+                        Xóa vĩnh viễn
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </section>
+            </aside>
+
+            <div className="space-y-6">
+              <section className="profile-card">
+                <SectionHeader icon={UserRound} title="Hồ sơ cá nhân" description="Thông tin này được dùng cho đơn hàng, liên hệ và hiển thị trong hệ thống." />
+
+                <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSaveProfile}>
+                  <Field label="Họ tên">
+                    <input className="profile-input" value={name} onChange={(event) => setName(event.target.value)} />
+                  </Field>
+                  <Field label="Số điện thoại">
+                    <input className="profile-input" value={phone} onChange={(event) => setPhone(event.target.value)} />
+                  </Field>
+                  <Field label="Email">
+                    <input className="profile-input text-[var(--text-muted)]" value={profile.email} readOnly />
+                  </Field>
+                  <Field label="Vai trò">
+                    <input className="profile-input text-[var(--text-muted)]" value={profile.role} readOnly />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <button type="submit" disabled={saving} className="profile-primary-button">
+                      {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                      Lưu thay đổi
+                    </button>
+                  </div>
+                </form>
+
+                <div className="my-4 h-px bg-[#EFEAE2]" />
+
+                <div className="grid gap-4">
+                  <SectionHeader icon={Lock} title="Đổi mật khẩu" description="Cập nhật mật khẩu mới để tăng bảo mật cho tài khoản." compact />
+
+                  <form className="grid w-full gap-3 md:grid-cols-[170px_minmax(0,420px)] md:items-center" onSubmit={handleChangePassword}>
+                    <PasswordRowLabel>Mật khẩu hiện tại</PasswordRowLabel>
+                    <PasswordControl
+                      value={passwords.currentPassword}
+                      visible={showPasswords.current}
+                      onToggle={() => togglePasswordVisibility('current')}
+                      onChange={(value) => updatePasswordField('currentPassword', value)}
+                    />
+
+                    <PasswordRowLabel>Mật khẩu mới</PasswordRowLabel>
+                    <div className="grid gap-1.5">
+                      <PasswordControl
+                        value={passwords.newPassword}
+                        visible={showPasswords.next}
+                        inputRef={newPasswordInputRef}
+                        isNewPassword
+                        onToggle={() => togglePasswordVisibility('next')}
+                        onChange={(value) => updatePasswordField('newPassword', value)}
+                      />
+                      <PasswordStrengthMeter password={passwords.newPassword} className="-mt-1" />
+                    </div>
+
+                    <PasswordRowLabel>Nhập lại mật khẩu</PasswordRowLabel>
+                    <PasswordControl
+                      value={passwords.confirmPassword}
+                      visible={showPasswords.confirm}
+                      autoComplete="new-password"
+                      onToggle={() => togglePasswordVisibility('confirm')}
+                      onChange={(value) => updatePasswordField('confirmPassword', value)}
+                    />
+
+                    <div className="md:col-span-2">
+                      <button type="submit" disabled={!canAttemptChangePassword} className="profile-primary-button">
+                        {passwordSaving ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                        Cập nhật mật khẩu
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </section>
+
+              <section className="profile-card">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <SectionHeader icon={MapPin} title="Địa chỉ giao hàng" description="Địa chỉ chính sẽ được ưu tiên khi tạo đơn hàng." compact />
+                  <button type="button" className="profile-secondary-button" onClick={() => openAddressDialog()}>
+                    <Plus className="size-4" />
+                    Thêm địa chỉ
                   </button>
                 </div>
-              </form>
 
+                <div className="grid gap-3">
+                  {defaultAddress && <AddressRow address={defaultAddress} onEdit={openAddressDialog} onDelete={handleDeleteAddress} onSetDefault={handleSetDefaultAddress} />}
+                  {secondaryAddresses.map((address) => (
+                    <AddressRow key={address.id} address={address} onEdit={openAddressDialog} onDelete={handleDeleteAddress} onSetDefault={handleSetDefaultAddress} />
+                  ))}
+                  {!profile.addresses.length && (
+                    <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">Chưa có địa chỉ giao hàng.</div>
+                  )}
+                </div>
+              </section>
             </div>
-          </section>
+          </div>
+        </div>
 
-          <section className="profile-card">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <SectionHeader
-                icon={MapPin}
-                title="Địa chỉ giao hàng"
-                description="Địa chỉ chính sẽ được ưu tiên khi tạo đơn hàng."
-                compact
-              />
-              <button type="button" className="profile-secondary-button" onClick={() => openAddressDialog()}>
-                <Plus className="size-4" />
-                Thêm địa chỉ
-              </button>
+        {weakPasswordModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-lg border border-red-100 bg-white p-6 shadow-[0_24px_70px_rgba(26,26,26,0.22)]">
+              <h2 className="text-xl font-extrabold text-red-600">⚠️ Cảnh báo bảo mật</h2>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
+                Mật khẩu này quá ngắn hoặc dễ đoán, có thể khiến tài khoản của bạn gặp rủi ro. Bạn có chắc chắn vẫn muốn sử dụng mật khẩu này không?
+              </p>
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-[#D8D3CA] bg-white px-4 text-sm font-bold text-[var(--text-main)] transition hover:bg-[#FBFAF7]"
+                  onClick={handleUseWeakPassword}
+                >
+                  Tôi vẫn muốn sử dụng
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-bold text-white transition hover:bg-red-700"
+                  onClick={() => {
+                    setWeakPasswordModalOpen(false);
+                    requestAnimationFrame(() => {
+                      const input = document.querySelector<HTMLInputElement>('[data-new-password-input="true"]');
+                      input?.focus();
+                    });
+                  }}
+                >
+                  Thay đổi mật khẩu khác
+                </button>
+              </div>
             </div>
+          </div>
+        )}
 
+        <Dialog open={addressOpen} onOpenChange={setAddressOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingAddress ? 'Sửa địa chỉ' : 'Thêm địa chỉ'}</DialogTitle>
+            </DialogHeader>
             <div className="grid gap-3">
-              {defaultAddress && (
-                <AddressRow
-                  address={defaultAddress}
-                  onEdit={openAddressDialog}
-                  onDelete={handleDeleteAddress}
-                  onSetDefault={handleSetDefaultAddress}
+              <Field label="Người nhận">
+                <input
+                  className="profile-input"
+                  value={addressDraft.receiverName}
+                  onChange={(event) =>
+                    setAddressDraft((value) => ({
+                      ...value,
+                      receiverName: event.target.value,
+                    }))
+                  }
                 />
-              )}
-              {secondaryAddresses.map((address) => (
-                <AddressRow
-                  key={address.id}
-                  address={address}
-                  onEdit={openAddressDialog}
-                  onDelete={handleDeleteAddress}
-                  onSetDefault={handleSetDefaultAddress}
+              </Field>
+              <Field label="Số điện thoại">
+                <input
+                  className="profile-input"
+                  value={addressDraft.receiverPhone}
+                  onChange={(event) =>
+                    setAddressDraft((value) => ({
+                      ...value,
+                      receiverPhone: event.target.value,
+                    }))
+                  }
                 />
-              ))}
-              {!profile.addresses.length && (
-                <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">
-                  Chưa có địa chỉ giao hàng.
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field label="Tỉnh/Thành">
+                  <select className="profile-input" value={selectedProvinceCode} onChange={(event) => handleProvinceChange(event.target.value)}>
+                    <option value="">Chọn tỉnh/thành</option>
+                    {provinceOptions.map((province) => (
+                      <option key={province.code} value={province.code}>
+                        {province.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Quận/Huyện">
+                  <select
+                    className="profile-input disabled:cursor-not-allowed disabled:bg-[#F1F1F1] disabled:text-[var(--text-muted)]"
+                    value={selectedDistrictCode}
+                    onChange={(event) => handleDistrictChange(event.target.value)}
+                    disabled={!selectedProvinceCode || addressOptionsLoading}
+                  >
+                    <option value="">{selectedProvinceCode ? 'Chọn quận/huyện' : 'Chọn tỉnh trước'}</option>
+                    {districtOptions.map((district) => (
+                      <option key={district.code} value={district.code}>
+                        {district.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Phường/Xã">
+                  <select
+                    className="profile-input disabled:cursor-not-allowed disabled:bg-[#F1F1F1] disabled:text-[var(--text-muted)]"
+                    value={selectedWardCode}
+                    onChange={(event) => handleWardChange(event.target.value)}
+                    disabled={!selectedDistrictCode || addressOptionsLoading}
+                  >
+                    <option value="">{selectedDistrictCode ? 'Chọn phường/xã' : 'Chọn quận trước'}</option>
+                    {wardOptions.map((ward) => (
+                      <option key={ward.code} value={ward.code}>
+                        {ward.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              {addressOptionsLoading && (
+                <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
+                  <Loader2 className="size-3.5 animate-spin text-[var(--primary-color)]" />
+                  Đang tải dữ liệu hành chính...
                 </div>
               )}
-            </div>
-          </section>
-
-        </div>
-      </div>
-      </div>
-
-      {weakPasswordModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-lg border border-red-100 bg-white p-6 shadow-[0_24px_70px_rgba(26,26,26,0.22)]">
-            <h2 className="text-xl font-extrabold text-red-600">⚠️ Cảnh báo bảo mật</h2>
-            <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
-              Mật khẩu này quá ngắn hoặc dễ đoán, có thể khiến tài khoản của bạn gặp rủi ro. Bạn có chắc chắn vẫn muốn sử dụng mật khẩu này không?
-            </p>
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                className="inline-flex h-10 items-center justify-center rounded-md border border-[#D8D3CA] bg-white px-4 text-sm font-bold text-[var(--text-main)] transition hover:bg-[#FBFAF7]"
-                onClick={handleUseWeakPassword}
-              >
-                Tôi vẫn muốn sử dụng
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-10 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-bold text-white transition hover:bg-red-700"
-                onClick={() => {
-                  setWeakPasswordModalOpen(false);
-                  requestAnimationFrame(() => {
-                    const input = document.querySelector<HTMLInputElement>('[data-new-password-input="true"]');
-                    input?.focus();
-                  });
-                }}
-              >
-                Thay đổi mật khẩu khác
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <Dialog open={addressOpen} onOpenChange={setAddressOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingAddress ? 'Sửa địa chỉ' : 'Thêm địa chỉ'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <Field label="Người nhận">
-              <input className="profile-input" value={addressDraft.receiverName} onChange={(event) => setAddressDraft((value) => ({ ...value, receiverName: event.target.value }))} />
-            </Field>
-            <Field label="Số điện thoại">
-              <input className="profile-input" value={addressDraft.receiverPhone} onChange={(event) => setAddressDraft((value) => ({ ...value, receiverPhone: event.target.value }))} />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Tỉnh/Thành">
-                <select
+              <Field label="Địa chỉ chi tiết">
+                <input
                   className="profile-input"
-                  value={selectedProvinceCode}
-                  onChange={(event) => handleProvinceChange(event.target.value)}
-                >
-                  <option value="">Chọn tỉnh/thành</option>
-                  {provinceOptions.map((province) => (
-                    <option key={province.code} value={province.code}>
-                      {province.name}
-                    </option>
-                  ))}
-                </select>
+                  value={addressDraft.detail}
+                  onChange={(event) =>
+                    setAddressDraft((value) => ({
+                      ...value,
+                      detail: event.target.value,
+                    }))
+                  }
+                />
               </Field>
-              <Field label="Quận/Huyện">
-                <select
-                  className="profile-input disabled:cursor-not-allowed disabled:bg-[#F1F1F1] disabled:text-[var(--text-muted)]"
-                  value={selectedDistrictCode}
-                  onChange={(event) => handleDistrictChange(event.target.value)}
-                  disabled={!selectedProvinceCode || addressOptionsLoading}
-                >
-                  <option value="">{selectedProvinceCode ? 'Chọn quận/huyện' : 'Chọn tỉnh trước'}</option>
-                  {districtOptions.map((district) => (
-                    <option key={district.code} value={district.code}>
-                      {district.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Phường/Xã">
-                <select
-                  className="profile-input disabled:cursor-not-allowed disabled:bg-[#F1F1F1] disabled:text-[var(--text-muted)]"
-                  value={selectedWardCode}
-                  onChange={(event) => handleWardChange(event.target.value)}
-                  disabled={!selectedDistrictCode || addressOptionsLoading}
-                >
-                  <option value="">{selectedDistrictCode ? 'Chọn phường/xã' : 'Chọn quận trước'}</option>
-                  {wardOptions.map((ward) => (
-                    <option key={ward.code} value={ward.code}>
-                      {ward.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input
+                  type="checkbox"
+                  checked={addressDraft.isDefault}
+                  onChange={(event) =>
+                    setAddressDraft((value) => ({
+                      ...value,
+                      isDefault: event.target.checked,
+                    }))
+                  }
+                />
+                Đặt làm địa chỉ chính
+              </label>
             </div>
-            {addressOptionsLoading && (
-              <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
-                <Loader2 className="size-3.5 animate-spin text-[var(--primary-color)]" />
-                Đang tải dữ liệu hành chính...
-              </div>
-            )}
-            <Field label="Địa chỉ chi tiết">
-              <input className="profile-input" value={addressDraft.detail} onChange={(event) => setAddressDraft((value) => ({ ...value, detail: event.target.value }))} />
-            </Field>
-            <label className="flex items-center gap-2 text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={addressDraft.isDefault}
-                onChange={(event) => setAddressDraft((value) => ({ ...value, isDefault: event.target.checked }))}
-              />
-              Đặt làm địa chỉ chính
-            </label>
-          </div>
-          <DialogFooter>
-            <button type="button" className="profile-secondary-button" onClick={() => setAddressOpen(false)}>
-              Hủy
-            </button>
-            <button type="button" className="profile-primary-button" onClick={handleSaveAddress}>
-              <Save className="size-4" />
-              Lưu địa chỉ
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <button type="button" className="profile-secondary-button" onClick={() => setAddressOpen(false)}>
+                Hủy
+              </button>
+              <button type="button" className="profile-primary-button" onClick={handleSaveAddress}>
+                <Save className="size-4" />
+                Lưu địa chỉ
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
@@ -934,15 +838,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function InfoLine({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) {
+function InfoLine({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <Icon className="size-4 shrink-0 text-[var(--primary-color)]" />
@@ -952,17 +848,7 @@ function InfoLine({
   );
 }
 
-function SectionHeader({
-  icon: Icon,
-  title,
-  description,
-  compact = false,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  compact?: boolean;
-}) {
+function SectionHeader({ icon: Icon, title, description, compact = false }: { icon: LucideIcon; title: string; description: string; compact?: boolean }) {
   return (
     <div className={compact ? 'flex min-w-0 items-start gap-2.5' : 'mb-5 flex min-w-0 items-start gap-3'}>
       <span className={`flex shrink-0 items-center justify-center rounded-md bg-[var(--bg-demo-box)] text-[var(--primary-color)] ${compact ? 'size-9' : 'size-10'}`}>
@@ -985,34 +871,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function PasswordStrengthMeter({ strength }: { strength: PasswordStrength }) {
-  return (
-    <div className="-mt-1 grid gap-1">
-      <div className="h-1 overflow-hidden rounded-full bg-[#ECE7DE]">
-        <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{
-            width: strength.width,
-            backgroundColor: strength.color,
-          }}
-        />
-      </div>
-      <p
-        className="min-h-4 text-[11px] font-semibold leading-4"
-        style={{ color: strength.color === 'transparent' ? 'var(--text-muted)' : strength.color }}
-      >
-        {strength.label || 'Nhập mật khẩu mới để kiểm tra độ mạnh'}
-      </p>
-    </div>
-  );
-}
-
 function PasswordRowLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="text-sm font-semibold text-[var(--text-main)] lg:self-center">
-      {children}
-    </div>
-  );
+  return <div className="text-sm font-semibold text-[var(--text-main)] lg:self-center">{children}</div>;
 }
 
 function PasswordControl({
@@ -1020,6 +880,7 @@ function PasswordControl({
   visible,
   inputRef,
   isNewPassword = false,
+  autoComplete,
   onToggle,
   onChange,
 }: {
@@ -1027,6 +888,7 @@ function PasswordControl({
   visible: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
   isNewPassword?: boolean;
+  autoComplete?: 'current-password' | 'new-password';
   onToggle: () => void;
   onChange: (value: string) => void;
 }) {
@@ -1039,6 +901,8 @@ function PasswordControl({
         className="profile-input pr-11"
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        minLength={isNewPassword ? PASSWORD_MIN_LENGTH : undefined}
+        autoComplete={autoComplete ?? (isNewPassword ? 'new-password' : 'current-password')}
       />
       <button
         type="button"
@@ -1052,17 +916,7 @@ function PasswordControl({
   );
 }
 
-function AddressRow({
-  address,
-  onEdit,
-  onDelete,
-  onSetDefault,
-}: {
-  address: Address;
-  onEdit: (address: Address) => void;
-  onDelete: (id: string) => void;
-  onSetDefault: (id: string) => void;
-}) {
+function AddressRow({ address, onEdit, onDelete, onSetDefault }: { address: Address; onEdit: (address: Address) => void; onDelete: (id: string) => void; onSetDefault: (id: string) => void }) {
   return (
     <div className="rounded-lg border border-[var(--border-color)] bg-[#FFFEFC] p-4 transition hover:border-[rgba(228,93,28,0.22)] hover:shadow-[0_14px_34px_rgba(26,26,26,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1076,7 +930,9 @@ function AddressRow({
           </div>
           <div className="mt-2 flex min-w-0 items-start gap-2 text-sm text-[var(--text-muted)]">
             <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--primary-color)]" />
-            <p>{address.detail}, {address.ward}, {address.district}, {address.province}</p>
+            <p>
+              {address.detail}, {address.ward}, {address.district}, {address.province}
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

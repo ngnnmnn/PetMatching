@@ -1,10 +1,11 @@
 import { IsString, MinLength } from 'class-validator';
+import { PASSWORD_MIN_LENGTH } from '../../../common/constants/password-policy.constants';
 
 export class LoginDto {
   @IsString()
-  email!: string;
+  identifier!: string;
 
   @IsString()
-  @MinLength(6)
+  @MinLength(PASSWORD_MIN_LENGTH)
   password!: string;
 }

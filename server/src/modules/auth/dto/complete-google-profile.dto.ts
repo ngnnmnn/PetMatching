@@ -1,7 +1,6 @@
 import {
-  IsEmail,
-  IsOptional,
   IsString,
+  IsOptional,
   Matches,
   MaxLength,
   MinLength,
@@ -11,9 +10,9 @@ import {
   PASSWORD_MIN_LENGTH_MESSAGE,
 } from '../../../common/constants/password-policy.constants';
 
-export class RegisterDto {
-  @IsEmail()
-  email!: string;
+export class CompleteGoogleProfileDto {
+  @IsString()
+  profileToken!: string;
 
   @IsString()
   @MinLength(4, { message: 'Tên đăng nhập phải có ít nhất 4 ký tự.' })
@@ -24,17 +23,16 @@ export class RegisterDto {
   username!: string;
 
   @IsString()
-  @MinLength(PASSWORD_MIN_LENGTH, { message: PASSWORD_MIN_LENGTH_MESSAGE })
-  password!: string;
-
-  @IsString()
+  @MinLength(2, { message: 'Tên hiển thị phải có ít nhất 2 ký tự.' })
+  @MaxLength(80, { message: 'Tên hiển thị không được quá 80 ký tự.' })
   name!: string;
 
   @IsOptional()
   @IsString()
-  phone?: string;
+  @MinLength(PASSWORD_MIN_LENGTH, { message: PASSWORD_MIN_LENGTH_MESSAGE })
+  password?: string;
 
   @IsOptional()
   @IsString()
-  avatarUrl?: string;
+  confirmPassword?: string;
 }
