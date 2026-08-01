@@ -1,34 +1,36 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { Eye, EyeOff } from 'lucide-react';
-import api from '@/lib/axios';
-import { LoginCredentials } from '@/types';
-import AuthShell from './AuthShell';
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
+import axios from "axios";
+import api from "@/lib/axios";
+import { LoginCredentials } from "@/types";
+import AuthShell from "./AuthShell";
 
 export default function LoginForm() {
   const router = useRouter();
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
   const [formData, setFormData] = useState<LoginCredentials>({
-    email: '',
-    password: '',
+    identifier: "",
+    password: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const searchParams = useSearchParams();
-  const redirectParam = searchParams.get('redirect');
+  const redirectParam = searchParams.get("redirect");
   const googleLoginUrl = redirectParam
     ? `${apiBaseUrl}/auth/google?redirect=${encodeURIComponent(redirectParam)}`
     : `${apiBaseUrl}/auth/google`;
 
   useEffect(() => {
-    const redirect = searchParams.get('redirect');
+    const redirect = searchParams.get("redirect");
     if (redirect) {
-      localStorage.setItem('login_redirect_url', redirect);
+      localStorage.setItem("login_redirect_url", redirect);
     }
   }, [searchParams]);
 
@@ -41,42 +43,48 @@ export default function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/login', formData);
+      const response = await api.post("/auth/login", formData);
 
       if (response.data.success) {
-        localStorage.setItem('accessToken', response.data.accessToken);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        window.dispatchEvent(new Event('auth-change'));
-        
-        const redirectUrl = localStorage.getItem('login_redirect_url');
-        localStorage.removeItem('login_redirect_url');
+        localStorage.setItem("accessToken", response.data.accessToken);
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+        window.dispatchEvent(new Event("auth-change"));
+
+        const redirectUrl = localStorage.getItem("login_redirect_url");
+        localStorage.removeItem("login_redirect_url");
 
         const role = response.data.user?.role;
-        if (role === 'ADMIN') {
-          router.push('/admin');
-        } else if (role === 'STORE_MANAGER' || role === 'SPA_MANAGER') {
-          router.push('/manager');
-        } else if (role === 'SPA_STAFF') {
-          router.push('/spa/staff');
+        if (role === "ADMIN") {
+          router.push("/admin");
+        } else if (role === "STORE_MANAGER" || role === "SPA_MANAGER") {
+          router.push("/manager");
+        } else if (role === "SPA_STAFF") {
+          router.push("/spa/staff");
         } else if (redirectUrl) {
           router.push(redirectUrl);
         } else {
-          router.push('/home');
+          router.push("/home");
         }
       }
-    } catch (err: any) {
-      const data = err.response?.data;
+    } catch (requestError: unknown) {
+      const data = axios.isAxiosError<{
+        requiresVerification?: boolean;
+        email?: string;
+        message?: string;
+      }>(requestError)
+        ? requestError.response?.data
+        : undefined;
 
       if (data?.requiresVerification && data?.email) {
         router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
         return;
       }
 
-      setError(data?.message || 'Đăng nhập thất bại!');
+      setError(data?.message || "Đăng nhập thất bại!");
     } finally {
       setLoading(false);
     }
@@ -92,15 +100,17 @@ export default function LoginForm() {
         <form id="login-form" onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">
-              Email <span className="text-[var(--primary-color)]">*</span>
+              Email hoặc tên đăng nhập{" "}
+              <span className="text-[var(--primary-color)]">*</span>
             </label>
             <input
-              type="email"
-              name="email"
-              value={formData.email}
+              type="text"
+              name="identifier"
+              value={formData.identifier}
               onChange={handleChange}
               className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] px-4 py-3 text-[15px] text-[var(--text-main)] transition duration-200 ease-in-out placeholder:text-[#B0B0B0] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[rgba(228,93,28,0.14)]"
-              placeholder="Nhập email"
+              placeholder="Nhập email hoặc tên đăng nhập"
+              autoComplete="username"
               required
             />
           </div>
@@ -111,7 +121,7 @@ export default function LoginForm() {
             </label>
             <div className="relative">
               <input
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
@@ -124,9 +134,13 @@ export default function LoginForm() {
                 type="button"
                 onClick={() => setShowPassword((current) => !current)}
                 className="absolute right-3 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--text-muted)] transition duration-200 ease-in-out hover:bg-white hover:text-[var(--primary-color)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
               </button>
             </div>
           </div>
@@ -142,13 +156,15 @@ export default function LoginForm() {
             disabled={loading}
             className="w-full rounded-xl bg-[var(--primary-color)] py-3.5 text-center font-bold text-white transition duration-200 ease-in-out hover:bg-[#cf5017] hover:shadow-[0_12px_26px_rgba(228,93,28,0.24)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
 
         <div className="my-5 flex items-center gap-3">
           <span className="h-px flex-1 bg-[var(--border-color)]" />
-          <span className="text-xs font-bold uppercase text-[var(--text-muted)]">Hoặc</span>
+          <span className="text-xs font-bold uppercase text-[var(--text-muted)]">
+            Hoặc
+          </span>
           <span className="h-px flex-1 bg-[var(--border-color)]" />
         </div>
 
@@ -161,13 +177,16 @@ export default function LoginForm() {
           </span>
           Đăng nhập bằng Google
         </a>
-
       </div>
 
       <p className="mt-6 text-center text-sm font-medium text-[var(--text-muted)]">
-        Chưa có tài khoản?{' '}
+        Chưa có tài khoản?{" "}
         <Link
-          href={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : "/register"}
+          href={
+            redirectParam
+              ? `/register?redirect=${encodeURIComponent(redirectParam)}`
+              : "/register"
+          }
           className="font-extrabold text-[var(--primary-color)] transition duration-200 ease-in-out hover:text-[#cf5017] hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.16)]"
         >
           Đăng ký ngay

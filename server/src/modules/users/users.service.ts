@@ -18,6 +18,7 @@ import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 type User = {
   id: string;
   email: string;
+  username?: string | null;
   googleId?: string | null;
   passwordHash: string | null;
   name: string;
@@ -49,7 +50,10 @@ function cleanItemNameForPayOS(name: string): string {
   str = str.replace(/Ỳ|Ý|Y|Ỷ|Ỹ/g, 'Y');
   str = str.replace(/Đ/g, 'D');
   str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return str.replace(/[^a-zA-Z0-9 ]/g, '').substring(0, 50).trim();
+  return str
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .substring(0, 50)
+    .trim();
 }
 
 @Injectable()
@@ -62,8 +66,16 @@ export class UsersService {
 
   async findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({
-      where: { email },
+      where: { email: email.trim().toLowerCase() },
     });
+  }
+
+  async findByUsername(username: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { username } });
+  }
+
+  async findByGoogleId(googleId: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { googleId } });
   }
 
   async findById(id: string): Promise<User | null> {
@@ -73,10 +85,13 @@ export class UsersService {
   }
 
   async validateUser(
-    email: string,
+    identifier: string,
     password: string,
   ): Promise<Omit<User, 'passwordHash'> | null> {
-    const user = await this.findByEmail(email);
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    const user = normalizedIdentifier.includes('@')
+      ? await this.findByEmail(normalizedIdentifier)
+      : await this.findByUsername(normalizedIdentifier);
     if (!user) return null;
     if (!user.passwordHash) return null;
 
@@ -89,22 +104,32 @@ export class UsersService {
 
   async createUser(data: {
     email: string;
+    username: string;
     password: string;
     name: string;
     phone?: string;
     avatarUrl?: string;
     role?: UserRole;
   }): Promise<Omit<User, 'passwordHash'>> {
-    const existingUser = await this.findByEmail(data.email);
+    const email = data.email.trim().toLowerCase();
+    const username = data.username.trim().toLowerCase();
+    const [existingUser, existingUsername] = await Promise.all([
+      this.findByEmail(email),
+      this.findByUsername(username),
+    ]);
     if (existingUser) {
       throw new ConflictException('Email đã được đăng ký!');
+    }
+    if (existingUsername) {
+      throw new ConflictException('Tên đăng nhập đã được sử dụng!');
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
     const user = await this.prisma.user.create({
       data: {
-        email: data.email,
+        email,
+        username,
         passwordHash: hashedPassword,
         name: data.name,
         phone: data.phone,
@@ -268,10 +293,7 @@ export class UsersService {
       },
     });
 
-    if (
-      previous?.avatarUrl &&
-      previous.avatarUrl !== user.avatarUrl
-    ) {
+    if (previous?.avatarUrl && previous.avatarUrl !== user.avatarUrl) {
       await this.cloudinary.destroyByUrl(previous.avatarUrl);
     }
 
@@ -312,10 +334,14 @@ export class UsersService {
       throw new NotFoundException('Khong tim thay tai khoan.');
     }
 
-    if (user.googleId || !user.passwordHash) {
+    if (!user.passwordHash) {
       throw new BadRequestException(
-        'Tai khoan Google khong the doi mat khau tai day.',
+        'Tài khoản chưa có mật khẩu. Vui lòng tạo mật khẩu trước.',
       );
+    }
+
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('Mật khẩu xác nhận không khớp.');
     }
 
     const isCurrentPasswordValid = await bcrypt.compare(
@@ -324,7 +350,17 @@ export class UsersService {
     );
 
     if (!isCurrentPasswordValid) {
-      throw new BadRequestException('Mat khau hien tai khong dung.');
+      throw new BadRequestException('Mật khẩu hiện tại không đúng.');
+    }
+
+    const isSamePassword = await bcrypt.compare(
+      dto.newPassword,
+      user.passwordHash,
+    );
+    if (isSamePassword) {
+      throw new BadRequestException(
+        'Mật khẩu mới phải khác mật khẩu hiện tại.',
+      );
     }
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
@@ -365,7 +401,11 @@ export class UsersService {
     });
   }
 
-  async updateAddress(userId: string, addressId: string, dto: UpdateAddressDto) {
+  async updateAddress(
+    userId: string,
+    addressId: string,
+    dto: UpdateAddressDto,
+  ) {
     await this.ensureAddressOwner(userId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -473,7 +513,9 @@ export class UsersService {
           needsReload = true;
         } else if (
           order.createdAt < fifteenMinsAgo ||
-          (paymentInfo && (paymentInfo.status === 'CANCELLED' || paymentInfo.status === 'EXPIRED'))
+          (paymentInfo &&
+            (paymentInfo.status === 'CANCELLED' ||
+              paymentInfo.status === 'EXPIRED'))
         ) {
           // Cập nhật trạng thái thành EXPIRED và hoàn stock thay vì xóa đơn hàng
           await this.prisma.$transaction(async (tx) => {
@@ -536,11 +578,15 @@ export class UsersService {
         });
 
         if (!product) {
-          throw new NotFoundException(`Sản phẩm với mã ${item.productId} không tồn tại.`);
+          throw new NotFoundException(
+            `Sản phẩm với mã ${item.productId} không tồn tại.`,
+          );
         }
 
         if (!product.isActive) {
-          throw new BadRequestException(`Sản phẩm "${product.name}" hiện không mở bán.`);
+          throw new BadRequestException(
+            `Sản phẩm "${product.name}" hiện không mở bán.`,
+          );
         }
 
         if (product.stock < item.quantity) {
@@ -718,7 +764,10 @@ export class UsersService {
           },
         };
       } catch (error) {
-        console.error('PayOS integration failed, setting order status to PAYMENT_ERROR:', error);
+        console.error(
+          'PayOS integration failed, setting order status to PAYMENT_ERROR:',
+          error,
+        );
         // Không xóa order và không hoàn stock. Cập nhật trạng thái thành PAYMENT_ERROR.
         const updatedOrder = await this.prisma.order.update({
           where: { id: order.id },
@@ -758,7 +807,9 @@ export class UsersService {
         throw new NotFoundException('Không tìm thấy đơn hàng.');
       }
       if (order.status !== 'PENDING') {
-        throw new BadRequestException('Chỉ có thể hủy đơn hàng ở trạng thái chờ xác nhận.');
+        throw new BadRequestException(
+          'Chỉ có thể hủy đơn hàng ở trạng thái chờ xác nhận.',
+        );
       }
 
       // Restore stock
@@ -781,7 +832,11 @@ export class UsersService {
     });
   }
 
-  async updateOrderShipping(userId: string, orderId: string, data: { shippingAddress: string }) {
+  async updateOrderShipping(
+    userId: string,
+    orderId: string,
+    data: { shippingAddress: string },
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
     });
@@ -789,7 +844,9 @@ export class UsersService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
     if (order.status !== 'PENDING') {
-      throw new BadRequestException('Chỉ có thể thay đổi thông tin đơn hàng ở trạng thái chờ xác nhận.');
+      throw new BadRequestException(
+        'Chỉ có thể thay đổi thông tin đơn hàng ở trạng thái chờ xác nhận.',
+      );
     }
     return this.prisma.order.update({
       where: { id: orderId },
@@ -813,17 +870,29 @@ export class UsersService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
 
-    if (order.status !== 'PENDING' && order.status !== 'PAYMENT_ERROR' && order.status !== 'EXPIRED') {
-      throw new BadRequestException('Đơn hàng không ở trạng thái có thể thanh toán.');
+    if (
+      order.status !== 'PENDING' &&
+      order.status !== 'PAYMENT_ERROR' &&
+      order.status !== 'EXPIRED'
+    ) {
+      throw new BadRequestException(
+        'Đơn hàng không ở trạng thái có thể thanh toán.',
+      );
     }
 
     if (order.paymentMethod !== 'QR') {
-      throw new BadRequestException('Phương thức thanh toán của đơn hàng không phải là chuyển khoản QR.');
+      throw new BadRequestException(
+        'Phương thức thanh toán của đơn hàng không phải là chuyển khoản QR.',
+      );
     }
 
     // Sinh orderCode mới để tránh bị trùng lặp trên PayOS nếu orderCode cũ bị lỗi hoặc hết hạn
     let orderCode = order.orderCode;
-    if (!orderCode || order.status === 'EXPIRED' || order.status === 'PAYMENT_ERROR') {
+    if (
+      !orderCode ||
+      order.status === 'EXPIRED' ||
+      order.status === 'PAYMENT_ERROR'
+    ) {
       let codeExists = true;
       while (codeExists) {
         orderCode = Math.floor(100000000 + Math.random() * 900000000);
@@ -896,7 +965,9 @@ export class UsersService {
         where: { id: order.id },
         data: { status: 'PAYMENT_ERROR' },
       });
-      throw new BadRequestException('Không thể tạo lại liên kết thanh toán PayOS. Vui lòng thử lại sau.');
+      throw new BadRequestException(
+        'Không thể tạo lại liên kết thanh toán PayOS. Vui lòng thử lại sau.',
+      );
     }
   }
 
@@ -919,7 +990,9 @@ export class UsersService {
     }
 
     if (order.status !== 'PROCESSING') {
-      throw new BadRequestException('Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đã thanh toán thành công (đang xử lý).');
+      throw new BadRequestException(
+        'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đã thanh toán thành công (đang xử lý).',
+      );
     }
 
     return this.prisma.order.update({
@@ -939,7 +1012,9 @@ export class UsersService {
     const apiKey = process.env.VIETQR_API_KEY;
 
     if (!clientId || !apiKey) {
-      throw new BadRequestException('Chức năng kiểm tra tài khoản chưa được cấu hình khóa API VietQR.');
+      throw new BadRequestException(
+        'Chức năng kiểm tra tài khoản chưa được cấu hình khóa API VietQR.',
+      );
     }
 
     try {
@@ -958,7 +1033,9 @@ export class UsersService {
 
       const data = await response.json();
       if (data.code !== '00') {
-        throw new Error(data.desc || 'Tài khoản không hợp lệ hoặc lỗi tra cứu.');
+        throw new Error(
+          data.desc || 'Tài khoản không hợp lệ hoặc lỗi tra cứu.',
+        );
       }
 
       return {
@@ -972,5 +1049,3 @@ export class UsersService {
     }
   }
 }
-
-
