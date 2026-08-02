@@ -459,7 +459,17 @@ function ShopPageContent() {
                           />
                         </PaginationItem>
                       </PaginationContent>
-                    </Pagination>      {/* Pet Selection Modal */}
+                    </Pagination>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+      <Footer />
+
+      {/* Pet Selection Modal */}
       {showPetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-md bg-[#FAF9F6] dark:bg-zinc-900 rounded-3xl p-6 shadow-2xl border border-gray-200 dark:border-zinc-800 space-y-5 relative">
