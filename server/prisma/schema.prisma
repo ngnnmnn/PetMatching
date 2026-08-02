@@ -130,10 +130,11 @@ model Pet {
   /// Tổng số lần phối giống thành công
   totalBreedings           Int               @default(0)
   location                 String
+  district                 String?
+  ward                     String?
   /// Toạ độ cho Redis GEOSEARCH (tìm gần vị trí người dùng)
   latitude                 Float?
   longitude                Float?
-  isActive                 Boolean           @default(true)
   status                   PetStatus         @default(ACTIVE)
   isAvailableForMatching   Boolean           @default(false)
   createdAt                DateTime          @default(now())

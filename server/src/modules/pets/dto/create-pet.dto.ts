@@ -24,6 +24,22 @@ export class CreatePetDto {
   location!: string;
 
   @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  ward?: string;
+
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
   @IsUrl({ require_tld: false })
   @MaxLength(2048)
   avatarUrl?: string;

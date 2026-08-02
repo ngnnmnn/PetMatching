@@ -29,7 +29,7 @@ export class PetsController {
     return this.petsService.updateAvailability(
       request.user.id,
       id,
-      dto.isAvailableForMatching,
+      dto,
     );
   }
 }

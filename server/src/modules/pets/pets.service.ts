@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { DocumentStatus, DocumentType, Gender, PetStatus, VerificationBadge } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePetDto } from './dto/create-pet.dto';
+import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 
 @Injectable()
 export class PetsService {
@@ -50,6 +51,10 @@ export class PetsService {
         birthday,
         weight: dto.weight,
         location: dto.location,
+        district: dto.district,
+        ward: dto.ward,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
         avatarUrl: dto.avatarUrl,
         gallery: dto.gallery ?? [],
         personality: dto.personality,
@@ -60,7 +65,6 @@ export class PetsService {
         breedingFee: dto.breedingFee,
         verificationBadge: documents.length ? VerificationBadge.PENDING : VerificationBadge.NONE,
         status: dto.status ?? PetStatus.ACTIVE,
-        isActive: (dto.status ?? PetStatus.ACTIVE) === PetStatus.ACTIVE,
         isAvailableForMatching: false,
         documents: documents.length ? { create: documents } : undefined,
       },
@@ -68,7 +72,7 @@ export class PetsService {
     });
   }
 
-  async updateAvailability(userId: string, petId: string, isAvailable: boolean) {
+  async updateAvailability(userId: string, petId: string, dto: UpdateAvailabilityDto) {
     const pet = await this.prisma.pet.findUnique({ where: { id: petId } });
     if (!pet) {
       throw new NotFoundException('Pet not found.');
@@ -76,16 +80,23 @@ export class PetsService {
     if (pet.ownerId !== userId) {
       throw new ForbiddenException('You do not own this pet.');
     }
-    if (pet.gender !== Gender.MALE && isAvailable) {
+    const nextStatus = dto.status ?? pet.status;
+    const isMatchingAvailable = nextStatus === PetStatus.HIDDEN ? false : (dto.isAvailableForMatching ?? pet.isAvailableForMatching);
+
+    if (pet.gender !== Gender.MALE && isMatchingAvailable) {
       throw new BadRequestException('Only male pets can be available for matching.');
-    }
-    if (pet.status !== PetStatus.ACTIVE && isAvailable) {
-      throw new BadRequestException('Only active pets can be available for matching.');
     }
 
     return this.prisma.pet.update({
       where: { id: petId },
-      data: { isAvailableForMatching: isAvailable },
+      data: {
+        status: nextStatus,
+        isAvailableForMatching: isMatchingAvailable,
+        ...(dto.breedingOption ? { breedingOption: dto.breedingOption } : {}),
+        ...(dto.breedingFee !== undefined ? { breedingFee: dto.breedingFee } : {}),
+        ...(dto.shareLitterCount !== undefined ? { shareLitterCount: dto.shareLitterCount } : {}),
+        ...(dto.personality !== undefined ? { personality: dto.personality } : {}),
+      },
     });
   }
 }

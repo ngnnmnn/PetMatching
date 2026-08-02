@@ -27,4 +27,8 @@ export class GetCandidatesDto {
   @IsOptional()
   @IsBooleanString()
   hasPedigreeOnly?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  maxDistanceKm?: string;
 }
