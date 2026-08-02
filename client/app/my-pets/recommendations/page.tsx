@@ -341,12 +341,74 @@ Hãy đưa ra 3 lời khuyên ngắn gọn, thiết thực nhất về cách ch�
     return true;
   };
 
-  // Split products into tabs and apply filters (stock, test products, weight compatibility)
+  // Standard sizing weight range mappings (S, M, L, XL, XXL, XXXL) for pet accessories/clothes
+  const SIZE_WEIGHT_RANGES: Record<string, { min: number; max: number }> = {
+    s: { min: 0, max: 4 },
+    m: { min: 4, max: 8 },
+    l: { min: 8, max: 15 },
+    xl: { min: 15, max: 30 },
+    xxl: { min: 30, max: 100 },
+    xxxl: { min: 45, max: 150 },
+  };
+
+  // Filter out products with size specs that don't match the pet's weight
+  const isSizeCompatible = (product: any, petWeight: number) => {
+    if (petWeight <= 0) return true;
+
+    let sizeStr = '';
+
+    // 1. Check specifications JSON
+    if (product.specifications && typeof product.specifications === 'object') {
+      const specs = product.specifications as Record<string, any>;
+      const sizeKey = Object.keys(specs).find(k => {
+        const kl = k.toLowerCase();
+        return kl === 'size' || kl === 'kích thước' || kl === 'kích cỡ';
+      });
+      if (sizeKey && typeof specs[sizeKey] === 'string') {
+        sizeStr = specs[sizeKey].trim().toLowerCase();
+      }
+    }
+
+    // 2. Check product name or description
+    if (!sizeStr) {
+      const nameLower = product.name.toLowerCase();
+      const sizeRegex = /\b(?:size|cỡ|kích\s*thước|kích\s*cỡ)\s+([sml]|xl|xxl|xxxl)\b/i;
+      const match = nameLower.match(sizeRegex);
+      if (match) {
+        sizeStr = match[1].toLowerCase();
+      } else {
+        // Look for standalone size codes separated by space/dash/parentheses, e.g. " - S", "(S)"
+        const nameParts = nameLower.split(/[-()]/);
+        for (const part of nameParts) {
+          const trimmed = part.trim();
+          if (/^(s|m|l|xl|xxl|xxxl)$/i.test(trimmed)) {
+            sizeStr = trimmed.toLowerCase();
+            break;
+          }
+        }
+      }
+    }
+
+    if (sizeStr) {
+      const cleanSize = sizeStr.replace(/^(size|cỡ)\s+/i, '').trim();
+      const range = SIZE_WEIGHT_RANGES[cleanSize];
+      if (range) {
+        return petWeight >= range.min && petWeight <= range.max;
+      }
+    }
+
+    return true;
+  };
+
+  // Split products into tabs and apply filters (stock, test products, weight compatibility, size compatibility)
   const petWeight = selectedPet?.weight || 0;
   const filteredProducts = products.filter(p => {
     if (p.stock === 0) return false;
     if (isTestOrSystemProduct(p)) return false;
-    if (petWeight > 0 && !isWeightCompatible(p, petWeight)) return false;
+    if (petWeight > 0) {
+      if (!isWeightCompatible(p, petWeight)) return false;
+      if (!isSizeCompatible(p, petWeight)) return false;
+    }
     return true;
   });
 
