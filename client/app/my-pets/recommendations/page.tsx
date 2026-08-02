@@ -223,10 +223,20 @@ function RecommendationsContent() {
 
   // Fetch products for active species
   const activeSpecies = selectedPet?.species || 'DOG';
-  const { products, loading: loadingProducts } = useProducts({
+  const { products, loading: loadingProducts, setFilters } = useProducts({
     limit: 80,
     targetSpecies: activeSpecies,
   });
+
+  // Sync species filter reactively when selectedPet changes
+  useEffect(() => {
+    if (selectedPet?.species) {
+      setFilters((prev) => ({
+        ...prev,
+        targetSpecies: selectedPet.species,
+      }));
+    }
+  }, [selectedPet?.species, setFilters]);
 
   // Calculate pet age details
   const ageDetails = getPetAgeDetails(selectedPet?.birthday);
@@ -274,13 +284,77 @@ Hãy đưa ra 3 lời khuyên ngắn gọn, thiết thực nhất về cách ch�
       });
   }, [selectedPet]);
 
-  // Split products into tabs and filter out out-of-stock items (stock === 0)
-  const availableProducts = products.filter(p => p.stock !== 0);
-  const foodProducts = availableProducts.filter(p => p.category.includes('FOOD'));
-  const toysProducts = availableProducts.filter(
+  // Filter out test/system products (e.g. vouchers, shipping fees, debug products)
+  const isTestOrSystemProduct = (product: any) => {
+    const nameLower = product.name.toLowerCase();
+    const brandLower = (product.brand || '').toLowerCase();
+    const descLower = (product.description || '').toLowerCase();
+    
+    return (
+      nameLower.includes('test') ||
+      nameLower.includes('freeship') ||
+      nameLower.includes('voucher') ||
+      nameLower.includes('coupon') ||
+      nameLower.includes('phí ship') ||
+      nameLower.includes('phí vận chuyển') ||
+      brandLower.includes('test') ||
+      descLower.includes('test thanh toán') ||
+      descLower.includes('test voucher')
+    );
+  };
+
+  // Filter out products with weight constraints that don't fit the pet's weight
+  const isWeightCompatible = (product: any, petWeight: number) => {
+    const text = `${product.name} ${product.description || ''}`.toLowerCase();
+    
+    // 1. Check max weight limits: e.g. "dưới 5kg", "tối đa 4kg", "<3kg", "3kg trở xuống"
+    const underRegexes = [
+      /dưới\s*(\d+(?:\.\d+)?)\s*kg/g,
+      /tối\s*đa\s*(\d+(?:\.\d+)?)\s*kg/g,
+      /<\s*(\d+(?:\.\d+)?)\s*kg/g,
+      /(\d+(?:\.\d+)?)\s*kg\s*trở\s*xuống/g
+    ];
+    
+    for (const regex of underRegexes) {
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const maxWeight = parseFloat(match[1]);
+        if (!isNaN(maxWeight) && petWeight > maxWeight) {
+          return false;
+        }
+      }
+    }
+
+    // 2. Check weight range limits: e.g. "1 - 3kg", "3-5 kg"
+    const rangeRegex = /(\d+(?:\.\d+)?)\s*[-to]\s*(\d+(?:\.\d+)?)\s*kg/g;
+    let rangeMatch;
+    while ((rangeMatch = rangeRegex.exec(text)) !== null) {
+      const minWeight = parseFloat(rangeMatch[1]);
+      const maxWeight = parseFloat(rangeMatch[2]);
+      if (!isNaN(minWeight) && !isNaN(maxWeight)) {
+        if (petWeight > maxWeight || petWeight < minWeight) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  // Split products into tabs and apply filters (stock, test products, weight compatibility)
+  const petWeight = selectedPet?.weight || 0;
+  const filteredProducts = products.filter(p => {
+    if (p.stock === 0) return false;
+    if (isTestOrSystemProduct(p)) return false;
+    if (petWeight > 0 && !isWeightCompatible(p, petWeight)) return false;
+    return true;
+  });
+
+  const foodProducts = filteredProducts.filter(p => p.category.includes('FOOD'));
+  const toysProducts = filteredProducts.filter(
     p => p.category === 'TOY' || p.category === 'ACCESSORY' || p.category === 'LEASH_COLLAR'
   );
-  const careProducts = availableProducts.filter(
+  const careProducts = filteredProducts.filter(
     p =>
       p.category === 'CAGE_BED' ||
       (!p.category.includes('FOOD') &&
