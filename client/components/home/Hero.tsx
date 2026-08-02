@@ -30,7 +30,7 @@ const SLIDES = [
     title: 'Tìm Bạn Đời Hoàn Hảo Cho Thú Cưng',
     description: 'Nền tảng ghép đôi và tìm kiếm bạn bè cho thú cưng hàng đầu Việt Nam. Kết nối tình cảm, giúp thú cưng tìm được một nửa yêu thương.',
     buttonText: 'Bắt đầu ghép đôi',
-    link: '/pet-matching',
+    link: '/explore',
   },
 ];
 

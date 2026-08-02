@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
@@ -12,13 +12,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
-    return { 
-      id: payload.sub, 
-      email: payload.email, 
+  validate(payload: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    accountStatus?: string;
+    name?: string;
+    purpose?: string;
+  }) {
+    if (!payload.sub || payload.purpose) {
+      throw new UnauthorizedException('Token đăng nhập không hợp lệ.');
+    }
+
+    return {
+      id: payload.sub,
+      email: payload.email,
       role: payload.role,
       accountStatus: payload.accountStatus,
-      name: payload.name 
+      name: payload.name,
     };
   }
 }

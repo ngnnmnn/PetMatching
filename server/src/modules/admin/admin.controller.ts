@@ -25,6 +25,8 @@ import {
   UpdateApprovalStatusDto,
   UpdateUserRoleDto,
   UpdateBreedRuleDto,
+  CreateBreedDto,
+  UpdateBreedDto,
 } from './dto/admin-actions.dto';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -170,6 +172,40 @@ export class AdminController {
     @Param('id') id: string,
   ) {
     return this.adminService.deleteBreedRule(request.user, id);
+  }
+
+  // Breed Catalog Management
+  @Get('breeds')
+  getAdminBreeds(
+    @Query('species') species?: Species,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getAdminBreeds({ species, search });
+  }
+
+  @Post('breeds')
+  createBreed(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: CreateBreedDto,
+  ) {
+    return this.adminService.createBreed(request.user, dto);
+  }
+
+  @Patch('breeds/:id')
+  updateBreed(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateBreedDto,
+  ) {
+    return this.adminService.updateBreed(request.user, id, dto);
+  }
+
+  @Delete('breeds/:id')
+  deleteBreed(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.deleteBreed(request.user, id);
   }
 
   @Patch('matching-reports/:id/resolve')

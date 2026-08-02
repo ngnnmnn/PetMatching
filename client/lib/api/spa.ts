@@ -17,6 +17,7 @@ export interface CreateBookingData {
 }
 
 export const spaApi = {
+  getCategories: () => api.get<any[]>('/spa/categories'),
   getBranches: () => api.get<SpaBranchType[]>('/spa/branches'),
   getServices: (species?: string, weight?: number) => {
     const params = new URLSearchParams();

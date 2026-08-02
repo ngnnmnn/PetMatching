@@ -18,7 +18,14 @@ const PRIVATE_ROUTES = [
   '/manager',
 ];
 
-const AUTH_ROUTES = ['/login', '/register', '/verify-email', '/auth/google/callback'];
+const AUTH_ROUTES = [
+  '/login',
+  '/register',
+  '/verify-email',
+  '/forgot-password',
+  '/reset-password',
+  '/auth/google/callback',
+];
 
 export default function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

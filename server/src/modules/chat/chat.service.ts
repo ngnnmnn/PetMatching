@@ -45,7 +45,7 @@ export class ChatService {
 
             // Query pets info and collect their species
             const pets = await this.prisma.pet.findMany({
-              where: { ownerId: userId, isActive: true },
+              where: { ownerId: userId, status: 'ACTIVE' },
               select: {
                 name: true,
                 species: true,

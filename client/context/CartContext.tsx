@@ -39,8 +39,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }));
         setCartItems(items);
         localStorage.removeItem('petmatch_cart');
-      } catch (e) {
-        console.error('Failed to load cart from backend', e);
+      } catch (e: any) {
+        if (e?.response?.status === 401) {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
+          const stored = localStorage.getItem('petmatch_cart');
+          if (stored) {
+            try {
+              setCartItems(JSON.parse(stored));
+            } catch {}
+          } else {
+            setCartItems([]);
+          }
+        } else {
+          console.error('Failed to load cart from backend', e);
+        }
       }
     } else {
       const stored = localStorage.getItem('petmatch_cart');

@@ -1,12 +1,14 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { AccountStatus } from '@prisma/client';
-import { randomInt } from 'crypto';
+import { AccountStatus, Prisma } from '@prisma/client';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -15,10 +17,14 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 type AuthUser = {
   id: string;
   email: string;
+  username?: string | null;
   name: string;
   role: string;
   accountStatus?: string;
@@ -40,9 +46,33 @@ type GoogleUserInfo = {
   picture?: string;
 };
 
+type GoogleOnboardingPayload = {
+  purpose: 'google-onboarding';
+  googleId: string;
+  email: string;
+  suggestedName: string;
+  avatarUrl?: string;
+  userId?: string;
+  needsPassword: boolean;
+};
+
+type GoogleOnboardingInput = Omit<GoogleOnboardingPayload, 'purpose'>;
+
+type GoogleLoginResult =
+  | {
+      requiresProfileCompletion: true;
+      profileToken: string;
+      email: string;
+      suggestedName: string;
+      needsPassword: boolean;
+    }
+  | ReturnType<AuthService['buildAuthResponse']>;
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly otpExpiryMs = 5 * 60 * 1000;
+  private readonly passwordResetExpiryMs = 15 * 60 * 1000;
   private readonly resendCooldownMs = 30 * 1000;
   private readonly maxOtpAttempts = 5;
   private readonly otpLockDurationMs = 15 * 60 * 1000;
@@ -58,6 +88,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
+      username: user.username,
       role: user.role,
       accountStatus: user.accountStatus,
       name: user.name,
@@ -70,6 +101,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
         name: user.name,
         role: user.role,
         accountStatus: user.accountStatus,
@@ -135,12 +167,14 @@ export class AuthService {
 
   async login(loginDto: LoginDto) {
     const user = await this.usersService.validateUser(
-      loginDto.email,
+      loginDto.identifier,
       loginDto.password,
     );
 
     if (!user) {
-      throw new UnauthorizedException('Email hoặc mật khẩu không đúng!');
+      throw new UnauthorizedException(
+        'Email/tên đăng nhập hoặc mật khẩu không đúng!',
+      );
     }
 
     if (user.accountStatus === AccountStatus.SUSPENDED) {
@@ -162,34 +196,34 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto) {
+    const email = registerDto.email.trim().toLowerCase();
     await this.usersService.createUser({
-      email: registerDto.email,
+      email,
+      username: registerDto.username,
       password: registerDto.password,
       name: registerDto.name,
       phone: registerDto.phone,
       avatarUrl: registerDto.avatarUrl,
     });
 
-    await this.createAndSendOtp(registerDto.email);
+    await this.createAndSendOtp(email);
 
     return {
       success: true,
-      message:
-        'Đăng ký thành công. Vui lòng kiểm tra email để lấy mã OTP.',
+      message: 'Đăng ký thành công. Vui lòng kiểm tra email để lấy mã OTP.',
       requiresVerification: true,
-      email: registerDto.email,
+      email,
     };
   }
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
-    const email = verifyEmailDto.email;
+    const email = verifyEmailDto.email.trim().toLowerCase();
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new BadRequestException('Email chưa được đăng ký.');
     }
 
-    const currentFailedOtpAttempts =
-      await this.ensureOtpAccountNotLocked(user);
+    const currentFailedOtpAttempts = await this.ensureOtpAccountNotLocked(user);
 
     const latestOtp = await this.prisma.emailOtp.findFirst({
       where: { email },
@@ -267,7 +301,7 @@ export class AuthService {
         data: { usedAt: new Date() },
       });
 
-      const updatedUser = await tx.user.update({
+      return tx.user.update({
         where: { id: user.id },
         data: {
           isVerified: true,
@@ -275,19 +309,14 @@ export class AuthService {
           lockedUntil: null,
         },
       });
-
-      const { passwordHash, ...result } = updatedUser;
-      return result;
     });
 
-    return this.buildAuthResponse(
-      verifiedUser,
-      'Xác thực email thành công!',
-    );
+    return this.buildAuthResponse(verifiedUser, 'Xác thực email thành công!');
   }
 
   async resendOtp(resendOtpDto: ResendOtpDto) {
-    const user = await this.usersService.findByEmail(resendOtpDto.email);
+    const email = resendOtpDto.email.trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new BadRequestException('Email chưa được đăng ký.');
     }
@@ -299,7 +328,7 @@ export class AuthService {
     await this.ensureOtpAccountNotLocked(user);
 
     const latestOtp = await this.prisma.emailOtp.findFirst({
-      where: { email: resendOtpDto.email },
+      where: { email },
       orderBy: { lastSentAt: 'desc' },
     });
 
@@ -325,12 +354,138 @@ export class AuthService {
       }
     }
 
-    await this.createAndSendOtp(resendOtpDto.email);
+    await this.createAndSendOtp(email);
 
     return {
       success: true,
       message: 'Mã OTP mới đã được gửi đến email của bạn.',
     };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const response = {
+      success: true,
+      message:
+        'Vui lòng kiểm tra email. Nếu địa chỉ này được liên kết với tài khoản PetMatching, bạn sẽ nhận được liên kết đặt lại mật khẩu.',
+    };
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email);
+
+    if (!user) {
+      return response;
+    }
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = this.hashPasswordResetToken(rawToken);
+    const now = new Date();
+    const resetToken = await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: now },
+      });
+
+      return tx.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(now.getTime() + this.passwordResetExpiryMs),
+        },
+      });
+    });
+
+    const clientUrl =
+      process.env.CLIENT_URL ||
+      process.env.FRONTEND_URL ||
+      'http://localhost:3000';
+    const resetUrl = `${clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+    try {
+      await this.mailService.sendPasswordResetEmail(email, resetUrl);
+    } catch (error) {
+      await this.prisma.passwordResetToken.updateMany({
+        where: { id: resetToken.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      this.logger.error(
+        `Không thể gửi email đặt lại mật khẩu cho user ${user.id}.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    return response;
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('Mật khẩu xác nhận không khớp.');
+    }
+
+    const invalidTokenMessage =
+      'Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.';
+    const tokenHash = this.hashPasswordResetToken(dto.token);
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+    const now = new Date();
+
+    if (
+      !resetToken ||
+      resetToken.usedAt ||
+      resetToken.expiresAt.getTime() <= now.getTime()
+    ) {
+      throw new BadRequestException(invalidTokenMessage);
+    }
+
+    if (
+      resetToken.user.passwordHash &&
+      (await bcrypt.compare(dto.newPassword, resetToken.user.passwordHash))
+    ) {
+      throw new BadRequestException(
+        'Mật khẩu mới phải khác mật khẩu hiện tại.',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.passwordResetToken.updateMany({
+        where: {
+          id: resetToken.id,
+          usedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { usedAt: now },
+      });
+
+      if (consumed.count !== 1) {
+        throw new BadRequestException(invalidTokenMessage);
+      }
+
+      await tx.user.update({
+        where: { id: resetToken.userId },
+        data: { passwordHash, refreshToken: null },
+      });
+
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: resetToken.userId,
+          id: { not: resetToken.id },
+          usedAt: null,
+        },
+        data: { usedAt: now },
+      });
+    });
+
+    return {
+      success: true,
+      message:
+        'Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.',
+    };
+  }
+
+  private hashPasswordResetToken(token: string) {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private generateOtp() {
@@ -386,7 +541,7 @@ export class AuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  async googleLogin(code: string) {
+  async googleLogin(code: string): Promise<GoogleLoginResult> {
     if (!code) {
       throw new BadRequestException('Missing Google authorization code');
     }
@@ -432,37 +587,200 @@ export class AuthService {
     );
 
     const googleUser = (await userInfoResponse.json()) as GoogleUserInfo;
-    if (!userInfoResponse.ok || !googleUser.email) {
-      throw new BadGatewayException(
-        'Không thể lấy thông tin tài khoản Google',
-      );
+    if (!userInfoResponse.ok || !googleUser.email || !googleUser.sub) {
+      throw new BadGatewayException('Không thể lấy thông tin tài khoản Google');
     }
 
-    if (googleUser.email_verified === false) {
+    if (googleUser.email_verified !== true) {
       throw new UnauthorizedException('Email Google chưa được xác minh');
     }
 
-    const existingUser = await this.usersService.findByEmail(googleUser.email);
-    const user = existingUser
-      ? await this.usersService.updateGoogleProfile(existingUser.id, {
-          name: existingUser.name || googleUser.name || googleUser.email,
-          googleId: googleUser.sub,
-          avatarUrl: existingUser.avatarUrl || googleUser.picture,
-          isVerified: true,
-        })
-      : await this.usersService.createGoogleUser({
-          email: googleUser.email,
-          name: googleUser.name || googleUser.email,
-          googleId: googleUser.sub,
-          avatarUrl: googleUser.picture,
-        });
+    const email = googleUser.email.trim().toLowerCase();
+    const suggestedName = googleUser.name || email;
+    const userByGoogleId = await this.usersService.findByGoogleId(
+      googleUser.sub,
+    );
 
-    return this.buildAuthResponse(user, 'Đăng nhập Google thành công!');
+    if (userByGoogleId) {
+      this.ensureAccountActive(userByGoogleId.accountStatus);
+      if (userByGoogleId.username && userByGoogleId.passwordHash) {
+        return this.buildAuthResponse(
+          userByGoogleId,
+          'Đăng nhập Google thành công!',
+        );
+      }
+      return this.buildGoogleOnboardingResponse({
+        googleId: googleUser.sub,
+        email,
+        suggestedName: userByGoogleId.name || suggestedName,
+        avatarUrl: userByGoogleId.avatarUrl || googleUser.picture,
+        userId: userByGoogleId.id,
+        needsPassword: !userByGoogleId.passwordHash,
+      });
+    }
+
+    const userByEmail = await this.usersService.findByEmail(email);
+    if (userByEmail) {
+      this.ensureAccountActive(userByEmail.accountStatus);
+      if (userByEmail.googleId && userByEmail.googleId !== googleUser.sub) {
+        throw new ConflictException(
+          'Email này đã được liên kết với một tài khoản Google khác.',
+        );
+      }
+
+      const linkedUser = await this.usersService.updateGoogleProfile(
+        userByEmail.id,
+        {
+          googleId: googleUser.sub,
+          avatarUrl: userByEmail.avatarUrl || googleUser.picture,
+          isVerified: true,
+        },
+      );
+      if (linkedUser.username && userByEmail.passwordHash) {
+        return this.buildAuthResponse(
+          linkedUser,
+          'Liên kết và đăng nhập Google thành công!',
+        );
+      }
+      return this.buildGoogleOnboardingResponse({
+        googleId: googleUser.sub,
+        email,
+        suggestedName: linkedUser.name || suggestedName,
+        avatarUrl: linkedUser.avatarUrl || googleUser.picture,
+        userId: linkedUser.id,
+        needsPassword: !userByEmail.passwordHash,
+      });
+    }
+
+    return this.buildGoogleOnboardingResponse({
+      googleId: googleUser.sub,
+      email,
+      suggestedName,
+      avatarUrl: googleUser.picture,
+      needsPassword: true,
+    });
+  }
+
+  async completeGoogleProfile(dto: CompleteGoogleProfileDto) {
+    const payload = this.verifyGoogleOnboardingToken(dto.profileToken);
+    const username = dto.username.trim().toLowerCase();
+    const name = dto.name.trim();
+
+    if (['admin', 'support', 'manager', 'api'].includes(username)) {
+      throw new BadRequestException(
+        'Tên đăng nhập này không được phép sử dụng.',
+      );
+    }
+    let passwordHash: string | undefined;
+    if (payload.needsPassword) {
+      if (!dto.password || dto.password !== dto.confirmPassword) {
+        throw new BadRequestException('Mật khẩu xác nhận không khớp.');
+      }
+      passwordHash = await bcrypt.hash(dto.password, 10);
+    }
+
+    const usernameOwner = await this.usersService.findByUsername(username);
+    if (usernameOwner && usernameOwner.id !== payload.userId) {
+      throw new ConflictException('Tên đăng nhập đã được sử dụng.');
+    }
+
+    if (!payload.userId && !passwordHash) {
+      throw new BadRequestException('Mật khẩu là bắt buộc.');
+    }
+    const requiredPasswordHash = passwordHash;
+
+    let user;
+    try {
+      user = await this.prisma.$transaction(async (tx) => {
+        if (payload.userId) {
+          const updated = await tx.user.updateMany({
+            where: {
+              id: payload.userId,
+              OR: [{ username: null }, { passwordHash: null }],
+            },
+            data: {
+              username,
+              name,
+              googleId: payload.googleId,
+              avatarUrl: payload.avatarUrl,
+              isVerified: true,
+              ...(passwordHash ? { passwordHash } : {}),
+            },
+          });
+          if (updated.count !== 1) {
+            throw new ConflictException('Tài khoản đã được hoàn tất trước đó.');
+          }
+          const completedUser = await tx.user.findUnique({
+            where: { id: payload.userId },
+          });
+          if (!completedUser) {
+            throw new UnauthorizedException('Tài khoản không còn tồn tại.');
+          }
+          return completedUser;
+        }
+
+        return tx.user.create({
+          data: {
+            email: payload.email,
+            username,
+            passwordHash: requiredPasswordHash,
+            googleId: payload.googleId,
+            name,
+            avatarUrl: payload.avatarUrl,
+            isVerified: true,
+          },
+        });
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Email, tên đăng nhập hoặc tài khoản Google đã được sử dụng.',
+        );
+      }
+      throw error;
+    }
+
+    return this.buildAuthResponse(user, 'Hoàn tất tài khoản thành công!');
+  }
+
+  private buildGoogleOnboardingResponse(payload: GoogleOnboardingInput) {
+    const profileToken = this.jwtService.sign(
+      { ...payload, purpose: 'google-onboarding' },
+      { expiresIn: '10m' },
+    );
+    return {
+      requiresProfileCompletion: true as const,
+      profileToken,
+      email: payload.email,
+      suggestedName: payload.suggestedName,
+      needsPassword: payload.needsPassword,
+    };
+  }
+
+  private verifyGoogleOnboardingToken(token: string): GoogleOnboardingPayload {
+    try {
+      const payload = this.jwtService.verify<GoogleOnboardingPayload>(token);
+      if (payload.purpose !== 'google-onboarding') throw new Error();
+      return payload;
+    } catch {
+      throw new UnauthorizedException(
+        'Phiên hoàn thiện tài khoản đã hết hạn. Vui lòng đăng nhập Google lại.',
+      );
+    }
+  }
+
+  private ensureAccountActive(accountStatus?: string) {
+    if (accountStatus === AccountStatus.SUSPENDED) {
+      throw new UnauthorizedException('Tài khoản đang bị khóa.');
+    }
   }
 
   async verify(token: string) {
     try {
-      const decoded = this.jwtService.verify(token);
+      const decoded = this.jwtService.verify<{ sub: string }>(token);
       const user = await this.usersService.findById(decoded.sub);
       if (!user) {
         throw new UnauthorizedException('User not found');
@@ -475,6 +793,7 @@ export class AuthService {
         user: {
           id: user.id,
           email: user.email,
+          username: user.username,
           name: user.name,
           role: user.role,
           accountStatus: user.accountStatus,
@@ -483,7 +802,7 @@ export class AuthService {
           isVerified: user.isVerified,
         },
       };
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException('Invalid token');
     }
   }

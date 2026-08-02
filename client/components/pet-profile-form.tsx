@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, Plus, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -44,7 +44,98 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [submitError, setSubmitError] = useState("")
 
-  const breeds = formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : []
+  // Location state (GHN 3-tier address selection)
+  const [provincesList, setProvincesList] = useState<{ provinceId: number; provinceName: string }[]>([])
+  const [districtsList, setDistrictsList] = useState<{ districtId: number; districtName: string }[]>([])
+  const [wardsList, setWardsList] = useState<{ wardCode: string; wardName: string }[]>([])
+
+  const [provinceId, setProvinceId] = useState<number | undefined>()
+  const [provinceName, setProvinceName] = useState<string>("")
+  const [districtId, setDistrictId] = useState<number | undefined>()
+  const [districtName, setDistrictName] = useState<string>("")
+  const [wardCode, setWardCode] = useState<string | undefined>()
+  const [wardName, setWardName] = useState<string>("")
+
+  const [loadingProvinces, setLoadingProvinces] = useState(false)
+  const [loadingDistricts, setLoadingDistricts] = useState(false)
+  const [loadingWards, setLoadingWards] = useState(false)
+
+  // Fetch Provinces
+  useEffect(() => {
+    setLoadingProvinces(true)
+    api
+      .get<{ provinceId: number; provinceName: string }[]>('/shipping/provinces')
+      .then((res) => {
+        if (Array.isArray(res.data)) setProvincesList(res.data)
+      })
+      .catch(() => setProvincesList([]))
+      .finally(() => setLoadingProvinces(false))
+  }, [])
+
+  // Fetch Districts when provinceId changes
+  useEffect(() => {
+    if (!provinceId) {
+      setDistrictsList([])
+      setWardsList([])
+      setDistrictId(undefined)
+      setDistrictName("")
+      setWardCode(undefined)
+      setWardName("")
+      return
+    }
+    setLoadingDistricts(true)
+    api
+      .get<{ districtId: number; districtName: string }[]>(`/shipping/districts?province_id=${provinceId}`)
+      .then((res) => {
+        if (Array.isArray(res.data)) setDistrictsList(res.data)
+      })
+      .catch(() => setDistrictsList([]))
+      .finally(() => setLoadingDistricts(false))
+  }, [provinceId])
+
+  // Fetch Wards when districtId changes
+  useEffect(() => {
+    if (!districtId) {
+      setWardsList([])
+      setWardCode(undefined)
+      setWardName("")
+      return
+    }
+    setLoadingWards(true)
+    api
+      .get<{ wardCode: string; wardName: string }[]>(`/shipping/wards?district_id=${districtId}`)
+      .then((res) => {
+        if (Array.isArray(res.data)) setWardsList(res.data)
+      })
+      .catch(() => setWardsList([]))
+      .finally(() => setLoadingWards(false))
+  }, [districtId])
+
+  const [dbBreeds, setDbBreeds] = useState<string[]>([])
+  const [isCustomBreed, setIsCustomBreed] = useState(false)
+  const [customBreedInput, setCustomBreedInput] = useState("")
+
+  useEffect(() => {
+    if (!formData.species) {
+      setDbBreeds([])
+      return
+    }
+    const species = formData.species.toUpperCase()
+    api
+      .get<{ id: string; name: string }[]>('/breeds', { params: { species } })
+      .then((res) => {
+        if (res.data && res.data.length > 0) {
+          setDbBreeds(res.data.map((b) => b.name))
+        } else {
+          setDbBreeds(formData.species === "dog" ? dogBreeds : catBreeds)
+        }
+      })
+      .catch(() => {
+        setDbBreeds(formData.species === "dog" ? dogBreeds : catBreeds)
+      })
+  }, [formData.species])
+
+  const breeds = dbBreeds.length > 0 ? dbBreeds : (formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : [])
 
   const handleImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -105,10 +196,11 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
   const canProceed = () => {
     if (step === 1) {
-      return formData.name && formData.species && formData.breed && formData.gender
+      const breedValid = isCustomBreed ? customBreedInput.trim().length > 0 : !!formData.breed
+      return formData.name && formData.species && breedValid && formData.gender
     }
     if (step === 2) {
-      return formData.birthday && formData.weight && formData.location
+      return formData.birthday && formData.weight && (provinceName || formData.location)
     }
     return true
   }
@@ -129,6 +221,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
     const species = formData.species === "dog" ? "DOG" : "CAT"
     const gender = formData.gender === "male" ? "MALE" : "FEMALE"
+    const finalBreed = isCustomBreed ? customBreedInput.trim() : formData.breed
+
     const breedingOptionMap: Record<string, string> = {
       cash: "CASH",
       share: "SHARE_LITTER",
@@ -138,15 +232,43 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     setIsSubmitting(true)
     setSubmitError("")
 
+    // Geocoding query via Nominatim OpenStreetMap API
+    let latitude: number | undefined
+    let longitude: number | undefined
+
+    const finalLocation = provinceName || formData.location || "TP. Hồ Chí Minh"
+
+    if (provinceName) {
+      try {
+        const fullAddressQuery = [wardName, districtName, provinceName, 'Việt Nam']
+          .filter(Boolean)
+          .join(', ')
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddressQuery)}&limit=1`,
+        )
+        const geoData = await geoRes.json()
+        if (Array.isArray(geoData) && geoData.length > 0) {
+          latitude = parseFloat(geoData[0].lat)
+          longitude = parseFloat(geoData[0].lon)
+        }
+      } catch (err) {
+        console.warn("Geocoding failed, proceeding with location string", err)
+      }
+    }
+
     try {
       await api.post("/pets", {
         name: formData.name.trim(),
         species,
-        breed: formData.breed,
+        breed: finalBreed,
         gender,
         birthday: formData.birthday,
         weight: Number(formData.weight),
-        location: formData.location,
+        location: finalLocation,
+        district: districtName || undefined,
+        ward: wardName || undefined,
+        latitude,
+        longitude,
         avatarUrl: avatar || undefined,
         gallery,
         personality: formData.personality.trim() || undefined,
@@ -268,8 +390,16 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               <div className="space-y-2">
                 <Label htmlFor="breed">Giống *</Label>
                 <Select
-                  value={formData.breed}
-                  onValueChange={(value) => setFormData({ ...formData, breed: value })}
+                  value={isCustomBreed ? "OTHER" : formData.breed}
+                  onValueChange={(value) => {
+                    if (value === "OTHER") {
+                      setIsCustomBreed(true)
+                      setFormData({ ...formData, breed: "" })
+                    } else {
+                      setIsCustomBreed(false)
+                      setFormData({ ...formData, breed: value })
+                    }
+                  }}
                   disabled={!formData.species}
                 >
                   <SelectTrigger>
@@ -281,8 +411,22 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                         {breed}
                       </SelectItem>
                     ))}
+                    <SelectItem value="OTHER">✨ Giống khác (Nhập thủ công)</SelectItem>
                   </SelectContent>
                 </Select>
+
+                {isCustomBreed && (
+                  <div className="mt-2 space-y-1">
+                    <Label htmlFor="customBreedInput" className="text-xs font-semibold text-primary">Tên giống của bé</Label>
+                    <Input
+                      id="customBreedInput"
+                      placeholder="Ví dụ: Puggle, Phốc sóc lai..."
+                      value={customBreedInput}
+                      onChange={(e) => setCustomBreedInput(e.target.value)}
+                      className="border-primary/50 focus:border-primary"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -351,20 +495,86 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="location">Khu vực *</Label>
-                <Select value={formData.location} onValueChange={(value) => setFormData({ ...formData, location: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn tỉnh/thành phố" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {provinces.map((province) => (
-                      <SelectItem key={province} value={province}>
-                        {province}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
+                <Label className="font-extrabold text-sm">Địa chỉ & Khu vực của bé *</Label>
+
+                {/* 1. Tỉnh / Thành phố */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="province" className="text-xs text-muted-foreground font-semibold">Tỉnh / Thành phố</Label>
+                  <Select
+                    value={provinceId ? String(provinceId) : ""}
+                    onValueChange={(val) => {
+                      const id = Number(val)
+                      setProvinceId(id)
+                      const found = provincesList.find((p) => p.provinceId === id)
+                      setProvinceName(found ? found.provinceName : "")
+                      setFormData({ ...formData, location: found ? found.provinceName : "" })
+                    }}
+                    disabled={loadingProvinces}
+                  >
+                    <SelectTrigger className="rounded-xl font-bold">
+                      <SelectValue placeholder={loadingProvinces ? "Đang tải Tỉnh/Thành..." : "Chọn Tỉnh / Thành phố"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {provincesList.map((p) => (
+                        <SelectItem key={p.provinceId} value={String(p.provinceId)}>
+                          {p.provinceName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 2. Quận / Huyện */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="district" className="text-xs text-muted-foreground font-semibold">Quận / Huyện</Label>
+                  <Select
+                    value={districtId ? String(districtId) : ""}
+                    onValueChange={(val) => {
+                      const id = Number(val)
+                      setDistrictId(id)
+                      const found = districtsList.find((d) => d.districtId === id)
+                      setDistrictName(found ? found.districtName : "")
+                    }}
+                    disabled={!provinceId || loadingDistricts}
+                  >
+                    <SelectTrigger className="rounded-xl font-bold">
+                      <SelectValue placeholder={!provinceId ? "Vui lòng chọn Tỉnh/Thành trước" : loadingDistricts ? "Đang tải Quận/Huyện..." : "Chọn Quận / Huyện"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {districtsList.map((d) => (
+                        <SelectItem key={d.districtId} value={String(d.districtId)}>
+                          {d.districtName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 3. Phường / Xã */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="ward" className="text-xs text-muted-foreground font-semibold">Phường / Xã</Label>
+                  <Select
+                    value={wardCode || ""}
+                    onValueChange={(val) => {
+                      setWardCode(val)
+                      const found = wardsList.find((w) => w.wardCode === val)
+                      setWardName(found ? found.wardName : "")
+                    }}
+                    disabled={!districtId || loadingWards}
+                  >
+                    <SelectTrigger className="rounded-xl font-bold">
+                      <SelectValue placeholder={!districtId ? "Vui lòng chọn Quận/Huyện trước" : loadingWards ? "Đang tải Phường/Xã..." : "Chọn Phường / Xã"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {wardsList.map((w) => (
+                        <SelectItem key={w.wardCode} value={w.wardCode}>
+                          {w.wardName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-4 rounded-xl bg-muted/50 p-4">

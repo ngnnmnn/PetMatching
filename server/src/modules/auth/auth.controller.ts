@@ -15,6 +15,9 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('api/auth')
 export class AuthController {
@@ -44,8 +47,26 @@ export class AuthController {
     return this.authService.resendOtp(resendOtpDto);
   }
 
+  @Post('complete-google-profile')
+  @HttpCode(HttpStatus.OK)
+  completeGoogleProfile(@Body() dto: CompleteGoogleProfileDto) {
+    return this.authService.completeGoogleProfile(dto);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
   @Get('google')
-  async googleAuth(@Query('redirect') redirect: string, @Res() res: Response) {
+  googleAuth(@Query('redirect') redirect: string, @Res() res: Response) {
     return res.redirect(this.authService.getGoogleAuthUrl(redirect));
   }
 
@@ -69,7 +90,15 @@ export class AuthController {
 
     try {
       const authResult = await this.authService.googleLogin(code);
-      const params = new URLSearchParams({ token: authResult.accessToken });
+      const params = new URLSearchParams();
+      if ('requiresProfileCompletion' in authResult) {
+        params.set('profileToken', authResult.profileToken);
+        params.set('email', authResult.email);
+        params.set('suggestedName', authResult.suggestedName);
+        params.set('needsPassword', String(authResult.needsPassword));
+      } else {
+        params.set('token', authResult.accessToken);
+      }
       if (state) {
         params.append('redirect', state);
       }

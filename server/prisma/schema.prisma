@@ -9,45 +9,72 @@ datasource db {
 }
 
 model User {
-  id                  String            @id @default(cuid())
-  email               String            @unique
-  googleId            String?           @unique
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  username             String?              @unique
+  googleId             String?              @unique
   /// Mật khẩu đã được hash (bcrypt)
-  passwordHash        String?
-  name                String
-  avatarUrl           String?
-  phone               String?
-  role                UserRole          @default(USER)
-  accountStatus       AccountStatus     @default(ACTIVE)
+  passwordHash         String?
+  name                 String
+  avatarUrl            String?
+  phone                String?
+  role                 UserRole             @default(USER)
+  accountStatus        AccountStatus        @default(ACTIVE)
   /// Xác thực email
-  isVerified          Boolean           @default(false)
+  isVerified           Boolean              @default(false)
   /// Số lần nhập sai OTP liên tiếp
-  failedOtpAttempts   Int               @default(0) @map("failed_otp_attempts")
+  failedOtpAttempts    Int                  @default(0) @map("failed_otp_attempts")
   /// Thời điểm hết hạn khóa do nhập sai OTP
-  lockedUntil         DateTime?         @map("locked_until")
+  lockedUntil          DateTime?            @map("locked_until")
   /// Refresh token lưu trong DB (backup cho Redis)
-  refreshToken        String?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  managedSpaAddresses AddressSpa[]      @relation("SpaAddressManager")
-  addresses           Address[]
-  auditLogs           AuditLog[]        @relation("AuditActor")
-  cartItems           CartItem[]
-  sentLikes           Like[]            @relation("LikeSender")
-  matchingRequests    MatchingRequest[] @relation("MatchingRequester")
-  messages            Message[]
-  orders              Order[]
-  reviewedDocuments   PetDocument[]     @relation("PetDocumentReviewer")
-  pets                Pet[]
-  reviews             ProductReview[]
-  assignedSpaBookings SpaBooking[]      @relation("SpaStaffBookings")
-  spaBookings         SpaBooking[]
+  refreshToken         String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  managedSpaAddresses  AddressSpa[]         @relation("SpaAddressManager")
+  addresses            Address[]
+  auditLogs            AuditLog[]           @relation("AuditActor")
+  cartItems            CartItem[]
+  sentLikes            Like[]               @relation("LikeSender")
+  matchingRequests     MatchingRequest[]    @relation("MatchingRequester")
+  messages             Message[]
+  orders               Order[]
+  reviewedDocuments    PetDocument[]        @relation("PetDocumentReviewer")
+  pets                 Pet[]
+  reviews              ProductReview[]
+  assignedSpaBookings  SpaBooking[]         @relation("SpaStaffBookings")
+  spaBookings          SpaBooking[]
   managedSpaCategories SpaCategory[]        @relation("SpaCategoryManager")
-  spaStaffProfile     SpaStaff?         @relation("UserSpaStaffProfile")
-  managedStores       Store[]           @relation("StoreManager")
-  wishlistItems       WishlistItem[]
+  spaStaffProfile      SpaStaff?            @relation("UserSpaStaffProfile")
+  managedStores        Store[]              @relation("StoreManager")
+  wishlistItems        WishlistItem[]
+  passwordResetTokens  PasswordResetToken[]
 
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("password_reset_tokens")
+}
+
+model Breed {
+  id        String   @id @default(cuid())
+  species   Species
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([species, name])
+  @@map("breeds")
 }
 
 model EmailOtp {
@@ -103,10 +130,11 @@ model Pet {
   /// Tổng số lần phối giống thành công
   totalBreedings           Int               @default(0)
   location                 String
+  district                 String?
+  ward                     String?
   /// Toạ độ cho Redis GEOSEARCH (tìm gần vị trí người dùng)
   latitude                 Float?
   longitude                Float?
-  isActive                 Boolean           @default(true)
   status                   PetStatus         @default(ACTIVE)
   isAvailableForMatching   Boolean           @default(false)
   createdAt                DateTime          @default(now())
@@ -772,16 +800,16 @@ enum VerificationBadge {
 }
 
 model Voucher {
-  id          String    @id @default(cuid())
-  code        String    @unique
-  type        String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
-  value       Float     @default(0)           // Số tiền hoặc % giảm (100 đối với 100% ship)
-  maxUsage    Int?                            // Số lần sử dụng tối đa
-  usedCount   Int       @default(0)
-  isActive    Boolean   @default(true)
-  expiredAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  code      String    @unique
+  type      String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
+  value     Float     @default(0) // Số tiền hoặc % giảm (100 đối với 100% ship)
+  maxUsage  Int? // Số lần sử dụng tối đa
+  usedCount Int       @default(0)
+  isActive  Boolean   @default(true)
+  expiredAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@map("vouchers")
 }

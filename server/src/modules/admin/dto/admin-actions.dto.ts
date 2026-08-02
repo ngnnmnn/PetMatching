@@ -133,3 +133,29 @@ export class CreateBreedRuleDto {
 }
 
 export class UpdateBreedRuleDto extends CreateBreedRuleDto {}
+
+export class CreateBreedDto {
+  @IsEnum(Species)
+  species!: Species;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateBreedDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

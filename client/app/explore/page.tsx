@@ -58,6 +58,9 @@ type Pet = {
   birthday: string;
   weight: number;
   location: string;
+  district?: string | null;
+  ward?: string | null;
+  distanceKm?: number;
   colorDesc?: string | null;
   avatarUrl?: string | null;
   avatar?: string | null;
@@ -222,14 +225,30 @@ export default function UnifiedMatchingHubPage() {
   const isSelectedFemale = selectedPet?.gender === 'FEMALE';
   const isSelectedMale = selectedPet?.gender === 'MALE';
 
-  // Load My Pets
+  // Load My Pets & Prefetch initial candidates
   useEffect(() => {
+    setLoadingPets(true);
     api
       .get<Pet[]>('/pets/my')
-      .then((res) => {
-        setMyPets(res.data || []);
-        if (res.data && res.data.length > 0) {
-          setSelectedPetId(res.data[0].id);
+      .then(async (res) => {
+        const pets = res.data || [];
+        setMyPets(pets);
+        if (pets.length > 0) {
+          const firstPet = pets[0];
+          setSelectedPetId(firstPet.id);
+          if (firstPet.gender === 'FEMALE') {
+            setLoadingCandidates(true);
+            try {
+              const candRes = await api.get<{ data: Pet[] }>('/matching/candidates', {
+                params: { femalePetId: firstPet.id },
+              });
+              setCandidates(candRes.data?.data || []);
+            } catch {
+              // silent catch
+            } finally {
+              setLoadingCandidates(false);
+            }
+          }
         }
       })
       .catch(() => toast.error('Không tải được danh sách thú cưng.'))
@@ -249,34 +268,47 @@ export default function UnifiedMatchingHubPage() {
   }, [selectedPet]);
 
   // Load Candidates for female pet
+  const handleSelectPet = useCallback(
+    async (targetPet: Pet) => {
+      setSelectedPetId(targetPet.id);
+      if (targetPet.gender === 'FEMALE') {
+        setLoadingCandidates(true);
+        try {
+          const candRes = await api.get<{ data: Pet[] }>('/matching/candidates', {
+            params: {
+              femalePetId: targetPet.id,
+              species: filters.species !== 'ALL' ? filters.species : undefined,
+              breed: filters.breed !== 'ALL' ? filters.breed : undefined,
+              purebredOnly: filters.purebredOnly || undefined,
+              vaccinatedOnly: filters.vaccinatedOnly || undefined,
+              verifiedOnly: filters.verifiedOnly || undefined,
+              maxDistanceKm: filters.distanceRadius > 0 ? String(filters.distanceRadius) : undefined,
+            },
+          });
+          setCandidates(candRes.data?.data || []);
+          setCurrentCandidateIndex(0);
+        } catch {
+          toast.error('Không tải được danh sách ứng viên đề xuất.');
+        } finally {
+          setLoadingCandidates(false);
+        }
+      } else {
+        setCandidates([]);
+      }
+    },
+    [filters],
+  );
+
   const fetchCandidates = useCallback(() => {
-    if (!selectedPetId || !isSelectedFemale) {
-      setCandidates([]);
-      return;
-    }
-    setLoadingCandidates(true);
-    api
-      .get<{ data: Pet[] }>('/matching/candidates', {
-        params: {
-          femalePetId: selectedPetId,
-          species: filters.species !== 'ALL' ? filters.species : undefined,
-          breed: filters.breed !== 'ALL' ? filters.breed : undefined,
-          purebredOnly: filters.purebredOnly || undefined,
-          vaccinatedOnly: filters.vaccinatedOnly || undefined,
-          verifiedOnly: filters.verifiedOnly || undefined,
-        },
-      })
-      .then((res) => {
-        setCandidates(res.data?.data || []);
-        setCurrentCandidateIndex(0);
-      })
-      .catch(() => toast.error('Không tải được danh sách ứng viên đề xuất.'))
-      .finally(() => setLoadingCandidates(false));
-  }, [selectedPetId, isSelectedFemale, filters]);
+    if (!selectedPet) return;
+    handleSelectPet(selectedPet);
+  }, [selectedPet, handleSelectPet]);
 
   useEffect(() => {
-    fetchCandidates();
-  }, [fetchCandidates]);
+    if (selectedPetId && isSelectedFemale && candidates.length === 0 && !loadingCandidates) {
+      fetchCandidates();
+    }
+  }, [filters]);
 
   // Load Requests & Matches
   const loadRequestsAndMatches = useCallback(() => {
@@ -379,6 +411,52 @@ export default function UnifiedMatchingHubPage() {
 
   const currentSwipeCandidate = candidates[currentCandidateIndex];
 
+  if (loadingPets) {
+    return (
+      <main className="min-h-screen bg-background text-foreground flex flex-col">
+        <AppHeader sectionLabel="Ghép đôi Thú cưng" />
+        <section className="border-b bg-gradient-to-br from-primary/10 via-background to-orange-50/50 shadow-sm">
+          <div className="container mx-auto px-4 py-6 space-y-4">
+            <div className="h-8 w-64 bg-muted animate-pulse rounded-xl" />
+            <div className="h-4 w-96 bg-muted animate-pulse rounded-lg" />
+            <div className="flex gap-3 pt-4 border-t">
+              <div className="h-10 w-32 bg-muted animate-pulse rounded-2xl" />
+              <div className="h-10 w-32 bg-muted animate-pulse rounded-2xl" />
+            </div>
+          </div>
+        </section>
+        <section className="container mx-auto flex-1 px-4 py-16 flex flex-col items-center justify-center space-y-4">
+          <div className="size-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm font-semibold text-muted-foreground animate-pulse">
+            Đang tải dữ liệu thú cưng...
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (myPets.length === 0) {
+    return (
+      <main className="min-h-screen bg-background text-foreground flex flex-col">
+        <AppHeader sectionLabel="Ghép đôi Thú cưng" />
+        <section className="container mx-auto flex-1 px-4 py-16 flex justify-center items-center">
+          <div className="max-w-md text-center space-y-4">
+            <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <PawPrint className="size-10" />
+            </div>
+            <h2 className="text-2xl font-black">Bạn chưa có hồ sơ thú cưng nào</h2>
+            <p className="text-sm text-muted-foreground">
+              Vui lòng tạo hồ sơ thú cưng của bạn để bắt đầu sử dụng tính năng ghép đôi thông minh.
+            </p>
+            <Button asChild className="rounded-xl font-bold shadow-md shadow-primary/20">
+              <Link href="/my-pets/new">Tạo bé mới ngay</Link>
+            </Button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground flex flex-col">
       <AppHeader sectionLabel="Ghép đôi Thú cưng" />
@@ -446,9 +524,7 @@ export default function UnifiedMatchingHubPage() {
                   <button
                     key={pet.id}
                     type="button"
-                    onClick={() => {
-                      setSelectedPetId(pet.id);
-                    }}
+                    onClick={() => handleSelectPet(pet)}
                     className={cn(
                       'flex items-center gap-2.5 rounded-2xl border-2 px-3.5 py-2 text-left transition-all shrink-0',
                       isSelected
@@ -654,7 +730,7 @@ export default function UnifiedMatchingHubPage() {
           ) : (
             <div className="text-center py-12">
               <Button asChild className="rounded-xl font-bold">
-                <Link href="/requests">Xem toàn bộ Lịch sử Yêu cầu Đã gửi</Link>
+                <Link href="/messages">Xem toàn bộ Lịch sử Yêu cầu Đã gửi</Link>
               </Button>
             </div>
           )}
@@ -1018,15 +1094,25 @@ function SwipeCardContainer({
             <h2 className="text-3xl font-black drop-shadow-md">{pet.name}</h2>
             <span className="text-lg font-bold text-white/90">{getAge(pet.birthday)}</span>
           </div>
-          <p className="text-sm font-semibold text-white/90">{pet.breed} · {pet.location}</p>
+          <p className="text-sm font-semibold text-white/90">
+            {pet.breed} · {pet.district ? `${pet.district}, ${pet.location}` : pet.location}
+          </p>
 
           <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
+            <span className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow">
+              📍 Cách {pet.distanceKm ?? 5} km
+            </span>
             <span className="rounded-lg bg-black/40 px-2.5 py-1 backdrop-blur-md">
               ⚖️ {pet.weight} kg
             </span>
             {pet.breedingOption && (
               <span className="rounded-lg bg-primary/90 px-2.5 py-1 text-white shadow">
-                💰 {pet.breedingOption === 'CASH' ? `${pet.breedingFee?.toLocaleString('vi-VN')}đ` : pet.breedingOption}
+                💰{' '}
+                {pet.breedingOption === 'CASH'
+                  ? pet.breedingFee ? `${pet.breedingFee.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
+                  : pet.breedingOption === 'SHARE_LITTER'
+                  ? `Chia ${pet.shareLitterCount || 1} con`
+                  : 'Thỏa thuận'}
               </span>
             )}
           </div>
@@ -1095,7 +1181,7 @@ function CandidateCardGrid({
       </div>
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-          <span>📍 {pet.location}</span>
+          <span className="font-semibold text-foreground">📍 {pet.district ? `${pet.district}, ${pet.location}` : pet.location} ({pet.distanceKm ?? 5} km)</span>
           <span>⚖️ {pet.weight} kg</span>
         </div>
         <div className="grid grid-cols-2 gap-2 pt-1">

@@ -16,6 +16,7 @@ import { ShippingModule } from './modules/shipping/shipping.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { VouchersModule } from './modules/vouchers/vouchers.module';
+import { BreedsModule } from './modules/breeds/breeds.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     ShippingModule,
     UploadsModule,
     VouchersModule,
+    BreedsModule,
   ],
 })
 export class AppModule {}

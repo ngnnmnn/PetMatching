@@ -22,6 +22,17 @@ export class SpaService {
     });
   }
 
+  async getCategories() {
+    return this.prisma.spaCategory.findMany({
+      where: {
+        status: ApprovalStatus.ACTIVE,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+  }
+
   async getServices(species?: Species, weight?: number) {
     let services = await this.prisma.spaService.findMany({
       where: {

@@ -46,6 +46,25 @@ const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
 // Chu kỳ nghỉ phối giống (tháng)
 const BREEDING_COOLDOWN_MONTHS = { DOG: 6, CAT: 3 } as const;
 
+function calculateHaversineDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
+
 @Injectable()
 export class MatchingService {
   constructor(private prisma: PrismaService) {}
@@ -71,7 +90,6 @@ export class MatchingService {
       species: femalePet.species,
       gender: Gender.MALE,
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: true,
       ownerId: { not: userId },
       // Hard constraint: chỉ lấy pet đủ tuổi
@@ -141,19 +159,60 @@ export class MatchingService {
       return latest.createdAt < latestProfileUpdate;
     });
 
-    // Tính compatibility scores song song
-    const data = await Promise.all(
-      eligibleCandidates.map(async (candidate) => {
-        const compatibility = await this.calculateCompatibilityScore(femalePet, candidate);
-        return {
-          ...this.toPetCard(candidate),
-          compatibilityScore: compatibility.score,
-          matchReasons: compatibility.reasons,
-          breedWarnings: compatibility.warnings,
-          breedInfo: compatibility.breedInfo,
-        };
-      }),
-    );
+    // Batch fetch breed rules để tránh N+1 DB query lên Supabase
+    const breedRules = await this.prisma.breedRule.findMany({
+      where: { species: femalePet.species, isActive: true },
+    });
+
+    const maxDist = dto.maxDistanceKm ? Number(dto.maxDistanceKm) : 0;
+
+    // Tính compatibility scores & distanceKm đồng bộ trong bộ nhớ
+    let data = eligibleCandidates.map((candidate) => {
+      const compatibility = this.calculateCompatibilityScoreSync(femalePet, candidate, breedRules);
+
+      let distanceKm = 10;
+      if (
+        femalePet.latitude != null &&
+        femalePet.longitude != null &&
+        candidate.latitude != null &&
+        candidate.longitude != null
+      ) {
+        distanceKm = calculateHaversineDistance(
+          femalePet.latitude,
+          femalePet.longitude,
+          candidate.latitude,
+          candidate.longitude,
+        );
+      } else if (
+        femalePet.district &&
+        candidate.district &&
+        femalePet.district.trim().toLowerCase() === candidate.district.trim().toLowerCase()
+      ) {
+        distanceKm = 3.5;
+      } else if (
+        femalePet.location &&
+        candidate.location &&
+        femalePet.location.trim().toLowerCase() === candidate.location.trim().toLowerCase()
+      ) {
+        distanceKm = 12.0;
+      } else {
+        distanceKm = 45.0;
+      }
+
+      return {
+        ...this.toPetCard(candidate),
+        compatibilityScore: compatibility.score,
+        matchReasons: compatibility.reasons,
+        breedWarnings: compatibility.warnings,
+        breedInfo: compatibility.breedInfo,
+        distanceKm,
+      };
+    });
+
+    // Lọc theo bán kính maxDistanceKm (nếu được truyền lên)
+    if (maxDist > 0) {
+      data = data.filter((item) => item.distanceKm <= maxDist);
+    }
 
     // Sắp xếp theo điểm giảm dần
     data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
@@ -331,7 +390,7 @@ export class MatchingService {
     if (pet.gender !== Gender.FEMALE) {
       throw new BadRequestException('Only female pets can send matching requests.');
     }
-    if (pet.status !== PetStatus.ACTIVE || !pet.isActive) {
+    if (pet.status !== PetStatus.ACTIVE) {
       throw new BadRequestException('Only active pets can join matching.');
     }
 
@@ -349,7 +408,7 @@ export class MatchingService {
     if (pet.gender !== Gender.MALE) {
       throw new BadRequestException('Only male pets can receive matching requests.');
     }
-    if (pet.status !== PetStatus.ACTIVE || !pet.isActive || !pet.isAvailableForMatching) {
+    if (pet.status !== PetStatus.ACTIVE || !pet.isAvailableForMatching) {
       throw new BadRequestException('This pet is not available for matching.');
     }
 
@@ -490,8 +549,59 @@ export class MatchingService {
       reasons.push('similar_weight');
     }
 
-    // BreedRule lookup từ database
     const breedRule = await this.findBreedRule(femalePet.species, femalePet.breed, malePet.breed);
+    return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
+  }
+
+  private calculateCompatibilityScoreSync(
+    femalePet: Pet,
+    malePet: Pet,
+    breedRules: BreedRule[],
+  ): CompatibilityResult {
+    let score = 30;
+    const reasons: string[] = [];
+    const warnings: string[] = [];
+
+    if (femalePet.breed === malePet.breed) {
+      score += 25;
+      reasons.push('same_breed');
+    }
+    if (femalePet.location === malePet.location) {
+      score += 15;
+      reasons.push('same_location');
+    }
+    if (femalePet.hasPedigree && malePet.hasPedigree) {
+      score += 10;
+      reasons.push('both_pedigree');
+    }
+    if (femalePet.vaccineVerified && malePet.vaccineVerified) {
+      score += 5;
+      reasons.push('both_vaccine_verified');
+    }
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 10;
+      reasons.push('both_pedigree_verified');
+    }
+    if (Math.abs(femalePet.weight - malePet.weight) <= 5) {
+      score += 10;
+      reasons.push('similar_weight');
+    }
+
+    const breedRule = breedRules.find(
+      (r) =>
+        (r.breedA === femalePet.breed && r.breedB === malePet.breed) ||
+        (r.breedA === malePet.breed && r.breedB === femalePet.breed),
+    ) || null;
+
+    return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
+  }
+
+  private applyBreedRuleScore(
+    score: number,
+    reasons: string[],
+    warnings: string[],
+    breedRule: BreedRule | null,
+  ): CompatibilityResult {
     let breedInfo: CompatibilityResult['breedInfo'] = undefined;
 
     if (breedRule) {
@@ -575,6 +685,10 @@ export class MatchingService {
       breedingOption: pet.breedingOption,
       breedingPrice: pet.breedingFee,
       location: pet.location,
+      district: pet.district,
+      ward: pet.ward,
+      latitude: pet.latitude,
+      longitude: pet.longitude,
       ownerName: pet.owner.name,
       ownerAvatar: pet.owner.avatarUrl,
       verified: pet.verificationBadge === VerificationBadge.VERIFIED,

@@ -83,6 +83,7 @@ type ChatMessage = {
 export default function MessagesPage() {
   const [activeTab, setActiveTab] = useState<'CHAT' | 'INCOMING' | 'OUTGOING'>('CHAT');
   const [incomingRequests, setIncomingRequests] = useState<MatchingRequest[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<MatchingRequest[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -105,10 +106,12 @@ export default function MessagesPage() {
     setLoading(true);
     Promise.all([
       api.get<MatchingRequest[]>('/matching/requests/incoming'),
+      api.get<MatchingRequest[]>('/matching/requests/outgoing'),
       api.get<Match[]>('/matching/matches'),
     ])
-      .then(([reqRes, matchRes]) => {
+      .then(([reqRes, outRes, matchRes]) => {
         setIncomingRequests(reqRes.data || []);
+        setOutgoingRequests(outRes.data || []);
         setMatches(matchRes.data || []);
         if (matchRes.data && matchRes.data.length > 0 && !selectedMatch) {
           setSelectedMatch(matchRes.data[0]);
@@ -208,13 +211,24 @@ export default function MessagesPage() {
               )}
             </button>
 
-            <Link
-              href="/requests"
-              className="flex items-center gap-2 border-b-2 border-transparent px-5 py-3 text-sm font-extrabold text-muted-foreground hover:text-foreground transition-all"
+            <button
+              type="button"
+              onClick={() => setActiveTab('OUTGOING')}
+              className={cn(
+                'flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-extrabold transition-all relative',
+                activeTab === 'OUTGOING'
+                  ? 'border-primary text-primary bg-primary/5 rounded-t-xl'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
             >
               <Heart className="size-4 text-primary" />
               Yêu cầu Đã gửi
-            </Link>
+              {outgoingRequests.length > 0 && (
+                <span className="flex size-5 items-center justify-center rounded-full bg-muted-foreground/20 text-xs font-black text-foreground">
+                  {outgoingRequests.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </section>
@@ -378,59 +392,124 @@ export default function MessagesPage() {
           )
         ) : (
           /* ================= TAB 2: INCOMING REQUESTS ================= */
-          incomingRequests.length === 0 ? (
-            <div className="py-20 text-center">
-              <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Inbox className="size-10" />
+          activeTab === 'INCOMING' ? (
+            incomingRequests.length === 0 ? (
+              <div className="py-20 text-center">
+                <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <Inbox className="size-10" />
+                </div>
+                <h2 className="mb-2 text-2xl font-bold">Chưa có yêu cầu ghép đôi mới nào</h2>
+                <p className="text-sm text-muted-foreground">Các lời mời phối giống từ thú cưng cái sẽ xuất hiện tại đây.</p>
               </div>
-              <h2 className="mb-2 text-2xl font-bold">Chưa có yêu cầu ghép đôi mới nào</h2>
-              <p className="text-sm text-muted-foreground">Các lời mời phối giống từ thú cưng cái sẽ xuất hiện tại đây.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {incomingRequests.map((req) => (
-                <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
-                  <div className="flex items-start gap-4">
-                    <img
-                      src={req.femalePet.avatarUrl || '/placeholder.svg'}
-                      alt={req.femalePet.name}
-                      className="size-16 rounded-2xl object-cover border"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-extrabold text-lg truncate">{req.femalePet.name}</h3>
-                        {req.femalePet.verificationBadge === 'VERIFIED' && (
-                          <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                            <ShieldCheck className="size-3" /> VERIFIED
-                          </span>
-                        )}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {incomingRequests.map((req) => (
+                  <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                    <div className="flex items-start gap-4">
+                      <img
+                        src={req.femalePet.avatarUrl || '/placeholder.svg'}
+                        alt={req.femalePet.name}
+                        className="size-16 rounded-2xl object-cover border"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-extrabold text-lg truncate">{req.femalePet.name}</h3>
+                          {req.femalePet.verificationBadge === 'VERIFIED' && (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                              <ShieldCheck className="size-3" /> VERIFIED
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground font-semibold">
+                          Giống: {req.femalePet.breed} · Chủ sở hữu: <span className="text-foreground">{req.femalePet.owner.name}</span>
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-primary">
+                          Muốn ghép đôi với bé đực: {req.malePet.name}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground font-semibold">
-                        Giống: {req.femalePet.breed} · Chủ sở hữu: <span className="text-foreground">{req.femalePet.owner.name}</span>
-                      </p>
-                      <p className="mt-1 text-xs font-bold text-primary">
-                        Muốn ghép đôi với bé đực: {req.malePet.name}
-                      </p>
                     </div>
-                  </div>
 
-                  {req.note && (
-                    <div className="rounded-xl border bg-muted/40 p-3 text-xs leading-relaxed italic text-muted-foreground">
-                      &ldquo;{req.note}&rdquo;
+                    {req.note && (
+                      <div className="rounded-xl border bg-muted/40 p-3 text-xs leading-relaxed italic text-muted-foreground">
+                        &ldquo;{req.note}&rdquo;
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <Button variant="outline" className="rounded-xl font-bold" onClick={() => respondRequest(req.id, 'reject')}>
+                        <X className="mr-1 size-4" /> Từ chối
+                      </Button>
+                      <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
+                        <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
+                      </Button>
                     </div>
-                  )}
+                  </article>
+                ))}
+              </div>
+            )
+          ) : (
+            /* ================= TAB 3: OUTGOING REQUESTS ================= */
+            outgoingRequests.length === 0 ? (
+              <div className="py-20 text-center">
+                <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <Heart className="size-10 text-primary" />
+                </div>
+                <h2 className="mb-2 text-2xl font-bold">Chưa gửi yêu cầu ghép đôi nào</h2>
+                <p className="mb-6 text-sm text-muted-foreground">Hãy vào trang Khám phá để tìm bạn đời thích hợp cho thú cưng của bạn.</p>
+                <Button asChild className="rounded-xl font-bold shadow-md shadow-primary/20">
+                  <Link href="/explore">Khám phá & Gửi yêu cầu ngay</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {outgoingRequests.map((req) => (
+                  <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                    <div className="flex items-start gap-4">
+                      <img
+                        src={req.malePet.avatarUrl || '/placeholder.svg'}
+                        alt={req.malePet.name}
+                        className="size-16 rounded-2xl object-cover border"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="font-extrabold text-lg truncate">Gửi tới bé đực: {req.malePet.name}</h3>
+                          <span
+                            className={cn(
+                              'px-2.5 py-1 rounded-full text-xs font-black shrink-0',
+                              req.status === 'PENDING' && 'bg-amber-100 text-amber-800',
+                              req.status === 'ACCEPTED' && 'bg-emerald-100 text-emerald-800',
+                              req.status === 'REJECTED' && 'bg-rose-100 text-rose-800',
+                              req.status === 'CANCELLED' && 'bg-slate-100 text-slate-800',
+                            )}
+                          >
+                            {req.status === 'PENDING' && 'Chờ phản hồi'}
+                            {req.status === 'ACCEPTED' && 'Đã chấp nhận'}
+                            {req.status === 'REJECTED' && 'Đã từ chối'}
+                            {req.status === 'CANCELLED' && 'Đã hủy'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-semibold">
+                          Giống: {req.malePet.breed} {req.malePet.owner?.name ? `· Chủ sở hữu: ${req.malePet.owner.name}` : ''}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-pink-600">
+                          Bé cái của bạn: {req.femalePet.name} ({req.femalePet.breed})
+                        </p>
+                      </div>
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <Button variant="outline" className="rounded-xl font-bold" onClick={() => respondRequest(req.id, 'reject')}>
-                      <X className="mr-1 size-4" /> Từ chối
-                    </Button>
-                    <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
-                      <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
-                    </Button>
-                  </div>
-                </article>
-              ))}
-            </div>
+                    {req.note && (
+                      <div className="rounded-xl border bg-muted/40 p-3 text-xs leading-relaxed italic text-muted-foreground">
+                        Lời nhắn: &ldquo;{req.note}&rdquo;
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2 border-t font-semibold">
+                      <span>Gửi ngày: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )
           )
         )}
       </section>

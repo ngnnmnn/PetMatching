@@ -48,6 +48,37 @@ export type BreedRulePayload = Pick<
   warningNote?: string;
 };
 
+export interface Breed {
+  id: string;
+  species: Species;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomBreedItem {
+  species: Species;
+  name: string;
+  isCustom: boolean;
+}
+
+export interface BreedCatalogResponse {
+  official: Breed[];
+  custom: CustomBreedItem[];
+}
+
+export type CreateBreedPayload = {
+  species: Species;
+  name: string;
+  isActive?: boolean;
+};
+
+export type UpdateBreedPayload = {
+  name?: string;
+  isActive?: boolean;
+};
+
 export const adminApi = {
   dashboard: () => api.get('/admin/dashboard'),
   users: () => api.get('/admin/users'),
@@ -75,6 +106,12 @@ export const adminApi = {
   updateBreedRule: (id: string, data: BreedRulePayload) =>
     api.patch<BreedRule>(`/admin/breed-rules/${id}`, data),
   deleteBreedRule: (id: string) => api.delete(`/admin/breed-rules/${id}`),
+  breeds: (params?: { species?: Species; search?: string }) =>
+    api.get<BreedCatalogResponse>('/admin/breeds', { params }),
+  createBreed: (data: CreateBreedPayload) => api.post<Breed>('/admin/breeds', data),
+  updateBreed: (id: string, data: UpdateBreedPayload) =>
+    api.patch<Breed>(`/admin/breeds/${id}`, data),
+  deleteBreed: (id: string) => api.delete(`/admin/breeds/${id}`),
   stores: () => api.get('/admin/stores'),
   storeDashboard: () => api.get('/admin/store-dashboard'),
   updateStoreSettings: (data: { name: string; phone?: string; address?: string; description?: string }) =>
@@ -93,3 +130,4 @@ export const adminApi = {
   resolveComplaint: (id: string, action: ComplaintAction, adminNote?: string) =>
     api.patch(`/admin/complaints/${id}/resolve`, { action, adminNote }),
 };
+

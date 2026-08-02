@@ -1,6 +1,7 @@
 export interface User {
   id: string;
   email: string;
+  username?: string | null;
   name: string;
   role: string;
   accountStatus?: string;
@@ -51,7 +52,14 @@ export interface OrderItem {
 export interface Order {
   id: string;
   userId: string;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
+  status:
+    | "PENDING"
+    | "PROCESSING"
+    | "SHIPPED"
+    | "DELIVERED"
+    | "CANCELLED"
+    | "EXPIRED"
+    | "PAYMENT_ERROR";
   totalAmount: number;
   shippingFee?: number;
   shippingAddress: string;
@@ -86,15 +94,17 @@ export interface UpdateProfileData {
 export interface ChangePasswordData {
   currentPassword: string;
   newPassword: string;
+  confirmPassword: string;
 }
 
 export interface LoginCredentials {
-  email: string;
+  identifier: string;
   password: string;
 }
 
 export interface RegisterData {
   email: string;
+  username: string;
   password: string;
   name: string;
   phone?: string;
@@ -131,7 +141,7 @@ export interface Product {
   name: string;
   slug?: string;
   category: ProductCategory;
-  targetSpecies: 'DOG' | 'CAT' | 'ALL';
+  targetSpecies: "DOG" | "CAT" | "ALL";
   description?: string;
   imageUrl?: string;
   images: string[];
@@ -167,7 +177,7 @@ export interface SpaServiceType {
   branchId?: string;
   name: string;
   description: string | null;
-  species?: 'DOG' | 'CAT' | null;
+  species?: "DOG" | "CAT" | null;
   petWeightMin?: number | null;
   petWeightMax?: number | null;
   price: number;
@@ -197,7 +207,7 @@ export interface SpaBranchType {
   id: string;
   name: string;
   description: string | null;
-  status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
   managerId: string | null;
   approvedAt: string | null;
   suspendedAt: string | null;
@@ -218,10 +228,20 @@ export interface SpaBookingType {
   staffId: string | null;
   petName: string | null;
   petId?: string | null;
-  petSpecies?: 'DOG' | 'CAT' | null;
+  petSpecies?: "DOG" | "CAT" | null;
   petWeight?: number | null;
   scheduledAt: string;
-  status: 'PENDING' | 'CONFIRMED' | 'CHECK_IN' | 'ARRIVED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' | 'LATE';
+  status:
+    | "PENDING"
+    | "CONFIRMED"
+    | "CHECK_IN"
+    | "ARRIVED"
+    | "ASSIGNED"
+    | "IN_PROGRESS"
+    | "COMPLETED"
+    | "CANCELLED"
+    | "NO_SHOW"
+    | "LATE";
   priceSnapshot: number | null;
   totalPrice?: number;
   discountAmount?: number;
@@ -258,7 +278,14 @@ export interface SpaBookingType {
     description?: string | null;
   }>;
   user?: User | null;
-  pet?: any | null;
+  pet?: {
+    id: string;
+    name: string;
+    species: "DOG" | "CAT";
+    breed: string;
+    weight: number;
+    avatarUrl?: string | null;
+  } | null;
   staff?: {
     name: string;
     avatarUrl?: string | null;

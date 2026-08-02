@@ -1,98 +1,80 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { BrandMark } from '@/components/auth/AuthShell';
+import axios from "axios";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { BrandMark } from "@/components/auth/AuthShell";
+import api from "@/lib/axios";
+import type { User } from "@/types";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+type VerifyResponse = { user?: User; message?: string };
 
 function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return 'Không thể hoàn tất đăng nhập Google. Vui lòng thử lại.';
+  if (axios.isAxiosError<{ message?: string }>(error)) {
+    return (
+      error.response?.data?.message || "Không thể hoàn tất đăng nhập Google."
+    );
+  }
+  return error instanceof Error
+    ? error.message
+    : "Không thể hoàn tất đăng nhập Google.";
 }
 
 export default function GoogleCallbackPage() {
   const router = useRouter();
-  const [message, setMessage] = useState('Đang hoàn tất đăng nhập Google...');
+  const [message, setMessage] = useState("Đang hoàn tất đăng nhập Google...");
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     const completeLogin = async () => {
       const params = new URLSearchParams(window.location.search);
-      const token = params.get('token');
-      const error = params.get('error');
+      const error = params.get("error");
+      if (error) throw new Error(error);
 
-      if (error) {
-        console.error('Google login returned error:', error);
-        throw new Error(decodeURIComponent(error));
-      }
-
-      if (!token) {
-        console.error('Google login callback: token is missing in URL');
-        throw new Error('Không nhận được mã đăng nhập từ Google.');
-      }
-
-      console.log('Google login token received:', token);
-      localStorage.setItem('accessToken', token);
-
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 10000);
-
-      try {
-        console.log('Verifying Google token with backend at:', `${API_BASE_URL}/auth/verify`);
-        const response = await fetch(`${API_BASE_URL}/auth/verify`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          signal: controller.signal,
+      const redirect = params.get("redirect") || "";
+      const profileToken = params.get("profileToken");
+      if (profileToken) {
+        const onboardingParams = new URLSearchParams({
+          profileToken,
+          email: params.get("email") || "",
+          suggestedName: params.get("suggestedName") || "",
+          needsPassword: params.get("needsPassword") || "true",
         });
-
-        const data = await response.json();
-        console.log('Verification response status:', response.status, data);
-
-        if (!response.ok || !data.user) {
-          throw new Error(data.message || 'Token đăng nhập không hợp lệ.');
-        }
-
-        console.log('Google token verified successfully. User:', data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        window.dispatchEvent(new Event('auth-change'));
-
-        const redirectUrl = params.get('redirect') || localStorage.getItem('login_redirect_url');
-        localStorage.removeItem('login_redirect_url');
-
-        const role = data.user?.role;
-        console.log('Redirecting user based on role:', role);
-        if (role === 'ADMIN') {
-          router.replace('/admin');
-        } else if (role === 'STORE_MANAGER' || role === 'SPA_MANAGER') {
-          router.replace('/manager');
-        } else if (role === 'SPA_STAFF') {
-          router.replace('/spa/staff');
-        } else if (redirectUrl) {
-          if (redirectUrl.startsWith('http://') || redirectUrl.startsWith('https://')) {
-            window.location.replace(redirectUrl);
-          } else {
-            router.replace(redirectUrl);
-          }
-        } else {
-          router.replace('/home');
-        }
-      } finally {
-        window.clearTimeout(timeoutId);
+        if (redirect) onboardingParams.set("redirect", redirect);
+        router.replace(`/complete-profile?${onboardingParams.toString()}`);
+        return;
       }
+
+      const token = params.get("token");
+      if (!token) throw new Error("Không nhận được mã đăng nhập từ Google.");
+
+      const response = await api.get<VerifyResponse>("/auth/verify", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.data.user) throw new Error("Token đăng nhập không hợp lệ.");
+
+      localStorage.setItem("accessToken", token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      window.dispatchEvent(new Event("auth-change"));
+      localStorage.removeItem("login_redirect_url");
+
+      const role = response.data.user.role;
+      if (role === "ADMIN") router.replace("/admin");
+      else if (role === "STORE_MANAGER" || role === "SPA_MANAGER")
+        router.replace("/manager");
+      else if (role === "SPA_STAFF") router.replace("/spa/staff");
+      else if (redirect) router.replace(redirect);
+      else router.replace("/home");
     };
 
-    completeLogin().catch((error) => {
-      console.error('Google login callback caught exception:', error);
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('user');
+    completeLogin().catch((error: unknown) => {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
       setHasError(true);
       setMessage(getErrorMessage(error));
     });
-  }, []);
+  }, [router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] px-5 text-[var(--text-main)]">
@@ -101,14 +83,15 @@ export default function GoogleCallbackPage() {
           <BrandMark size="lg" />
         </div>
         <h1 className="mb-3 text-2xl font-extrabold">
-          {hasError ? 'Đăng nhập thất bại' : 'Đang đăng nhập'}
+          {hasError ? "Đăng nhập thất bại" : "Đang đăng nhập"}
         </h1>
-        <p className="text-sm font-medium text-[var(--text-muted)]">{message}</p>
-
+        <p className="text-sm font-medium text-[var(--text-muted)]">
+          {message}
+        </p>
         {hasError && (
           <Link
             href="/login"
-            className="mt-6 inline-flex rounded-xl bg-[var(--primary-color)] px-5 py-3 text-sm font-bold text-white transition duration-200 ease-in-out hover:bg-[#cf5017] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.22)]"
+            className="mt-6 inline-flex rounded-xl bg-[var(--primary-color)] px-5 py-3 text-sm font-bold text-white hover:bg-[#cf5017]"
           >
             Quay lại đăng nhập
           </Link>
