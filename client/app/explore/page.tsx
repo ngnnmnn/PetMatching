@@ -58,6 +58,9 @@ type Pet = {
   birthday: string;
   weight: number;
   location: string;
+  district?: string | null;
+  ward?: string | null;
+  distanceKm?: number;
   colorDesc?: string | null;
   avatarUrl?: string | null;
   avatar?: string | null;
@@ -279,6 +282,7 @@ export default function UnifiedMatchingHubPage() {
               purebredOnly: filters.purebredOnly || undefined,
               vaccinatedOnly: filters.vaccinatedOnly || undefined,
               verifiedOnly: filters.verifiedOnly || undefined,
+              maxDistanceKm: filters.distanceRadius > 0 ? String(filters.distanceRadius) : undefined,
             },
           });
           setCandidates(candRes.data?.data || []);
@@ -1090,9 +1094,14 @@ function SwipeCardContainer({
             <h2 className="text-3xl font-black drop-shadow-md">{pet.name}</h2>
             <span className="text-lg font-bold text-white/90">{getAge(pet.birthday)}</span>
           </div>
-          <p className="text-sm font-semibold text-white/90">{pet.breed} · {pet.location}</p>
+          <p className="text-sm font-semibold text-white/90">
+            {pet.breed} · {pet.district ? `${pet.district}, ${pet.location}` : pet.location}
+          </p>
 
           <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
+            <span className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow">
+              📍 Cách {pet.distanceKm ?? 5} km
+            </span>
             <span className="rounded-lg bg-black/40 px-2.5 py-1 backdrop-blur-md">
               ⚖️ {pet.weight} kg
             </span>
@@ -1172,7 +1181,7 @@ function CandidateCardGrid({
       </div>
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-          <span>📍 {pet.location}</span>
+          <span className="font-semibold text-foreground">📍 {pet.district ? `${pet.district}, ${pet.location}` : pet.location} ({pet.distanceKm ?? 5} km)</span>
           <span>⚖️ {pet.weight} kg</span>
         </div>
         <div className="grid grid-cols-2 gap-2 pt-1">

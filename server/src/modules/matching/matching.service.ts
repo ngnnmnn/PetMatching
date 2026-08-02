@@ -46,6 +46,25 @@ const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
 // Chu kỳ nghỉ phối giống (tháng)
 const BREEDING_COOLDOWN_MONTHS = { DOG: 6, CAT: 3 } as const;
 
+function calculateHaversineDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
+
 @Injectable()
 export class MatchingService {
   constructor(private prisma: PrismaService) {}
@@ -71,7 +90,6 @@ export class MatchingService {
       species: femalePet.species,
       gender: Gender.MALE,
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: true,
       ownerId: { not: userId },
       // Hard constraint: chỉ lấy pet đủ tuổi
@@ -146,17 +164,55 @@ export class MatchingService {
       where: { species: femalePet.species, isActive: true },
     });
 
-    // Tính compatibility scores đồng bộ trong bộ nhớ
-    const data = eligibleCandidates.map((candidate) => {
+    const maxDist = dto.maxDistanceKm ? Number(dto.maxDistanceKm) : 0;
+
+    // Tính compatibility scores & distanceKm đồng bộ trong bộ nhớ
+    let data = eligibleCandidates.map((candidate) => {
       const compatibility = this.calculateCompatibilityScoreSync(femalePet, candidate, breedRules);
+
+      let distanceKm = 10;
+      if (
+        femalePet.latitude != null &&
+        femalePet.longitude != null &&
+        candidate.latitude != null &&
+        candidate.longitude != null
+      ) {
+        distanceKm = calculateHaversineDistance(
+          femalePet.latitude,
+          femalePet.longitude,
+          candidate.latitude,
+          candidate.longitude,
+        );
+      } else if (
+        femalePet.district &&
+        candidate.district &&
+        femalePet.district.trim().toLowerCase() === candidate.district.trim().toLowerCase()
+      ) {
+        distanceKm = 3.5;
+      } else if (
+        femalePet.location &&
+        candidate.location &&
+        femalePet.location.trim().toLowerCase() === candidate.location.trim().toLowerCase()
+      ) {
+        distanceKm = 12.0;
+      } else {
+        distanceKm = 45.0;
+      }
+
       return {
         ...this.toPetCard(candidate),
         compatibilityScore: compatibility.score,
         matchReasons: compatibility.reasons,
         breedWarnings: compatibility.warnings,
         breedInfo: compatibility.breedInfo,
+        distanceKm,
       };
     });
+
+    // Lọc theo bán kính maxDistanceKm (nếu được truyền lên)
+    if (maxDist > 0) {
+      data = data.filter((item) => item.distanceKm <= maxDist);
+    }
 
     // Sắp xếp theo điểm giảm dần
     data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
@@ -334,7 +390,7 @@ export class MatchingService {
     if (pet.gender !== Gender.FEMALE) {
       throw new BadRequestException('Only female pets can send matching requests.');
     }
-    if (pet.status !== PetStatus.ACTIVE || !pet.isActive) {
+    if (pet.status !== PetStatus.ACTIVE) {
       throw new BadRequestException('Only active pets can join matching.');
     }
 
@@ -352,7 +408,7 @@ export class MatchingService {
     if (pet.gender !== Gender.MALE) {
       throw new BadRequestException('Only male pets can receive matching requests.');
     }
-    if (pet.status !== PetStatus.ACTIVE || !pet.isActive || !pet.isAvailableForMatching) {
+    if (pet.status !== PetStatus.ACTIVE || !pet.isAvailableForMatching) {
       throw new BadRequestException('This pet is not available for matching.');
     }
 
@@ -629,6 +685,10 @@ export class MatchingService {
       breedingOption: pet.breedingOption,
       breedingPrice: pet.breedingFee,
       location: pet.location,
+      district: pet.district,
+      ward: pet.ward,
+      latitude: pet.latitude,
+      longitude: pet.longitude,
       ownerName: pet.owner.name,
       ownerAvatar: pet.owner.avatarUrl,
       verified: pet.verificationBadge === VerificationBadge.VERIFIED,

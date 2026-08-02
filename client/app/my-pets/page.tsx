@@ -109,6 +109,20 @@ export default function MyPetsPage() {
     }
   };
 
+  const handleTogglePetStatus = async (pet: Pet) => {
+    const nextStatus = pet.status === 'HIDDEN' ? 'ACTIVE' : 'HIDDEN';
+    try {
+      await api.patch(`/pets/${pet.id}/availability`, {
+        isAvailableForMatching: pet.isAvailableForMatching,
+        status: nextStatus,
+      });
+      toast.success(nextStatus === 'HIDDEN' ? `Đã tạm ẩn hồ sơ bé ${pet.name}!` : `Đã hiện lại hồ sơ bé ${pet.name}!`);
+      loadPets();
+    } catch {
+      toast.error('Không cập nhật được trạng thái hồ sơ.');
+    }
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <AppHeader sectionLabel="Thú cưng của tôi" />
@@ -155,7 +169,10 @@ export default function MyPetsPage() {
             {pets.map((pet) => (
               <article
                 key={pet.id}
-                className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
+                className={cn(
+                  'group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 relative',
+                  pet.status === 'HIDDEN' && 'opacity-70 bg-muted/40 border-rose-300 dark:border-rose-900',
+                )}
               >
                 {/* Image */}
                 <div className="relative aspect-video overflow-hidden bg-muted">
@@ -176,8 +193,12 @@ export default function MyPetsPage() {
                     {pet.gender === 'MALE' ? '♂ Đực' : '♀ Cái'}
                   </span>
 
-                  {/* Matching availability indicator */}
-                  {pet.gender === 'MALE' && (
+                  {/* Matching availability indicator / Status */}
+                  {pet.status === 'HIDDEN' ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                      🔴 Đã tạm ẩn
+                    </span>
+                  ) : pet.gender === 'MALE' ? (
                     <span
                       className={cn(
                         'absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md',
@@ -187,7 +208,7 @@ export default function MyPetsPage() {
                       <span className={cn('size-2 rounded-full', pet.isAvailableForMatching ? 'bg-white animate-pulse' : 'bg-gray-400')} />
                       {pet.isAvailableForMatching ? 'Sẵn sàng phối' : 'Tắt ghép đôi'}
                     </span>
-                  )}
+                  ) : null}
 
                   {/* Bottom title */}
                   <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
@@ -235,23 +256,37 @@ export default function MyPetsPage() {
                   )}
 
                   {/* Action buttons */}
-                  <div className="pt-2">
+                  <div className="pt-2 flex gap-2">
                     {pet.gender === 'MALE' ? (
                       <Button
-                        className="w-full gap-2 rounded-xl font-bold shadow-md shadow-primary/20"
+                        className="flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
                         onClick={() => openSetupModal(pet)}
                       >
                         <Settings2 className="size-4" />
-                        {pet.isAvailableForMatching ? 'Chỉnh sửa Cấu hình Ghép đôi' : 'Thiết lập & Bật ghép đôi'}
+                        {pet.isAvailableForMatching ? 'Cấu hình Ghép đôi' : 'Bật ghép đôi'}
                       </Button>
                     ) : (
-                      <Button className="w-full gap-2 rounded-xl font-bold shadow-md shadow-primary/20" asChild>
+                      <Button className="flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs" asChild>
                         <Link href="/explore">
                           <Heart className="size-4" />
-                          Tìm bạn đời cho {pet.name}
+                          Tìm bạn đời
                         </Link>
                       </Button>
                     )}
+
+                    <Button
+                      variant="outline"
+                      title={pet.status === 'HIDDEN' ? 'Hiện lại hồ sơ' : 'Tạm ẩn hồ sơ'}
+                      className={cn(
+                        'rounded-xl shrink-0 font-bold text-xs px-3 transition-colors',
+                        pet.status === 'HIDDEN'
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-100',
+                      )}
+                      onClick={() => handleTogglePetStatus(pet)}
+                    >
+                      {pet.status === 'HIDDEN' ? '👁️ Hiện hồ sơ' : '🙈 Ẩn hồ sơ'}
+                    </Button>
                   </div>
                 </div>
               </article>

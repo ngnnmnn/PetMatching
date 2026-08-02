@@ -56,7 +56,7 @@ async function main() {
   // 2.1 Bé Poodle cái (15 tháng - đủ điều kiện)
   await prisma.pet.upsert({
     where: { slug: 'demo-female-poodle' },
-    update: { status: PetStatus.ACTIVE, isActive: true, isAvailableForMatching: false },
+    update: { status: PetStatus.ACTIVE, isAvailableForMatching: false },
     create: {
       ownerId: demoUser.id,
       slug: 'demo-female-poodle',
@@ -76,7 +76,6 @@ async function main() {
       personality: 'Rất ngoan và thích quấn chủ',
       location: 'TP. Ho Chi Minh',
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: false, // Cái không cần available
     }
   });
@@ -101,7 +100,6 @@ async function main() {
       gallery: [],
       location: 'TP. Ho Chi Minh',
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: false,
     }
   });
@@ -125,7 +123,6 @@ async function main() {
       gallery: [],
       location: 'TP. Ho Chi Minh',
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: false,
     }
   });
@@ -196,7 +193,6 @@ async function main() {
       where: { slug: pet.slug },
       update: {
         status: PetStatus.ACTIVE,
-        isActive: true,
         isAvailableForMatching: true, // Quan trọng: phải là true mới lên danh sách
         birthday: getBirthday(pet.monthsOld),
       },
@@ -219,7 +215,6 @@ async function main() {
         personality: 'Ứng viên cực kỳ tiềm năng.',
         location: 'TP. Ho Chi Minh',
         status: PetStatus.ACTIVE,
-        isActive: true,
         isAvailableForMatching: true,
       }
     });

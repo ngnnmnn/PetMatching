@@ -432,7 +432,7 @@ export class AdminService {
   async hidePet(actor: AdminActor, petId: string, dto: HidePetDto) {
     const currentPet = await this.prisma.pet.findUnique({
       where: { id: petId },
-      select: { id: true, status: true, isActive: true, isAvailableForMatching: true },
+      select: { id: true, status: true, isAvailableForMatching: true },
     });
 
     if (!currentPet) throw new NotFoundException('Pet not found.');
@@ -446,7 +446,7 @@ export class AdminService {
     return this.prisma.$transaction(async (tx) => {
       const pet = await tx.pet.update({
         where: { id: petId },
-        data: { status: PetStatus.HIDDEN, isActive: false, isAvailableForMatching: false },
+        data: { status: PetStatus.HIDDEN, isAvailableForMatching: false },
       });
 
       await tx.auditLog.create({
@@ -459,7 +459,6 @@ export class AdminService {
             reason: dto.reason,
             note: dto.note ?? null,
             previousStatus: currentPet.status,
-            previousIsActive: currentPet.isActive,
             previousMatchingAvailability: currentPet.isAvailableForMatching,
           },
         },
@@ -509,7 +508,7 @@ export class AdminService {
     return this.prisma.$transaction(async (tx) => {
       const restoredPet = await tx.pet.update({
         where: { id: petId },
-        data: { status: PetStatus.ACTIVE, isActive: true, isAvailableForMatching: false },
+        data: { status: PetStatus.ACTIVE, isAvailableForMatching: false },
       });
 
       await tx.auditLog.create({

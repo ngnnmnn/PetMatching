@@ -83,7 +83,6 @@ async function main() {
     update: {
       ownerId: clientUser.id,
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: false,
     },
     create: {
@@ -107,7 +106,6 @@ async function main() {
       breedingOption: BreedingOption.NEGOTIATE,
       location: 'TP. Ho Chi Minh',
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: false,
     },
   });
@@ -117,7 +115,6 @@ async function main() {
     update: {
       ownerId: clientUser.id,
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: true,
     },
     create: {
@@ -142,7 +139,6 @@ async function main() {
       breedingFee: 5000000,
       location: 'TP. Ho Chi Minh',
       status: PetStatus.ACTIVE,
-      isActive: true,
       isAvailableForMatching: true,
     },
   });
@@ -174,7 +170,6 @@ async function main() {
       update: {
         ownerId: breeder.id,
         status: PetStatus.ACTIVE,
-        isActive: true,
         isAvailableForMatching: true,
       },
       create: {
@@ -198,7 +193,6 @@ async function main() {
         breedingFee: pet.breedingFee,
         location: pet.location,
         status: PetStatus.ACTIVE,
-        isActive: true,
         isAvailableForMatching: true,
       },
     });
