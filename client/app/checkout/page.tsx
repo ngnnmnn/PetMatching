@@ -294,6 +294,7 @@ function CheckoutPageContent() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
   const [calculatedShippingFee, setCalculatedShippingFee] = useState<number>(30000);
   const [calculatingFee, setCalculatingFee] = useState<boolean>(false);
+  const [shippingFeeWarning, setShippingFeeWarning] = useState<string | null>(null);
 
   // Auto calculate GHN shipping fee when selected address changes
   useEffect(() => {
@@ -327,6 +328,16 @@ function CheckoutPageContent() {
           const data = await res.json();
           if (data.total && typeof data.total === 'number') {
             setCalculatedShippingFee(data.total);
+          }
+          if (data.isEstimated && data.message) {
+            // Check if it is a block warning from GHN or dynamic calculation issue
+            if (data.message.includes('ngưng hỗ trợ') || data.message.includes('RECEIVER_WARD_BLOCKED') || data.message.includes('block')) {
+              setShippingFeeWarning('Địa chỉ này tạm thời GHN không nhận giao hàng. Bạn vẫn có thể đặt hàng và Shop sẽ chủ động liên hệ giao cho bạn bằng đơn vị vận chuyển khác (ViettelPost, GHTK...).');
+            } else {
+              setShippingFeeWarning(null);
+            }
+          } else {
+            setShippingFeeWarning(null);
           }
         } catch (err) {
           console.error('Failed to calculate GHN fee', err);
@@ -854,6 +865,13 @@ function CheckoutPageContent() {
                     <p className="text-[var(--text-muted)] mt-1.5 leading-relaxed">
                       {detail}, {selectedWardName}, {selectedDistrictName}, {selectedProvinceName}
                     </p>
+                  </div>
+                )}
+
+                {shippingFeeWarning && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mt-3 flex items-start gap-2 text-amber-800 text-xs font-bold animate-in fade-in duration-200">
+                    <span>⚠️</span>
+                    <p className="leading-relaxed">{shippingFeeWarning}</p>
                   </div>
                 )}
 

@@ -535,7 +535,7 @@ ${securityRules}
 Dưới đây là danh sách sản phẩm hiện có tại cửa hàng PetMatch:
 ${JSON.stringify(products, null, 2)}
 
-Hãy luôn trả lời bằng Tiếng Việt một cách tự nhiên, lịch sự, ngắn gọn và hữu ích nhất. Chào mừng khách hàng nhiệt tình khi bắt đầu.
+Hãy luôn trả lời bằng Tiếng Việt một cách tự nhiên, lịch sự, ngắn gọn và hữu ích nhất. Chào mừng khách hàng nhiệt tình khi bắt đầu. Đặc biệt, tuyệt đối KHÔNG sử dụng các ký hiệu hoặc công thức toán học dưới dạng mã LaTeX phức tạp (ví dụ: $$ hay \text{}). Nếu cần viết công thức tính toán, hãy sử dụng các chữ cái, ký hiệu toán học phổ thông (+, -, *, /, =) và trình bày bằng chữ in đậm hoặc danh sách thông thường để hiển thị đẹp mắt trên khung chat của người dùng.
 `;
 
       // 6. Format chat history for Gemini API with a sliding window of the last 10 messages
@@ -559,7 +559,7 @@ Hãy luôn trả lời bằng Tiếng Việt một cách tự nhiên, lịch s�
         },
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
         },
       };
 

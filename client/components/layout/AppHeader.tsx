@@ -13,6 +13,7 @@ import {
   Scissors,
   Search,
   ShoppingCart,
+  Sparkles,
   Store,
   Loader2,
   ShoppingBag,
@@ -395,6 +396,14 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
             </>
           )}
 
+          <Link
+            href="/my-pets/recommendations"
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-orange-500 bg-white px-3.5 text-xs font-black text-orange-600 shadow-sm transition hover:bg-orange-50/30 active:scale-95"
+            title="Đề xuất chăm sóc & Sức khỏe"
+          >
+            <Sparkles className="size-4 text-orange-500 fill-orange-500/10" />
+            <span>Góc sức khỏe</span>
+          </Link>
           <Link
             href="/cart"
             className="relative inline-flex size-10 items-center justify-center rounded-md border border-[var(--border-color)] bg-card text-foreground shadow-sm transition hover:border-primary hover:text-primary"

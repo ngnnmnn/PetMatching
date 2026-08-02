@@ -211,6 +211,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   const [exportOnlyPendingGhn, setExportOnlyPendingGhn] = useState(false);
+  const [exportOnlyRefunded, setExportOnlyRefunded] = useState(false);
   const [exportAllTime, setExportAllTime] = useState(false);
   const [exportingOrders, setExportingOrders] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -218,6 +219,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [importImages, setImportImages] = useState<File[]>([]);
   const [importMode, setImportMode] = useState<'file' | 'folder'>('file');
   const [isDuplicateFolder, setIsDuplicateFolder] = useState(false);
+
+  const [banks, setBanks] = useState<any[]>([]);
   const [importResult, setImportResult] = useState<{
     success: boolean;
     updatedCount: number;
@@ -269,7 +272,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   useEffect(() => {
     fetchData();
-  }, [currentTab]);
+    if (banks.length === 0) {
+      fetch('https://api.vietqr.io/v2/banks')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.code === '00') {
+            setBanks(data.data || []);
+          }
+        })
+        .catch((err) => console.error('Failed to fetch banks', err));
+    }
+  }, [currentTab, banks.length]);
 
   // Filtered lists based on search and status filters
   const filteredProducts = useMemo(() => {
@@ -308,7 +321,18 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const matchesSearch =
         customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         order.id.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesStatus = filterStatus === 'ALL' || order.status === filterStatus;
+      
+      let matchesStatus = false;
+      if (filterStatus === 'ALL') {
+        matchesStatus = true;
+      } else if (filterStatus === 'REFUND_PENDING') {
+        matchesStatus = order.refundStatus === 'PENDING';
+      } else if (filterStatus === 'REFUND_APPROVED') {
+        matchesStatus = order.refundStatus === 'REFUNDED';
+      } else {
+        matchesStatus = order.status === filterStatus;
+      }
+
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchQuery, filterStatus]);
@@ -375,7 +399,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const eligibleOrdersForGhn = useMemo(() => {
     return filteredOrders.filter(
-      (o) => !o.ghnOrderCode && o.status !== 'CANCELLED' && o.status !== 'SHIPPED' && o.status !== 'DELIVERED'
+      (o) =>
+        !o.ghnOrderCode &&
+        o.status !== 'CANCELLED' &&
+        o.status !== 'SHIPPED' &&
+        o.status !== 'DELIVERED' &&
+        o.refundStatus !== 'PENDING' &&
+        o.refundStatus !== 'REFUNDED'
     );
   }, [filteredOrders]);
 
@@ -392,6 +422,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setExportStartDate(formatDate(firstDay));
     setExportEndDate(formatDate(now));
     setExportOnlyPendingGhn(false);
+    setExportOnlyRefunded(false);
     setExportAllTime(false);
     setIsExportModalOpen(true);
   };
@@ -404,6 +435,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         startDate: exportAllTime ? undefined : (exportStartDate || undefined),
         endDate: exportAllTime ? undefined : (exportEndDate || undefined),
         onlyPendingGhn: exportOnlyPendingGhn || undefined,
+        onlyRefunded: exportOnlyRefunded || undefined,
       });
 
       const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -419,6 +451,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       }
       if (exportOnlyPendingGhn) {
         filename += '_chua_gui_ghn';
+      }
+      if (exportOnlyRefunded) {
+        filename += '_da_duyet_hoan_tien';
       }
       filename += '.xlsx';
 
@@ -448,6 +483,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     } catch (error) {
       console.error('Failed to update order status', error);
       toast.error('Lỗi khi cập nhật trạng thái đơn hàng.');
+    }
+  };
+
+  const [sendingGhnId, setSendingGhnId] = useState<string | null>(null);
+
+  const handleSendToGhn = async (orderId: string) => {
+    setSendingGhnId(orderId);
+    try {
+      await managerApi.createShippingOrder(orderId);
+      toast.success('Gửi đơn hàng sang GHN thành công!');
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+    } catch (error: any) {
+      console.error('Failed to create shipping order', error);
+      toast.error(error.response?.data?.message || 'Lỗi khi tạo vận đơn GHN.');
+    } finally {
+      setSendingGhnId(null);
     }
   };
 
@@ -500,7 +552,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
     for (const orderId of selectedOrderIds) {
       try {
-        await managerApi.updateOrderStatus(orderId, 'SHIPPED');
+        await managerApi.createShippingOrder(orderId);
         successCount++;
       } catch (err) {
         console.error(`Failed to send order ${orderId} to GHN`, err);
@@ -2274,6 +2326,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 className="rounded-xl border border-[#EFEAE2] bg-white px-3 py-2.5 text-sm font-bold text-[var(--text-main)] focus:outline-none"
               >
                 <option value="ALL">Tất cả trạng thái</option>
+                <option value="REFUND_PENDING">⏳ Yêu cầu hoàn tiền</option>
+                <option value="REFUND_APPROVED">✅ Đã duyệt hoàn tiền</option>
                 {Object.keys(ORDER_STATUS_MAP).map((status) => (
                   <option key={status} value={status}>{ORDER_STATUS_MAP[status]}</option>
                 ))}
@@ -2353,7 +2407,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           className="transition hover:bg-gray-50 cursor-pointer"
                         >
                           <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                            {!o.ghnOrderCode && o.status !== 'CANCELLED' && o.status !== 'SHIPPED' ? (
+                            {!o.ghnOrderCode &&
+                            o.status !== 'CANCELLED' &&
+                            o.status !== 'SHIPPED' &&
+                            o.status !== 'DELIVERED' &&
+                            o.refundStatus !== 'PENDING' &&
+                            o.refundStatus !== 'REFUNDED' ? (
                               <input
                                 type="checkbox"
                                 checked={selectedOrderIds.includes(o.id)}
@@ -2369,7 +2428,19 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             ) : null}
                           </td>
                           <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]" title={o.id}>
-                            {o.id.length > 15 ? o.id.slice(0, 12) + '...' : o.id}
+                            <div className="flex flex-col gap-1">
+                              <span>{o.id.length > 15 ? o.id.slice(0, 12) + '...' : o.id}</span>
+                              {o.refundStatus === 'PENDING' && (
+                                <span className="inline-flex items-center w-fit rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-black text-amber-800 animate-pulse">
+                                  ⏳ Y/C Hoàn tiền
+                                </span>
+                              )}
+                              {o.refundStatus === 'REFUNDED' && (
+                                <span className="inline-flex items-center w-fit rounded bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-black text-green-800">
+                                  ✅ Đã duyệt hoàn tiền
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 font-bold text-[var(--text-main)]">
                             {shippingInfo.name}
@@ -2394,7 +2465,15 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           </td>
                           <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(o.totalAmount)}</td>
                           <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                            {o.status === 'CANCELLED' ? (
+                            {o.refundStatus === 'REFUNDED' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-green-50 border border-green-200 text-green-700 shadow-sm">
+                                ✅ Đã duyệt hoàn tiền
+                              </span>
+                            ) : o.refundStatus === 'PENDING' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-amber-50 border border-amber-200 text-amber-700 shadow-sm">
+                                ⏳ Chờ duyệt hoàn tiền
+                              </span>
+                            ) : o.status === 'CANCELLED' ? (
                               <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-red-50 border border-red-200 text-red-700 shadow-sm">
                                 ❌ Đã hủy
                               </span>
@@ -2409,10 +2488,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => handleOrderStatusChange(o.id, 'SHIPPED')}
-                                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-black text-white bg-[#0F766E] rounded-xl hover:bg-[#115E59] shadow-md transition active:scale-95 cursor-pointer"
+                                disabled={sendingGhnId === o.id}
+                                onClick={() => handleSendToGhn(o.id)}
+                                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-black text-white bg-[#0F766E] rounded-xl hover:bg-[#115E59] shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
                               >
-                                🚚 Gửi GHN
+                                {sendingGhnId === o.id ? (
+                                  <Loader2 className="size-3 animate-spin text-white" />
+                                ) : (
+                                  '🚚 '
+                                )}
+                                Gửi GHN
                               </button>
                             )}
                           </td>
@@ -2574,8 +2659,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         <span className="font-bold text-sm text-[var(--text-main)]">{selectedOrderDetails.refundAccountName}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-gray-500 block">Ngân hàng (BIN):</span>
-                        <span className="font-bold text-[var(--text-main)] font-mono">{selectedOrderDetails.refundBankCode}</span>
+                        <span className="text-[10px] text-gray-500 block">Ngân hàng:</span>
+                        <span className="font-bold text-xs text-[var(--text-main)]">
+                          {(() => {
+                            const bank = banks.find(b => b.bin === selectedOrderDetails.refundBankCode);
+                            return bank ? `${bank.shortName} - ${bank.name}` : selectedOrderDetails.refundBankCode;
+                          })()}
+                        </span>
                       </div>
                       <div>
                         <span className="text-[10px] text-gray-500 block">Trạng thái hoàn:</span>
@@ -2585,7 +2675,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           selectedOrderDetails.refundStatus === 'REFUNDED' && 'bg-green-100 text-green-800',
                           selectedOrderDetails.refundStatus === 'FAILED' && 'bg-red-100 text-red-800'
                         )}>
-                          {selectedOrderDetails.refundStatus === 'PENDING' ? 'Chờ duyệt' : selectedOrderDetails.refundStatus === 'REFUNDED' ? 'Đã hoàn tiền' : 'Thất bại'}
+                          {selectedOrderDetails.refundStatus === 'PENDING' ? 'Chờ duyệt' : selectedOrderDetails.refundStatus === 'REFUNDED' ? 'Đã duyệt hoàn tiền' : 'Thất bại'}
                         </span>
                       </div>
                     </div>
@@ -2622,7 +2712,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 </div>
                 
                 <div className="flex justify-between items-center pt-2 border-t">
-                  {selectedOrderDetails.refundStatus === 'PENDING' ? (
+                  {selectedOrderDetails.refundStatus === 'PENDING' || selectedOrderDetails.refundStatus === 'FAILED' ? (
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -2636,10 +2726,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         type="button"
                         disabled={refundingId === selectedOrderDetails.id}
                         onClick={() => handleApproveRefund(selectedOrderDetails.id)}
-                        className="rounded-xl bg-[var(--primary-color)] text-white px-4 py-2 font-bold hover:bg-[var(--primary-hover)] transition text-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        className="rounded-xl bg-emerald-600 text-white px-4 py-2 font-bold hover:bg-emerald-700 transition text-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {refundingId === selectedOrderDetails.id && <Loader2 className="size-3 animate-spin text-white" />}
-                        Duyệt & Hoàn tiền (PayOS)
+                        Duyệt hoàn tiền
                       </button>
                     </div>
                   ) : (
@@ -2723,15 +2813,36 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <input
                         type="checkbox"
                         checked={exportOnlyPendingGhn}
-                        onChange={(e) => setExportOnlyPendingGhn(e.target.checked)}
+                        onChange={(e) => {
+                          setExportOnlyPendingGhn(e.target.checked);
+                          if (e.target.checked) setExportOnlyRefunded(false);
+                        }}
                         className="size-4 rounded border-gray-300 text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer"
                       />
                       <span className="text-xs text-gray-700 font-bold">
                         Chỉ xuất các đơn hàng chưa gửi cho GHN
                       </span>
                     </label>
-                    <p className="text-[10px] text-gray-400 font-medium pl-6 leading-relaxed">
+                    <p className="text-[10px] text-gray-400 font-medium pl-6 leading-relaxed mb-3">
                       (Bỏ qua các đơn hàng đã bị hủy, đang giao hàng hoặc đã giao hàng thành công bằng đối tác khác).
+                    </p>
+
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={exportOnlyRefunded}
+                        onChange={(e) => {
+                          setExportOnlyRefunded(e.target.checked);
+                          if (e.target.checked) setExportOnlyPendingGhn(false);
+                        }}
+                        className="size-4 rounded border-gray-300 text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-700 font-bold">
+                        Chỉ xuất các đơn hàng đã duyệt hoàn tiền
+                      </span>
+                    </label>
+                    <p className="text-[10px] text-gray-400 font-medium pl-6 leading-relaxed">
+                      (Xuất danh sách các hóa đơn có trạng thái hoàn tiền thành công, đi kèm đầy đủ số tài khoản và ngân hàng nhận).
                     </p>
                   </div>
 

@@ -119,7 +119,8 @@ export const managerApi = {
   updateOrderStatus: (id: string, status: string) => api.patch<ManagerOrder>(`/manager/orders/${id}/status`, { status }),
   approveRefund: (id: string) => api.post<any>(`/manager/orders/${id}/approve-refund`),
   rejectRefund: (id: string) => api.post<any>(`/manager/orders/${id}/reject-refund`),
-  exportOrders: (params: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean }) =>
+  createShippingOrder: (orderId: string) => api.post<any>('/shipping/create-order', { orderId }),
+  exportOrders: (params: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean; onlyRefunded?: boolean }) =>
     api.get<Blob>('/manager/orders/export', {
       params,
       responseType: 'blob',

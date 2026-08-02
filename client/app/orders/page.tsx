@@ -156,6 +156,15 @@ function formatAddressForDisplay(addrStr: string) {
   return addrStr;
 }
 
+const removeAccentsAndUpperCase = (str: string) => {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove accent marks
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toUpperCase();
+};
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,7 +278,7 @@ export default function OrdersPage() {
         try {
           const res = await usersApi.lookupBankName(refundBankCode, refundAccountNumber);
           if (res.data && res.data.accountName) {
-            setRefundAccountName(res.data.accountName);
+            setRefundAccountName(removeAccentsAndUpperCase(res.data.accountName));
             toast.success('Xác thực tài khoản ngân hàng thành công!');
           } else {
             setRefundAccountName('');
@@ -481,6 +490,9 @@ export default function OrdersPage() {
   };
 
   const getPaymentStatusBadge = (order: Order) => {
+    if (order.status === 'CANCELLED' && !order.refundStatus) {
+      return null;
+    }
     if (order.refundStatus) {
       if (order.refundStatus === 'PENDING') {
         return (
@@ -491,7 +503,7 @@ export default function OrdersPage() {
       } else if (order.refundStatus === 'REFUNDED') {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-extrabold text-green-700 border border-green-200">
-            Đã hoàn tiền
+            Đã duyệt hoàn tiền
           </span>
         );
       } else if (order.refundStatus === 'FAILED') {
@@ -933,7 +945,7 @@ export default function OrdersPage() {
 
               <div className="space-y-1">
                 <div className="flex justify-between items-center">
-                  <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Tên chủ tài khoản (Tự động)</label>
+                  <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Tên chủ tài khoản (Viết hoa không dấu)</label>
                   {isLookingUpAccount && (
                     <span className="text-[10px] text-amber-600 font-bold animate-pulse">Đang tra cứu...</span>
                   )}
@@ -941,10 +953,10 @@ export default function OrdersPage() {
                 <input
                   type="text"
                   required
-                  readOnly={true}
-                  placeholder={isLookingUpAccount ? "Đang truy vấn ngân hàng..." : "Tên chủ tài khoản sẽ tự động hiện"}
+                  placeholder={isLookingUpAccount ? "Đang truy vấn ngân hàng..." : "Ví dụ: TRAN NGOC DUC"}
                   value={refundAccountName}
-                  className="w-full rounded-xl border border-gray-100 bg-gray-100/80 text-gray-500 cursor-not-allowed border-gray-100 px-3.5 py-2.5 outline-none font-bold text-xs"
+                  onChange={(e) => setRefundAccountName(removeAccentsAndUpperCase(e.target.value))}
+                  className="w-full rounded-xl border border-gray-200 bg-[#FAF9F5] px-3.5 py-2.5 outline-none focus:border-[var(--primary-color)] font-bold text-xs"
                 />
               </div>
 

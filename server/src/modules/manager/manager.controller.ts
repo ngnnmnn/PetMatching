@@ -61,11 +61,13 @@ export class ManagerController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('onlyPendingGhn') onlyPendingGhn?: string,
+    @Query('onlyRefunded') onlyRefunded?: string,
   ) {
     const buffer = await this.managerService.exportOrdersToExcel({
       startDate,
       endDate,
       onlyPendingGhn: onlyPendingGhn === 'true',
+      onlyRefunded: onlyRefunded === 'true',
     });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

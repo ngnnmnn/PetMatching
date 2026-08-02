@@ -606,8 +606,8 @@ export class ManagerService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
 
-    if (order.refundStatus !== 'PENDING') {
-      throw new BadRequestException('Đơn hàng không ở trạng thái chờ hoàn tiền.');
+    if (order.refundStatus !== 'PENDING' && order.refundStatus !== 'FAILED') {
+      throw new BadRequestException('Đơn hàng không ở trạng thái chờ hoàn tiền hoặc hoàn tiền lỗi.');
     }
 
     if (!order.refundBankCode || !order.refundAccountNumber) {
@@ -615,15 +615,6 @@ export class ManagerService {
     }
 
     try {
-      // Call PayOS Payout API
-      await this.paymentService.createPayout({
-        referenceId: order.id,
-        amount: Math.round(order.totalAmount),
-        description: `PM Hoan tien don hang ${order.id}`,
-        toBin: order.refundBankCode,
-        toAccountNumber: order.refundAccountNumber,
-      });
-
       // Update order status and restore stock in transaction
       return await this.prisma.$transaction(async (tx) => {
         for (const item of order.items) {
@@ -647,15 +638,9 @@ export class ManagerService {
         });
       });
     } catch (error) {
-      console.error('PayOS Payout failed:', error);
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          refundStatus: 'FAILED',
-        },
-      });
+      console.error('Approve refund failed:', error);
       throw new BadRequestException(
-        `Hoàn tiền qua PayOS thất bại: ${error.message || 'Lỗi không xác định'}.`,
+        `Phê duyệt hoàn tiền thất bại: ${error.message || 'Lỗi không xác định'}.`,
       );
     }
   }
@@ -669,8 +654,8 @@ export class ManagerService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
 
-    if (order.refundStatus !== 'PENDING') {
-      throw new BadRequestException('Đơn hàng không ở trạng thái chờ hoàn tiền.');
+    if (order.refundStatus !== 'PENDING' && order.refundStatus !== 'FAILED') {
+      throw new BadRequestException('Đơn hàng không ở trạng thái chờ hoàn tiền hoặc hoàn tiền lỗi.');
     }
 
     return this.prisma.order.update({
@@ -906,7 +891,7 @@ export class ManagerService {
     };
   }
 
-  async exportOrdersToExcel(filters: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean }) {
+  async exportOrdersToExcel(filters: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean; onlyRefunded?: boolean }) {
     const where: any = {};
 
     if (filters.startDate || filters.endDate) {
@@ -926,6 +911,10 @@ export class ManagerService {
       where.status = { notIn: ['CANCELLED', 'SHIPPED', 'DELIVERED'] };
     }
 
+    if (filters.onlyRefunded) {
+      where.refundStatus = 'REFUNDED';
+    }
+
     const orders = await this.prisma.order.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -942,6 +931,19 @@ export class ManagerService {
         },
       },
     });
+
+    // Fetch banks mapping to translate BIN to shortName
+    const bankMap = new Map<string, string>();
+    try {
+      const bankRes = await fetch('https://api.vietqr.io/v2/banks').then((r) => r.json());
+      if (bankRes && bankRes.code === '00' && Array.isArray(bankRes.data)) {
+        for (const b of bankRes.data) {
+          bankMap.set(b.bin, `${b.shortName} - ${b.name}`);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch bank list for Excel export mapping', e);
+    }
 
     const exportData = orders.map((o) => {
       let name = o.user?.name || '';
@@ -986,6 +988,10 @@ export class ManagerService {
         'Lợi nhuận đơn': orderProfit,
         'Trạng thái': statusLabels[o.status] || o.status,
         'Mã vận đơn GHN': o.ghnOrderCode || 'Chưa gửi',
+        'STK Nhận hoàn tiền': o.refundAccountNumber || '',
+        'Ngân hàng Nhận hoàn tiền': o.refundBankCode ? (bankMap.get(o.refundBankCode) || o.refundBankCode) : '',
+        'Chủ tài khoản Nhận hoàn tiền': o.refundAccountName || '',
+        'Ngày hoàn tiền': o.refundedAt ? new Date(o.refundedAt).toLocaleDateString('vi-VN') : '',
       };
     });
 

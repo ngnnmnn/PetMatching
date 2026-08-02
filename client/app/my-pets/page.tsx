@@ -235,7 +235,7 @@ export default function MyPetsPage() {
                   )}
 
                   {/* Action buttons */}
-                  <div className="pt-2">
+                  <div className="pt-2 space-y-2">
                     {pet.gender === 'MALE' ? (
                       <Button
                         className="w-full gap-2 rounded-xl font-bold shadow-md shadow-primary/20"
@@ -252,6 +252,12 @@ export default function MyPetsPage() {
                         </Link>
                       </Button>
                     )}
+                    <Button variant="outline" className="w-full gap-2 rounded-xl font-bold border-[#EFEAE2] hover:bg-[#FAF9F6] text-xs shadow-sm" asChild>
+                      <Link href={`/my-pets/recommendations?petId=${pet.id}`}>
+                        <Sparkles className="size-4 text-primary fill-primary/10" />
+                        Đề xuất & Đồ dùng phù hợp
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               </article>

@@ -305,4 +305,26 @@ export class ShippingService {
       orderStatus: newOrderStatus,
     };
   }
+
+  /**
+   * Tra cứu chi tiết đơn hàng từ GHN API theo mã vận đơn
+   */
+  async getShippingOrderDetail(ghnOrderCode: string) {
+    try {
+      const response = await fetch(`${this.ghnBaseUrl}/v2/shipping-order/detail`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ order_code: ghnOrderCode }),
+      });
+      const data = await response.json();
+      if (data.code !== 200) {
+        this.logger.error(`Không thể lấy chi tiết vận đơn GHN ${ghnOrderCode}: ${data.message}`);
+        return null;
+      }
+      return data.data;
+    } catch (error) {
+      this.logger.error(`Lỗi kết nối GHN detail API cho mã ${ghnOrderCode}:`, error);
+      return null;
+    }
+  }
 }
