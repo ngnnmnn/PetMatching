@@ -34,7 +34,7 @@ import {
   Percent,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats, ProductUnit } from '@/lib/api/manager';
+import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, ManagerDashboardStats, ProductUnit } from '@/lib/api/manager';
 import { productsApi } from '@/lib/api/products';
 import { spaApi } from '@/lib/api/spa';
 import { Category } from '@/types';
@@ -136,7 +136,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [products, setProducts] = useState<ManagerProduct[]>([]);
   const [orders, setOrders] = useState<ManagerOrder[]>([]);
   const [customers, setCustomers] = useState<ManagerCustomer[]>([]);
-  const [storeInfo, setStoreInfo] = useState<StoreSettings | null>(null);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ManagerOrder | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -180,8 +179,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     onConfirm: () => {},
     loading: false,
   });
-  const [isSaved, setIsSaved] = useState(false);
-  const [submittingSettings, setSubmittingSettings] = useState(false);
   const [feedbackProduct, setFeedbackProduct] = useState<ManagerProduct | null>(null);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
@@ -246,12 +243,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, unitsRes] = await Promise.all([
+      const [statsRes, productsRes, ordersRes, customersRes, categoriesRes, unitsRes] = await Promise.all([
         managerApi.getDashboardStats(),
         managerApi.getProducts(),
         managerApi.getOrders(),
         managerApi.getCustomers(),
-        managerApi.getStoreSettings(),
         productsApi.getCategories(),
         managerApi.getProductUnits(),
       ]);
@@ -259,7 +255,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       setProducts(productsRes.data);
       setOrders(ordersRes.data);
       setCustomers(customersRes.data);
-      setStoreInfo(settingsRes.data);
       setCategories(categoriesRes.data);
       setUnits(unitsRes.data);
     } catch (error) {
@@ -573,22 +568,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     // Refresh orders
     const res = await managerApi.getOrders();
     setOrders(res.data);
-  };
-
-  const handleUpdateSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!storeInfo) return;
-    setSubmittingSettings(true);
-    try {
-      await managerApi.updateStoreSettings(storeInfo);
-      setIsSaved(true);
-      toast.success('Lưu cấu hình cửa hàng thành công!');
-    } catch (error) {
-      console.error('Failed to save store settings', error);
-      toast.error('Lỗi khi cập nhật cấu hình cửa hàng.');
-    } finally {
-      setSubmittingSettings(false);
-    }
   };
 
   const handleAddClick = () => {
@@ -3212,96 +3191,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </div>
             </div>
           )}
-        </div>
-      );
-
-    case 'settings':
-      return (
-        <div className="max-w-2xl space-y-6 animate-fadeIn">
-          <div>
-            <h2 className="text-xl font-black">Cấu hình chi nhánh cửa hàng</h2>
-            <p className="text-sm font-semibold text-[var(--text-muted)]">Thiết lập các thông tin chi nhánh cửa hàng thực tế hiển thị lên ứng dụng.</p>
-          </div>
-
-          <form onSubmit={handleUpdateSettings} className="rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-sm space-y-5">
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Tên cửa hàng *</label>
-              <input
-                type="text"
-                required
-                value={storeInfo?.name || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, name: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Số điện thoại liên hệ *</label>
-              <input
-                type="text"
-                required
-                value={storeInfo?.phone || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, phone: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Địa chỉ chi nhánh *</label>
-              <input
-                type="text"
-                required
-                value={storeInfo?.address || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, address: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Mô tả cửa hàng</label>
-              <textarea
-                value={storeInfo?.description || ''}
-                rows={3}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, description: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            {isSaved && (
-              <div className="rounded-xl bg-green-50 p-3.5 text-sm font-bold text-green-700 animate-fadeIn">
-                Lưu cấu hình cửa hàng thành công!
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={submittingSettings}
-              className="w-full rounded-xl bg-[var(--primary-color)] py-3.5 font-bold text-white transition hover:bg-[#cf5017] flex items-center justify-center gap-2"
-            >
-              {submittingSettings && <Loader2 className="size-4 animate-spin text-white" />}
-              Lưu cấu hình
-            </button>
-          </form>
         </div>
       );
 

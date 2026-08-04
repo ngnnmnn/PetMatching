@@ -51,7 +51,7 @@ const complaintStatusOptions = [
   ['ESCALATED', 'Đã chuyển cấp'],
   ['DISMISSED', 'Đã bỏ qua'],
 ] as const;
-const readOnlySections = new Set(['stores', 'store-overview', 'store-products', 'store-orders', 'store-settings', 'spa-overview', 'spa-services', 'spa-staff-schedule', 'spa-bookings']);
+const readOnlySections = new Set(['stores', 'system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-staff-schedule', 'spa-bookings']);
 
 const sectionConfig: Record<string, {
   title: string;
@@ -124,6 +124,12 @@ const sectionConfig: Record<string, {
       { key: 'orders', label: 'Đơn hàng', render: (row) => row._count?.orders ?? 0 },
     ],
   },
+  'system-profile': {
+    title: 'Thông tin hệ thống',
+    description: 'Quản lý thông tin chung và trạng thái vận hành của PetMatching tại một nơi duy nhất.',
+    loader: adminApi.systemProfile,
+    columns: [],
+  },
   'store-overview': {
     title: 'Tổng quan cửa hàng',
     description: 'Dashboard mini theo dõi nhanh hoạt động kinh doanh của PetMatching Store.',
@@ -159,18 +165,6 @@ const sectionConfig: Record<string, {
       { key: 'totalAmount', label: 'Tổng tiền', render: moneyCell },
       { key: 'createdAt', label: 'Ngày đặt', render: dateCell },
     ],
-  },
-  'store-settings': {
-    title: 'Cấu hình cửa hàng',
-    description: 'Cập nhật thông tin chính thức của cửa hàng PetMatching hiển thị trên hệ thống.',
-    loader: adminApi.stores,
-    columns: [],
-  },
-  spas: {
-    title: 'Thông tin Spa',
-    description: 'Theo dõi thông tin và trạng thái nhận lịch của Spa PetMatching.',
-    loader: adminApi.spas,
-    columns: [],
   },
   'spa-overview': {
     title: 'Tổng quan Spa',
@@ -278,6 +272,14 @@ export default function AdminSectionPage() {
   }, [complaintStatus, complaintTarget, complaintType, rows, section]);
 
   const titleStats = useMemo(() => {
+    if (section === 'system-profile') {
+      const profile = rows[0];
+      return {
+        total: 1,
+        active: [profile?.storeStatus, profile?.spaStatus].filter((status) => status === 'ACTIVE').length,
+        pending: [profile?.storeStatus, profile?.spaStatus].filter((status) => status !== 'ACTIVE').length,
+      };
+    }
     if (section === 'store-overview') {
       const stats = rows[0]?.stats ?? {};
       return { total: stats.todayOrders ?? 0, active: stats.completedOrders ?? 0, pending: stats.pendingOrders ?? 0 };
@@ -348,9 +350,9 @@ export default function AdminSectionPage() {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 self-center">
-            <MiniStat label={section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : 'Tổng'} value={titleStats.total} />
-            <MiniStat label={['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : 'Hoạt động'} value={titleStats.active} />
-            <MiniStat label={section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
+            <MiniStat label={section === 'system-profile' ? 'Cơ sở' : section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : 'Tổng'} value={titleStats.total} />
+            <MiniStat label={section === 'system-profile' ? 'Đang hoạt động' : ['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : 'Hoạt động'} value={titleStats.active} />
+            <MiniStat label={section === 'system-profile' ? 'Tạm ngừng' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
           </div>
         </div>
       </section>
@@ -371,14 +373,12 @@ export default function AdminSectionPage() {
             onRunAction={runAction}
             onRoleChange={handleRoleChange}
           />
+        ) : section === 'system-profile' ? (
+          <SystemProfileForm profile={rows[0]} onSaved={load} />
         ) : section === 'store-overview' ? (
           <StoreOverviewPanel data={rows[0]} />
         ) : section === 'spa-overview' ? (
           <SpaOverviewPanel data={rows[0]} />
-        ) : section === 'store-settings' ? (
-          <StoreSettingsForm store={rows[0]} onSaved={load} />
-        ) : section === 'spas' ? (
-          <SpaSettingsForm spa={rows[0]} onSaved={load} />
         ) : section === 'store-products' ? (
           <ProductCatalogPanel products={rows} />
         ) : (
@@ -735,73 +735,69 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
   );
 }
 
-function StoreSettingsForm({ store, onSaved }: { store?: Row; onSaved: () => void }) {
-  const [form, setForm] = useState({
-    name: store?.name ?? 'PetMatching Store',
-    phone: store?.phone ?? '',
-    address: store?.address ?? '',
-    description: store?.description ?? '',
+function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () => void }) {
+  const initialForm = () => ({
+    name: profile?.name ?? 'PetMatching',
+    description: profile?.description ?? '',
+    address: profile?.address ?? '',
+    phone: profile?.phone ?? '',
+    storeStatus: (profile?.storeStatus ?? 'ACTIVE') as ApprovalStatus,
+    spaStatus: (profile?.spaStatus ?? 'ACTIVE') as ApprovalStatus,
   });
+  const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    setForm({
-      name: store?.name ?? 'PetMatching Store',
-      phone: store?.phone ?? '',
-      address: store?.address ?? '',
-      description: store?.description ?? '',
-    });
-  }, [store]);
+  useEffect(() => setForm(initialForm()), [profile]);
 
-  const update = (key: keyof typeof form, value: string) => {
+  const update = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
-  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.name.trim()) {
-      toast.error('Vui lòng nhập tên cửa hàng.');
+    const data = { ...form, name: form.name.trim(), address: form.address.trim(), phone: form.phone.trim() };
+    if (!data.name || !data.address || !data.phone) {
+      toast.error('Vui lòng nhập tên, địa chỉ và số điện thoại.');
       return;
     }
 
     setSaving(true);
     try {
-      await adminApi.updateStoreSettings(form);
-      toast.success('Đã cập nhật cấu hình cửa hàng.');
+      await adminApi.updateSystemProfile(data);
+      toast.success('Đã cập nhật thông tin hệ thống.');
       onSaved();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Không thể cập nhật cấu hình cửa hàng.');
+      toast.error(err?.response?.data?.message ?? 'Không thể cập nhật thông tin hệ thống.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <form onSubmit={submit} className="grid gap-5 p-6">
-      <div className="grid gap-5 md:grid-cols-2">
-        <StoreField label="Tên cửa hàng" required value={form.name} onChange={(value) => update('name', value)} />
-        <StoreField label="Số điện thoại" value={form.phone} onChange={(value) => update('phone', value)} />
+    <form onSubmit={submit} className="grid gap-6 p-6">
+      <div className="rounded-xl border border-[#BFE1DC] bg-[#EFFAF8] p-4">
+        <p className="text-sm font-black text-[#0F766E]">Một cơ sở PetMatching duy nhất</p>
+        <p className="mt-1 text-sm font-semibold leading-6 text-[#476861]">
+          Thông tin bên dưới được dùng thống nhất cho Store và Spa, trong khi trạng thái vận hành được điều khiển độc lập.
+        </p>
       </div>
-      <StoreField label="Địa chỉ" value={form.address} onChange={(value) => update('address', value)} />
+      <div className="grid gap-5 md:grid-cols-2">
+        <StoreField label="Tên thương hiệu" required value={form.name} onChange={(value) => update('name', value)} />
+        <StoreField label="Số điện thoại" required value={form.phone} onChange={(value) => update('phone', value)} />
+      </div>
+      <StoreField label="Địa chỉ" required value={form.address} onChange={(value) => update('address', value)} />
       <label className="grid gap-2 text-sm font-black text-[#172033]">
-        Mô tả cửa hàng
-        <textarea
-          value={form.description}
-          onChange={(event) => update('description', event.target.value)}
-          rows={5}
-          placeholder="Giới thiệu ngắn về PetMatching Store"
-          className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
-        />
+        Mô tả chung
+        <textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows={4} className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10" />
       </label>
+      <div className="grid gap-5 md:grid-cols-2">
+        <StatusField label="Trạng thái Store" value={form.storeStatus} onChange={(value) => update('storeStatus', value)} />
+        <StatusField label="Trạng thái nhận lịch Spa" value={form.spaStatus} onChange={(value) => update('spaStatus', value)} />
+      </div>
       <div className="flex items-center justify-between gap-4 border-t border-[#E5EAF0] pt-5">
-        <p className="text-xs font-semibold text-[#64748B]">Thay đổi được áp dụng cho cửa hàng PetMatching duy nhất.</p>
-        <button
-          type="submit"
-          disabled={saving}
-          className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0F766E] px-5 text-sm font-black text-white transition hover:bg-[#0B5F59] disabled:opacity-50"
-        >
+        <p className="text-xs font-semibold text-[#64748B]">Mọi thay đổi được áp dụng đồng thời cho Store và Spa.</p>
+        <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0F766E] px-5 text-sm font-black text-white transition hover:bg-[#0B5F59] disabled:opacity-50">
           {saving && <Loader2 className="size-4 animate-spin" />}
-          Lưu cấu hình
+          Lưu thông tin
         </button>
       </div>
     </form>
@@ -814,7 +810,7 @@ function StoreOverviewPanel({ data }: { data?: Row }) {
     { label: 'Sản phẩm', value: stats.activeProducts ?? 0, href: '/admin/store-products' },
     { label: 'Đơn hàng hôm nay', value: stats.todayOrders ?? 0, href: '/admin/store-orders' },
     { label: 'Hết hàng', value: stats.outOfStockProducts ?? 0, href: '/admin/store-products' },
-    { label: 'Cấu hình cửa hàng', value: data?.store?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/store-settings' },
+    { label: 'Thông tin hệ thống', value: data?.store?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/system-profile' },
   ];
 
   return (
@@ -832,7 +828,7 @@ function StoreOverviewPanel({ data }: { data?: Row }) {
       <div className="grid gap-4 md:grid-cols-3">
         <MiniStat label="Đơn chờ xử lý" value={stats.pendingOrders ?? 0} />
         <MiniStat label="Đã giao" value={stats.completedOrders ?? 0} />
-        <MiniStat label="Doanh thu cửa hàng" value={moneyCell({ price: stats.revenue ?? 0 })} />
+        <MiniStat label="Doanh thu đơn đã giao" value={moneyCell({ price: stats.revenue ?? 0 })} />
       </div>
 
       <section className="overflow-hidden rounded-xl border border-[#D8E0EA]">
@@ -868,7 +864,7 @@ function SpaOverviewPanel({ data }: { data?: Row }) {
     { label: 'Dịch vụ Spa', value: stats.services ?? 0, href: '/admin/spa-services' },
     { label: 'Lịch nhân viên', value: stats.staffs ?? 0, href: '/admin/spa-staff-schedule' },
     { label: 'Lịch đặt hôm nay', value: stats.todayBookings ?? 0, href: '/admin/spa-bookings' },
-    { label: 'Thông tin Spa', value: data?.spa?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/spas' },
+    { label: 'Thông tin hệ thống', value: data?.spa?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/system-profile' },
   ];
 
   return (
@@ -886,7 +882,7 @@ function SpaOverviewPanel({ data }: { data?: Row }) {
       <div className="grid gap-4 md:grid-cols-3">
         <MiniStat label="Chờ xử lý" value={stats.pendingBookings ?? 0} />
         <MiniStat label="Đã hoàn thành" value={stats.completedBookings ?? 0} />
-        <MiniStat label="Doanh thu Spa" value={moneyCell({ price: stats.revenue ?? 0 })} />
+        <MiniStat label="Doanh thu spa" value={moneyCell({ price: stats.revenue ?? 0 })} />
       </div>
 
       <section className="overflow-hidden rounded-xl border border-[#D8E0EA]">
@@ -909,103 +905,6 @@ function SpaOverviewPanel({ data }: { data?: Row }) {
           {!data?.upcomingBookings?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có lịch sắp tới.</p>}
         </div>
       </section>
-    </div>
-  );
-}
-
-function SpaSettingsForm({ spa, onSaved }: { spa?: Row; onSaved: () => void }) {
-  const [form, setForm] = useState({
-    name: spa?.name ?? 'PetMatching Spa',
-    phone: spa?.phone ?? '',
-    address: spa?.address ?? '',
-    description: spa?.description ?? '',
-    status: (spa?.status ?? 'ACTIVE') as ApprovalStatus,
-  });
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setForm({
-      name: spa?.name ?? 'PetMatching Spa',
-      phone: spa?.phone ?? '',
-      address: spa?.address ?? '',
-      description: spa?.description ?? '',
-      status: (spa?.status ?? 'ACTIVE') as ApprovalStatus,
-    });
-  }, [spa]);
-
-  const update = (key: keyof typeof form, value: string) => {
-    setForm((current) => ({ ...current, [key]: value }));
-  };
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!form.name.trim() || !form.address.trim()) {
-      toast.error('Vui lòng nhập tên và địa chỉ Spa.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await adminApi.updateSpaSettings(form);
-      toast.success('Đã cập nhật thông tin Spa.');
-      onSaved();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Không thể cập nhật thông tin Spa.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form onSubmit={submit} className="grid gap-6 p-6">
-      <div className="grid gap-4 rounded-xl border border-[#D8E0EA] bg-[#F7F9FB] p-4 sm:grid-cols-3">
-        <InfoStat label="Quản lý" value={spa?.manager?.name ?? 'Chưa phân công'} />
-        <InfoStat label="Nhân viên" value={spa?._count?.staffs ?? 0} />
-        <InfoStat label="Tổng lịch đặt" value={spa?._count?.bookings ?? 0} />
-      </div>
-
-      <div className="grid gap-5 md:grid-cols-2">
-        <StoreField label="Tên Spa" required value={form.name} onChange={(value) => update('name', value)} />
-        <StoreField label="Số điện thoại" value={form.phone} onChange={(value) => update('phone', value)} />
-      </div>
-      <StoreField label="Địa chỉ" required value={form.address} onChange={(value) => update('address', value)} />
-      <label className="grid gap-2 text-sm font-black text-[#172033]">
-        Trạng thái nhận lịch
-        <select
-          value={form.status}
-          onChange={(event) => update('status', event.target.value)}
-          className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
-        >
-          <option value="ACTIVE">Đang nhận lịch</option>
-          <option value="SUSPENDED">Tạm ngừng nhận lịch</option>
-        </select>
-      </label>
-      <label className="grid gap-2 text-sm font-black text-[#172033]">
-        Giới thiệu Spa
-        <textarea
-          value={form.description}
-          onChange={(event) => update('description', event.target.value)}
-          rows={5}
-          placeholder="Giới thiệu ngắn về dịch vụ chăm sóc thú cưng"
-          className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
-        />
-      </label>
-      <div className="flex items-center justify-between gap-4 border-t border-[#E5EAF0] pt-5">
-        <p className="text-xs font-semibold text-[#64748B]">Hệ thống chỉ sử dụng một Spa PetMatching duy nhất.</p>
-        <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0F766E] px-5 text-sm font-black text-white transition hover:bg-[#0B5F59] disabled:opacity-50">
-          {saving && <Loader2 className="size-4 animate-spin" />}
-          Lưu thông tin
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function InfoStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{label}</p>
-      <p className="mt-1 text-base font-black text-[#172033]">{value}</p>
     </div>
   );
 }
@@ -1460,10 +1359,6 @@ function ActionGroup({
     );
   }
 
-  if (section === 'spas') {
-    return <ApprovalButtons update={(status) => adminApi.updateSpaStatus(row.id, status)} onAction={onAction} />;
-  }
-
   if (section === 'matching-reports' && !row.isResolved) {
     return (
       <div className="flex justify-end">
@@ -1612,8 +1507,8 @@ async function loadAllReports(): Promise<{ data: Row[] }> {
 }
 
 function normalizeRows(section: string, data: Row[] | Row): Row[] {
-  if (['store-overview', 'spa-overview'].includes(section) && !Array.isArray(data)) return [data];
-  if (['stores', 'store-settings'].includes(section) && Array.isArray(data)) {
+  if (['system-profile', 'store-overview', 'spa-overview'].includes(section) && !Array.isArray(data)) return [data];
+  if (section === 'stores' && Array.isArray(data)) {
     return data.length ? [data[0]] : [];
   }
 
@@ -1759,6 +1654,18 @@ function formatPetModerationReason(reason?: string) {
 function renderDocumentLinks(imageUrls?: string[]) {
   if (!imageUrls?.length) return '-';
   return <DocumentImageLinks imageUrls={imageUrls} />;
+}
+
+function StatusField({ label, value, onChange }: { label: string; value: ApprovalStatus; onChange: (value: string) => void }) {
+  return (
+    <label className="grid gap-2 text-sm font-black text-[#172033]">
+      {label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10">
+        <option value="ACTIVE">Đang hoạt động</option>
+        <option value="SUSPENDED">Tạm ngừng</option>
+      </select>
+    </label>
+  );
 }
 
 function DocumentImageLinks({ imageUrls }: { imageUrls: string[] }) {

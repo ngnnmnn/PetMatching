@@ -92,16 +92,6 @@ export class ManagerController {
     return this.managerService.getCustomers();
   }
 
-  @Get('store-settings')
-  getStoreSettings(@Req() req: AuthenticatedRequest) {
-    return this.managerService.getOrCreateStore(req.user.id);
-  }
-
-  @Put('store-settings')
-  updateStoreSettings(@Req() req: AuthenticatedRequest, @Body() dto: any) {
-    return this.managerService.updateStoreSettings(req.user.id, dto);
-  }
-
   @Post('categories')
   createCategory(@Body() dto: { name: string }) {
     return this.managerService.createCategory(dto);

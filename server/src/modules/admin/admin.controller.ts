@@ -22,7 +22,6 @@ import {
   ResolveComplaintDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
-  UpdateApprovalStatusDto,
   UpdateUserRoleDto,
   UpdateBreedRuleDto,
   CreateBreedDto,
@@ -218,17 +217,29 @@ export class AdminController {
     return this.adminService.getStores({ status });
   }
 
+  @Get('system-profile')
+  getSystemProfile() {
+    return this.adminService.getSystemProfile();
+  }
+
+  @Put('system-profile')
+  updateSystemProfile(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: {
+      name: string;
+      description?: string;
+      address: string;
+      phone: string;
+      storeStatus: ApprovalStatus;
+      spaStatus: ApprovalStatus;
+    },
+  ) {
+    return this.adminService.updateSystemProfile(request.user, dto);
+  }
+
   @Get('store-dashboard')
   getStoreDashboard() {
     return this.adminService.getStoreDashboard();
-  }
-
-  @Put('store-settings')
-  updateStoreSettings(
-    @Req() request: AuthenticatedRequest,
-    @Body() dto: { name: string; phone?: string; address?: string; description?: string },
-  ) {
-    return this.adminService.updateStoreSettings(request.user, dto);
   }
 
   @Get('store-products')
@@ -259,23 +270,6 @@ export class AdminController {
   @Get('spa-staff-schedule')
   getSpaStaffSchedule() {
     return this.adminService.getSpaStaffSchedule();
-  }
-
-  @Put('spa-settings')
-  updateSpaSettings(
-    @Req() request: AuthenticatedRequest,
-    @Body() dto: { name: string; phone?: string; address: string; description?: string; status?: ApprovalStatus },
-  ) {
-    return this.adminService.updateSpaSettings(request.user, dto);
-  }
-
-  @Patch('spas/:id/status')
-  updateSpaBranchStatus(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: UpdateApprovalStatusDto,
-  ) {
-    return this.adminService.updateSpaBranchStatus(request.user, id, dto);
   }
 
   @Get('spa-bookings')

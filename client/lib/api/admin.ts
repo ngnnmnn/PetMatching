@@ -113,18 +113,16 @@ export const adminApi = {
     api.patch<Breed>(`/admin/breeds/${id}`, data),
   deleteBreed: (id: string) => api.delete(`/admin/breeds/${id}`),
   stores: () => api.get('/admin/stores'),
+  systemProfile: () => api.get('/admin/system-profile'),
+  updateSystemProfile: (data: { name: string; description?: string; address: string; phone: string; storeStatus: ApprovalStatus; spaStatus: ApprovalStatus }) =>
+    api.put('/admin/system-profile', data),
   storeDashboard: () => api.get('/admin/store-dashboard'),
-  updateStoreSettings: (data: { name: string; phone?: string; address?: string; description?: string }) =>
-    api.put('/admin/store-settings', data),
   storeProducts: () => api.get('/admin/store-products'),
   storeOrders: () => api.get('/admin/store-orders'),
   spas: () => api.get('/admin/spas'),
   spaDashboard: () => api.get('/admin/spa-dashboard'),
   spaServices: () => api.get('/admin/spa-services'),
   spaStaffSchedule: () => api.get('/admin/spa-staff-schedule'),
-  updateSpaSettings: (data: { name: string; phone?: string; address: string; description?: string; status: ApprovalStatus }) =>
-    api.put('/admin/spa-settings', data),
-  updateSpaStatus: (id: string, status: ApprovalStatus) => api.patch(`/admin/spas/${id}/status`, { status }),
   spaBookings: () => api.get('/admin/spa-bookings'),
   complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),
   resolveComplaint: (id: string, action: ComplaintAction, adminNote?: string) =>
