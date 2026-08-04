@@ -308,9 +308,18 @@ export default function BookingDialog({
                 type="date"
                 value={date}
                 min={getLocalDateString()}
-                onChange={(e) => setDate(e.target.value)}
+                onKeyDown={(e) => e.preventDefault()}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const todayStr = getLocalDateString();
+                  if (!val || val >= todayStr) {
+                    setDate(val);
+                  } else {
+                    setDate(todayStr);
+                  }
+                }}
                 required
-                className="bg-background border-input"
+                className="bg-background border-input cursor-pointer"
               />
             </div>
             <div className="space-y-1.5">

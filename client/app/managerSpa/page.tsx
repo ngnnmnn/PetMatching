@@ -1427,7 +1427,17 @@ function SpaManagerConsoleContent() {
                   <input
                     type="date"
                     value={slotDate}
-                    onChange={(e) => setSlotDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    onKeyDown={(e) => e.preventDefault()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      if (!val || val >= todayStr) {
+                        setSlotDate(val);
+                      } else {
+                        setSlotDate(todayStr);
+                      }
+                    }}
                     className="h-10 rounded-xl border border-gray-150 bg-white px-3 py-1.5 text-sm font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                   />
                 </div>
@@ -1844,11 +1854,18 @@ function SpaManagerConsoleContent() {
                   type="date"
                   value={rescheduleDate}
                   min={new Date().toISOString().split('T')[0]}
+                  onKeyDown={(e) => e.preventDefault()}
                   onChange={(e) => {
-                    setRescheduleDate(e.target.value);
+                    const val = e.target.value;
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    if (!val || val >= todayStr) {
+                      setRescheduleDate(val);
+                    } else {
+                      setRescheduleDate(todayStr);
+                    }
                     setSelectedRescheduleSlot('');
                   }}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-sm font-bold text-gray-700 bg-white"
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-sm font-bold text-gray-700 bg-white cursor-pointer"
                 />
               </div>
 

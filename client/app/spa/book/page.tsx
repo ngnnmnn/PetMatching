@@ -171,48 +171,79 @@ function SpaBookingWizard() {
         setMainServices(mains);
         setSubServices(subs);
 
-        // Auto select service passed from query params
+        // Auto select service passed from query params (with strict matching priority)
         if (initialServiceId || initialBrandId || initialTitle) {
-          let matched = mains.find(
-            (m) =>
-              (initialServiceId && m.id === initialServiceId) ||
-              (initialBrandId && m.brandId === initialBrandId)
-          );
+          const normTitle = initialTitle ? initialTitle.toLowerCase().trim() : '';
+          const normServiceId = initialServiceId ? initialServiceId.toLowerCase().trim() : '';
 
-          if (!matched && initialTitle) {
-            const targetTitle = initialTitle.toLowerCase().trim();
+          // 1. Try exact ID match in main services
+          let matched = initialServiceId ? mains.find((m) => m.id === initialServiceId) : undefined;
+
+          // 2. Try exact ID or category/brand ID match
+          if (!matched && initialServiceId) {
+            matched = mains.find(
+              (m) =>
+                m.id.toLowerCase() === normServiceId ||
+                (m.categoryId && m.categoryId.toLowerCase() === normServiceId)
+            );
+          }
+
+          // 3. Try matching title/name in main services
+          if (!matched && normTitle) {
             matched = mains.find((m) => {
               const name = (m.name || '').toLowerCase();
               const brandName = (m.brand?.name || '').toLowerCase();
-              return name.includes(targetTitle) || brandName.includes(targetTitle) || targetTitle.includes(brandName);
+              return (
+                name.includes(normTitle) ||
+                normTitle.includes(name) ||
+                (brandName && (brandName.includes(normTitle) || normTitle.includes(brandName)))
+              );
             });
           }
 
-          if (!matched && initialServiceId) {
-            const targetIdStr = initialServiceId.toLowerCase().trim();
+          // 4. Try matching title with initialServiceId if initialServiceId is descriptive text
+          if (!matched && normServiceId) {
             matched = mains.find((m) => {
               const name = (m.name || '').toLowerCase();
-              const brandName = (m.brand?.name || '').toLowerCase();
-              return name.includes(targetIdStr) || brandName.includes(targetIdStr);
+              return name.includes(normServiceId) || normServiceId.includes(name);
             });
+          }
+
+          // 5. Fallback to brandId match ONLY if neither ID nor Title produced a match
+          if (!matched && initialBrandId) {
+            matched = mains.find((m) => m.brandId === initialBrandId);
           }
 
           if (matched) {
             setSelectedMainServiceId(matched.id);
           } else {
-            let matchedSub = subs.find(
-              (s) =>
-                (initialServiceId && s.id === initialServiceId) ||
-                (initialBrandId && s.brandId === initialBrandId)
-            );
-            if (!matchedSub && initialTitle) {
-              const targetTitle = initialTitle.toLowerCase().trim();
-              matchedSub = subs.find((s) => (s.name || '').toLowerCase().includes(targetTitle));
+            // Check sub-services if not matched in main services
+            let matchedSub = initialServiceId ? subs.find((s) => s.id === initialServiceId) : undefined;
+
+            if (!matchedSub && normTitle) {
+              matchedSub = subs.find((s) => {
+                const name = (s.name || '').toLowerCase();
+                return name.includes(normTitle) || normTitle.includes(name);
+              });
             }
+
+            if (!matchedSub && normServiceId) {
+              matchedSub = subs.find((s) => {
+                const name = (s.name || '').toLowerCase();
+                return name.includes(normServiceId) || normServiceId.includes(name);
+              });
+            }
+
+            if (!matchedSub && initialBrandId) {
+              matchedSub = subs.find((s) => s.brandId === initialBrandId);
+            }
+
             if (matchedSub) {
               setSelectedSubServiceIds([matchedSub.id]);
             }
           }
+        } else if (mains.length > 0 && !selectedMainServiceId) {
+          setSelectedMainServiceId(mains[0].id);
         }
       } catch (err) {
         console.error('Failed to load filtered services', err);
@@ -723,9 +754,15 @@ function SpaBookingWizard() {
                         type="date"
                         min={getLocalDateString()}
                         value={bookingDate}
+                        onKeyDown={(e) => e.preventDefault()}
                         onChange={(e) => {
-                          if (e.target.value) {
-                            setBookingDate(e.target.value);
+                          const val = e.target.value;
+                          const todayStr = getLocalDateString();
+                          if (val && val >= todayStr) {
+                            setBookingDate(val);
+                            setBookingTime('');
+                          } else if (val && val < todayStr) {
+                            setBookingDate(todayStr);
                             setBookingTime('');
                           }
                         }}
