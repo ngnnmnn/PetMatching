@@ -133,6 +133,14 @@ type Match = {
   };
 };
 
+type MatchMessage = {
+  id: string;
+  content: string;
+  senderId: string;
+  createdAt: string;
+  sender: { id: string; name: string; avatarUrl?: string | null };
+};
+
 type FilterState = {
   species: 'ALL' | 'DOG' | 'CAT';
   breed: string;
@@ -210,7 +218,10 @@ export default function UnifiedMatchingHubPage() {
   // Chat Window State
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [inputText, setInputText] = useState('');
-  const [chatMessages, setChatMessages] = useState<Record<string, { id: string; sender: string; text: string; time: string }[]>>({});
+  const [chatMessages, setChatMessages] = useState<Record<string, MatchMessage[]>>({});
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   // Male Pet Setup State
   const [isAvailable, setIsAvailable] = useState(false);
@@ -330,6 +341,28 @@ export default function UnifiedMatchingHubPage() {
     loadRequestsAndMatches();
   }, [loadRequestsAndMatches]);
 
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) return;
+    try {
+      setCurrentUserId((JSON.parse(storedUser) as { id?: string }).id || '');
+    } catch {
+      setCurrentUserId('');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMatch) return;
+    const matchId = selectedMatch.id;
+    setLoadingMessages(true);
+    const loadMessages = (showError = false) => api.get<MatchMessage[]>(`/matching/matches/${matchId}/messages`)
+      .then((res) => setChatMessages((prev) => ({ ...prev, [matchId]: res.data || [] })))
+      .catch(() => { if (showError) toast.error('Không tải được lịch sử trò chuyện.'); });
+    loadMessages(true).finally(() => setLoadingMessages(false));
+    const intervalId = window.setInterval(() => loadMessages(), 5000);
+    return () => window.clearInterval(intervalId);
+  }, [selectedMatch]);
+
   // Actions
   const handlePass = useCallback(async (candidateId: string) => {
     if (!selectedPetId) return;
@@ -398,6 +431,26 @@ export default function UnifiedMatchingHubPage() {
       toast.error('Không thể lưu cấu hình.');
     } finally {
       setSavingSetup(false);
+    }
+  };
+
+  const handleSendMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const input = form.querySelector('input');
+    const content = input?.value.trim() || inputText.trim();
+    if (!selectedMatch || !content || sendingMessage) return;
+    const matchId = selectedMatch.id;
+    setSendingMessage(true);
+    try {
+      const res = await api.post<MatchMessage>(`/matching/matches/${matchId}/messages`, { content });
+      setChatMessages((prev) => ({ ...prev, [matchId]: [...(prev[matchId] || []), res.data] }));
+      setInputText('');
+      form.reset();
+    } catch {
+      toast.error('Không thể gửi tin nhắn. Vui lòng thử lại.');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -794,10 +847,26 @@ export default function UnifiedMatchingHubPage() {
                       🎉 Hai bên đã ghép đôi thành công! Hãy trao đổi về thời gian và địa điểm phối giống.
                     </div>
                   </div>
-                  <div className="p-4 border-t flex gap-2">
+                  <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                    {loadingMessages && <p className="py-4 text-center text-xs text-muted-foreground">Đang tải lịch sử trò chuyện...</p>}
+                    {!loadingMessages && (chatMessages[selectedMatch.id] || []).length === 0 && (
+                      <p className="py-4 text-center text-xs text-muted-foreground">Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.</p>
+                    )}
+                    {(chatMessages[selectedMatch.id] || []).map((message) => (
+                      <div key={message.id} className={cn('flex flex-col', message.senderId === currentUserId ? 'items-end' : 'items-start')}>
+                        <span className="px-1 text-[10px] font-bold text-muted-foreground">
+                          {message.senderId === currentUserId ? 'Bạn' : message.sender.name} · {new Date(message.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <div className={cn('mt-1 max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2 text-sm', message.senderId === currentUserId ? 'bg-primary text-primary-foreground rounded-tr-none' : 'border bg-card rounded-tl-none')}>
+                          {message.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <form onSubmit={handleSendMessage} className="p-4 border-t flex gap-2">
                     <Input placeholder="Nhập tin nhắn..." className="rounded-xl" />
                     <Button className="rounded-xl font-bold shadow-md shadow-primary/20">Gửi</Button>
-                  </div>
+                  </form>
                 </div>
               )}
             </div>

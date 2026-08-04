@@ -222,6 +222,7 @@ model Match {
 model Message {
   id        String   @id @default(cuid())
   content   String
+  imageUrl  String?
   matchId   String
   senderId  String
   isRead    Boolean  @default(false)

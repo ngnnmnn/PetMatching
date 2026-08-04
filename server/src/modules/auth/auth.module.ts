@@ -15,7 +15,7 @@ import { MailModule } from '../../common/mail/mail.module';
     JwtModule.registerAsync({
       useFactory: () => ({
         secret: process.env.JWT_SECRET || 'your_secret_key_here',
-        signOptions: { expiresIn: '1h' },
+        signOptions: { expiresIn: '30m' },
       }),
     }),
   ],

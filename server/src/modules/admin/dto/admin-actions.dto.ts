@@ -23,7 +23,7 @@ export class UpdateUserRoleDto {
 }
 
 export class UpdateAccountStatusDto {
-  @IsEnum(AccountStatus)
+  @IsIn([AccountStatus.ACTIVE, AccountStatus.SUSPENDED])
   accountStatus!: AccountStatus;
 }
 

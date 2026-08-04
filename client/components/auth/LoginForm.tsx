@@ -28,6 +28,12 @@ export default function LoginForm() {
     : `${apiBaseUrl}/auth/google`;
 
   useEffect(() => {
+    const authNotice = sessionStorage.getItem("auth_notice");
+    if (authNotice) {
+      setError(authNotice);
+      sessionStorage.removeItem("auth_notice");
+    }
+
     const redirect = searchParams.get("redirect");
     if (redirect) {
       localStorage.setItem("login_redirect_url", redirect);
