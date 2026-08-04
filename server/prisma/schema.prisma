@@ -43,6 +43,7 @@ model User {
   reviews              ProductReview[]
   assignedSpaBookings  SpaBooking[]         @relation("SpaStaffBookings")
   spaBookings          SpaBooking[]
+  spaFeedbacks         SpaFeedback[]
   managedSpaCategories SpaCategory[]        @relation("SpaCategoryManager")
   spaStaffProfile      SpaStaff?            @relation("UserSpaStaffProfile")
   managedStores        Store[]              @relation("StoreManager")
@@ -502,11 +503,28 @@ model SpaBooking {
   service               SpaService?      @relation(fields: [serviceId], references: [id])
   staff                 User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
   user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedback              SpaFeedback?
 
   @@index([categoryId, status])
   @@index([userId])
   @@index([staffId])
   @@map("spa_bookings")
+}
+
+model SpaFeedback {
+  id           String     @id @default(cuid())
+  bookingId    String     @unique @map("booking_id")
+  userId       String     @map("user_id")
+  rateStaff    Int        @map("rate_staff")
+  rateServices Int        @map("rate_services")
+  comment      String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  booking      SpaBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("spa_feedbacks")
 }
 
 model Complaint {

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -57,6 +57,16 @@ export class SpaController {
   @Patch('bookings/:id/cancel')
   cancelBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.cancelBooking(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('bookings/:id/feedback')
+  createFeedback(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: CreateSpaFeedbackDto,
+  ) {
+    return this.spaService.createFeedback(req.user.id, bookingId, dto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -249,6 +259,18 @@ export class SpaController {
   @Get('manager/staffs')
   getManagerStaffs(@Req() req: AuthenticatedRequest, @Query('branchId') branchId: string) {
     return this.spaService.getManagerStaffs(req.user.id, branchId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Post('manager/staffs')
+  createManagerStaff(@Req() req: AuthenticatedRequest, @Body() dto: CreateStaffDto) {
+    return this.spaService.createManagerStaff(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Get('manager/feedbacks')
+  getManagerFeedbacks(@Req() req: AuthenticatedRequest, @Query('branchId') branchId?: string) {
+    return this.spaService.getManagerFeedbacks(req.user.id, branchId);
   }
 
   // =============================================================

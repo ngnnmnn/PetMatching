@@ -129,6 +129,13 @@ function SpaBookingWizard() {
   const [addresses, setAddresses] = useState<AddressSpaType[]>([]);
   const [pets, setPets] = useState<PetType[]>([]);
 
+  const getLocalDateString = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Selected Booking form state
   const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [customSpecies, setCustomSpecies] = useState<'DOG' | 'CAT'>('DOG');
@@ -137,7 +144,7 @@ function SpaBookingWizard() {
   const [selectedSubServiceIds, setSelectedSubServiceIds] = useState<string[]>([]);
 
   const [selectedAddressSpaId, setSelectedAddressSpaId] = useState<string>('');
-  const [bookingDate, setBookingDate] = useState<string>(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [bookingDate, setBookingDate] = useState<string>(getLocalDateString());
   const [bookingTime, setBookingTime] = useState<string>('');
   const [bookingNote, setBookingNote] = useState<string>('');
 
@@ -228,7 +235,7 @@ function SpaBookingWizard() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(d);
       const weekdayStr = weekdays[d.getDay()];
       const dayNum = d.getDate();
       days.push({ dateStr, weekdayStr, dayNum });
@@ -245,19 +252,44 @@ function SpaBookingWizard() {
   }, [selectedMainServiceId, selectedSubServiceIds, mainServices, subServices]);
 
   const filteredValidSlots = useMemo(() => {
+    const todayStr = getLocalDateString();
+    const isToday = bookingDate === todayStr;
+
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
     return availableSlots.filter((slot) => {
       // 1. Hide slot if no staff is available during this window
-      if (!slot.isAvailable || slot.remainingSlots <= 0) {
+      if (!slot.isAvailable || slot.remainingSlots <= 0 || !slot.availableStaffs || slot.availableStaffs.length === 0) {
         return false;
       }
 
-      // 2. Hide slot if completion time exceeds 18:00
+      // 2. Hide slot if start time < 09:00 or completion time exceeds 18:00
       const [h, m] = slot.time.split(':').map(Number);
       const startMins = h * 60 + m;
       const endMins = startMins + totalDurationMinutes;
-      return startMins >= 9 * 60 && endMins <= 18 * 60;
+      if (startMins < 9 * 60 || endMins > 18 * 60) {
+        return false;
+      }
+
+      // 3. If selected date is TODAY, only display time slots at or after current time (hour & minute)
+      if (isToday && startMins < currentMins) {
+        return false;
+      }
+
+      return true;
     });
-  }, [availableSlots, totalDurationMinutes]);
+  }, [availableSlots, totalDurationMinutes, bookingDate]);
+
+  // Auto-deselect selected booking time if it is no longer valid/available
+  useEffect(() => {
+    if (bookingTime) {
+      const isValid = filteredValidSlots.some((s) => s.time === bookingTime);
+      if (!isValid) {
+        setBookingTime('');
+      }
+    }
+  }, [filteredValidSlots, bookingTime]);
 
   useEffect(() => {
     const fetchSlots = async () => {
@@ -297,9 +329,7 @@ function SpaBookingWizard() {
           setSelectedPetId(myPets[0].id);
         }
 
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        setBookingDate(tomorrow.toISOString().split('T')[0]);
+        setBookingDate(getLocalDateString());
       } catch {
         toast.error('Không thể tải thông tin Spa. Vui lòng thử lại.');
       } finally {
@@ -691,7 +721,7 @@ function SpaBookingWizard() {
                       <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn ngày đặt lịch *</label>
                       <input
                         type="date"
-                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                        min={getLocalDateString()}
                         value={bookingDate}
                         onChange={(e) => {
                           if (e.target.value) {
@@ -706,8 +736,8 @@ function SpaBookingWizard() {
                     <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
                       {carouselDays.map((day) => {
                         const active = bookingDate === day.dateStr;
-                        const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-                        const isPast = day.dateStr < tomorrowStr;
+                        const todayStr = getLocalDateString();
+                        const isPast = day.dateStr < todayStr;
 
                         return (
                           <button
@@ -892,7 +922,7 @@ function SpaBookingWizard() {
   );
 }
 
-export default function SpaBookingWizardPage() {
+export default function SpaBooking() {
   return (
     <Suspense
       fallback={

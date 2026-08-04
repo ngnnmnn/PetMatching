@@ -13,7 +13,9 @@ const PRIVATE_ROUTES = [
   '/favorites',
   '/orders',
   '/profile',
-  '/spa',
+  '/spa/book',
+  '/spa/bookings',
+  '/spa/staff',
   '/admin',
   '/manager',
 ];
@@ -54,9 +56,14 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
             router.replace('/admin');
             return;
           }
-          if ((user.role === 'STORE_MANAGER' || user.role === 'SPA_MANAGER') && !pathname.startsWith('/manager')) {
+          if (user.role === 'STORE_MANAGER' && !pathname.startsWith('/manager')) {
             setAuthorized(false);
             router.replace('/manager');
+            return;
+          }
+          if (user.role === 'SPA_MANAGER' && !pathname.startsWith('/managerSpa')) {
+            setAuthorized(false);
+            router.replace('/managerSpa');
             return;
           }
           if (user.role === 'SPA_STAFF' && !pathname.startsWith('/spa/staff')) {

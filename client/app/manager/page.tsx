@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -99,6 +99,7 @@ function parseShippingAddress(addressStr: string) {
 }
 
 export default function ManagerDashboard() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
 
@@ -114,17 +115,21 @@ export default function ManagerDashboard() {
     }
   }, []);
 
-  if (!role) {
+  useEffect(() => {
+    if (role === 'SPA_MANAGER') {
+      router.replace('/managerSpa');
+    }
+  }, [role, router]);
+
+  if (!role || role === 'SPA_MANAGER') {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
-        <span className="ml-2 text-sm font-bold text-[var(--text-muted)]">Đang tải...</span>
+        <span className="ml-2 text-sm font-bold text-[var(--text-muted)]">
+          {role === 'SPA_MANAGER' ? 'Đang chuyển tới trang Quản lý Spa...' : 'Đang tải...'}
+        </span>
       </div>
     );
-  }
-
-  if (role === 'SPA_MANAGER') {
-    return <SpaManagerConsole currentTab={currentTab} managerUser={managerUser} />;
   }
 
   return <StoreManagerConsole currentTab={currentTab} />;
@@ -177,7 +182,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     loading: false,
   });
   const [isSaved, setIsSaved] = useState(false);
@@ -321,7 +326,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const matchesSearch =
         customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         order.id.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       let matchesStatus = false;
       if (filterStatus === 'ALL') {
         matchesStatus = true;
@@ -339,7 +344,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const filteredCustomers = useMemo(() => {
     let result = [...customers];
-    
+
     // 1. Filter new customers (0 total orders, even if cancelled)
     if (customerFilterNew === 'new') {
       result = result.filter(c => c.isNewCustomer);
@@ -348,7 +353,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     // 2. Search query (name, email, phone)
     if (customerSearch.trim()) {
       const query = customerSearch.toLowerCase();
-      result = result.filter(c => 
+      result = result.filter(c =>
         c.name.toLowerCase().includes(query) ||
         c.email.toLowerCase().includes(query) ||
         c.phone.includes(query)
@@ -442,7 +447,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
+
       let filename = 'danh_sach_don_hang';
       if (exportAllTime) {
         filename += '_toan_bo_thoi_gian';
@@ -462,7 +467,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Xuất file Excel thành công!');
       setIsExportModalOpen(false);
     } catch (err: any) {
@@ -616,8 +621,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setEditingProduct(product);
     if (product.specifications) {
       try {
-        const specs = typeof product.specifications === 'string' 
-          ? JSON.parse(product.specifications) 
+        const specs = typeof product.specifications === 'string'
+          ? JSON.parse(product.specifications)
           : product.specifications;
         const list = Object.entries(specs).map(([key, val]) => ({
           key,
@@ -727,7 +732,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
           setIsImportModalOpen(false);
           setImportFile(null);
           setImportImages([]);
-          
+
           if (folderName) {
             const importedFolders = JSON.parse(localStorage.getItem('imported_folders') || '[]');
             if (!importedFolders.includes(folderName)) {
@@ -933,7 +938,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Filter className="size-4 text-[#B0B0B0]" />
-              
+
               {/* Category Filter */}
               <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
                 <span className="text-gray-400">Danh mục:</span>
@@ -1020,8 +1025,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           <td className="px-6 py-4 text-right">
                             {(() => {
                               const currentPrice = p.salePrice ?? p.sellingPrice;
-                              const unitProfit = p.importPrice 
-                                ? currentPrice - p.importPrice 
+                              const unitProfit = p.importPrice
+                                ? currentPrice - p.importPrice
                                 : currentPrice * 0.5;
                               const margin = ((unitProfit / currentPrice) * 100).toFixed(0) + '%';
                               return (
@@ -1250,27 +1255,27 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                       />
                     </div>
-                     <div>
-                       <label className="block text-xs font-bold mb-1">Đơn vị tính *</label>
-                       <select
-                         required
-                         value={productForm.unit || ''}
-                         onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
-                         className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
-                       >
-                         <option value="">-- Chọn đơn vị tính --</option>
-                         {units.map((u) => (
-                           <option key={u.id} value={u.name}>
-                             {u.name}
-                           </option>
-                         ))}
-                       </select>
-                     </div>
+                    <div>
+                      <label className="block text-xs font-bold mb-1">Đơn vị tính *</label>
+                      <select
+                        required
+                        value={productForm.unit || ''}
+                        onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
+                        className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
+                      >
+                        <option value="">-- Chọn đơn vị tính --</option>
+                        {units.map((u) => (
+                          <option key={u.id} value={u.name}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold mb-1">Ảnh sản phẩm</label>
-                    
+
                     {/* Live Preview Box */}
                     {productForm.imageUrl && (
                       <div className="relative mb-3 aspect-video w-full max-w-[200px] overflow-hidden rounded-xl border border-[#EFEAE2] bg-gray-50">
@@ -1596,7 +1601,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                               } catch (err: any) {
                                                 toast.error(err.response?.data?.message || 'Không thể xóa đơn vị tính.');
                                               } finally {
-                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                                               }
                                             }
                                           });
@@ -1708,7 +1713,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                   {/* Category List Scrollable Content */}
                   <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                    
+
                     {/* List of existing categories */}
                     <div className="border border-[#EFEAE2] rounded-2xl overflow-hidden bg-[#FAF9F7]">
                       <table className="w-full text-left text-xs font-semibold">
@@ -1761,7 +1766,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                                 console.error(err);
                                                 toast.error(err.response?.data?.message || 'Lỗi khi cập nhật danh mục.');
                                               } finally {
-                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                                               }
                                             }
                                           });
@@ -1814,7 +1819,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                                 console.error(err);
                                                 toast.error(err.response?.data?.message || 'Không thể xóa danh mục.');
                                               } finally {
-                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                                               }
                                             }
                                           });
@@ -1861,7 +1866,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 console.error(error);
                                 toast.error(error.response?.data?.message || 'Lỗi khi tạo danh mục mới.');
                               } finally {
-                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                               }
                             }
                           });
@@ -1934,7 +1939,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   >
                     <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-                  
+
                   {/* Header */}
                   <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
                     <div className="flex items-center gap-3">
@@ -1981,7 +1986,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </div>
                             <span className="text-[11px] text-gray-400 font-extrabold block mt-1.5">{feedbacks.length} đánh giá khách hàng</span>
                           </div>
-                          
+
                           <div className="md:col-span-2 text-xs text-gray-500 space-y-1.5 font-bold">
                             {[5, 4, 3, 2, 1].map((stars) => {
                               const count = feedbacks.filter((f) => f.rating === stars).length;
@@ -2169,7 +2174,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             const files = Array.from(e.target.files || []);
                             const excel = files.find(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
                             const images = files.filter(f => f.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name));
-                            
+
                             if (!excel) {
                               toast.error('Không tìm thấy file Excel (.xlsx hoặc .xls) trong thư mục bạn chọn!');
                               setImportFile(null);
@@ -2199,13 +2204,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             <Upload className="size-8 text-gray-400 mx-auto animate-bounce" />
                           )}
                           <p className="text-sm font-bold text-gray-600">
-                            {importFile 
-                              ? `Thư mục: ${(importFile as any).webkitRelativePath?.split('/')[0] || ''}` 
+                            {importFile
+                              ? `Thư mục: ${(importFile as any).webkitRelativePath?.split('/')[0] || ''}`
                               : 'Tải lên thư mục hóa đơn tương ứng'}
                           </p>
                           <p className="text-[10px] text-gray-400 font-medium">
-                            {importImages.length > 0 
-                              ? `Đã nhận diện file Excel: ${importFile?.name} và ${importImages.length} ảnh sản phẩm` 
+                            {importImages.length > 0
+                              ? `Đã nhận diện file Excel: ${importFile?.name} và ${importImages.length} ảnh sản phẩm`
                               : 'Chọn thư mục chứa file Excel và các thư mục ảnh con'}
                           </p>
                         </div>
@@ -2408,11 +2413,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         >
                           <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
                             {!o.ghnOrderCode &&
-                            o.status !== 'CANCELLED' &&
-                            o.status !== 'SHIPPED' &&
-                            o.status !== 'DELIVERED' &&
-                            o.refundStatus !== 'PENDING' &&
-                            o.refundStatus !== 'REFUNDED' ? (
+                              o.status !== 'CANCELLED' &&
+                              o.status !== 'SHIPPED' &&
+                              o.status !== 'DELIVERED' &&
+                              o.refundStatus !== 'PENDING' &&
+                              o.refundStatus !== 'REFUNDED' ? (
                               <input
                                 type="checkbox"
                                 checked={selectedOrderIds.includes(o.id)}
@@ -2584,11 +2589,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 >
                   <X className="size-5" />
                 </button>
-                
+
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
                   Chi tiết đơn hàng: {selectedOrderDetails.id}
                 </h3>
-                
+
                 {/* Delivery Info */}
                 {(() => {
                   const info = parseShippingAddress(selectedOrderDetails.shippingAddress);
@@ -2610,7 +2615,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
                   );
                 })()}
-                
+
                 {/* Order Items Table */}
                 <div className="overflow-hidden rounded-xl border border-[#EFEAE2]">
                   <table className="w-full text-left border-collapse text-xs">
@@ -2710,7 +2715,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-between items-center pt-2 border-t">
                   {selectedOrderDetails.refundStatus === 'PENDING' || selectedOrderDetails.refundStatus === 'FAILED' ? (
                     <div className="flex gap-2">
@@ -3081,7 +3086,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   >
                     <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-                  
+
                   {/* Header */}
                   <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
                     <div className="flex items-center gap-3">
@@ -3135,7 +3140,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <h4 className="text-xs font-black text-[#8A8980] uppercase tracking-wider">
                         Lịch sử đơn hàng ({selectedCustomer.orders?.length || 0})
                       </h4>
-                      
+
                       {selectedCustomer.orders && selectedCustomer.orders.length > 0 ? (
                         <div className="space-y-4">
                           {selectedCustomer.orders.map((order: any) => (
@@ -3160,19 +3165,19 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                   <span className={cn(
                                     "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
                                     order.status === 'DELIVERED' ? "bg-green-50 text-green-700 border-green-100" :
-                                    order.status === 'CANCELLED' ? "bg-red-50 text-red-700 border-red-100" :
-                                    order.status === 'PROCESSING' ? "bg-blue-50 text-blue-700 border-blue-100" :
-                                    order.status === 'SHIPPED' ? "bg-purple-50 text-purple-700 border-purple-100" :
-                                    "bg-gray-50 text-gray-700 border-gray-100"
+                                      order.status === 'CANCELLED' ? "bg-red-50 text-red-700 border-red-100" :
+                                        order.status === 'PROCESSING' ? "bg-blue-50 text-blue-700 border-blue-100" :
+                                          order.status === 'SHIPPED' ? "bg-purple-50 text-purple-700 border-purple-100" :
+                                            "bg-gray-50 text-gray-700 border-gray-100"
                                   )}>
                                     {order.status === 'DELIVERED' ? 'Hoàn thành' :
-                                     order.status === 'CANCELLED' ? 'Đã hủy' :
-                                     order.status === 'PROCESSING' ? 'Đang xử lý' :
-                                     order.status === 'SHIPPED' ? 'Đang giao' :
-                                     order.status === 'EXPIRED' ? 'Hết hạn' :
-                                     order.status === 'PAYMENT_ERROR' ? 'Lỗi thanh toán' :
-                                     order.status === 'PENDING' ? 'Chờ thanh toán' :
-                                     order.status}
+                                      order.status === 'CANCELLED' ? 'Đã hủy' :
+                                        order.status === 'PROCESSING' ? 'Đang xử lý' :
+                                          order.status === 'SHIPPED' ? 'Đang giao' :
+                                            order.status === 'EXPIRED' ? 'Hết hạn' :
+                                              order.status === 'PAYMENT_ERROR' ? 'Lỗi thanh toán' :
+                                                order.status === 'PENDING' ? 'Chờ thanh toán' :
+                                                  order.status}
                                   </span>
                                 </div>
                               </div>
@@ -3498,2073 +3503,4 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         </div>
       );
   }
-}
-
-// =============================================================
-// SPA MANAGER CONSOLE COMPONENT
-// =============================================================
-
-function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; managerUser: any }) {
-  // states
-  const [branches, setBranches] = useState<any[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
-  const [stats, setStats] = useState<any>(null);
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
-  const [staffs, setStaffs] = useState<any[]>([]);
-  const [managerBrands, setManagerBrands] = useState<any[]>([]);
-  
-  // Date and slot states
-  const [slotDate, setSlotDate] = useState<string>('');
-  const [slotsData, setSlotsData] = useState<any[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
-
-  // Assignment & Detail states
-  const [selectedBookingDetail, setSelectedBookingDetail] = useState<any | null>(null);
-  const [managerStaffs, setManagerStaffs] = useState<any[]>([]);
-  const [availableStaffsMap, setAvailableStaffsMap] = useState<Record<string, any[]>>({});
-  const [selectedAssignStaffMap, setSelectedAssignStaffMap] = useState<Record<string, string>>({});
-  const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
-  const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
-  const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
-
-  // Helper to resolve subServices for any booking in Manager view
-  const getManagerBookingSubServices = (b: any) => {
-    if (!b) return [];
-    if (b.subServices && b.subServices.length > 0) {
-      return b.subServices;
-    }
-    if (b.subServiceIds && b.subServiceIds.length > 0 && services.length > 0) {
-      return b.subServiceIds
-        .map((id: string) => services.find((s: any) => s.id === id))
-        .filter(Boolean);
-    }
-    return [];
-  };
-
-  // Reschedule states
-  const [rescheduleBooking, setRescheduleBooking] = useState<any | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState<string>('');
-  const [rescheduleSlots, setRescheduleSlots] = useState<any[]>([]);
-  const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState<boolean>(false);
-  const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<string>('');
-  const [submittingReschedule, setSubmittingReschedule] = useState<boolean>(false);
-
-  // Service modal states
-  const [serviceModalOpen, setServiceModalOpen] = useState<boolean>(false);
-  const [editingService, setEditingService] = useState<any | null>(null);
-  const [serviceForm, setServiceForm] = useState({
-    brandId: '',
-    name: '',
-    description: '',
-    price: '',
-    durationMin: '60',
-    durationMax: '',
-    isMain: true,
-    species: 'ALL' as 'ALL' | 'DOG' | 'CAT',
-    petWeightMin: '',
-    petWeightMax: '',
-    isActive: true
-  });
-  const [submittingService, setSubmittingService] = useState<boolean>(false);
-
-  // Booking search and filters
-  const [bookingSearch, setBookingSearch] = useState<string>('');
-  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('ALL');
-
-  // Service filters
-  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>('ALL');
-  const [serviceBrandFilter, setServiceBrandFilter] = useState<string>('ALL');
-
-  // Category modal & filter states
-  const [categoryModalOpen, setCategoryModalOpen] = useState<boolean>(false);
-  const [editingCategory, setEditingCategory] = useState<any | null>(null);
-  const [categoryForm, setCategoryForm] = useState({
-    name: '',
-    description: '',
-    isMain: true,
-    status: 'ACTIVE' as 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED'
-  });
-  const [submittingCategory, setSubmittingCategory] = useState<boolean>(false);
-  const [categoryTypeFilter, setCategoryTypeFilter] = useState<string>('ALL');
-
-  const filteredServices = useMemo(() => {
-    return services.filter((s: any) => {
-      if (serviceTypeFilter === 'MAIN' && !s.isMain) return false;
-      if (serviceTypeFilter === 'SUB' && s.isMain) return false;
-      if (serviceBrandFilter !== 'ALL' && (s.categoryId || s.brandId) !== serviceBrandFilter) return false;
-      return true;
-    });
-  }, [services, serviceTypeFilter, serviceBrandFilter]);
-
-  // Filter SpaBrand options in form based on selected classification (isMain)
-  const filteredBrandsForForm = useMemo(() => {
-    return managerBrands.filter((b: any) => {
-      if (serviceForm.isMain) {
-        return b.isMain !== false;
-      } else {
-        return b.isMain === false;
-      }
-    });
-  }, [managerBrands, serviceForm.isMain]);
-
-  const handleClassificationChange = (isMainSelected: boolean) => {
-    const matchingBrands = managerBrands.filter((b: any) =>
-      isMainSelected ? b.isMain !== false : b.isMain === false
-    );
-
-    const currentBrandValid = matchingBrands.some((b: any) => b.id === serviceForm.brandId);
-    const newBrandId = currentBrandValid ? serviceForm.brandId : (matchingBrands[0]?.id || '');
-
-    setServiceForm((prev) => ({
-      ...prev,
-      isMain: isMainSelected,
-      brandId: newBrandId,
-    }));
-  };
-
-  useEffect(() => {
-    // Set default slot date to today
-    setSlotDate(new Date().toISOString().split('T')[0]);
-  }, []);
-
-  // Fetch branches and categories managed by this manager
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const [branchesRes, categoriesRes] = await Promise.all([
-          spaApi.getManagerBranches(),
-          spaApi.getManagerCategories(),
-        ]);
-        const bData = branchesRes.data || [];
-        setBranches(bData);
-        setManagerBrands(categoriesRes.data || []);
-        if (bData.length > 0) {
-          setSelectedBranchId(bData[0].id);
-        } else {
-          setLoading(false);
-        }
-      } catch (err) {
-        toast.error('Lỗi khi tải thông tin quản lý.');
-        setLoading(false);
-      }
-    };
-    fetchInitialData();
-  }, []);
-
-  // Fetch data based on active tab and selected branch
-  const refreshData = async () => {
-    // For tabs that don't need a branch (categories, services), don't block on selectedBranchId
-    const needsBranch = ['dashboard', 'bookings', 'staffs', 'slots'].includes(currentTab);
-    if (needsBranch && !selectedBranchId) return;
-    setLoading(true);
-    try {
-      if (currentTab === 'dashboard') {
-        const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId);
-        setStats(statsRes.data);
-        
-        // Auto fetch available staffs for confirmed bookings
-        const todayBookings = statsRes.data?.todayBookings || [];
-        const confirmed = todayBookings.filter((b: any) => b.status === 'CONFIRMED');
-        const staffMap: Record<string, any[]> = {};
-        for (const b of confirmed) {
-          try {
-            const stRes = await spaApi.getAvailableStaffForBooking(b.id);
-            staffMap[b.id] = stRes.data || [];
-          } catch (e) {
-            console.error(e);
-          }
-        }
-        setAvailableStaffsMap(staffMap);
-
-      } else if (currentTab === 'bookings') {
-        const [bookingsRes, staffsRes, servicesRes] = await Promise.all([
-          spaApi.getManagerBookings(selectedBranchId),
-          spaApi.getManagerStaffs(selectedBranchId).catch(() => ({ data: [] })),
-          spaApi.getServices().catch(() => ({ data: [] })),
-        ]);
-        setBookings(bookingsRes.data || []);
-        setManagerStaffs(staffsRes.data || []);
-        if (servicesRes.data) setServices(servicesRes.data);
-      } else if (currentTab === 'services') {
-        const servicesRes = await spaApi.getManagerServices();
-        setServices(servicesRes.data || []);
-      } else if (currentTab === 'categories') {
-        const categoriesRes = await spaApi.getManagerCategories();
-        setManagerBrands(categoriesRes.data || []);
-      } else if (currentTab === 'staffs') {
-        const staffsRes = await spaApi.getManagerStaffs(selectedBranchId);
-        setStaffs(staffsRes.data || []);
-      }
-    } catch (err) {
-      toast.error('Không thể tải dữ liệu.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    refreshData();
-  }, [selectedBranchId, currentTab]);
-
-  // Fetch slots data when slots tab date changes
-  useEffect(() => {
-    const fetchSlots = async () => {
-      if (!selectedBranchId || !slotDate || currentTab !== 'slots') return;
-      setLoadingSlots(true);
-      try {
-        const res = await spaApi.getAvailability(selectedBranchId, slotDate);
-        setSlotsData(res.data || []);
-      } catch (err) {
-        toast.error('Lỗi khi tải danh sách khung giờ.');
-      } finally {
-        setLoadingSlots(false);
-      }
-    };
-    fetchSlots();
-  }, [selectedBranchId, slotDate, currentTab]);
-
-  // Fetch slots for reschedule when date changes
-  useEffect(() => {
-    const fetchRescheduleSlots = async () => {
-      if (!rescheduleBooking || !rescheduleDate) return;
-      setLoadingRescheduleSlots(true);
-      try {
-        const duration = rescheduleBooking.service?.durationMin || 30;
-        const res = await spaApi.getAvailability(selectedBranchId, rescheduleDate, duration);
-        setRescheduleSlots(res.data || []);
-      } catch (err) {
-        toast.error('Lỗi khi tải khung giờ khả dụng.');
-      } finally {
-        setLoadingRescheduleSlots(false);
-      }
-    };
-    fetchRescheduleSlots();
-  }, [rescheduleBooking, rescheduleDate]);
-
-  // Confirm booking to CONFIRMED
-  const handleConfirmBooking = async (bookingId: string) => {
-    try {
-      await spaApi.confirmBooking(bookingId);
-      toast.success('Xác nhận lịch hẹn thành công!');
-      
-      // Load available staff immediately
-      const stRes = await spaApi.getAvailableStaffForBooking(bookingId);
-      setAvailableStaffsMap(prev => ({ ...prev, [bookingId]: stRes.data || [] }));
-
-      // Refresh page data
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi xác nhận lịch hẹn.');
-    }
-  };
-
-  // Assign staff to booking
-  const handleAssignStaff = async () => {
-    if (!assignConfirmBooking || !assignConfirmStaff) return;
-    setAssigningLoading(true);
-    try {
-      await spaApi.assignStaff(assignConfirmBooking.id, assignConfirmStaff.id);
-      toast.success(`Đã phân công lịch hẹn cho ${assignConfirmStaff.name}!`);
-      setAssignConfirmBooking(null);
-      setAssignConfirmStaff(null);
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi phân công nhân viên.');
-    } finally {
-      setAssigningLoading(false);
-    }
-  };
-
-  // Reschedule booking submission
-  const handleRescheduleSubmit = async () => {
-    if (!rescheduleBooking || !rescheduleDate || !selectedRescheduleSlot) {
-      toast.error('Vui lòng chọn đầy đủ ngày và giờ.');
-      return;
-    }
-    setSubmittingReschedule(true);
-    try {
-      const scheduledAt = `${rescheduleDate}T${selectedRescheduleSlot}:00`;
-      await spaApi.rescheduleBooking(rescheduleBooking.id, scheduledAt);
-      toast.success('Đổi lịch hẹn của khách hàng thành công!');
-      setRescheduleBooking(null);
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi đổi lịch hẹn.');
-    } finally {
-      setSubmittingReschedule(false);
-    }
-  };
-
-  // Apply late discount 10%
-  const handleApplyLateDiscount = async (bookingId: string) => {
-    try {
-      await spaApi.applyLateDiscount(bookingId);
-      toast.success('Đã tự động giảm 10% giá đơn hàng do trễ hẹn!');
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi áp dụng giảm giá.');
-    }
-  };
-
-  // Weight change handlers with instant validation and auto-adjust
-  const handleMinWeightChange = (val: string) => {
-    if (val === '') {
-      setServiceForm((prev) => ({ ...prev, petWeightMin: '' }));
-      return;
-    }
-    const minNum = parseFloat(val);
-    const maxNum = parseFloat(serviceForm.petWeightMax);
-
-    if (!isNaN(minNum) && !isNaN(maxNum) && minNum > maxNum) {
-      toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn cân nặng tối đa (max)! Đã tự động điều chỉnh max = min');
-      setServiceForm((prev) => ({
-        ...prev,
-        petWeightMin: val,
-        petWeightMax: val,
-      }));
-      return;
-    }
-
-    setServiceForm((prev) => ({ ...prev, petWeightMin: val }));
-  };
-
-  const handleMaxWeightChange = (val: string) => {
-    if (val === '') {
-      setServiceForm((prev) => ({ ...prev, petWeightMax: '' }));
-      return;
-    }
-    const maxNum = parseFloat(val);
-    const minNum = parseFloat(serviceForm.petWeightMin);
-
-    if (!isNaN(minNum) && !isNaN(maxNum) && maxNum < minNum) {
-      toast.error(`Cân nặng tối đa (${maxNum}kg) phải lớn hơn hoặc bằng cân nặng tối thiểu (${minNum}kg)!`);
-      setServiceForm((prev) => ({ ...prev, petWeightMax: String(minNum) }));
-      return;
-    }
-
-    setServiceForm((prev) => ({ ...prev, petWeightMax: val }));
-  };
-
-  // Service submit with complete field validation
-  const handleServiceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // 1. Validate Brand
-    if (!serviceForm.brandId) {
-      toast.error('Vui lòng chọn Thương hiệu Spa!');
-      return;
-    }
-
-    // 2. Validate Service Name
-    if (!serviceForm.name || serviceForm.name.trim().length < 2) {
-      toast.error('Vui lòng nhập Tên dịch vụ (tối thiểu 2 ký tự)!');
-      return;
-    }
-
-    // 3. Validate Price
-    const priceNum = Number(serviceForm.price);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      toast.error('Vui lòng nhập Giá dịch vụ hợp lệ (lớn hơn 0đ)!');
-      return;
-    }
-
-    // 4. Validate Single Duration
-    const durationNum = Number(serviceForm.durationMin);
-    if (isNaN(durationNum) || durationNum < 10) {
-      toast.error('Thời gian thực hiện phải từ 10 phút trở lên!');
-      return;
-    }
-
-    // 5. Validate Weight Range
-    const weightMinNum = serviceForm.petWeightMin ? Number(serviceForm.petWeightMin) : null;
-    const weightMaxNum = serviceForm.petWeightMax ? Number(serviceForm.petWeightMax) : null;
-
-    if (weightMinNum !== null && weightMinNum < 0) {
-      toast.error('Cân nặng tối thiểu không được nhỏ hơn 0kg!');
-      return;
-    }
-
-    if (weightMinNum !== null && weightMaxNum !== null && weightMinNum > weightMaxNum) {
-      toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn hoặc bằng cân nặng tối đa (max)!');
-      return;
-    }
-
-    setSubmittingService(true);
-    try {
-      const data = {
-        brandId: serviceForm.brandId,
-        name: serviceForm.name.trim(),
-        description: serviceForm.description ? serviceForm.description.trim() : undefined,
-        price: priceNum,
-        durationMin: durationNum,
-        durationMax: durationNum,
-        isMain: serviceForm.isMain,
-        species: serviceForm.species === 'ALL' ? undefined : serviceForm.species,
-        petWeightMin: weightMinNum !== null ? weightMinNum : undefined,
-        petWeightMax: weightMaxNum !== null ? weightMaxNum : undefined,
-        isActive: serviceForm.isActive
-      };
-
-      if (editingService) {
-        await spaApi.updateManagerService(editingService.id, data);
-        toast.success('Cập nhật dịch vụ thành công!');
-      } else {
-        await spaApi.createManagerService(data);
-        toast.success('Thêm dịch vụ mới thành công!');
-      }
-      setServiceModalOpen(false);
-      setEditingService(null);
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi lưu dịch vụ.');
-    } finally {
-      setSubmittingService(false);
-    }
-  };
-
-  // Open edit service modal
-  const handleEditServiceClick = (service: any) => {
-    setEditingService(service);
-    setServiceForm({
-      brandId: service.brandId || (managerBrands[0]?.id || ''),
-      name: service.name,
-      description: service.description || '',
-      price: String(service.price),
-      durationMin: String(service.durationMin || 60),
-      durationMax: service.durationMax ? String(service.durationMax) : '',
-      isMain: service.isMain ?? true,
-      species: service.species || 'ALL',
-      petWeightMin: service.petWeightMin !== null && service.petWeightMin !== undefined ? String(service.petWeightMin) : '',
-      petWeightMax: service.petWeightMax !== null && service.petWeightMax !== undefined ? String(service.petWeightMax) : '',
-      isActive: service.isActive ?? true
-    });
-    setServiceModalOpen(true);
-  };
-
-  // Open add service modal
-  const handleAddServiceClick = () => {
-    setEditingService(null);
-    const defaultMainBrand = managerBrands.find((b: any) => b.isMain !== false);
-    const brandId = defaultMainBrand ? defaultMainBrand.id : (managerBrands[0]?.id || '');
-    setServiceForm({
-      brandId,
-      name: '',
-      description: '',
-      price: '',
-      durationMin: '60',
-      durationMax: '60',
-      isMain: true,
-      species: 'ALL',
-      petWeightMin: '',
-      petWeightMax: '',
-      isActive: true
-    });
-    setServiceModalOpen(true);
-  };
-
-  // Category Handlers
-  const handleAddCategoryClick = () => {
-    setEditingCategory(null);
-    setCategoryForm({
-      name: '',
-      description: '',
-      isMain: true,
-      status: 'ACTIVE',
-    });
-    setCategoryModalOpen(true);
-  };
-
-  const handleEditCategoryClick = (cat: any) => {
-    setEditingCategory(cat);
-    setCategoryForm({
-      name: cat.name || '',
-      description: cat.description || '',
-      isMain: cat.isMain ?? true,
-      status: cat.status || 'ACTIVE',
-    });
-    setCategoryModalOpen(true);
-  };
-
-  const handleCategorySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!categoryForm.name || categoryForm.name.trim().length < 2) {
-      toast.error('Vui lòng nhập Tên danh mục (tối thiểu 2 ký tự)!');
-      return;
-    }
-
-    setSubmittingCategory(true);
-    try {
-      const data = {
-        name: categoryForm.name.trim(),
-        description: categoryForm.description ? categoryForm.description.trim() : undefined,
-        isMain: categoryForm.isMain,
-        status: categoryForm.status,
-      };
-
-      if (editingCategory) {
-        await spaApi.updateManagerCategory(editingCategory.id, data);
-        toast.success('Cập nhật danh mục thành công!');
-      } else {
-        await spaApi.createManagerCategory(data);
-        toast.success('Thêm danh mục mới thành công!');
-      }
-      setCategoryModalOpen(false);
-      setEditingCategory(null);
-      const res = await spaApi.getManagerCategories();
-      setManagerBrands(res.data || []);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi lưu danh mục.');
-    } finally {
-      setSubmittingCategory(false);
-    }
-  };
-
-  const handleDeleteCategoryClick = async (cat: any) => {
-    if (cat._count?.services > 0) {
-      toast.error(`Không thể xóa danh mục đang có ${cat._count.services} dịch vụ!`);
-      return;
-    }
-    if (!confirm(`Bạn có chắc chắn muốn xóa danh mục "${cat.name}"?`)) return;
-
-    try {
-      await spaApi.deleteManagerCategory(cat.id);
-      toast.success('Xóa danh mục thành công!');
-      const res = await spaApi.getManagerCategories();
-      setManagerBrands(res.data || []);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể xóa danh mục.');
-    }
-  };
-
-  // Filter bookings list
-  const filteredBookings = bookings.filter(b => {
-    const sName = b.service?.name || '';
-    const cName = b.user?.name || '';
-    const matchesSearch = sName.toLowerCase().includes(bookingSearch.toLowerCase()) || 
-                          cName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-                          b.id.toLowerCase().includes(bookingSearch.toLowerCase());
-    
-    const matchesStatus = bookingStatusFilter === 'ALL' || b.status === bookingStatusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  if (branches.length === 0 && !loading) {
-    return (
-      <div className="flex h-64 flex-col items-center justify-center space-y-4">
-        <AlertCircle className="size-12 text-red-500" />
-        <p className="text-sm font-black text-gray-700">Tài khoản này chưa được phân công quản lý chi nhánh Spa nào.</p>
-        <p className="text-xs text-gray-500">Vui lòng liên hệ Admin để gán quản lý chi nhánh trong AddressSpa.</p>
-      </div>
-    );
-  }
-
-  // Display branches names under name
-  const branchNames = branches.map(b => b.name).join(', ');
-
-  return (
-    <div className="space-y-6">
-      
-      {/* Dynamic Purple Header */}
-      <section className="bg-primary text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <span className="text-xs text-orange-200 block uppercase tracking-wider font-extrabold">Spa Manager</span>
-          <h2 className="text-2xl font-black">{managerUser?.name || 'Nguyễn Thị Mai'}</h2>
-          <p className="text-xs text-orange-100 mt-1 font-medium flex items-center gap-1">
-            📍 Quản lý: <span className="font-bold">{branchNames || 'Chi nhánh Spa'}</span>
-          </p>
-        </div>
-        
-        {/* Branch switcher dropdown if multiple branches */}
-        {branches.length > 1 && (
-          <div className="bg-white/10 border border-white/20 rounded-xl px-3 py-1.5 flex items-center gap-2">
-            <span className="text-xs font-bold text-orange-100">Chi nhánh hiển thị:</span>
-            <select
-              value={selectedBranchId}
-              onChange={(e) => setSelectedBranchId(e.target.value)}
-              className="bg-transparent border-0 font-bold text-white text-xs focus:ring-0 focus:outline-none cursor-pointer"
-            >
-              {branches.map(b => (
-                <option key={b.id} value={b.id} className="text-gray-900 font-semibold">{b.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </section>
-
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="size-8 animate-spin text-primary" />
-          <span className="ml-2 text-sm font-bold text-gray-500">Đang tải dữ liệu Spa...</span>
-        </div>
-      ) : (
-        <>
-          {/* TAB CONTENT: DASHBOARD */}
-          {(currentTab === 'dashboard' || !currentTab) && stats && (
-            <div className="space-y-6 animate-fadeIn">
-              
-              {/* Metrics cards row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Metric 1 */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-black uppercase text-[#8A8980]">Lịch hẹn hôm nay</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-2xl font-black text-gray-900">{stats.todayBookingsCount}</p>
-                      {stats.unconfirmedBookingsCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = new URL(window.location.href);
-                            url.searchParams.set('tab', 'bookings');
-                            window.history.pushState({}, '', url.toString());
-                            window.dispatchEvent(new Event('popstate'));
-                          }}
-                          className="text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded-full shadow-2xs transition cursor-pointer flex items-center gap-1"
-                        >
-                          🚨 {stats.unconfirmedBookingsCount} cần xác nhận ➔
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="size-10 rounded-full bg-orange-55 shadow-inner flex items-center justify-center text-primary shrink-0">
-                    <Calendar className="size-5" />
-                  </div>
-                </div>
-                {/* Metric 2 */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Hoàn thành</span>
-                    <p className="text-2xl font-black text-gray-900 mt-1">{stats.completedBookingsCount}</p>
-                  </div>
-                  <div className="size-10 rounded-full bg-green-50 shadow-inner flex items-center justify-center text-green-600">
-                    <CheckCircle2 className="size-5" />
-                  </div>
-                </div>
-                {/* Metric 3 */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Doanh thu</span>
-                    <p className="text-2xl font-black text-gray-900 mt-1">{(stats.totalRevenue).toLocaleString('vi-VN')}đ</p>
-                  </div>
-                  <div className="size-10 rounded-full bg-purple-50 shadow-inner flex items-center justify-center text-purple-700">
-                    <TrendingUp className="size-5" />
-                  </div>
-                </div>
-                {/* Metric 4 */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Nhân viên</span>
-                    <p className="text-2xl font-black text-gray-900 mt-1">{stats.staffCount}</p>
-                  </div>
-                  <div className="size-10 rounded-full bg-blue-50 shadow-inner flex items-center justify-center text-blue-600">
-                    <Users className="size-5" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Charts row */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
-                {/* Revenue by Service custom chart */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-7 space-y-4">
-                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Doanh thu theo dịch vụ</h3>
-                  <div className="space-y-3.5 pt-2">
-                    {stats.revenueByService && stats.revenueByService.length > 0 ? (
-                      stats.revenueByService.map((item: any, idx: number) => {
-                        const maxVal = Math.max(...stats.revenueByService.map((x: any) => x.value), 1);
-                        const percent = (item.value / maxVal) * 100;
-                        return (
-                          <div key={idx} className="space-y-1.5">
-                            <div className="flex justify-between text-xs font-bold text-gray-700">
-                              <span>{item.name}</span>
-                              <span className="text-primary">{item.value.toLocaleString('vi-VN')}đ</span>
-                            </div>
-                            <div className="h-6 w-full bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                style={{ width: `${percent}%` }}
-                                className="h-full bg-primary rounded-full transition-all duration-500 shadow-sm"
-                              />
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-xs text-gray-400 py-6 text-center">Chưa có doanh thu nào để vẽ biểu đồ.</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Status distribution custom chart */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-5 space-y-4">
-                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Phân bổ trạng thái lịch hẹn</h3>
-                  <div className="space-y-3 pt-2">
-                    {stats.statusDistribution && stats.statusDistribution.length > 0 ? (
-                      stats.statusDistribution.map((item: any, idx: number) => {
-                        const total = stats.statusDistribution.reduce((acc: number, x: any) => acc + x.value, 0);
-                        const percent = ((item.value / total) * 100).toFixed(0);
-                        const displayStatus = {
-                          PENDING: { label: 'Đang xử lý', color: 'bg-amber-500' },
-                          CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
-                          ASSIGNED: { label: 'Đã phân công', color: 'bg-indigo-500' },
-                          IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
-                          COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
-                          CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
-                          NO_SHOW: { label: 'No Show', color: 'bg-gray-500' },
-                          LATE: { label: 'Trễ hẹn', color: 'bg-rose-500' }
-                        }[item.status as string] || { label: item.status, color: 'bg-gray-400' };
-
-                        return (
-                          <div key={idx} className="space-y-1.5">
-                            <div className="flex justify-between text-xs font-bold text-gray-700">
-                              <span className="flex items-center gap-1.5">
-                                <span className={`size-2.5 rounded-full ${displayStatus.color}`} />
-                                {displayStatus.label}
-                              </span>
-                              <span>{item.value} ({percent}%)</span>
-                            </div>
-                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                style={{ width: `${percent}%` }}
-                                className={`h-full ${displayStatus.color} rounded-full`}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-xs text-gray-400 py-6 text-center">Chưa có dữ liệu phân bổ trạng thái.</p>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Today's Booking table */}
-              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-gray-150 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Lịch hẹn hôm nay ({stats.todayBookings?.length || 0})</h3>
-                  {stats.unconfirmedBookingsCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('tab', 'bookings');
-                        window.history.pushState({}, '', url.toString());
-                        window.dispatchEvent(new Event('popstate'));
-                      }}
-                      className="text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
-                    >
-                      <AlertCircle className="size-3.5 text-amber-600" />
-                      {stats.unconfirmedBookingsCount} lịch hẹn cần xác nhận (Chuyển qua trang lịch hẹn ➔)
-                    </button>
-                  )}
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
-                        <th className="px-6 py-3.5">Giờ</th>
-                        <th className="px-6 py-3.5">Khách hàng / Bé</th>
-                        <th className="px-6 py-3.5">Dịch vụ</th>
-                        <th className="px-6 py-3.5">Ghi chú</th>
-                        <th className="px-6 py-3.5 text-center">Trạng thái</th>
-                        <th className="px-6 py-3.5 text-center">Phân công nhân viên</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {stats.todayBookings && stats.todayBookings.length > 0 ? (
-                        stats.todayBookings.map((b: any) => {
-                          const timeStr = new Date(b.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                          const statusStyle = {
-                            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
-                            CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
-                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                            IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
-                            COMPLETED: 'bg-green-50 text-green-700 border-green-200',
-                            CANCELLED: 'bg-red-50 text-red-700 border-red-200',
-                            NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
-                            LATE: 'bg-rose-50 text-rose-705 border-rose-200'
-                          }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
-
-                          return (
-                            <tr key={b.id} className="hover:bg-gray-50/30 transition">
-                              <td className="px-6 py-4 font-extrabold text-gray-900 whitespace-nowrap">{timeStr}</td>
-                              <td className="px-6 py-4">
-                                <div className="space-y-0.5">
-                                  <p className="font-bold text-gray-800 text-xs">{b.customerName}</p>
-                                  <p className="text-[10px] text-gray-405 font-semibold">Pet: <span className="text-gray-600 font-extrabold">{b.petName}</span></p>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 font-bold text-gray-800 text-xs">{b.serviceName}</td>
-                              <td className="px-6 py-4 text-xs italic text-gray-500 max-w-[200px] truncate" title={b.note}>
-                                {b.note ? `"${b.note}"` : '—'}
-                              </td>
-                              <td className="px-6 py-4 text-center whitespace-nowrap">
-                                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center items-center">
-                                  {b.status === 'PENDING' && (
-                                    <button
-                                      onClick={() => handleConfirmBooking(b.id)}
-                                      className="bg-primary hover:bg-primary/95 text-white px-3 py-1 text-xs font-bold rounded-lg shadow-sm transition"
-                                    >
-                                      Xác nhận
-                                    </button>
-                                  )}
-
-                                  {b.status === 'CONFIRMED' && (
-                                    <div className="flex items-center gap-1.5">
-                                      <select
-                                        value={selectedAssignStaffMap[b.id] || ''}
-                                        onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [b.id]: e.target.value }))}
-                                        className="border border-gray-300 rounded-lg text-xs font-semibold px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary h-8"
-                                      >
-                                        <option value="">-- Chọn nhân viên --</option>
-                                        {(availableStaffsMap[b.id] || []).map((st: any) => (
-                                          <option key={st.id} value={st.id}>{st.name}</option>
-                                        ))}
-                                      </select>
-                                      
-                                      {selectedAssignStaffMap[b.id] && (
-                                        <button
-                                          onClick={() => {
-                                            const stId = selectedAssignStaffMap[b.id];
-                                            const staffName = (availableStaffsMap[b.id] || []).find((s: any) => s.id === stId)?.name || 'Nhân viên';
-                                            setAssignConfirmBooking(b);
-                                            setAssignConfirmStaff({ id: stId, name: staffName });
-                                          }}
-                                          className="bg-purple-600 hover:bg-purple-750 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm transition h-8"
-                                        >
-                                          Phân công
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {b.status === 'ASSIGNED' && (
-                                    <span className="text-[11px] font-bold text-gray-500 leading-tight">
-                                      Nhân viên: <span className="font-black text-purple-700">✨ {b.staffName}</span>
-                                    </span>
-                                  )}
-
-                                  {['IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'LATE'].includes(b.status) && (
-                                    <span className="text-[11px] text-gray-400 font-semibold italic">
-                                      {b.staffName ? `Đã giao: ${b.staffName}` : 'Không phân công'}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Không có lịch hẹn nào phát sinh hôm nay.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* TAB CONTENT: SERVICES */}
-          {currentTab === 'services' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900">Quản lý dịch vụ Spa</h2>
-                  <p className="text-sm font-semibold text-gray-500">Thêm, chỉnh sửa dịch vụ spa, phân loại gói chính / dịch vụ lẻ và thiết lập mốc cân nặng.</p>
-                </div>
-                <button
-                  onClick={handleAddServiceClick}
-                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017]"
-                >
-                  <Plus className="size-4" /> Thêm dịch vụ
-                </button>
-              </div>
-
-              {/* Filter Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Filter className="size-4 text-gray-400" />
-                    <span className="text-xs font-bold text-gray-500">Phân loại dịch vụ:</span>
-                    <select
-                      value={serviceTypeFilter}
-                      onChange={(e) => setServiceTypeFilter(e.target.value)}
-                      className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    >
-                      <option value="ALL">🌐 Tất cả dịch vụ ({services.length})</option>
-                      <option value="MAIN">★ Chỉ gói dịch vụ chính ({services.filter((s: any) => s.isMain).length})</option>
-                      <option value="SUB">✦ Chỉ dịch vụ lẻ chọn thêm ({services.filter((s: any) => !s.isMain).length})</option>
-                    </select>
-                  </div>
-
-                  {managerBrands.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-gray-500">Thương hiệu Spa:</span>
-                      <select
-                        value={serviceBrandFilter}
-                        onChange={(e) => setServiceBrandFilter(e.target.value)}
-                        className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                      >
-                        <option value="ALL">Tất cả thương hiệu</option>
-                        {managerBrands.map((b: any) => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Services Table */}
-              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
-                        <th className="px-6 py-4">Tên dịch vụ & Phân loại</th>
-                        <th className="px-6 py-4">Thương hiệu / Nhóm</th>
-                        <th className="px-6 py-4">Đối tượng & Cân nặng</th>
-                        <th className="px-6 py-4 text-center">Thời gian</th>
-                        <th className="px-6 py-4 text-right">Giá</th>
-                        <th className="px-6 py-4 text-center">Số lượt đặt</th>
-                        <th className="px-6 py-4 text-center">Trạng thái</th>
-                        <th className="px-6 py-4 text-center">Chỉnh sửa</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {filteredServices.length > 0 ? (
-                        filteredServices.map((s: any) => {
-                          const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
-                          const weightText = s.petWeightMin !== null && s.petWeightMax !== null
-                            ? `${s.petWeightMin}kg - ${s.petWeightMax}kg`
-                            : 'Tất cả cân nặng';
-
-                          return (
-                            <tr key={s.id} className="hover:bg-gray-50/30 transition">
-                              <td className="px-6 py-4 space-y-1">
-                                <span className="font-extrabold text-gray-900 block text-sm">{s.name}</span>
-                                <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${
-                                  s.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                }`}>
-                                  {s.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                  {s.category?.name || s.brand?.name || 'Grooming Spa'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-xs font-semibold text-gray-700 space-y-0.5">
-                                <span className="block font-bold text-gray-800">{speciesBadge}</span>
-                                <span className="block text-gray-450 font-medium">{weightText}</span>
-                              </td>
-                              <td className="px-6 py-4 text-center font-semibold text-gray-700">{s.durationMin} phút</td>
-                              <td className="px-6 py-4 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
-                              <td className="px-6 py-4 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
-                              <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                                  s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                }`}>
-                                  {s.isActive ? 'Đang hoạt động' : 'Tắt'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <button
-                                  onClick={() => handleEditServiceClick(s)}
-                                  className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
-                                  title="Chỉnh sửa dịch vụ"
-                                >
-                                  <Edit2 className="size-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={8} className="px-6 py-12 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB CONTENT: CATEGORIES */}
-          {currentTab === 'categories' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900">Quản lý Danh mục Spa</h2>
-                  <p className="text-sm font-semibold text-gray-500">Thêm, chỉnh sửa và thiết lập phân loại danh mục (Gói chính / Dịch vụ lẻ).</p>
-                </div>
-                <button
-                  onClick={handleAddCategoryClick}
-                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-sm transition hover:bg-[#cf5017]"
-                >
-                  <Plus className="size-4" /> Thêm danh mục
-                </button>
-              </div>
-
-              {/* Filter Toolbar */}
-              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <Filter className="size-4 text-gray-400" />
-                  <span className="text-xs font-bold text-gray-500">Phân loại danh mục:</span>
-                  <select
-                    value={categoryTypeFilter}
-                    onChange={(e) => setCategoryTypeFilter(e.target.value)}
-                    className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                  >
-                    <option value="ALL">🌐 Tất cả danh mục ({managerBrands.length})</option>
-                    <option value="MAIN">★ Chỉ gói dịch vụ chính ({managerBrands.filter((c: any) => c.isMain).length})</option>
-                    <option value="SUB">✦ Chỉ dịch vụ lẻ chọn thêm ({managerBrands.filter((c: any) => !c.isMain).length})</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Categories Table */}
-              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
-                        <th className="px-6 py-4">Tên danh mục & Phân loại</th>
-                        <th className="px-6 py-4">Mô tả</th>
-                        <th className="px-6 py-4 text-center">Số dịch vụ</th>
-                        <th className="px-6 py-4 text-center">Số lượt đặt</th>
-                        <th className="px-6 py-4 text-center">Trạng thái</th>
-                        <th className="px-6 py-4 text-center">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {managerBrands
-                        .filter((c: any) => {
-                          if (categoryTypeFilter === 'MAIN' && !c.isMain) return false;
-                          if (categoryTypeFilter === 'SUB' && c.isMain) return false;
-                          return true;
-                        })
-                        .map((c: any) => (
-                          <tr key={c.id} className="hover:bg-gray-50/30 transition">
-                            <td className="px-6 py-4 space-y-1">
-                              <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
-                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${
-                                c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                              }`}>
-                                {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-xs font-semibold text-gray-600 max-w-[250px] truncate" title={c.description || 'Chưa có mô tả'}>
-                              {c.description || <span className="italic text-gray-400">Không có mô tả</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center font-bold text-gray-800">
-                              <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                {c._count?.services || 0} dịch vụ
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center font-extrabold text-purple-700">
-                              {c._count?.bookings || 0} lượt
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                                c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                              }`}>
-                                {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleEditCategoryClick(c)}
-                                  className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
-                                  title="Chỉnh sửa danh mục"
-                                >
-                                  <Edit2 className="size-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteCategoryClick(c)}
-                                  className="p-1.5 rounded-lg border text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
-                                  title="Xóa danh mục"
-                                >
-                                  <Trash2 className="size-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB CONTENT: BOOKINGS */}
-          {currentTab === 'bookings' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div>
-                <h2 className="text-xl font-black text-gray-900">Danh sách tất cả lịch hẹn</h2>
-                <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên và áp dụng giảm giá trễ hẹn 10%.</p>
-              </div>
-
-              {/* Filters */}
-              <div className="flex flex-col gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm theo tên khách hàng, tên dịch vụ hoặc mã..."
-                    value={bookingSearch}
-                    onChange={(e) => setBookingSearch(e.target.value)}
-                    className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-10 text-sm focus:border-primary focus:bg-white focus:outline-none"
-                  />
-                  {bookingSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setBookingSearch('')}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Filter className="size-4 text-gray-400" />
-                  <select
-                    value={bookingStatusFilter}
-                    onChange={(e) => setBookingStatusFilter(e.target.value)}
-                    className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-sm font-bold text-gray-700 focus:outline-none"
-                  >
-                    <option value="ALL">Tất cả trạng thái</option>
-                    <option value="PENDING">Pending (Chờ xác nhận)</option>
-                    <option value="CONFIRMED">Confirmed (Đã xác nhận)</option>
-                    <option value="CHECK_IN">Check-in (Khách đã đến)</option>
-                    <option value="ASSIGNED">Assigned (Đã giao việc)</option>
-                    <option value="IN_PROGRESS">In Progress (Đang làm)</option>
-                    <option value="COMPLETED">Completed (Hoàn thành)</option>
-                    <option value="CANCELLED">Cancelled (Đã hủy)</option>
-                    <option value="NO_SHOW">No Show (Vắng mặt)</option>
-                    <option value="LATE">Late (Trễ hẹn)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Bookings Table */}
-              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50/50 text-xs font-black uppercase text-gray-500 tracking-wider">
-                        <th className="px-6 py-4">Mã lịch</th>
-                        <th className="px-6 py-4">Thời gian hẹn</th>
-                        <th className="px-6 py-4">Khách hàng / Thú cưng</th>
-                        <th className="px-6 py-4">Dịch vụ</th>
-                        <th className="px-6 py-4">Nhân viên</th>
-                        <th className="px-6 py-4 text-center">Trạng thái</th>
-                        <th className="px-6 py-4 text-center">Thao tác quản lý</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {filteredBookings.length > 0 ? (
-                        filteredBookings.map((b: any) => {
-                          const dateObj = new Date(b.scheduledAt);
-                          const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-                          const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                          const statusStyle = {
-                            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
-                            CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
-                            CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
-                            ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
-                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                            IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
-                            COMPLETED: 'bg-green-50 text-green-700 border-green-200',
-                            CANCELLED: 'bg-red-50 text-red-700 border-red-200',
-                            NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
-                            LATE: 'bg-rose-50 text-rose-700 border-rose-250'
-                          }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
-
-                          const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status);
-                          const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
-
-                          return (
-                            <tr
-                              key={b.id}
-                              onClick={() => setSelectedBookingDetail(b)}
-                              className="hover:bg-gray-50/70 transition cursor-pointer"
-                            >
-                              <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
-                              <td className="px-6 py-4">
-                                <span className="font-extrabold text-gray-900 block">{timeStr}</span>
-                                <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="space-y-0.5">
-                                  <p className="font-bold text-gray-800 text-xs">{b.user?.name || 'Khách hàng'}</p>
-                                  <p className="text-[10px] text-gray-500 font-semibold">Pet: <span className="text-gray-700 font-extrabold">{b.petName || b.pet?.name || 'Thú cưng'}</span></p>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
-                                <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
-                                {(() => {
-                                  const subList = getManagerBookingSubServices(b);
-                                  if (subList.length === 0) return null;
-                                  return (
-                                    <div className="text-[10px] text-purple-700 font-bold pt-0.5 line-clamp-1" title={subList.map((s: any) => s.name).join(', ')}>
-                                      + {subList.length} dịch vụ lẻ
-                                    </div>
-                                  );
-                                })()}
-                                {b.discountAmount ? (
-                                  <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
-                                ) : null}
-                              </td>
-                              <td className="px-6 py-4 font-semibold text-xs text-gray-700">
-                                {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
-                              </td>
-                              <td className="px-6 py-4 text-center whitespace-nowrap">
-                                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex flex-col items-center gap-1.5">
-                                  <button
-                                    onClick={() => setSelectedBookingDetail(b)}
-                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                  >
-                                    <Eye className="size-3.5" /> Xem chi tiết
-                                  </button>
-
-                                  {b.status === 'PENDING' && (
-                                    <button
-                                      onClick={() => setSelectedBookingDetail(b)}
-                                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                    >
-                                      ✓ Xác nhận & Gán NV
-                                    </button>
-                                  )}
-
-                                  {canReschedule && (
-                                    <button
-                                      onClick={() => {
-                                        setRescheduleBooking(b);
-                                        setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-                                        setSelectedRescheduleSlot('');
-                                      }}
-                                      className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                    >
-                                      <Calendar className="size-3.5" /> Đổi lịch
-                                    </button>
-                                  )}
-
-                                  {isLateOfferable && (
-                                    <button
-                                      onClick={() => handleApplyLateDiscount(b.id)}
-                                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
-                                      title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
-                                    >
-                                      🎁 Giảm 10%
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không tìm thấy lịch hẹn phù hợp.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB CONTENT: SLOTS (TIME SLOTS MANAGEMENT) */}
-          {currentTab === 'slots' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900">Quản lý thời gian & Nhân viên khả dụng</h2>
-                  <p className="text-sm font-semibold text-gray-500">Xem tất cả mốc thời gian 30p của ngày và danh sách kỹ thuật viên rảnh rỗi.</p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={slotDate}
-                    onChange={(e) => setSlotDate(e.target.value)}
-                    className="h-10 rounded-xl border border-gray-150 bg-white px-3 py-1.5 text-sm font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {loadingSlots ? (
-                <div className="flex h-64 items-center justify-center">
-                  <Loader2 className="size-8 animate-spin text-primary" />
-                  <span className="ml-2 text-sm font-bold text-gray-500">Đang tải lịch rảnh nhân viên...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Slots Table */}
-                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi sáng (9:00 - 12:00)</h3>
-                    <div className="divide-y">
-                      {slotsData.slice(0, 6).map((slot: any) => (
-                        <div key={slot.time} className="py-3 flex items-center justify-between">
-                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                            <Clock className="size-4 text-primary" />
-                            {slot.time}
-                          </span>
-                          <div className="text-right">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                              slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                            }`}>
-                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
-                            </span>
-                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
-                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi chiều (14:00 - 18:00)</h3>
-                    <div className="divide-y">
-                      {slotsData.slice(6).map((slot: any) => (
-                        <div key={slot.time} className="py-3 flex items-center justify-between">
-                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                            <Clock className="size-4 text-primary" />
-                            {slot.time}
-                          </span>
-                          <div className="text-right">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                              slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                            }`}>
-                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
-                            </span>
-                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
-                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB CONTENT: STAFFS */}
-          {currentTab === 'staffs' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div>
-                <h2 className="text-xl font-black text-gray-900">Quản lý nhân viên chi nhánh & Hiệu suất ca làm</h2>
-                <p className="text-sm font-semibold text-gray-500">Theo dõi tỷ lệ hoàn thành Đúng hạn / Trễ hạn và tổng doanh thu của từng kỹ thuật viên.</p>
-              </div>
-
-              {/* Staffs Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {staffs.length > 0 ? (
-                  staffs.map((s: any) => (
-                    <div
-                      key={s.id}
-                      className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        {s.avatarUrl ? (
-                          <img
-                            src={s.avatarUrl}
-                            alt={s.name}
-                            className="size-12 rounded-full object-cover border"
-                          />
-                        ) : (
-                          <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
-                            {s.name.slice(0, 1).toUpperCase()}
-                          </div>
-                        )}
-                        <div>
-                          <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
-                          <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
-                          <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
-                        </div>
-                      </div>
-
-                      {/* Performance metrics breakdown */}
-                      <div className="space-y-2 border-t pt-4">
-                        <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
-                          <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {s.onTimeRate ?? 100}%
-                          </span>
-                        </div>
-                        <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            style={{ width: `${s.onTimeRate ?? 100}%` }}
-                            className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
-                            <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
-                          </div>
-                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
-                            <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
-                            <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
-                            <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="border-t pt-3 flex justify-between items-center">
-                        <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
-                        <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
-                    Không tìm thấy nhân viên nào ở chi nhánh này.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* CONFIRMATION POPUP FOR STAFF ASSIGNMENT */}
-      {assignConfirmBooking && assignConfirmStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 relative animate-in zoom-in-95 duration-150">
-            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Xác nhận phân công</h3>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Bạn có chắc chắn muốn phân công lịch hẹn dịch vụ <span className="font-extrabold text-primary">{assignConfirmBooking.serviceName}</span> cho kỹ thuật viên <span className="font-extrabold text-purple-700">{assignConfirmStaff.name}</span> không?
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                disabled={assigningLoading}
-                onClick={() => {
-                  setAssignConfirmBooking(null);
-                  setAssignConfirmStaff(null);
-                }}
-                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
-              >
-                Hủy
-              </button>
-              <button
-                disabled={assigningLoading}
-                onClick={handleAssignStaff}
-                className="px-4 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017]"
-              >
-                {assigningLoading ? 'Đang giao...' : 'Đồng ý'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* RESCHEDULE MODAL */}
-      {rescheduleBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-5 my-8 relative animate-in zoom-in-95 duration-150">
-            <button
-              onClick={() => setRescheduleBooking(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              <X className="size-5" />
-            </button>
-            
-            <div>
-              <h3 className="text-base font-black text-gray-900">Đổi lịch hẹn Spa</h3>
-              <p className="text-xs text-gray-450 mt-1 font-semibold">Khách hàng: {rescheduleBooking.user?.name || 'Khách hàng'} ({rescheduleBooking.petName || 'Bé cưng'}) • Dịch vụ: {rescheduleBooking.service?.name}</p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold uppercase">1. Chọn ngày mới</label>
-                <input
-                  type="date"
-                  value={rescheduleDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => {
-                    setRescheduleDate(e.target.value);
-                    setSelectedRescheduleSlot('');
-                  }}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-sm font-bold text-gray-700 bg-white"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[11px] text-gray-400 font-bold uppercase">2. Chọn khung giờ khả dụng</label>
-                {loadingRescheduleSlots ? (
-                  <div className="flex justify-center py-6">
-                    <Loader2 className="size-6 animate-spin text-primary" />
-                  </div>
-                ) : rescheduleSlots.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {rescheduleSlots.map((slot: any) => (
-                      <button
-                        key={slot.time}
-                        disabled={!slot.isAvailable}
-                        onClick={() => setSelectedRescheduleSlot(slot.time)}
-                        className={`py-2 px-1 border rounded-lg text-center transition flex flex-col items-center justify-center ${
-                          !slot.isAvailable
-                            ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                            : selectedRescheduleSlot === slot.time
-                            ? 'bg-primary border-primary text-white shadow-sm font-bold'
-                            : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
-                        }`}
-                      >
-                        <span className="text-xs font-black">{slot.time}</span>
-                        {slot.isAvailable && (
-                          <span className={`text-[9px] mt-0.5 ${selectedRescheduleSlot === slot.time ? 'text-white' : 'text-gray-400'}`}>
-                            {slot.remainingSlots} chỗ
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-450 italic py-2">Chọn ngày để xem các khung giờ.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                disabled={submittingReschedule}
-                onClick={() => setRescheduleBooking(null)}
-                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                disabled={submittingReschedule || !selectedRescheduleSlot}
-                onClick={handleRescheduleSubmit}
-                className="px-5 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] disabled:opacity-50"
-              >
-                {submittingReschedule ? 'Đang đổi...' : 'Xác nhận đổi lịch'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SERVICE MODAL (ADD / EDIT) */}
-      {serviceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-lg bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
-            <button
-              onClick={() => setServiceModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              <X className="size-5" />
-            </button>
-
-            <div>
-              <h3 className="text-base font-black text-gray-900">{editingService ? 'Chỉnh sửa dịch vụ Spa' : 'Thêm dịch vụ Spa mới'}</h3>
-              <p className="text-xs text-gray-450 mt-1 font-semibold">Tạo hoặc cập nhật mốc cân nặng, giá và nhóm thương hiệu dịch vụ.</p>
-            </div>
-
-            <form onSubmit={handleServiceSubmit} className="space-y-4">
-              
-              {/* Brand & Main/Sub Category */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thương hiệu Spa (SpaBrand) *</label>
-                  <select
-                    required
-                    value={serviceForm.brandId}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
-                  >
-                    <option value="">-- Chọn thương hiệu --</option>
-                    {filteredBrandsForForm.map((b: any) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại dịch vụ *</label>
-                  <select
-                    value={serviceForm.isMain ? 'MAIN' : 'SUB'}
-                    onChange={(e) => handleClassificationChange(e.target.value === 'MAIN')}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
-                  >
-                    <option value="MAIN">Dịch vụ chính</option>
-                    <option value="SUB">Dịch vụ lẻ</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Name */}
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Tên dịch vụ *</label>
-                <input
-                  type="text"
-                  required
-                  value={serviceForm.name}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
-                  placeholder="Ví dụ: SPA Cắt tỉa lông (Chó 3-6kg)"
-                />
-              </div>
-
-              {/* Species & Weight Bracket */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Loài áp dụng</label>
-                  <select
-                    value={serviceForm.species}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, species: e.target.value as any }))}
-                    className="w-full h-10 border rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-800 bg-white"
-                  >
-                    <option value="ALL">🐾 Tất cả loài</option>
-                    <option value="DOG">🐕 Chó</option>
-                    <option value="CAT">🐈 Mèo</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Cân nặng từ (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    value={serviceForm.petWeightMin}
-                    onChange={(e) => handleMinWeightChange(e.target.value)}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
-                    placeholder="Ví dụ: 1.5"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Cân nặng đến (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    value={serviceForm.petWeightMax}
-                    onChange={(e) => handleMaxWeightChange(e.target.value)}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
-                    placeholder="Ví dụ: 3.0"
-                  />
-                </div>
-              </div>
-
-              {/* Description */}
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả chi tiết</label>
-                <textarea
-                  value={serviceForm.description}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full min-h-[60px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
-                  placeholder="Mô tả công việc và ưu đãi dịch vụ..."
-                />
-              </div>
-
-              {/* Price & Duration */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Giá dịch vụ (đ) *</label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    value={serviceForm.price}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, price: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-black text-primary bg-white"
-                    placeholder="150000"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
-                  <input
-                    type="number"
-                    required
-                    min={10}
-                    value={serviceForm.durationMin}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMin: e.target.value, durationMax: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
-                    placeholder="60"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1.5">
-                <input
-                  type="checkbox"
-                  id="service-active"
-                  checked={serviceForm.isActive}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, isActive: e.target.checked }))}
-                  className="accent-primary size-4"
-                />
-                <label htmlFor="service-active" className="text-xs font-bold text-gray-700">Dịch vụ đang hoạt động khả dụng</label>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <button
-                  type="button"
-                  onClick={() => setServiceModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingService}
-                  className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer"
-                >
-                  {submittingService ? 'Đang lưu...' : 'Lưu dịch vụ'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* Booking Detail & Management Modal */}
-      {selectedBookingDetail && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <span className="text-[10px] font-mono text-gray-400 block font-bold">MÃ LỊCH: #{selectedBookingDetail.id.slice(-6).toUpperCase()}</span>
-                <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
-                  <Scissors className="size-5 text-primary" /> Chi Tiết Lịch Hẹn Spa
-                </h3>
-              </div>
-              <button onClick={() => setSelectedBookingDetail(null)} className="rounded-full p-1 text-gray-400 hover:text-gray-600">
-                <X className="size-5" />
-              </button>
-            </div>
-
-            {/* Customer & Pet Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-gray-50 p-3.5 rounded-xl border border-gray-150">
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-gray-400 block uppercase">Khách hàng</span>
-                <p className="font-extrabold text-gray-900">{selectedBookingDetail.user?.name || 'Khách hàng'}</p>
-                {selectedBookingDetail.user?.phone && (
-                  <p className="text-gray-600 font-semibold">📞 SĐT: {selectedBookingDetail.user.phone}</p>
-                )}
-                {selectedBookingDetail.user?.email && (
-                  <p className="text-gray-500 font-medium truncate">{selectedBookingDetail.user.email}</p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-gray-400 block uppercase">Thú cưng</span>
-                <p className="font-extrabold text-purple-950">🐾 {selectedBookingDetail.petName || selectedBookingDetail.pet?.name || 'Thú cưng'}</p>
-                <p className="text-gray-600 font-semibold">
-                  {selectedBookingDetail.petSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {selectedBookingDetail.petWeight || 3}kg
-                </p>
-              </div>
-            </div>
-
-            {/* Date & Time */}
-            <div className="p-3.5 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="text-[10px] font-bold text-purple-800 uppercase block">Thời gian hẹn</span>
-                <span className="font-black text-sm text-purple-950">
-                  {new Date(selectedBookingDetail.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedBookingDetail.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                </span>
-              </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${
-                {
-                  PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
-                  CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
-                  ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-                  IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
-                  COMPLETED: 'bg-green-100 text-green-800 border-green-300',
-                  CANCELLED: 'bg-red-100 text-red-800 border-red-300',
-                  NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
-                  LATE: 'bg-rose-100 text-rose-800 border-rose-300',
-                }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
-              }`}>
-                {selectedBookingDetail.status === 'PENDING' ? '🚨 Chờ xác nhận' : selectedBookingDetail.status}
-              </span>
-            </div>
-
-            {/* Services List */}
-            <div className="space-y-2 text-xs">
-              <span className="font-extrabold text-gray-800 uppercase text-[10px] tracking-wider block">Dịch vụ chính & Dịch vụ phụ:</span>
-              <div className="p-3 bg-white border border-gray-200 rounded-xl space-y-2">
-                <div className="flex justify-between items-center font-black text-gray-900">
-                  <span>✂️ Dịch vụ chính: {selectedBookingDetail.service?.name || 'Gói Chăm Sóc Spa'}</span>
-                  <span>{(selectedBookingDetail.service?.price || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
-                </div>
-
-                {(() => {
-                  const subList = getManagerBookingSubServices(selectedBookingDetail);
-                  if (subList.length === 0) {
-                    return <p className="text-[11px] text-gray-400 italic pt-1.5 border-t border-gray-150">Không có dịch vụ lẻ đi kèm.</p>;
-                  }
-                  return (
-                    <div className="space-y-1.5 pt-2 border-t border-gray-150">
-                      <span className="text-[10px] font-extrabold text-purple-900 block uppercase">
-                        Dịch vụ lẻ chọn thêm ({subList.length}):
-                      </span>
-                      <div className="space-y-1">
-                        {subList.map((sub: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center bg-green-50/70 p-2 rounded-lg border border-green-150 text-xs">
-                            <span className="font-extrabold text-gray-900 flex items-center gap-1.5">
-                              <span className="size-1.5 rounded-full bg-green-600 shrink-0" />
-                              {sub.name}
-                            </span>
-                            <span className="text-green-700 font-black">+ {(sub.price || 0).toLocaleString('vi-VN')}đ</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div className="pt-2 border-t border-gray-200 flex justify-between items-center font-black text-sm text-purple-950">
-                  <span>Tổng thanh toán:</span>
-                  <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Staff Assignment Section inside Modal */}
-            <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2 text-xs">
-              <span className="font-extrabold text-gray-800 block text-[10px] uppercase">Nhân viên phụ trách:</span>
-              {selectedBookingDetail.staff ? (
-                <div className="flex items-center gap-2 font-bold text-gray-900 bg-white p-2 rounded-lg border">
-                  <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
-                    {selectedBookingDetail.staff.name.slice(0, 1)}
-                  </span>
-                  <div>
-                    <p>{selectedBookingDetail.staff.name}</p>
-                    <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-amber-800 font-bold italic text-[11px]">⚠️ Đơn chưa được phân công nhân viên phụ trách ca làm.</p>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedAssignStaffMap[selectedBookingDetail.id] || ''}
-                      onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
-                      className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
-                    >
-                      <option value="">-- Chọn nhân viên phụ trách --</option>
-                      {managerStaffs.map((st: any) => (
-                        <option key={st.id} value={st.id}>
-                          👤 {st.user?.name || st.name} ({st.user?.phone || 'NV Spa'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t">
-              {selectedBookingDetail.status === 'PENDING' && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await spaApi.confirmBooking(selectedBookingDetail.id);
-                      const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
-                      if (staffIdToAssign) {
-                        await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
-                        toast.success('Đã xác nhận đơn hàng và phân công nhân viên!');
-                      } else {
-                        toast.success('Đã xác nhận đơn hàng thành công!');
-                      }
-                      setSelectedBookingDetail(null);
-                      refreshData();
-                    } catch (err: any) {
-                      toast.error(err.response?.data?.message || 'Lỗi xác nhận.');
-                    }
-                  }}
-                  className="bg-primary hover:bg-primary/90 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
-                >
-                  ✓ Xác nhận đơn & Phân công
-                </button>
-              )}
-
-              {selectedBookingDetail.status === 'CONFIRMED' && !selectedBookingDetail.staffId && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
-                    if (!staffIdToAssign) {
-                      toast.error('Vui lòng chọn nhân viên trước khi xác nhận.');
-                      return;
-                    }
-                    try {
-                      await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
-                      toast.success('Đã phân công nhân viên thành công!');
-                      setSelectedBookingDetail(null);
-                      refreshData();
-                    } catch (err: any) {
-                      toast.error(err.response?.data?.message || 'Lỗi phân công.');
-                    }
-                  }}
-                  disabled={!selectedAssignStaffMap[selectedBookingDetail.id]}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
-                >
-                  👤 Phân công Nhân viên
-                </button>
-              )}
-
-              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(selectedBookingDetail.status) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const b = selectedBookingDetail;
-                    setSelectedBookingDetail(null);
-                    setRescheduleBooking(b);
-                    setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-                    setSelectedRescheduleSlot('');
-                  }}
-                  className="border border-purple-300 text-purple-800 hover:bg-purple-50 font-black text-xs h-9 px-3 gap-1 rounded-lg transition cursor-pointer flex items-center"
-                >
-                  <Calendar className="size-3.5 mr-1" /> Đổi lịch hẹn
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setSelectedBookingDetail(null)}
-                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CATEGORY MODAL (ADD / EDIT) */}
-      {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
-            <button
-              onClick={() => setCategoryModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              <X className="size-5" />
-            </button>
-
-            <div>
-              <h3 className="text-base font-black text-gray-900">{editingCategory ? 'Chỉnh sửa danh mục Spa' : 'Thêm danh mục Spa mới'}</h3>
-              <p className="text-xs text-gray-450 mt-1 font-semibold">Tạo nhóm phân loại cho các gói dịch vụ chính hoặc dịch vụ lẻ.</p>
-            </div>
-
-            <form onSubmit={handleCategorySubmit} className="space-y-4">
-              {/* Name */}
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Tên danh mục *</label>
-                <input
-                  type="text"
-                  required
-                  value={categoryForm.name}
-                  onChange={(e) => setCategoryForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
-                  placeholder="Ví dụ: Tắm & Sấy, Cắt tỉa lông..."
-                />
-              </div>
-
-              {/* Classification */}
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại danh mục *</label>
-                <select
-                  value={categoryForm.isMain ? 'MAIN' : 'SUB'}
-                  onChange={(e) => setCategoryForm(prev => ({ ...prev, isMain: e.target.value === 'MAIN' }))}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
-                >
-                  <option value="MAIN">Dịch vụ chính</option>
-                  <option value="SUB">Dịch vụ lẻ</option>
-                </select>
-              </div>
-
-              {/* Description */}
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả danh mục</label>
-                <textarea
-                  value={categoryForm.description}
-                  onChange={(e) => setCategoryForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full min-h-[60px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
-                  placeholder="Mô tả nhóm danh mục..."
-                />
-              </div>
-
-              {/* Active Toggle */}
-              <div className="flex items-center gap-2 pt-1.5">
-                <input
-                  type="checkbox"
-                  id="catIsActive"
-                  checked={categoryForm.status === 'ACTIVE'}
-                  onChange={(e) => setCategoryForm(prev => ({ ...prev, status: e.target.checked ? 'ACTIVE' : 'SUSPENDED' }))}
-                  className="rounded border-gray-300 text-primary focus:ring-primary size-4"
-                />
-                <label htmlFor="catIsActive" className="text-xs font-bold text-gray-700 cursor-pointer">
-                  Danh mục đang hoạt động khả dụng
-                </label>
-              </div>
-
-              {/* Submit buttons */}
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <button
-                  type="button"
-                  onClick={() => setCategoryModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingCategory}
-                  className="px-5 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] disabled:opacity-50"
-                >
-                  {submittingCategory ? 'Đang lưu...' : (editingCategory ? 'Cập nhật' : 'Lưu danh mục')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+}

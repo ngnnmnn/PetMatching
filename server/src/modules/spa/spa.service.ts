@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CreateBookingDto } from './dto/create-booking.dto';
+import { CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
 import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class SpaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async getBranches() {
     return this.prisma.spaCategory.findMany({
@@ -255,6 +256,7 @@ export class SpaService {
             avatarUrl: true,
           },
         },
+        feedback: true,
       },
       orderBy: {
         scheduledAt: 'desc',
@@ -268,9 +270,9 @@ export class SpaService {
     const subServicesList =
       allSubServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
-            where: { id: { in: allSubServiceIds } },
-            select: { id: true, name: true, price: true, description: true },
-          })
+          where: { id: { in: allSubServiceIds } },
+          select: { id: true, name: true, price: true, description: true },
+        })
         : [];
 
     const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
@@ -280,14 +282,17 @@ export class SpaService {
         .map((id) => subServicesMap.get(id))
         .filter(Boolean);
 
+      // Use actual totalPrice from DB (saved at booking creation time = mainPrice + subTotal - discount)
+      // Only fallback to recompute if totalPrice is missing
       const mainPrice = b.priceSnapshot || b.service?.price || 0;
       const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
-      const computedTotalPrice = Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
 
       return {
         ...b,
         priceSnapshot: mainPrice,
-        totalPrice: computedTotalPrice,
+        totalPrice,
+        subServicesTotal,
         subServices,
       };
     });
@@ -372,34 +377,63 @@ export class SpaService {
       },
     });
 
+    const allMainServiceIds = Array.from(
+      new Set(bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean))
+    );
     const allSubServiceIds = Array.from(
       new Set(bookings.flatMap((b) => b.subServiceIds || []))
     );
+    const allServiceIds = Array.from(new Set([...allMainServiceIds, ...allSubServiceIds]));
 
-    const subServicesList =
-      allSubServiceIds.length > 0
+    const servicesList =
+      allServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
-            where: { id: { in: allSubServiceIds } },
-            select: { id: true, name: true, price: true, description: true },
-          })
+          where: { id: { in: allServiceIds as string[] } },
+          select: { id: true, name: true, price: true, description: true, isMain: true },
+        })
         : [];
 
-    const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
+    const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
     return bookings.map((b) => {
+      const targetMainId = b.serviceId || b.mainServiceId;
+      const mainServiceResolved = b.service || (targetMainId ? servicesMap.get(targetMainId) : null);
       const subServices = (b.subServiceIds || [])
-        .map((id) => subServicesMap.get(id))
+        .map((id) => servicesMap.get(id))
         .filter(Boolean);
 
-      const mainPrice = b.priceSnapshot || b.service?.price || 0;
-      const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
-      const computedTotalPrice = Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+      // Use actual totalPrice from DB; only fallback recompute if missing
+      const mainPrice = b.priceSnapshot || (mainServiceResolved as any)?.price || 0;
+      const subServicesTotal = subServices.length > 0
+        ? subServices.reduce((sum, s) => sum + ((s as any)?.price || 0), 0)
+        : 0;
+      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+
+      // Compute sub-revenue: if sub-services can't be resolved, compute from totalPrice - mainPrice
+      const subRevenue = Math.max(0, totalPrice - mainPrice - (b.discountAmount || 0));
+
+      // Build sub-services display list:
+      // - If IDs resolve → use actual objects
+      // - If IDs don't resolve but exist → create placeholder items with distributed price
+      let subServicesDisplay: any[] = subServices;
+      if (subServices.length === 0 && (b.subServiceIds || []).length > 0) {
+        const count = (b.subServiceIds || []).length;
+        const pricePerService = count > 0 ? Math.round(subRevenue / count) : 0;
+        subServicesDisplay = (b.subServiceIds || []).map((id, i) => ({
+          id,
+          name: `Dịch vụ lẻ #${i + 1}`,
+          price: pricePerService,
+          isMain: false,
+        }));
+      }
 
       return {
         ...b,
         priceSnapshot: mainPrice,
-        totalPrice: computedTotalPrice,
-        subServices,
+        totalPrice,
+        subServicesTotal: subRevenue,
+        subServices: subServicesDisplay,
+        mainServiceResolved,
       };
     });
   }
@@ -438,7 +472,7 @@ export class SpaService {
     }
 
     const newSubIds = Array.from(new Set([...booking.subServiceIds, ...subServiceIds]));
-    
+
     // Fetch main service & all sub services
     const mainServiceId = booking.mainServiceId || booking.serviceId;
     const mainService = mainServiceId ? await this.prisma.spaService.findUnique({ where: { id: mainServiceId } }) : null;
@@ -632,26 +666,43 @@ export class SpaService {
   async getManagerDashboardStats(managerId: string, branchId: string) {
     await this.autoUpdateBookingStatuses();
 
-    const branch = await this.prisma.addressSpa.findFirst({
-      where: { id: branchId, managerId },
-    });
-    if (!branch) {
-      throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
-    }
+    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
 
     const staffCount = await this.prisma.spaStaff.count({
-      where: { addressSpaId: branchId },
+      where: targetBranch ? { addressSpaId: targetBranch } : {},
     });
 
     const bookings = await this.prisma.spaBooking.findMany({
-      where: { addressSpaId: branchId },
+      where: targetBranch ? { addressSpaId: targetBranch } : {},
       include: {
-        service: true,
+        service: {
+          include: { category: true },
+        },
+        category: true,
         user: true,
         pet: true,
         staff: true,
+        feedback: true,
       },
     });
+
+    const allMainServiceIds = Array.from(
+      new Set(bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean))
+    );
+    const allSubServiceIds = Array.from(
+      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+    );
+
+    const allServiceIds = Array.from(new Set([...allMainServiceIds, ...allSubServiceIds]));
+
+    const servicesList = allServiceIds.length > 0
+      ? await this.prisma.spaService.findMany({
+        where: { id: { in: allServiceIds as string[] } },
+        include: { category: true },
+      })
+      : [];
+
+    const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -665,14 +716,110 @@ export class SpaService {
     });
 
     const completedBookings = bookings.filter((b) => b.status === SpaBookingStatus.COMPLETED);
-    const totalRevenue = completedBookings.reduce((sum, b) => sum + (b.totalPrice || b.priceSnapshot || 0), 0);
+    // totalRevenue uses the actual totalPrice stored in DB (= mainPrice + subServicesTotal at booking time)
+    const totalRevenue = completedBookings.reduce((sum, b) => sum + (b.totalPrice ?? b.priceSnapshot ?? 0), 0);
 
-    const serviceRevenueMap: Record<string, number> = {};
-    completedBookings.forEach((b) => {
-      const sName = b.service?.name || 'Khác';
-      serviceRevenueMap[sName] = (serviceRevenueMap[sName] || 0) + (b.totalPrice || b.priceSnapshot || 0);
+    const categoriesList = await this.prisma.spaCategory.findMany({
+      orderBy: { createdAt: 'asc' },
     });
-    const revenueByService = Object.entries(serviceRevenueMap).map(([name, value]) => ({ name, value }));
+
+    const categoryMap = new Map<string, { id: string; name: string; revenue: number; ratings: number[] }>();
+    for (const c of categoriesList) {
+      categoryMap.set(c.id, {
+        id: c.id,
+        name: c.name,
+        revenue: 0,
+        ratings: [],
+      });
+    }
+
+    function findCategoryForService(service?: any, bookingCatId?: string | null): string {
+      if (service?.categoryId && categoryMap.has(service.categoryId)) {
+        return service.categoryId;
+      }
+      if (bookingCatId && categoryMap.has(bookingCatId)) {
+        return bookingCatId;
+      }
+      const sName = (service?.name || '').toLowerCase();
+      for (const cat of categoriesList) {
+        const cName = cat.name.toLowerCase();
+        if (sName.includes(cName) || (cName.length > 2 && sName.includes(cName.substring(0, 3)))) {
+          return cat.id;
+        }
+      }
+      return categoriesList[0]?.id || '';
+    }
+
+    // Find the "Dịch vụ lẻ" category id (isMain = false)
+    const subServiceCategoryId = categoriesList.find((c) => c.isMain === false)?.id
+      || categoriesList.find((c) => c.name.toLowerCase().includes('lẻ'))?.id
+      || categoriesList[categoriesList.length - 1]?.id
+      || '';
+
+    completedBookings.forEach((b) => {
+      const targetId = b.serviceId || b.mainServiceId;
+      const mainService = b.service || (targetId ? servicesMap.get(targetId) : null);
+      const resolvedSubServices = (b.subServiceIds || []).map((id) => servicesMap.get(id)).filter(Boolean);
+
+      // Main service price = priceSnapshot (snapshotted at booking time)
+      const mainPrice = b.priceSnapshot || (mainService as any)?.price || 0;
+      const bookingTotal = b.totalPrice ?? b.priceSnapshot ?? 0;
+
+      // Revenue that belongs to sub-services = totalPrice - mainPrice (- discount already included in totalPrice)
+      const subRevenue = Math.max(0, bookingTotal - mainPrice);
+
+      // Distribute main service revenue to its category
+      const mainCatId = findCategoryForService(mainService, b.categoryId);
+      const targetMain = categoryMap.get(mainCatId);
+      if (targetMain) {
+        targetMain.revenue += mainPrice;
+        if (b.feedback && typeof b.feedback.rateServices === 'number') {
+          targetMain.ratings.push(b.feedback.rateServices);
+        }
+      }
+
+      if (subRevenue > 0) {
+        if (resolvedSubServices.length > 0) {
+          // Sub-services found in DB: distribute by each sub-service's own category
+          const resolvedSubTotal = resolvedSubServices.reduce((sum: number, s: any) => sum + (s?.price || 0), 0);
+          resolvedSubServices.forEach((s: any) => {
+            const subCatId = findCategoryForService(s, null);
+            const targetSub = categoryMap.get(subCatId);
+            if (targetSub) {
+              // Scale by ratio in case catalog prices differ from booking time
+              const ratio = resolvedSubTotal > 0 ? (s?.price || 0) / resolvedSubTotal : 0;
+              targetSub.revenue += Math.round(subRevenue * ratio);
+              if (b.feedback && typeof b.feedback.rateServices === 'number') {
+                targetSub.ratings.push(b.feedback.rateServices);
+              }
+            }
+          });
+        } else {
+          // Sub-service IDs not found in DB (old data): put all remaining revenue into "Dịch vụ lẻ"
+          const fallbackSub = categoryMap.get(subServiceCategoryId);
+          if (fallbackSub) {
+            fallbackSub.revenue += subRevenue;
+            if (b.feedback && typeof b.feedback.rateServices === 'number') {
+              fallbackSub.ratings.push(b.feedback.rateServices);
+            }
+          }
+        }
+      }
+    });
+
+    const categoryBreakdown = categoriesList.map((cat) => {
+      const data = categoryMap.get(cat.id) || { revenue: 0, ratings: [] as number[] };
+      const avgRating = data.ratings.length > 0
+        ? Math.round((data.ratings.reduce((a, b) => a + b, 0) / data.ratings.length) * 10) / 10
+        : 0;
+      return {
+        id: cat.id,
+        name: cat.name,
+        value: data.revenue,
+        avgRating,
+        ratingCount: data.ratings.length,
+      };
+    });
 
     const statusCountMap: Record<string, number> = {};
     bookings.forEach((b) => {
@@ -690,7 +837,8 @@ export class SpaService {
       completedBookingsCount: completedBookings.length,
       totalRevenue,
       staffCount,
-      revenueByService,
+      revenueByService: categoryBreakdown,
+      categoryBreakdown,
       statusDistribution,
       todayBookings: todayBookings.map((b) => ({
         id: b.id,
@@ -983,15 +1131,10 @@ export class SpaService {
   async getManagerBookings(managerId: string, branchId: string) {
     await this.autoUpdateBookingStatuses();
 
-    const branch = await this.prisma.addressSpa.findFirst({
-      where: { id: branchId, managerId },
-    });
-    if (!branch) {
-      throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
-    }
+    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
 
     const bookings = await this.prisma.spaBooking.findMany({
-      where: { addressSpaId: branchId },
+      where: targetBranch ? { addressSpaId: targetBranch } : {},
       include: {
         service: {
           select: { id: true, name: true, price: true, durationMin: true, description: true },
@@ -1006,34 +1149,62 @@ export class SpaService {
       },
     });
 
+    // Collect ALL service IDs (main + sub) for a single bulk query
+    const allMainServiceIds = Array.from(
+      new Set(bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean))
+    ) as string[];
     const allSubServiceIds = Array.from(
       new Set(bookings.flatMap((b) => b.subServiceIds || []))
-    );
+    ) as string[];
+    const allServiceIds = Array.from(new Set([...allMainServiceIds, ...allSubServiceIds]));
 
-    const subServicesList =
-      allSubServiceIds.length > 0
-        ? await this.prisma.spaService.findMany({
-            where: { id: { in: allSubServiceIds } },
-            select: { id: true, name: true, price: true, description: true },
-          })
-        : [];
+    const servicesList = allServiceIds.length > 0
+      ? await this.prisma.spaService.findMany({
+        where: { id: { in: allServiceIds } },
+        select: { id: true, name: true, price: true, description: true, isMain: true },
+      })
+      : [];
 
-    const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
+    const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
     const mappedBookings = bookings.map((b) => {
-      const subServices = (b.subServiceIds || [])
-        .map((id) => subServicesMap.get(id))
-        .filter(Boolean);
+      const targetMainId = b.serviceId || b.mainServiceId;
+      // Resolve main service: prefer Prisma include, fall back to bulk query
+      const mainServiceResolved: any = b.service || (targetMainId ? servicesMap.get(targetMainId) : null);
 
-      const mainPrice = b.priceSnapshot || b.service?.price || 0;
-      const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
-      const computedTotalPrice = Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+      // Resolve sub-services from bulk query
+      const resolvedSubServices = (b.subServiceIds || [])
+        .map((id) => servicesMap.get(id))
+        .filter(Boolean) as any[];
+
+      // Use DB totalPrice (actual price paid), fall back to computed only if null
+      const mainPrice = b.priceSnapshot || mainServiceResolved?.price || 0;
+      const resolvedSubTotal = resolvedSubServices.reduce((sum, s) => sum + (s?.price || 0), 0);
+      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + resolvedSubTotal - (b.discountAmount || 0));
+      const subRevenue = Math.max(0, totalPrice - mainPrice - (b.discountAmount || 0));
+
+      // Build sub-services display:
+      // - If IDs resolved → show real services
+      // - If not (old data) → create placeholder entries with distributed price
+      let subServicesDisplay: any[] = resolvedSubServices;
+      const subIds = b.subServiceIds || [];
+      if (resolvedSubServices.length === 0 && subIds.length > 0) {
+        const priceEach = subIds.length > 0 ? Math.round(subRevenue / subIds.length) : 0;
+        subServicesDisplay = subIds.map((id, i) => ({
+          id,
+          name: `Dịch vụ lẻ #${i + 1}`,
+          price: priceEach,
+          isMain: false,
+        }));
+      }
 
       return {
         ...b,
         priceSnapshot: mainPrice,
-        totalPrice: computedTotalPrice,
-        subServices,
+        totalPrice,
+        subServicesTotal: subRevenue,
+        subServices: subServicesDisplay,
+        mainServiceResolved,
       };
     });
 
@@ -1377,18 +1548,103 @@ export class SpaService {
     });
   }
 
+  async createManagerStaff(managerId: string, dto: CreateStaffDto) {
+    const username = dto.username?.trim();
+    const fullname = dto.fullname?.trim();
+    const phone = dto.phone?.trim();
+    const password = dto.password;
+
+    if (!username || username.length < 3) {
+      throw new BadRequestException('Tên đăng nhập phải có ít nhất 3 ký tự.');
+    }
+
+    if (!fullname || fullname.length < 2) {
+      throw new BadRequestException('Họ và tên phải có ít nhất 2 ký tự.');
+    }
+
+    if (!password || password.length < 6) {
+      throw new BadRequestException('Mật khẩu phải có ít nhất 6 ký tự.');
+    }
+
+    // Phone validation: starts with 0 and has exactly 10 digits
+    const phoneRegex = /^0\d{9}$/;
+    if (!phone || !phoneRegex.test(phone)) {
+      throw new BadRequestException('Số điện thoại phải bắt đầu bằng số 0 và bao gồm đúng 10 chữ số (vd: 0912345678).');
+    }
+
+    // Check existing username or phone
+    const existingUsername = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: username.toLowerCase() },
+          { email: `${username.toLowerCase()}@spa.local` },
+        ],
+      },
+    });
+    if (existingUsername) {
+      throw new BadRequestException('Tên đăng nhập đã tồn tại trên hệ thống.');
+    }
+
+    // Find manager's branch
+    let targetBranchId = dto.branchId;
+    if (targetBranchId) {
+      const branch = await this.prisma.addressSpa.findFirst({
+        where: { id: targetBranchId, managerId },
+      });
+      if (!branch) {
+        throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
+      }
+    } else {
+      const managerBranch = await this.prisma.addressSpa.findFirst({
+        where: { managerId },
+      });
+      if (managerBranch) {
+        targetBranchId = managerBranch.id;
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const email = `${username.toLowerCase()}@spa.local`;
+
+    const user = await this.prisma.user.create({
+      data: {
+        username: username.toLowerCase(),
+        email,
+        passwordHash: hashedPassword,
+        name: fullname,
+        phone,
+        role: UserRole.SPA_STAFF,
+        accountStatus: AccountStatus.ACTIVE,
+        isVerified: true,
+      },
+    });
+
+    const staffId = `staff_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const spaStaff = await this.prisma.spaStaff.create({
+      data: {
+        id: staffId,
+        userId: user.id,
+        addressSpaId: targetBranchId || null,
+      },
+    });
+
+    return {
+      id: spaStaff.id,
+      userId: user.id,
+      username: user.username,
+      name: user.name,
+      phone: user.phone,
+      addressSpaId: spaStaff.addressSpaId,
+    };
+  }
+
   async getManagerStaffs(managerId: string, branchId: string) {
     await this.autoUpdateBookingStatuses();
 
-    const branch = await this.prisma.addressSpa.findFirst({
-      where: { id: branchId, managerId },
-    });
-    if (!branch) {
-      throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
-    }
+    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
 
     const staffs = await this.prisma.spaStaff.findMany({
-      where: { addressSpaId: branchId },
+      where: targetBranch ? { addressSpaId: targetBranch } : {},
       include: {
         user: {
           select: { id: true, name: true, email: true, avatarUrl: true },
@@ -1401,12 +1657,13 @@ export class SpaService {
     const bookings = await this.prisma.spaBooking.findMany({
       where: {
         staffId: { in: staffIds },
-        addressSpaId: branchId,
+        ...(targetBranch ? { addressSpaId: targetBranch } : {}),
       },
       include: {
         service: {
           select: { price: true },
         },
+        feedback: true,
       },
     });
 
@@ -1419,6 +1676,11 @@ export class SpaService {
         b.status === SpaBookingStatus.CHECK_IN ||
         b.status === SpaBookingStatus.LATE
       );
+
+      const ratedBookings = staffBookings.filter((b) => b.feedback && typeof b.feedback.rateStaff === 'number');
+      const averageRating = ratedBookings.length > 0
+        ? Math.round((ratedBookings.reduce((sum, b) => sum + b.feedback!.rateStaff, 0) / ratedBookings.length) * 10) / 10
+        : 0;
 
       const onTimeBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) <= 0);
       const lateBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) > 0);
@@ -1437,8 +1699,70 @@ export class SpaService {
         lateCount: lateBookings.length,
         onTimeRate,
         revenue,
+        averageRating,
+        feedbackCount: ratedBookings.length,
       };
     });
+  }
+
+  async getManagerFeedbacks(managerId: string, branchId?: string) {
+    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
+
+    const feedbacks = await this.prisma.spaFeedback.findMany({
+      where: targetBranch ? { booking: { addressSpaId: targetBranch } } : {},
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            avatarUrl: true,
+          },
+        },
+        booking: {
+          include: {
+            service: true,
+            pet: true,
+            staff: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                avatarUrl: true,
+              },
+            },
+            addressSpa: true,
+          },
+        },
+      },
+    });
+
+    const allSubServiceIds = Array.from(
+      new Set(feedbacks.flatMap((f) => f.booking.subServiceIds || []))
+    );
+
+    const subServicesList =
+      allSubServiceIds.length > 0
+        ? await this.prisma.spaService.findMany({
+          where: { id: { in: allSubServiceIds } },
+          select: { id: true, name: true, price: true, description: true },
+        })
+        : [];
+
+    const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
+
+    return feedbacks.map((f) => ({
+      ...f,
+      booking: {
+        ...f.booking,
+        subServices: (f.booking.subServiceIds || []).map((id) => subServicesMap.get(id)).filter(Boolean),
+      },
+    }));
   }
 
   async getAvailability(branchId: string, dateStr: string, durationMin: number = 30) {
@@ -1539,6 +1863,44 @@ export class SpaService {
     }
 
     return result;
+  }
+
+  async createFeedback(userId: string, bookingId: string, dto: CreateSpaFeedbackDto) {
+    const booking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+      include: { feedback: true },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    if (booking.userId !== userId) {
+      throw new ForbiddenException('Bạn không có quyền đánh giá lịch hẹn này.');
+    }
+
+    if (booking.status !== SpaBookingStatus.COMPLETED) {
+      throw new BadRequestException('Chỉ có thể đánh giá những đơn hàng ở trạng thái hoàn thành.');
+    }
+
+    if (booking.feedback) {
+      throw new BadRequestException('Lịch hẹn này đã được đánh giá trước đó.');
+    }
+
+    const rateStaff = Math.min(5, Math.max(1, Number(dto.rateStaff) || 1));
+    const rateServices = Math.min(5, Math.max(1, Number(dto.rateServices) || 1));
+
+    const feedback = await this.prisma.spaFeedback.create({
+      data: {
+        bookingId,
+        userId,
+        rateStaff,
+        rateServices,
+        comment: dto.comment?.trim() || null,
+      },
+    });
+
+    return feedback;
   }
 }
 

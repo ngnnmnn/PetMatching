@@ -51,7 +51,7 @@ const CATEGORIES = [
   { label: 'Gói combo', value: 'gói combo' },
 ];
 
-export default function SpaHomePage() {
+export default function SpaHome() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'services' | 'branches'>('services');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -95,6 +95,13 @@ export default function SpaHomePage() {
   }, []);
 
   const handleOpenBooking = (service: SpaServiceType) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    const targetUrl = '/spa/book';
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để thực hiện đặt lịch Spa.');
+      router.push(`/login?redirect=${encodeURIComponent(targetUrl)}`);
+      return;
+    }
     setSelectedService({
       id: service.id,
       name: service.name,

@@ -9,7 +9,7 @@ const MENU_ITEMS = [
   { icon: User, label: 'Hồ sơ cá nhân', href: '/profile' },
   { icon: Package, label: 'Đơn hàng của tôi', href: '/orders' },
   { icon: MessageCircle, label: 'Tin nhắn & Ghép đôi', href: '/messages' },
-  { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/book' },
+  { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/bookingHistory' },
   { icon: Sparkles, label: 'Đề xuất & Chăm sóc', href: '/my-pets/recommendations' },
 ];
 
@@ -107,11 +107,24 @@ export default function UserDropdown() {
                 Admin console
               </button>
             )}
-            {(user.role === 'STORE_MANAGER' || user.role === 'SPA_MANAGER') && (
+            {user.role === 'STORE_MANAGER' && (
               <button
                 type="button"
                 onClick={() => {
                   router.push('/manager');
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-bold text-[#E45D1C] transition hover:bg-[#FFF5F0]"
+              >
+                <ShieldCheck className="size-4" />
+                Manager console
+              </button>
+            )}
+            {user.role === 'SPA_MANAGER' && (
+              <button
+                type="button"
+                onClick={() => {
+                  router.push('/managerSpa');
                   setOpen(false);
                 }}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-bold text-[#E45D1C] transition hover:bg-[#FFF5F0]"

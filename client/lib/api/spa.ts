@@ -32,6 +32,8 @@ export const spaApi = {
   createBooking: (data: CreateBookingData) => api.post<any>('/spa/bookings', data),
   getMyBookings: () => api.get<SpaBookingType[]>('/spa/bookings/my'),
   cancelBooking: (id: string) => api.patch<any>(`/spa/bookings/${id}/cancel`),
+  createFeedback: (id: string, data: { rateStaff: number; rateServices: number; comment?: string }) =>
+    api.post<any>(`/spa/bookings/${id}/feedback`, data),
   
   // Staff APIs
   getStaffBookings: () => api.get<SpaBookingType[]>('/spa/staff/bookings'),
@@ -68,6 +70,10 @@ export const spaApi = {
   getAvailableStaffForBooking: (id: string) => api.get<any[]>(`/spa/manager/bookings/${id}/available-staff`),
   assignStaff: (id: string, staffId: string) => api.patch<any>(`/spa/manager/bookings/${id}/assign`, { staffId }),
   getManagerStaffs: (branchId: string) => api.get<any[]>(`/spa/manager/staffs?branchId=${branchId}`),
+  createManagerStaff: (data: { username: string; password: string; fullname: string; phone: string; branchId?: string }) =>
+    api.post<any>('/spa/manager/staffs', data),
+  getManagerFeedbacks: (branchId?: string) =>
+    api.get<any[]>(`/spa/manager/feedbacks${branchId ? `?branchId=${branchId}` : ''}`),
   getAvailability: (branchId: string, date: string, durationMin?: number) =>
     api.get<any[]>(`/spa/availability?branchId=${branchId}&date=${date}${durationMin ? `&durationMin=${durationMin}` : ''}`),
 };

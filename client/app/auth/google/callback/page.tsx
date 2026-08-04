@@ -61,8 +61,8 @@ export default function GoogleCallbackPage() {
 
       const role = response.data.user.role;
       if (role === "ADMIN") router.replace("/admin");
-      else if (role === "STORE_MANAGER" || role === "SPA_MANAGER")
-        router.replace("/manager");
+      else if (role === "STORE_MANAGER") router.replace("/manager");
+      else if (role === "SPA_MANAGER") router.replace("/managerSpa");
       else if (role === "SPA_STAFF") router.replace("/spa/staff");
       else if (redirect) router.replace(redirect);
       else router.replace("/home");

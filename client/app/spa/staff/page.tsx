@@ -38,7 +38,7 @@ const PRESET_PHOTOS = [
   { label: 'Bé mèo sạch sẽ', url: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&h=400&fit=crop' }
 ];
 
-export default function SpaStaffPage() {
+export default function SpaStaff() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [bookings, setBookings] = useState<SpaBookingType[]>([]);

@@ -2,10 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   Calendar,
   ChevronLeft,
+  CheckCircle,
   Clock,
   Eye,
   MapPin,
@@ -14,6 +16,7 @@ import {
   RefreshCw,
   Scissors,
   Sparkles,
+  Star,
   User,
   X
 } from 'lucide-react';
@@ -23,7 +26,8 @@ import { Button } from '@/components/ui/button';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBookingType, SpaServiceType } from '@/types';
 
-export default function SpaBookingsPage() {
+export default function SpaHistory() {
+  const router = useRouter();
   const [bookings, setBookings] = useState<SpaBookingType[]>([]);
   const [allServices, setAllServices] = useState<SpaServiceType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -32,6 +36,56 @@ export default function SpaBookingsPage() {
   // Detail Modal State
   const [selectedBooking, setSelectedBooking] = useState<SpaBookingType | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState<boolean>(false);
+
+  // Feedback Modal State
+  const [feedbackBooking, setFeedbackBooking] = useState<SpaBookingType | null>(null);
+  const [rateStaff, setRateStaff] = useState<number>(0);
+  const [rateServices, setRateServices] = useState<number>(0);
+  const [comment, setComment] = useState<string>('');
+  const [submittingFeedback, setSubmittingFeedback] = useState<boolean>(false);
+
+  const openFeedbackModal = (booking: SpaBookingType) => {
+    setFeedbackBooking(booking);
+    setRateStaff(0);
+    setRateServices(0);
+    setComment('');
+  };
+
+  const handleSubmittingFeedback = async () => {
+    if (!feedbackBooking) return;
+    if (rateServices <= 0) {
+      toast.error('Vui lòng chọn số sao đánh giá dịch vụ Spa.');
+      return;
+    }
+    if (rateStaff <= 0) {
+      toast.error('Vui lòng chọn số sao đánh giá nhân viên.');
+      return;
+    }
+    setSubmittingFeedback(true);
+    try {
+      const res = await spaApi.createFeedback(feedbackBooking.id, {
+        rateStaff,
+        rateServices,
+        comment: comment.trim() || undefined,
+      });
+      toast.success('Gửi đánh giá thành công! Cảm ơn bạn đã đóng góp ý kiến.');
+      const newFeedback = res.data;
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === feedbackBooking.id ? { ...b, feedback: newFeedback } : b
+        )
+      );
+      if (selectedBooking?.id === feedbackBooking.id) {
+        setSelectedBooking((prev) => (prev ? { ...prev, feedback: newFeedback } : null));
+      }
+      setFeedbackBooking(null);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Không thể gửi đánh giá. Vui lòng thử lại.';
+      toast.error(msg);
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -50,8 +104,14 @@ export default function SpaBookingsPage() {
   };
 
   useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để xem lịch hẹn Spa của bạn.');
+      router.push('/login?redirect=/spa/bookings');
+      return;
+    }
     fetchBookings();
-  }, []);
+  }, [router]);
 
   // Helper to resolve subServices for any booking
   const getBookingSubServices = (booking: SpaBookingType) => {
@@ -156,6 +216,10 @@ export default function SpaBookingsPage() {
     }
   };
 
+  const sortedBookings = React.useMemo(() => {
+    return [...bookings].sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime());
+  }, [bookings]);
+
   return (
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-12">
       <AppHeader sectionLabel="Spa" />
@@ -210,7 +274,7 @@ export default function SpaBookingsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {bookings.map((booking) => (
+            {sortedBookings.map((booking) => (
               <div
                 key={booking.id}
                 onClick={() => openDetailModal(booking)}
@@ -300,9 +364,9 @@ export default function SpaBookingsPage() {
                   </div>
                 </div>
 
-                {/* Bottom Section: Action cancel */}
-                {(booking.status === 'PENDING' || booking.status === 'CONFIRMED') && (
-                  <div className="flex justify-end pt-2 border-t border-dashed">
+                {/* Bottom Section: Action buttons */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-dashed border-gray-200">
+                  {(booking.status === 'PENDING' || booking.status === 'CONFIRMED') && (
                     <Button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -314,8 +378,34 @@ export default function SpaBookingsPage() {
                     >
                       {cancellingId === booking.id ? 'Đang hủy...' : 'Hủy lịch hẹn'}
                     </Button>
-                  </div>
-                )}
+                  )}
+
+                  {booking.status === 'COMPLETED' && (
+                    booking.feedback ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-xs cursor-default"
+                      >
+                        <CheckCircle className="size-3.5" />
+                        Đã đánh giá
+                      </button>
+                    ) : (
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openFeedbackModal(booking);
+                        }}
+                        className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 h-8 gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <Star className="size-3.5 fill-white text-white" />
+                        Đánh giá
+                      </Button>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -531,6 +621,119 @@ export default function SpaBookingsPage() {
               >
                 Đóng
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEEDBACK POPUP MODAL */}
+      {feedbackBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100 my-8">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+              <div className="flex items-center gap-2">
+                <Star className="size-5 fill-white text-white" />
+                <h3 className="text-base font-extrabold">Đánh giá dịch vụ & nhân viên</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackBooking(null)}
+                className="rounded-full p-1 text-white/80 hover:text-white hover:bg-white/20 transition cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Booking Summary */}
+              <div className="p-3.5 bg-amber-50/60 border border-amber-200/70 rounded-xl text-xs space-y-1">
+                <p className="font-bold text-amber-900 text-sm">
+                  {feedbackBooking.service?.name || 'Dịch vụ Spa'}
+                </p>
+                <p className="text-amber-800">
+                  Thú cưng: <span className="font-semibold">{feedbackBooking.petName}</span> • Chi nhánh: <span className="font-semibold">{feedbackBooking.addressSpa?.name || 'PetMatch Spa'}</span>
+                </p>
+              </div>
+
+              {/* Service Rating */}
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase text-gray-700 tracking-wider block">
+                  Đánh giá dịch vụ Spa
+                </label>
+                <div className="flex items-center gap-1 bg-gray-50 p-3 rounded-xl border border-gray-200 justify-center">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setRateServices(star)}
+                      className="p-1 text-amber-400 hover:scale-125 transition cursor-pointer"
+                    >
+                      <Star
+                        className={`size-7 ${star <= rateServices ? 'fill-amber-400 text-amber-400' : 'text-gray-300'
+                          }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Staff Rating */}
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase text-gray-700 tracking-wider block">
+                  Đánh giá nhân viên
+                </label>
+                <div className="flex items-center gap-1 bg-gray-50 p-3 rounded-xl border border-gray-200 justify-center">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setRateStaff(star)}
+                      className="p-1 text-amber-400 hover:scale-125 transition cursor-pointer"
+                    >
+                      <Star
+                        className={`size-7 ${star <= rateStaff ? 'fill-amber-400 text-amber-400' : 'text-gray-300'
+                          }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Comment Textarea */}
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase text-gray-700 tracking-wider block">
+                  Feedback <span className="text-gray-400 font-normal lowercase"></span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Nhập phản hồi của bạn"
+                  className="w-full text-xs p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+                />
+              </div>
+
+              {/* Bottom Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setFeedbackBooking(null)}
+                  disabled={submittingFeedback}
+                  className="text-xs font-bold text-gray-600 border-gray-300 hover:bg-gray-100 px-5 h-9 cursor-pointer"
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSubmittingFeedback}
+                  disabled={submittingFeedback}
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-black text-xs px-6 h-9 shadow-sm cursor-pointer"
+                >
+                  {submittingFeedback ? 'Đang lưu...' : 'Đánh giá'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -80,3 +80,37 @@ export class ManagerUpdateServicesDto {
   @IsString({ each: true })
   subServiceIds?: string[];
 }
+
+export class CreateStaffDto {
+  @IsNotEmpty()
+  @IsString()
+  username: string;
+
+  @IsNotEmpty()
+  @IsString()
+  password: string;
+
+  @IsNotEmpty()
+  @IsString()
+  fullname: string;
+
+  @IsNotEmpty()
+  @IsString()
+  phone: string;
+
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+}
+
+export class CreateSpaFeedbackDto {
+  @IsNumber()
+  rateStaff: number;
+
+  @IsNumber()
+  rateServices: number;
+
+  @IsOptional()
+  @IsString()
+  comment?: string;
+}
