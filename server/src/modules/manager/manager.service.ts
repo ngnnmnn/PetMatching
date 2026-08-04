@@ -404,19 +404,6 @@ export class ManagerService {
     });
   }
 
-  async updateStoreSettings(managerId: string, dto: any) {
-    const store = await this.getOrCreateStore(managerId);
-    return this.prisma.store.update({
-      where: { id: store.id },
-      data: {
-        name: dto.name,
-        phone: dto.phone,
-        address: dto.address,
-        description: dto.description || '',
-      },
-    });
-  }
-
   async createCategory(dto: { name: string }) {
     if (!dto.name || !dto.name.trim()) {
       throw new BadRequestException('Tên danh mục không được để trống.');

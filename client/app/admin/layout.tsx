@@ -10,14 +10,13 @@ import {
   FileWarning,
   LayoutDashboard,
   LogOut,
+  MapPin,
   PawPrint,
   Package,
   Scissors,
-  Settings,
   ShieldCheck,
   ShoppingBag,
   SlidersHorizontal,
-  Stethoscope,
   UsersRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,6 +26,7 @@ const navGroups = [
     label: 'Tổng quan',
     items: [
       { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
+      { label: 'Thông tin hệ thống', href: '/admin/system-profile', icon: MapPin },
       { label: 'Người dùng & vai trò', href: '/admin/users', icon: UsersRound },
       { label: 'Báo cáo & khiếu nại', href: '/admin/reports', icon: FileWarning },
     ],
@@ -45,7 +45,6 @@ const navGroups = [
       { label: 'Tổng quan cửa hàng', href: '/admin/store-overview', icon: ShoppingBag },
       { label: 'Sản phẩm', href: '/admin/store-products', icon: Package },
       { label: 'Đơn hàng', href: '/admin/store-orders', icon: Activity },
-      { label: 'Cấu hình cửa hàng', href: '/admin/store-settings', icon: Settings },
     ],
   },
   {
@@ -55,7 +54,6 @@ const navGroups = [
       { label: 'Dịch vụ Spa', href: '/admin/spa-services', icon: Scissors },
       { label: 'Lịch nhân viên', href: '/admin/spa-staff-schedule', icon: CalendarDays },
       { label: 'Lịch đặt Spa', href: '/admin/spa-bookings', icon: Activity },
-      { label: 'Thông tin Spa', href: '/admin/spas', icon: Stethoscope },
     ],
   },
 ];
