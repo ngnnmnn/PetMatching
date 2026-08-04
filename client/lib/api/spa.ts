@@ -72,6 +72,7 @@ export const spaApi = {
   getManagerStaffs: (branchId: string) => api.get<any[]>(`/spa/manager/staffs?branchId=${branchId}`),
   createManagerStaff: (data: { username: string; password: string; fullname: string; phone: string; branchId?: string }) =>
     api.post<any>('/spa/manager/staffs', data),
+  toggleStaffStatus: (id: string) => api.patch<any>(`/spa/manager/staffs/${id}/toggle-status`),
   getManagerFeedbacks: (branchId?: string) =>
     api.get<any[]>(`/spa/manager/feedbacks${branchId ? `?branchId=${branchId}` : ''}`),
   getAvailability: (branchId: string, date: string, durationMin?: number) =>

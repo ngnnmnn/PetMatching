@@ -268,6 +268,12 @@ export class SpaController {
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/staffs/:id/toggle-status')
+  toggleStaffStatus(@Req() req: AuthenticatedRequest, @Param('id') staffId: string) {
+    return this.spaService.toggleStaffStatus(req.user.id, staffId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/feedbacks')
   getManagerFeedbacks(@Req() req: AuthenticatedRequest, @Query('branchId') branchId?: string) {
     return this.spaService.getManagerFeedbacks(req.user.id, branchId);

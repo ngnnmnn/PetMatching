@@ -9,7 +9,7 @@ const MENU_ITEMS = [
   { icon: User, label: 'Hồ sơ cá nhân', href: '/profile' },
   { icon: Package, label: 'Đơn hàng của tôi', href: '/orders' },
   { icon: MessageCircle, label: 'Tin nhắn & Ghép đôi', href: '/messages' },
-  { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/bookingHistory' },
+  { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/bookings' },
   { icon: Sparkles, label: 'Đề xuất & Chăm sóc', href: '/my-pets/recommendations' },
 ];
 

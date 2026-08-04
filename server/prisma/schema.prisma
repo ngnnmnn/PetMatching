@@ -627,6 +627,7 @@ model SpaStaff {
   id           String      @id
   userId       String      @unique
   addressSpaId String?
+  status       String      @default("ACTIVE")
   addressSpa   AddressSpa? @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
   user         User        @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
 

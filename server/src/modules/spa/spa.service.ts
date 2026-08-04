@@ -573,6 +573,9 @@ export class SpaService {
       where: {
         role: UserRole.SPA_STAFF,
         accountStatus: AccountStatus.ACTIVE,
+        spaStaffProfile: {
+          status: 'ACTIVE',
+        },
       },
       select: {
         id: true,
@@ -1208,7 +1211,7 @@ export class SpaService {
       };
     });
 
-    // Priority Sort: 1. PENDING (unconfirmed), 2. CONFIRMED without staff, 3. Chronological by scheduledAt asc
+    // Priority Sort: 1. PENDING (unconfirmed), 2. CONFIRMED without staff, 3. Reverse chronological by scheduledAt desc
     return mappedBookings.sort((a, b) => {
       const getPriority = (item: any) => {
         if (item.status === SpaBookingStatus.PENDING) return 1;
@@ -1220,7 +1223,7 @@ export class SpaService {
       const prioB = getPriority(b);
 
       if (prioA !== prioB) return prioA - prioB;
-      return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+      return new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime();
     });
   }
 
@@ -1240,7 +1243,10 @@ export class SpaService {
     }
 
     const staff = await this.prisma.spaStaff.findFirst({
-      where: { userId: newStaffId, addressSpaId: booking.addressSpaId },
+      where: {
+        OR: [{ userId: newStaffId }, { id: newStaffId }],
+        addressSpaId: booking.addressSpaId,
+      },
     });
     if (!staff) {
       throw new BadRequestException('Nhân viên không thuộc chi nhánh này.');
@@ -1274,7 +1280,7 @@ export class SpaService {
     return this.prisma.spaBooking.update({
       where: { id: bookingId },
       data: {
-        staffId: newStaffId,
+        staffId: staff.userId,
         status: SpaBookingStatus.ASSIGNED,
       },
     });
@@ -1468,7 +1474,7 @@ export class SpaService {
     }
 
     const staffs = await this.prisma.spaStaff.findMany({
-      where: { addressSpaId: booking.addressSpaId },
+      where: { addressSpaId: booking.addressSpaId, status: 'ACTIVE' },
       include: {
         user: {
           select: { id: true, name: true, email: true, avatarUrl: true },
@@ -1533,7 +1539,10 @@ export class SpaService {
     }
 
     const staff = await this.prisma.spaStaff.findFirst({
-      where: { userId: staffId, addressSpaId: booking.addressSpaId },
+      where: {
+        OR: [{ userId: staffId }, { id: staffId }],
+        addressSpaId: booking.addressSpaId,
+      },
     });
     if (!staff) {
       throw new BadRequestException('Nhân viên không thuộc chi nhánh này.');
@@ -1542,7 +1551,7 @@ export class SpaService {
     return this.prisma.spaBooking.update({
       where: { id: bookingId },
       data: {
-        staffId,
+        staffId: staff.userId,
         status: SpaBookingStatus.ASSIGNED,
       },
     });
@@ -1679,7 +1688,7 @@ export class SpaService {
 
       const ratedBookings = staffBookings.filter((b) => b.feedback && typeof b.feedback.rateStaff === 'number');
       const averageRating = ratedBookings.length > 0
-        ? Math.round((ratedBookings.reduce((sum, b) => sum + b.feedback!.rateStaff, 0) / ratedBookings.length) * 10) / 10
+        ? Math.round((ratedBookings.reduce((sum, b) => sum + (b.feedback?.rateStaff || 0), 0) / ratedBookings.length) * 10) / 10
         : 0;
 
       const onTimeBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) <= 0);
@@ -1690,9 +1699,10 @@ export class SpaService {
       return {
         id: staff.id,
         userId: staff.userId,
-        name: staff.user.name,
-        email: staff.user.email,
-        avatarUrl: staff.user.avatarUrl,
+        name: staff.user?.name || 'Nhân viên',
+        email: staff.user?.email || '',
+        avatarUrl: staff.user?.avatarUrl || null,
+        status: staff.status || 'ACTIVE',
         completedCount: completed.length,
         activeCount: active.length,
         onTimeCount: onTimeBookings.length,
@@ -1702,6 +1712,25 @@ export class SpaService {
         averageRating,
         feedbackCount: ratedBookings.length,
       };
+    });
+  }
+
+  async toggleStaffStatus(managerId: string, staffId: string) {
+    const staff = await this.prisma.spaStaff.findUnique({
+      where: { id: staffId },
+    });
+    if (!staff) {
+      throw new NotFoundException('Nhân viên không tồn tại.');
+    }
+    const newStatus = staff.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    return this.prisma.spaStaff.update({
+      where: { id: staffId },
+      data: { status: newStatus },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, avatarUrl: true },
+        },
+      },
     });
   }
 
@@ -1743,7 +1772,7 @@ export class SpaService {
     });
 
     const allSubServiceIds = Array.from(
-      new Set(feedbacks.flatMap((f) => f.booking.subServiceIds || []))
+      new Set(feedbacks.flatMap((f) => f.booking?.subServiceIds || []))
     );
 
     const subServicesList =
@@ -1758,10 +1787,10 @@ export class SpaService {
 
     return feedbacks.map((f) => ({
       ...f,
-      booking: {
+      booking: f.booking ? {
         ...f.booking,
         subServices: (f.booking.subServiceIds || []).map((id) => subServicesMap.get(id)).filter(Boolean),
-      },
+      } : null,
     }));
   }
 
@@ -1769,7 +1798,7 @@ export class SpaService {
     await this.autoUpdateBookingStatuses();
 
     const staffs = await this.prisma.spaStaff.findMany({
-      where: { addressSpaId: branchId },
+      where: { addressSpaId: branchId, status: 'ACTIVE' },
       include: {
         user: {
           select: { id: true, name: true, email: true, avatarUrl: true },

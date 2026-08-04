@@ -359,6 +359,17 @@ function SpaManagerConsoleContent() {
     }
   };
 
+  // Toggle staff status (ACTIVE / INACTIVE)
+  const handleToggleStaffStatus = async (staffId: string) => {
+    try {
+      await spaApi.toggleStaffStatus(staffId);
+      toast.success('Cập nhật trạng thái nhân viên thành công!');
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật trạng thái nhân viên.');
+    }
+  };
+
   // Reschedule booking submission
   const handleRescheduleSubmit = async () => {
     if (!rescheduleBooking || !rescheduleDate || !selectedRescheduleSlot) {
@@ -1512,7 +1523,16 @@ function SpaManagerConsoleContent() {
                             </div>
                           )}
                           <div>
-                            <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${
+                                s.status === 'ACTIVE'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-gray-100 text-gray-500 border-gray-200'
+                              }`}>
+                                ● {s.status === 'ACTIVE' ? 'Hoạt động' : 'Tạm dừng'}
+                              </span>
+                            </div>
                             <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
                             <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
                           </div>
@@ -1574,8 +1594,23 @@ function SpaManagerConsoleContent() {
                       </div>
 
                       <div className="border-t pt-3 flex justify-between items-center">
-                        <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
-                        <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
+                        <div>
+                          <span className="text-[11px] text-gray-400 font-bold uppercase block">Doanh thu tạo ra:</span>
+                          <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
+                        </div>
+
+                        {/* Status Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStaffStatus(s.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                            s.status === 'ACTIVE'
+                              ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-300'
+                          }`}
+                        >
+                          {s.status === 'ACTIVE' ? '🟢 Bật (Đang hoạt động)' : '⚪ Tắt (Đang dừng)'}
+                        </button>
                       </div>
                     </div>
                   ))
@@ -2173,8 +2208,8 @@ function SpaManagerConsoleContent() {
                       className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
                     >
                       <option value="">-- Chọn nhân viên phụ trách --</option>
-                      {managerStaffs.map((st: any) => (
-                        <option key={st.id} value={st.id}>
+                      {managerStaffs.filter((st: any) => st.status !== 'INACTIVE').map((st: any) => (
+                        <option key={st.id} value={st.userId || st.user?.id || st.id}>
                           👤 {st.user?.name || st.name} ({st.user?.phone || 'NV Spa'})
                         </option>
                       ))}
