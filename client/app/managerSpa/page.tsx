@@ -263,9 +263,25 @@ function SpaManagerConsoleContent() {
           spaApi.getManagerStaffs(selectedBranchId).catch(() => ({ data: [] })),
           spaApi.getServices().catch(() => ({ data: [] })),
         ]);
-        setBookings(bookingsRes.data || []);
+        const bList = bookingsRes.data || [];
+        setBookings(bList);
         setManagerStaffs(staffsRes.data || []);
         if (servicesRes.data) setServices(servicesRes.data);
+
+        // Auto fetch available staff for bookings needing assignment
+        const needStaffBookings = bList.filter((b: any) => !b.staffId && ['PENDING', 'CONFIRMED', 'CHECK_IN', 'LATE'].includes(b.status));
+        const staffMap: Record<string, any[]> = {};
+        await Promise.all(
+          needStaffBookings.map(async (b: any) => {
+            try {
+              const stRes = await spaApi.getAvailableStaffForBooking(b.id);
+              staffMap[b.id] = stRes.data || [];
+            } catch (e) {
+              console.error(e);
+            }
+          })
+        );
+        setAvailableStaffsMap(staffMap);
       } else if (currentTab === 'services') {
         const servicesRes = await spaApi.getManagerServices();
         setServices(servicesRes.data || []);
@@ -308,6 +324,20 @@ function SpaManagerConsoleContent() {
   }, [selectedBranchId, slotDate, currentTab]);
 
   // Fetch slots for reschedule when date changes
+  useEffect(() => {
+    if (selectedBookingDetail?.id) {
+      spaApi
+        .getAvailableStaffForBooking(selectedBookingDetail.id)
+        .then((stRes) => {
+          setAvailableStaffsMap((prev) => ({
+            ...prev,
+            [selectedBookingDetail.id]: stRes.data || [],
+          }));
+        })
+        .catch(console.error);
+    }
+  }, [selectedBookingDetail?.id]);
+
   useEffect(() => {
     const fetchRescheduleSlots = async () => {
       if (!rescheduleBooking || !rescheduleDate) return;
@@ -2224,10 +2254,14 @@ function SpaManagerConsoleContent() {
                       onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
                       className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
                     >
-                      <option value="">-- Chọn nhân viên phụ trách --</option>
-                      {managerStaffs.filter((st: any) => st.status !== 'INACTIVE').map((st: any) => (
-                        <option key={st.id} value={st.userId || st.user?.id || st.id}>
-                          👤 {st.user?.name || st.name} ({st.user?.phone || 'NV Spa'})
+                      <option value="">
+                        {(availableStaffsMap[selectedBookingDetail.id] || []).length === 0
+                          ? '-- Không có nhân viên rảnh ca làm này --'
+                          : '-- Chọn nhân viên chưa có ca làm --'}
+                      </option>
+                      {(availableStaffsMap[selectedBookingDetail.id] || []).map((st: any) => (
+                        <option key={st.id} value={st.id}>
+                          👤 {st.name} ({st.email || 'NV Rảnh'})
                         </option>
                       ))}
                     </select>

@@ -256,11 +256,11 @@ function SpaBookingWizard() {
     if (!bookingDate) return [];
     const base = new Date(bookingDate);
     if (isNaN(base.getTime())) return [];
-    
+
     const day = base.getDay();
     const diff = base.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(base.setDate(diff));
-    
+
     const days = [];
     const weekdays = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
     for (let i = 0; i < 7; i++) {
@@ -533,11 +533,10 @@ function SpaBookingWizard() {
                         <div
                           key={pet.id}
                           onClick={() => setSelectedPetId(pet.id)}
-                          className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
-                            selectedPetId === pet.id
+                          className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${selectedPetId === pet.id
                               ? 'border-primary bg-primary/5 ring-1 ring-primary'
                               : 'border-gray-200 bg-white'
-                          }`}
+                            }`}
                         >
                           <input
                             type="radio"
@@ -634,11 +633,10 @@ function SpaBookingWizard() {
                             <div
                               key={service.id}
                               onClick={() => setSelectedMainServiceId(isSelected ? '' : service.id)}
-                              className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between space-y-2 ${
-                                isSelected
+                              className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between space-y-2 ${isSelected
                                   ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/30'
                                   : 'border-gray-200 bg-white hover:border-purple-200'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start justify-between">
                                 <div className="space-y-1">
@@ -675,11 +673,6 @@ function SpaBookingWizard() {
                         <Plus className="size-4 text-green-600" />
                         Dịch vụ phụ / Dịch vụ lẻ (Chọn thêm hoặc không)
                       </label>
-                      {selectedMainService && subServices.length > availableSubServices.length && (
-                        <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
-                          ✨ Đã ẩn các dịch vụ lẻ đã có sẵn trong gói combo đã chọn
-                        </span>
-                      )}
                     </div>
 
                     {availableSubServices.length === 0 ? (
@@ -694,11 +687,10 @@ function SpaBookingWizard() {
                             <div
                               key={sub.id}
                               onClick={() => handleSubServiceToggle(sub.id)}
-                              className={`p-3.5 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${
-                                isChecked
+                              className={`p-3.5 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${isChecked
                                   ? 'border-green-600 bg-green-50/80 ring-1 ring-green-500/30'
                                   : 'border-gray-200 bg-white hover:border-green-200 hover:bg-gray-50'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start gap-3">
                                 <input
@@ -785,13 +777,12 @@ function SpaBookingWizard() {
                               setBookingDate(day.dateStr);
                               setBookingTime('');
                             }}
-                            className={`flex flex-col items-center justify-center p-3 rounded-xl border min-w-[76px] transition-all cursor-pointer ${
-                              isPast
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border min-w-[76px] transition-all cursor-pointer ${isPast
                                 ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
                                 : active
-                                ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
-                                : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
-                            }`}
+                                  ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
+                                  : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
+                              }`}
                           >
                             <span className="text-[10px] uppercase font-bold tracking-wider">{day.weekdayStr}</span>
                             <span className="text-lg font-black mt-0.5">{day.dayNum}</span>
@@ -830,13 +821,12 @@ function SpaBookingWizard() {
                               type="button"
                               disabled={!hasChuyen}
                               onClick={() => setBookingTime(slot.time)}
-                              className={`py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${
-                                !hasChuyen
+                              className={`py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${!hasChuyen
                                   ? 'bg-gray-50 border-gray-150 text-gray-300 cursor-not-allowed'
                                   : isSelected
-                                  ? 'bg-primary border-primary text-white shadow-md font-bold'
-                                  : 'bg-white border-gray-250 text-gray-700 hover:border-primary'
-                              }`}
+                                    ? 'bg-primary border-primary text-white shadow-md font-bold'
+                                    : 'bg-white border-gray-250 text-gray-700 hover:border-primary'
+                                }`}
                             >
                               <span className="text-sm font-black">{slot.time}</span>
                               {hasChuyen ? (
