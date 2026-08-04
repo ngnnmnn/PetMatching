@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { ImageLightbox } from '@/components/ui/image-lightbox';
 import {
   AccountStatus,
   AdminRole,
@@ -26,8 +27,8 @@ type PetModerationFlow = {
   pet: Row;
 };
 
-const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER'];
-const accountStatusOptions: AccountStatus[] = ['ACTIVE', 'SUSPENDED', 'PENDING_MANAGER'];
+const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER', 'SPA_STAFF'];
+const accountStatusOptions: AccountStatus[] = ['ACTIVE', 'SUSPENDED'];
 const complaintTypeOptions = [
   ['ALL', 'Tất cả nhóm'],
   ['STORE', 'Cửa hàng'],
@@ -285,7 +286,7 @@ export default function AdminSectionPage() {
       const stats = rows[0]?.stats ?? {};
       return { total: stats.todayBookings ?? 0, active: stats.completedBookings ?? 0, pending: stats.pendingBookings ?? 0 };
     }
-    const pending = rows.filter((row) => row.status === 'PENDING' || row.accountStatus === 'PENDING_MANAGER').length;
+    const pending = rows.filter((row) => row.status === 'PENDING').length;
     const active = section === 'spa-services'
       ? rows.filter((row) => row.isActive).length
       : section === 'reports'
@@ -317,7 +318,7 @@ export default function AdminSectionPage() {
   const handleRoleChange = (row: Row, nextRole: AdminRole) => {
     if (nextRole === row.role) return;
 
-    if (row.role === 'USER' && nextRole === 'SPA_MANAGER') {
+    if (row.role !== 'SPA_MANAGER' && nextRole === 'SPA_MANAGER') {
       setSpaManagerRoleFlow({ mode: 'GRANT', user: row });
       return;
     }
@@ -530,7 +531,6 @@ function UserManagementPanel({
         <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
           <option value="ALL">Tất cả vai trò</option>
           {roleOptions.map((role) => <option key={role} value={role}>{formatRole(role)}</option>)}
-          <option value="SPA_STAFF">Nhân viên spa</option>
         </select>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
           <option value="ALL">Tất cả trạng thái</option>
@@ -1406,14 +1406,11 @@ function ActionGroup({
   }
 
   if (section === 'users') {
-    const isSpaStaff = row.role === 'SPA_STAFF';
-    const availableRoles: AdminRole[] = isSpaStaff
-      ? ['SPA_STAFF']
-      : row.role === 'SPA_MANAGER'
-        ? ['SPA_MANAGER', 'USER']
-        : row.role === 'STORE_MANAGER'
-          ? ['STORE_MANAGER', 'USER']
-          : roleOptions;
+    const availableRoles: AdminRole[] = row.role === 'SPA_MANAGER'
+      ? ['SPA_MANAGER', 'USER']
+      : row.role === 'STORE_MANAGER'
+        ? ['STORE_MANAGER', 'USER', 'SPA_STAFF']
+        : roleOptions;
 
     return (
       <div className="flex flex-wrap justify-end gap-2">
@@ -1422,8 +1419,6 @@ function ActionGroup({
             className="h-9 rounded-lg border border-[#D8E0EA] bg-white px-2.5 text-xs font-black text-[#334155] outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
             value={row.role}
             onChange={(event) => onRoleChange(event.target.value as AdminRole)}
-            disabled={isSpaStaff}
-            title={isSpaStaff ? 'Vai trò nhân viên Spa do Spa Manager quản lý' : undefined}
           >
             {availableRoles.map((role) => <option key={role} value={role}>{formatRole(role)}</option>)}
           </select>
@@ -1695,7 +1690,6 @@ function formatStatus(status?: string) {
   const statuses: Record<string, string> = {
     ACTIVE: 'Đang hoạt động',
     SUSPENDED: 'Tạm dừng',
-    PENDING_MANAGER: 'Chờ duyệt quản lý',
     PENDING: 'Đang chờ',
     REVIEWING: 'Đang xem xét',
     APPROVED: 'Đã duyệt',
@@ -1763,6 +1757,32 @@ function formatPetModerationReason(reason?: string) {
 }
 
 function renderDocumentLinks(imageUrls?: string[]) {
+  if (!imageUrls?.length) return '-';
+  return <DocumentImageLinks imageUrls={imageUrls} />;
+}
+
+function DocumentImageLinks({ imageUrls }: { imageUrls: string[] }) {
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {imageUrls.map((url, index) => (
+          <button
+            type="button"
+            key={`${url.slice(0, 24)}-${index}`}
+            onClick={() => setViewingImageUrl(url)}
+            className="rounded-lg border border-[#D8E0EA] px-2.5 py-1 text-xs font-black text-[#0F766E] transition hover:border-[#0F766E] hover:bg-[#E6F5F2]"
+          >
+            Ảnh {index + 1}
+          </button>
+        ))}
+      </div>
+      <ImageLightbox imageUrl={viewingImageUrl} alt="Tài liệu xác minh thú cưng" onClose={() => setViewingImageUrl(null)} />
+    </>
+  );
+}
+
+function renderDocumentLinksLegacy(imageUrls?: string[]) {
   if (!imageUrls?.length) return '-';
 
   return (

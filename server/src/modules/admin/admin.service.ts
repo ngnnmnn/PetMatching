@@ -233,22 +233,38 @@ export class AdminService {
 
     const currentUser = await this.ensureManagedUser(userId);
 
-    if (currentUser.role === UserRole.SPA_STAFF || dto.role === UserRole.SPA_STAFF) {
-      throw new BadRequestException('Tài khoản nhân viên Spa chỉ được quản lý bởi Spa Manager.');
-    }
-
     if (currentUser.role === UserRole.SPA_MANAGER || dto.role === UserRole.SPA_MANAGER) {
       throw new BadRequestException('Hãy sử dụng quy trình cấp hoặc thu hồi quyền Spa Manager.');
     }
 
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role: dto.role },
-      select: { id: true, email: true, name: true, role: true, accountStatus: true },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { role: dto.role },
+        select: { id: true, email: true, name: true, role: true, accountStatus: true },
+      });
 
-    await this.audit(actor.id, 'ADMIN_UPDATE_USER_ROLE', 'User', userId, { role: dto.role });
-    return user;
+      if (dto.role === UserRole.SPA_STAFF) {
+        await tx.spaStaff.upsert({
+          where: { userId },
+          update: {},
+          create: { id: userId, userId },
+        });
+      } else if (currentUser.role === UserRole.SPA_STAFF) {
+        await tx.spaStaff.deleteMany({ where: { userId } });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_UPDATE_USER_ROLE',
+          targetType: 'User',
+          targetId: userId,
+          metadata: { previousRole: currentUser.role, role: dto.role },
+        },
+      });
+      return user;
+    });
   }
 
   async updateAccountStatus(actor: AdminActor, userId: string, dto: UpdateAccountStatusDto) {
@@ -268,8 +284,8 @@ export class AdminService {
 
   async grantSpaManager(actor: AdminActor, userId: string, dto: GrantSpaManagerDto) {
     const user = await this.ensureManagedUser(userId);
-    if (user.role !== UserRole.USER) {
-      throw new BadRequestException('Chỉ có thể cấp quyền Spa Manager cho tài khoản người dùng.');
+    if (user.role !== UserRole.USER && user.role !== UserRole.SPA_STAFF) {
+      throw new BadRequestException('Chỉ có thể cấp quyền Spa Manager cho tài khoản người dùng hoặc nhân viên Spa.');
     }
 
     const spa = await this.prisma.addressSpa.findFirst({
@@ -287,6 +303,9 @@ export class AdminService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (user.role === UserRole.SPA_STAFF) {
+        await tx.spaStaff.deleteMany({ where: { userId } });
+      }
       const manager = await tx.user.update({
         where: { id: userId },
         data: { role: UserRole.SPA_MANAGER, accountStatus: AccountStatus.ACTIVE },

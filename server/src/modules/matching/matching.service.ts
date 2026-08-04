@@ -17,6 +17,7 @@ import {
   VerificationBadge,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
@@ -67,7 +68,10 @@ function calculateHaversineDistance(
 
 @Injectable()
 export class MatchingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
@@ -369,10 +373,127 @@ export class MatchingService {
       include: {
         pet1: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
         pet2: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
-        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { sender: { select: { id: true, name: true } } },
+        },
+        _count: {
+          select: {
+            messages: { where: { senderId: { not: userId }, isRead: false } },
+          },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  async getMessages(userId: string, matchId: string) {
+    const match = await this.prisma.match.findFirst({
+      where: {
+        id: matchId,
+        status: MatchStatus.ACTIVE,
+        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+      },
+      select: {
+        messages: {
+          include: {
+            sender: { select: { id: true, name: true, avatarUrl: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!match) {
+      throw new NotFoundException('Active match not found.');
+    }
+
+    const hasUnreadMessages = match.messages.some(
+      (message) => message.senderId !== userId && !message.isRead,
+    );
+    if (hasUnreadMessages) {
+      await this.prisma.message.updateMany({
+        where: { matchId, senderId: { not: userId }, isRead: false },
+        data: { isRead: true },
+      });
+    }
+
+    return match.messages.map((message) =>
+      message.senderId === userId ? message : { ...message, isRead: true },
+    );
+  }
+
+  async sendMessage(userId: string, matchId: string, content: string) {
+    await this.getOwnedActiveMatch(userId, matchId);
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      throw new BadRequestException('Message content cannot be empty.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: { matchId, senderId: userId, content: normalizedContent },
+        include: {
+          sender: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      });
+      await tx.match.update({ where: { id: matchId }, data: { updatedAt: new Date() } });
+      return message;
+    });
+  }
+
+  async sendImageMessage(
+    userId: string,
+    matchId: string,
+    file: { buffer: Buffer; mimetype: string },
+    content?: string,
+  ) {
+    await this.getOwnedActiveMatch(userId, matchId);
+    const uploaded = await this.cloudinary.uploadBuffer(
+      file.buffer,
+      `petmatching/users/${userId}/chat/${matchId}`,
+      {
+        quality: 'auto:good',
+        fetch_format: 'auto',
+        transformation: [{ width: 1600, height: 1600, crop: 'limit' }],
+      },
+    );
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const message = await tx.message.create({
+          data: {
+            matchId,
+            senderId: userId,
+            content: content?.trim().slice(0, 2000) || '',
+            imageUrl: uploaded.url,
+          },
+          include: {
+            sender: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        });
+        await tx.match.update({ where: { id: matchId }, data: { updatedAt: new Date() } });
+        return message;
+      });
+    } catch (error) {
+      await this.cloudinary.destroyByUrl(uploaded.url);
+      throw error;
+    }
+  }
+
+  private async getOwnedActiveMatch(userId: string, matchId: string) {
+    const match = await this.prisma.match.findFirst({
+      where: {
+        id: matchId,
+        status: MatchStatus.ACTIVE,
+        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+      },
+      select: { id: true },
+    });
+    if (!match) {
+      throw new NotFoundException('Active match not found.');
+    }
+    return match;
   }
 
   // =============================================================

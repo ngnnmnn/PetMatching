@@ -1,7 +1,7 @@
 import api from '@/lib/axios';
 
 export type AdminRole = 'USER' | 'ADMIN' | 'MODERATOR' | 'STORE_MANAGER' | 'SPA_MANAGER' | 'SPA_STAFF';
-export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING_MANAGER';
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED';
 export type ApprovalStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
 export type DocumentStatus = 'PENDING' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'NEED_MORE_INFO';
 export type ComplaintAction =
