@@ -1,9 +1,23 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
+import { ConfirmPregnancyDto } from './dto/confirm-pregnancy.dto';
+import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
 import { SendMatchMessageDto } from './dto/send-match-message.dto';
@@ -15,7 +29,10 @@ export class MatchingController {
   constructor(private readonly matchingService: MatchingService) {}
 
   @Get('candidates')
-  getCandidates(@Req() request: AuthenticatedRequest, @Query() dto: GetCandidatesDto) {
+  getCandidates(
+    @Req() request: AuthenticatedRequest,
+    @Query() dto: GetCandidatesDto,
+  ) {
     return this.matchingService.getCandidates(request.user.id, dto);
   }
 
@@ -57,6 +74,32 @@ export class MatchingController {
     return this.matchingService.getMatches(request.user.id);
   }
 
+  @Post('matches/:id/confirm-meeting')
+  confirmMeeting(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.matchingService.confirmMeeting(request.user.id, id);
+  }
+
+  @Post('matches/:id/confirm-pregnancy')
+  confirmPregnancy(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ConfirmPregnancyDto,
+  ) {
+    return this.matchingService.confirmPregnancy(request.user.id, id, dto);
+  }
+
+  @Post('matches/:id/end')
+  endMatch(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: EndMatchDto,
+  ) {
+    return this.matchingService.endMatch(request.user.id, id, dto);
+  }
+
   @Get('matches/:id/messages')
   getMessages(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.matchingService.getMessages(request.user.id, id);
@@ -77,8 +120,13 @@ export class MatchingController {
       storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_request, file, callback) => {
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
-          callback(new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.'), false);
+        if (
+          !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)
+        ) {
+          callback(
+            new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.'),
+            false,
+          );
           return;
         }
         callback(null, true);
@@ -92,6 +140,11 @@ export class MatchingController {
     @Body('content') content?: string,
   ) {
     if (!file) throw new BadRequestException('Không tìm thấy ảnh để tải lên.');
-    return this.matchingService.sendImageMessage(request.user.id, id, file, content);
+    return this.matchingService.sendImageMessage(
+      request.user.id,
+      id,
+      file,
+      content,
+    );
   }
 }

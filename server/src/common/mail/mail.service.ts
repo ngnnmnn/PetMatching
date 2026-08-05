@@ -1,6 +1,14 @@
 import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
+interface MeetingEmailDetails {
+  email: string;
+  recipientName: string;
+  confirmerName: string;
+  pet1Name: string;
+  pet2Name: string;
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -91,5 +99,72 @@ export class MailService {
         </div>
       `,
     });
+  }
+
+  async sendMeetingConfirmationRequestedEmail(details: MeetingEmailDetails) {
+    const mailer = this.createMailer();
+    if (!mailer) {
+      throw new BadGatewayException(
+        'Chưa cấu hình SMTP để gửi email xác nhận gặp mặt.',
+      );
+    }
+
+    const recipientName = this.escapeHtml(details.recipientName);
+    const confirmerName = this.escapeHtml(details.confirmerName);
+    const pet1Name = this.escapeHtml(details.pet1Name);
+    const pet2Name = this.escapeHtml(details.pet2Name);
+
+    await mailer.transporter.sendMail({
+      from: mailer.from,
+      to: details.email,
+      subject: 'Xác nhận gặp mặt trên PetMatching',
+      text: `${details.confirmerName} đã xác nhận ${details.pet1Name} và ${details.pet2Name} đã gặp nhau. Vui lòng truy cập PetMatching để xác nhận.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #1a1a1a; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #e45d1c;">Xác nhận gặp mặt</h2>
+          <p>Xin chào ${recipientName},</p>
+          <p><strong>${confirmerName}</strong> đã xác nhận <strong>${pet1Name}</strong> và <strong>${pet2Name}</strong> đã gặp nhau.</p>
+          <p>Vui lòng truy cập PetMatching để xác nhận từ phía bạn.</p>
+        </div>
+      `,
+    });
+  }
+
+  async sendMeetingCompletedEmail(details: MeetingEmailDetails) {
+    const mailer = this.createMailer();
+    if (!mailer) {
+      throw new BadGatewayException(
+        'Chưa cấu hình SMTP để gửi email hoàn tất gặp mặt.',
+      );
+    }
+
+    const recipientName = this.escapeHtml(details.recipientName);
+    const confirmerName = this.escapeHtml(details.confirmerName);
+    const pet1Name = this.escapeHtml(details.pet1Name);
+    const pet2Name = this.escapeHtml(details.pet2Name);
+
+    await mailer.transporter.sendMail({
+      from: mailer.from,
+      to: details.email,
+      subject: 'Hai bên đã hoàn tất xác nhận gặp mặt',
+      text: `${details.confirmerName} đã xác nhận. Hai bên đã hoàn tất xác nhận gặp mặt cho ${details.pet1Name} và ${details.pet2Name}.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #1a1a1a; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #e45d1c;">Xác nhận gặp mặt hoàn tất</h2>
+          <p>Xin chào ${recipientName},</p>
+          <p><strong>${confirmerName}</strong> đã xác nhận. Hai bên đã hoàn tất xác nhận gặp mặt cho <strong>${pet1Name}</strong> và <strong>${pet2Name}</strong>.</p>
+          <p>Trạng thái ghép đôi hiện là <strong>Đã gặp</strong>.</p>
+        </div>
+      `,
+    });
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 }
