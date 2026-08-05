@@ -1,4 +1,13 @@
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+} from 'class-validator';
 import { BreedingOption, Gender, PetStatus, Species } from '@prisma/client';
 
 export class CreatePetDto {

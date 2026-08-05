@@ -17,7 +17,7 @@ async function bootstrap() {
     'http://localhost:3001',
     'http://127.0.0.1:3001',
   ].filter(Boolean);
-  
+
   app.enableCors({
     origin: (
       origin: string | undefined,
@@ -28,7 +28,7 @@ async function bootstrap() {
         callback(null, true);
         return;
       }
-      
+
       // Allow any vercel.app subdomains for preview environments
       if (origin.endsWith('.vercel.app')) {
         callback(null, true);
@@ -39,14 +39,16 @@ async function bootstrap() {
     },
     credentials: true,
   });
-  
+
   // Thêm ValidationPipe để tự động validate DTO
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-    forbidNonWhitelisted: true,
-  }));
-  
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+
   const port = process.env.PORT || 5000;
   await app.listen(port, '0.0.0.0');
   console.log(`Server running on port ${port}`);

@@ -158,8 +158,10 @@ function CheckoutPageContent() {
       return;
     }
 
-    if (item.product.stock !== undefined && item.product.stock !== null && newQty > item.product.stock) {
-      toast.warning(`Chỉ còn lại ${item.product.stock} sản phẩm trong kho`);
+    const stock = item.variant ? item.variant.stock : item.product.stock;
+
+    if (stock !== undefined && stock !== null && newQty > stock) {
+      toast.warning(`Chỉ còn lại ${stock} sản phẩm trong kho`);
       return;
     }
 
@@ -285,7 +287,9 @@ function CheckoutPageContent() {
   }, [loading, checkoutItems, router, orderPlaced]);
 
   const checkoutTotal = checkoutItems.reduce((acc, item) => {
-    const price = item.product.salePrice ?? item.product.sellingPrice;
+    const price = item.variant
+      ? (item.variant.salePrice ?? item.variant.sellingPrice)
+      : (item.product.salePrice ?? item.product.sellingPrice);
     return acc + price * item.quantity;
   }, 0);
 
@@ -593,9 +597,14 @@ function CheckoutPageContent() {
 
       // Prepare order items
       const orderItems = checkoutItems.map((item) => ({
-        productId: item.product.id,
+        productId: item.productId,
+        variantId: item.variantId || null,
         quantity: Number(item.quantity),
-        price: Number(item.product.salePrice ?? item.product.sellingPrice),
+        price: Number(
+          item.variant
+            ? (item.variant.salePrice ?? item.variant.sellingPrice)
+            : (item.product.salePrice ?? item.product.sellingPrice)
+        ),
       }));
 
       // Create Order in DB
@@ -1030,13 +1039,15 @@ function CheckoutPageContent() {
 
                 <div className="divide-y divide-[var(--border-color)] max-h-[30rem] overflow-y-auto pr-1">
                   {checkoutItems.map((item) => {
-                    const price = item.product.salePrice ?? item.product.sellingPrice;
+                    const price = item.variant
+                      ? (item.variant.salePrice ?? item.variant.sellingPrice)
+                      : (item.product.salePrice ?? item.product.sellingPrice);
                     return (
                       <div key={item.id} className="py-4 flex gap-3 items-center border-b border-[var(--border-color)] last:border-b-0">
                         {/* Image */}
                         <div className="aspect-square size-14 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)] shrink-0 relative">
                           <img
-                            src={item.product.imageUrl || '/placeholder.svg'}
+                            src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
                             className="w-full h-full object-cover"
                           />
@@ -1047,6 +1058,11 @@ function CheckoutPageContent() {
                           <p className="text-xs font-bold text-[var(--text-main)] line-clamp-2 pr-2" title={item.product.name}>
                             {item.product.name}
                           </p>
+                          {item.variant && (
+                            <p className="text-[10px] text-[#0F766E] font-extrabold mt-0.5 bg-[#EEF8F5] px-1.5 py-0.5 rounded inline-block w-fit">
+                              Phân loại: {item.variant.name}
+                            </p>
+                          )}
 
                           {/* Mini Quantity Selector */}
                           <div className="flex items-center gap-2 mt-2">

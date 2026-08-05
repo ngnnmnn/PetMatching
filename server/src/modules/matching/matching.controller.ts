@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
@@ -12,7 +21,10 @@ export class MatchingController {
   constructor(private readonly matchingService: MatchingService) {}
 
   @Get('candidates')
-  getCandidates(@Req() request: AuthenticatedRequest, @Query() dto: GetCandidatesDto) {
+  getCandidates(
+    @Req() request: AuthenticatedRequest,
+    @Query() dto: GetCandidatesDto,
+  ) {
     return this.matchingService.getCandidates(request.user.id, dto);
   }
 

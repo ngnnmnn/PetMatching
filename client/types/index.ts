@@ -136,6 +136,20 @@ export interface ProductReview {
   };
 }
 
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  attributes?: Record<string, any> | null;
+  sellingPrice: number;
+  salePrice?: number | null;
+  stock: number;
+  imageUrl?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -158,6 +172,7 @@ export interface Product {
   isFeatured: boolean;
   createdAt: string;
   updatedAt: string;
+  variants?: ProductVariant[];
 }
 
 export interface PaginatedResponse<T> {

@@ -10,7 +10,6 @@ const MENU_ITEMS = [
   { icon: Package, label: 'Đơn hàng của tôi', href: '/orders' },
   { icon: MessageCircle, label: 'Tin nhắn & Ghép đôi', href: '/messages' },
   { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/book' },
-  { icon: Sparkles, label: 'Đề xuất & Chăm sóc', href: '/my-pets/recommendations' },
 ];
 
 export default function UserDropdown() {

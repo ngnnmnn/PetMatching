@@ -1,21 +1,24 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product } from '@/types';
+import { Product, ProductVariant } from '@/types';
 import { toast } from 'sonner';
 import { cartApi } from '@/lib/api/cart';
 
 export interface CartItem {
-  id: string; // matches product.id
+  id: string; // unique cart item line identifier (cuid on DB or composite key for guest)
+  productId: string;
+  variantId?: string | null;
   product: Product;
+  variant?: ProductVariant | null;
   quantity: number;
 }
 
 interface CartContextType {
   cartItems: CartItem[];
-  addToCart: (product: Product, quantity?: number, showToast?: boolean) => Promise<void>;
-  removeFromCart: (productId: string) => Promise<void>;
-  updateQuantity: (productId: string, quantity: number) => Promise<void>;
+  addToCart: (product: Product, quantity?: number, showToast?: boolean, variantId?: string | null) => Promise<void>;
+  removeFromCart: (cartItemId: string) => Promise<void>;
+  updateQuantity: (cartItemId: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
   cartCount: number;
   cartTotal: number;
@@ -33,8 +36,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       try {
         const res = await cartApi.getCart();
         const items = res.data.map((item) => ({
-          id: item.product.id,
+          id: item.id,
+          productId: item.productId,
+          variantId: item.variantId || null,
           product: item.product,
+          variant: item.variant || null,
           quantity: item.quantity,
         }));
         setCartItems(items);
@@ -78,13 +84,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const localItems: CartItem[] = JSON.parse(stored);
           if (localItems.length > 0) {
             const mergePayload = localItems.map((item) => ({
-              productId: item.id,
+              productId: item.productId,
               quantity: item.quantity,
+              variantId: item.variantId || null,
             }));
             const res = await cartApi.mergeCart(mergePayload);
             const items = res.data.map((item) => ({
-              id: item.product.id,
+              id: item.id,
+              productId: item.productId,
+              variantId: item.variantId || null,
               product: item.product,
+              variant: item.variant || null,
               quantity: item.quantity,
             }));
             setCartItems(items);
@@ -135,22 +145,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [cartItems, isMounted]);
 
-  const addToCart = async (product: Product, quantity = 1, showToast = true) => {
+  const addToCart = async (product: Product, quantity = 1, showToast = true, variantId?: string | null) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-    const existing = cartItems.find((item) => item.id === product.id);
+    
+    // Resolve variant details
+    const variant = variantId && product.variants
+      ? product.variants.find(v => v.id === variantId)
+      : null;
+
+    // Unique key on frontend
+    const cartItemId = token ? '' : (variantId ? `${product.id}_${variantId}` : product.id);
+    
+    // Find existing item in frontend state
+    const existing = token
+      ? cartItems.find((item) => item.productId === product.id && item.variantId === (variantId || null))
+      : cartItems.find((item) => item.id === cartItemId);
+
     const currentQtyInCart = existing ? existing.quantity : 0;
     const targetQty = currentQtyInCart + quantity;
+    const stock = variant ? variant.stock : product.stock;
 
-    if (product.stock !== undefined && product.stock !== null && targetQty > product.stock) {
-      toast.warning(`Chỉ có thể thêm tối đa ${product.stock} sản phẩm này vào giỏ hàng (Hiện tại trong giỏ: ${currentQtyInCart})`);
+    if (stock !== undefined && stock !== null && targetQty > stock) {
+      toast.warning(`Chỉ có thể thêm tối đa ${stock} sản phẩm này vào giỏ hàng (Hiện tại trong giỏ: ${currentQtyInCart})`);
       return;
     }
 
     if (token) {
       try {
-        await cartApi.addToCart(product.id, quantity);
+        await cartApi.addToCart(product.id, quantity, variantId);
         if (showToast) {
-          toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}" vào giỏ hàng!`);
+          toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}${variant ? ` (${variant.name})` : ''}" vào giỏ hàng!`);
         }
         await loadCart();
       } catch (e: any) {
@@ -158,67 +182,76 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       if (showToast) {
-        toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}" vào giỏ hàng!`);
+        toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}${variant ? ` (${variant.name})` : ''}" vào giỏ hàng!`);
       }
       setCartItems((prev) => {
         if (existing) {
           return prev.map((item) =>
-            item.id === product.id ? { ...item, quantity: targetQty } : item
+            item.id === existing.id ? { ...item, quantity: targetQty } : item
           );
         }
-        return [...prev, { id: product.id, product, quantity }];
+        return [...prev, {
+          id: cartItemId,
+          productId: product.id,
+          variantId: variantId || null,
+          product,
+          variant,
+          quantity
+        }];
       });
     }
   };
 
-  const removeFromCart = async (productId: string) => {
+  const removeFromCart = async (cartItemId: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-    const item = cartItems.find((i) => i.id === productId);
+    const item = cartItems.find((i) => i.id === cartItemId);
 
     if (item && token) {
       try {
-        await cartApi.removeFromCart(productId);
-        toast.success(`Đã xóa "${item.product.name}" khỏi giỏ hàng`);
+        await cartApi.removeFromCart(item.productId, item.variantId);
+        toast.success(`Đã xóa "${item.product.name}${item.variant ? ` (${item.variant.name})` : ''}" khỏi giỏ hàng`);
         await loadCart();
       } catch (e: any) {
         toast.error(e.response?.data?.message || 'Không thể xóa sản phẩm khỏi giỏ hàng');
       }
     } else {
       setCartItems((prev) => {
-        const item = prev.find((i) => i.id === productId);
+        const item = prev.find((i) => i.id === cartItemId);
         if (item) {
-          toast.success(`Đã xóa "${item.product.name}" khỏi giỏ hàng`);
+          toast.success(`Đã xóa "${item.product.name}${item.variant ? ` (${item.variant.name})` : ''}" khỏi giỏ hàng`);
         }
-        return prev.filter((i) => i.id !== productId);
+        return prev.filter((i) => i.id !== cartItemId);
       });
     }
   };
 
-  const updateQuantity = async (productId: string, quantity: number) => {
+  const updateQuantity = async (cartItemId: string, quantity: number) => {
     if (quantity <= 0) {
-      await removeFromCart(productId);
+      await removeFromCart(cartItemId);
       return;
     }
 
-    const item = cartItems.find((i) => i.id === productId);
+    const item = cartItems.find((i) => i.id === cartItemId);
     if (!item) return;
 
-    if (item.product.stock !== undefined && item.product.stock !== null && quantity > item.product.stock) {
-      toast.warning(`Chỉ còn ${item.product.stock} sản phẩm trong kho`);
-      quantity = item.product.stock;
+    const stock = item.variant ? item.variant.stock : item.product.stock;
+
+    if (stock !== undefined && stock !== null && quantity > stock) {
+      toast.warning(`Chỉ còn ${stock} sản phẩm trong kho`);
+      quantity = stock;
     }
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       try {
-        await cartApi.updateQuantity(productId, quantity);
+        await cartApi.updateQuantity(item.productId, quantity, item.variantId);
         await loadCart();
       } catch (e: any) {
         toast.error(e.response?.data?.message || 'Không thể cập nhật số lượng');
       }
     } else {
       setCartItems((prev) => {
-        return prev.map((i) => (i.id === productId ? { ...i, quantity } : i));
+        return prev.map((i) => (i.id === cartItemId ? { ...i, quantity } : i));
       });
     }
   };
@@ -240,7 +273,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   const cartTotal = cartItems.reduce((acc, item) => {
-    const price = item.product.salePrice ?? item.product.sellingPrice;
+    const price = item.variant
+      ? (item.variant.salePrice ?? item.variant.sellingPrice)
+      : (item.product.salePrice ?? item.product.sellingPrice);
     return acc + price * item.quantity;
   }, 0);
 

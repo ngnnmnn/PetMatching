@@ -13,7 +13,9 @@ export class ShippingSyncService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
-    this.logger.log('ShippingSyncService initialized. Running initial database GHN status sync...');
+    this.logger.log(
+      'ShippingSyncService initialized. Running initial database GHN status sync...',
+    );
     // Run initial sync when application boots up
     await this.syncGhnOrderStatus();
 
@@ -42,13 +44,17 @@ export class ShippingSyncService implements OnApplicationBootstrap {
         return;
       }
 
-      this.logger.log(`Found ${activeOrders.length} active GHN orders to sync.`);
+      this.logger.log(
+        `Found ${activeOrders.length} active GHN orders to sync.`,
+      );
 
       for (const order of activeOrders) {
         if (!order.ghnOrderCode) continue;
 
         try {
-          const detail = await this.shippingService.getShippingOrderDetail(order.ghnOrderCode);
+          const detail = await this.shippingService.getShippingOrderDetail(
+            order.ghnOrderCode,
+          );
           if (!detail) continue;
 
           const status = (detail.status || '').toLowerCase();
@@ -80,7 +86,10 @@ export class ShippingSyncService implements OnApplicationBootstrap {
               break;
           }
 
-          if (order.status !== newOrderStatus || order.shippingStatus !== status) {
+          if (
+            order.status !== newOrderStatus ||
+            order.shippingStatus !== status
+          ) {
             await this.prisma.order.update({
               where: { id: order.id },
               data: {

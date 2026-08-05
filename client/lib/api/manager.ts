@@ -32,6 +32,7 @@ export interface ManagerProduct {
   sales?: number;
   isActive: boolean;
   isFeatured: boolean;
+  variants?: any[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -140,6 +141,11 @@ export const managerApi = {
   updateProductUnit: (id: string, data: { name: string }) => api.put<ProductUnit>(`/manager/units/${id}`, data),
   deleteProductUnit: (id: string) => api.delete(`/manager/units/${id}`),
 
+  getProductVariants: (productId: string) => api.get<ManagerProductVariant[]>(`/manager/products/${productId}/variants`),
+  createProductVariant: (productId: string, data: Partial<ManagerProductVariant>) => api.post<ManagerProductVariant>(`/manager/products/${productId}/variants`, data),
+  updateProductVariant: (variantId: string, data: Partial<ManagerProductVariant>) => api.put<ManagerProductVariant>(`/manager/variants/${variantId}`, data),
+  deleteProductVariant: (variantId: string) => api.delete(`/manager/variants/${variantId}`),
+
   importProducts: (file: File, images: File[] = []) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -157,3 +163,16 @@ export const managerApi = {
     });
   },
 };
+
+export interface ManagerProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sellingPrice: number;
+  salePrice?: number | null;
+  stock: number;
+  imageUrl?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}

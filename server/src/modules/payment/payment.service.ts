@@ -12,7 +12,9 @@ export class PaymentService {
     const checksumKey = process.env.PAYOS_CHECKSUM_KEY;
 
     if (!clientId || !apiKey || !checksumKey) {
-      console.error('PAYOS credentials are not fully configured in environment variables.');
+      console.error(
+        'PAYOS credentials are not fully configured in environment variables.',
+      );
     }
 
     this.payos = new PayOS({
@@ -94,7 +96,8 @@ export class PaymentService {
         throw new Error('Cấu hình Kênh chi PayOS chưa đầy đủ trong file .env');
       }
 
-      const { referenceId, amount, description, toBin, toAccountNumber } = params;
+      const { referenceId, amount, description, toBin, toAccountNumber } =
+        params;
 
       // Signature raw string order: amount=$amount&description=$description&referenceId=$referenceId&toAccountNumber=$toAccountNumber&toBin=$toBin
       const rawSignature = `amount=${amount}&description=${description}&referenceId=${referenceId}&toAccountNumber=${toAccountNumber}&toBin=${toBin}`;
@@ -123,7 +126,9 @@ export class PaymentService {
 
       const data = await response.json();
       if (data.code !== '00') {
-        throw new Error(`PayOS Payout error: ${data.desc} (code: ${data.code})`);
+        throw new Error(
+          `PayOS Payout error: ${data.desc} (code: ${data.code})`,
+        );
       }
       return data.data;
     } catch (error) {

@@ -1,4 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards, UseInterceptors, UploadedFiles, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+  UseInterceptors,
+  UploadedFiles,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -29,20 +44,24 @@ export class ManagerController {
 
   @Post('products/import')
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'file', maxCount: 1 },
-      { name: 'images' }
-    ], {
+    FileFieldsInterceptor([{ name: 'file', maxCount: 1 }, { name: 'images' }], {
       storage: memoryStorage(),
       limits: { fileSize: 30 * 1024 * 1024 }, // Up to 30MB
     }),
   )
   importProducts(
-    @UploadedFiles() files: { file?: Express.Multer.File[], images?: Express.Multer.File[] }
+    @UploadedFiles()
+    files: {
+      file?: Express.Multer.File[];
+      images?: Express.Multer.File[];
+    },
   ) {
     const excelFile = files?.file?.[0];
     const imageFiles = files?.images || [];
-    return this.managerService.importProducts(excelFile as Express.Multer.File, imageFiles);
+    return this.managerService.importProducts(
+      excelFile as Express.Multer.File,
+      imageFiles,
+    );
   }
 
   @Put('products/:id')
@@ -70,7 +89,8 @@ export class ManagerController {
       onlyRefunded: onlyRefunded === 'true',
     });
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="orders_export.xlsx"',
       'Content-Length': buffer.length,
     });
@@ -145,5 +165,31 @@ export class ManagerController {
   @Post('orders/:id/reject-refund')
   rejectRefund(@Param('id') id: string) {
     return this.managerService.rejectRefund(id);
+  }
+
+  @Get('products/:productId/variants')
+  getProductVariants(@Param('productId') productId: string) {
+    return this.managerService.getProductVariants(productId);
+  }
+
+  @Post('products/:productId/variants')
+  createProductVariant(
+    @Param('productId') productId: string,
+    @Body() dto: any,
+  ) {
+    return this.managerService.createProductVariant(productId, dto);
+  }
+
+  @Put('variants/:variantId')
+  updateProductVariant(
+    @Param('variantId') variantId: string,
+    @Body() dto: any,
+  ) {
+    return this.managerService.updateProductVariant(variantId, dto);
+  }
+
+  @Delete('variants/:variantId')
+  deleteProductVariant(@Param('variantId') variantId: string) {
+    return this.managerService.deleteProductVariant(variantId);
   }
 }

@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 
 export class AddToCartDto {
   @IsNotEmpty()
@@ -9,4 +9,8 @@ export class AddToCartDto {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsString()
+  variantId?: string;
 }

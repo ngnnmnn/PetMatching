@@ -1,5 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DocumentStatus, DocumentType, Gender, PetStatus, VerificationBadge } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  DocumentStatus,
+  DocumentType,
+  Gender,
+  PetStatus,
+  VerificationBadge,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
@@ -27,7 +38,8 @@ export class PetsService {
         type: DocumentType.VACCINE_RECORD,
         title: 'Sổ tiêm phòng',
         imageUrls: dto.vaccineDocumentUrls ?? [],
-        userNote: dto.vaccineNote ?? 'Người dùng khai báo đã tiêm đủ 3 mũi cơ bản.',
+        userNote:
+          dto.vaccineNote ?? 'Người dùng khai báo đã tiêm đủ 3 mũi cơ bản.',
         status: DocumentStatus.PENDING,
       });
     }
@@ -63,7 +75,9 @@ export class PetsService {
         pedigreeNumber: dto.pedigreeNumber,
         breedingOption: dto.breedingOption,
         breedingFee: dto.breedingFee,
-        verificationBadge: documents.length ? VerificationBadge.PENDING : VerificationBadge.NONE,
+        verificationBadge: documents.length
+          ? VerificationBadge.PENDING
+          : VerificationBadge.NONE,
         status: dto.status ?? PetStatus.ACTIVE,
         isAvailableForMatching: false,
         documents: documents.length ? { create: documents } : undefined,
@@ -72,7 +86,11 @@ export class PetsService {
     });
   }
 
-  async updateAvailability(userId: string, petId: string, dto: UpdateAvailabilityDto) {
+  async updateAvailability(
+    userId: string,
+    petId: string,
+    dto: UpdateAvailabilityDto,
+  ) {
     const pet = await this.prisma.pet.findUnique({ where: { id: petId } });
     if (!pet) {
       throw new NotFoundException('Pet not found.');
@@ -81,10 +99,15 @@ export class PetsService {
       throw new ForbiddenException('You do not own this pet.');
     }
     const nextStatus = dto.status ?? pet.status;
-    const isMatchingAvailable = nextStatus === PetStatus.HIDDEN ? false : (dto.isAvailableForMatching ?? pet.isAvailableForMatching);
+    const isMatchingAvailable =
+      nextStatus === PetStatus.HIDDEN
+        ? false
+        : (dto.isAvailableForMatching ?? pet.isAvailableForMatching);
 
     if (pet.gender !== Gender.MALE && isMatchingAvailable) {
-      throw new BadRequestException('Only male pets can be available for matching.');
+      throw new BadRequestException(
+        'Only male pets can be available for matching.',
+      );
     }
 
     return this.prisma.pet.update({
@@ -93,9 +116,15 @@ export class PetsService {
         status: nextStatus,
         isAvailableForMatching: isMatchingAvailable,
         ...(dto.breedingOption ? { breedingOption: dto.breedingOption } : {}),
-        ...(dto.breedingFee !== undefined ? { breedingFee: dto.breedingFee } : {}),
-        ...(dto.shareLitterCount !== undefined ? { shareLitterCount: dto.shareLitterCount } : {}),
-        ...(dto.personality !== undefined ? { personality: dto.personality } : {}),
+        ...(dto.breedingFee !== undefined
+          ? { breedingFee: dto.breedingFee }
+          : {}),
+        ...(dto.shareLitterCount !== undefined
+          ? { shareLitterCount: dto.shareLitterCount }
+          : {}),
+        ...(dto.personality !== undefined
+          ? { personality: dto.personality }
+          : {}),
       },
     });
   }

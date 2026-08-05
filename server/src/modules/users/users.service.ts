@@ -486,6 +486,12 @@ export class UsersService {
                 imageUrl: true,
               },
             },
+            variant: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -524,14 +530,25 @@ export class UsersService {
               data: { status: 'EXPIRED' },
             });
             for (const item of order.items) {
-              await tx.product.update({
-                where: { id: item.productId },
-                data: {
-                  stock: {
-                    increment: item.quantity,
+              if (item.variantId) {
+                await tx.productVariant.update({
+                  where: { id: item.variantId },
+                  data: {
+                    stock: {
+                      increment: item.quantity,
+                    },
                   },
-                },
-              });
+                });
+              } else {
+                await tx.product.update({
+                  where: { id: item.productId },
+                  data: {
+                    stock: {
+                      increment: item.quantity,
+                    },
+                  },
+                });
+              }
             }
           });
           needsReload = true;
@@ -552,6 +569,12 @@ export class UsersService {
                     imageUrl: true,
                   },
                 },
+                variant: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -568,6 +591,54 @@ export class UsersService {
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {
+    // 0. Kiểm tra địa chỉ giao hàng hợp lệ trực tiếp với GHN (Kiểm tra xem phường/xã có bị khóa giao nhận hay không)
+    if (dto.districtId && dto.wardCode) {
+      const ghnToken =
+        process.env.GHN_TOKEN || '8205e68a-8a8e-11f1-a973-aee5264794df';
+      const ghnBaseUrl =
+        process.env.GHN_API_URL ||
+        'https://online-gateway.ghn.vn/shiip/public-api';
+      try {
+        const response = await fetch(
+          `${ghnBaseUrl}/master-data/ward?district_id=${dto.districtId}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Token: ghnToken,
+            },
+            body: JSON.stringify({ district_id: Number(dto.districtId) }),
+          },
+        );
+        const data = await response.json();
+        if (data.code === 200 && data.data) {
+          const ward = data.data.find(
+            (w: any) => String(w.WardCode) === String(dto.wardCode),
+          );
+          if (!ward) {
+            throw new BadRequestException(
+              'Phường/Xã không tồn tại trên hệ thống giao nhận của GHN.',
+            );
+          }
+          // Kiểm tra trạng thái hoạt động (Status === 1) và quyền giao nhận (Config.To.LockType === 'unlocked')
+          const isLocked =
+            ward.Status !== 1 ||
+            (ward.Config?.To?.LockType &&
+              ward.Config.To.LockType !== 'unlocked');
+          if (isLocked) {
+            throw new BadRequestException(
+              `GHN tạm ngưng hỗ trợ giao hàng ở phường/xã này: ${ward.WardName} - Dự kiến mở lại ngày Chưa xác định.`,
+            );
+          }
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) {
+          throw err;
+        }
+        console.error('GHN pre-order address validation failed:', err.message);
+      }
+    }
+
     const payosItems: { name: string; quantity: number; price: number }[] = [];
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -589,25 +660,70 @@ export class UsersService {
           );
         }
 
-        if (product.stock < item.quantity) {
-          throw new BadRequestException(
-            `Sản phẩm "${product.name}" chỉ còn ${product.stock} cái trong kho, không đủ đáp ứng số lượng đặt mua (${item.quantity} cái).`,
-          );
-        }
+        let itemName = product.name;
 
-        // 2. Decrement stock
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: {
-              decrement: item.quantity,
+        if (item.variantId) {
+          const variant = await tx.productVariant.findUnique({
+            where: { id: item.variantId },
+          });
+
+          if (!variant) {
+            throw new NotFoundException(
+              `Biến thể với mã ${item.variantId} không tồn tại.`,
+            );
+          }
+
+          if (!variant.isActive) {
+            throw new BadRequestException(
+              `Biến thể "${variant.name}" của sản phẩm "${product.name}" hiện không hoạt động.`,
+            );
+          }
+
+          if (variant.stock < item.quantity) {
+            throw new BadRequestException(
+              `Biến thể "${variant.name}" chỉ còn ${variant.stock} cái trong kho, không đủ đáp ứng số lượng đặt mua (${item.quantity} cái).`,
+            );
+          }
+
+          // Decrement variant stock
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: {
+              stock: {
+                decrement: item.quantity,
+              },
             },
-          },
-        });
+          });
+
+          itemName = `${product.name} (${variant.name})`;
+        } else {
+          // Fallback to product stock checking
+          if (
+            product.stock !== null &&
+            product.stock !== undefined &&
+            product.stock < item.quantity
+          ) {
+            throw new BadRequestException(
+              `Sản phẩm "${product.name}" chỉ còn ${product.stock} cái trong kho, không đủ đáp ứng số lượng đặt mua (${item.quantity} cái).`,
+            );
+          }
+
+          if (product.stock !== null && product.stock !== undefined) {
+            // Decrement product stock
+            await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: {
+                  decrement: item.quantity,
+                },
+              },
+            });
+          }
+        }
 
         // Store name for PayOS (strip special characters and accents, limit length)
         payosItems.push({
-          name: cleanItemNameForPayOS(product.name),
+          name: cleanItemNameForPayOS(itemName),
           quantity: item.quantity,
           price: Math.round(item.price),
         });
@@ -708,6 +824,7 @@ export class UsersService {
           items: {
             create: dto.items.map((item) => ({
               productId: item.productId,
+              variantId: item.variantId || null,
               quantity: item.quantity,
               price: item.price,
             })),
@@ -721,6 +838,12 @@ export class UsersService {
                   id: true,
                   name: true,
                   imageUrl: true,
+                },
+              },
+              variant: {
+                select: {
+                  id: true,
+                  name: true,
                 },
               },
             },
@@ -814,20 +937,76 @@ export class UsersService {
 
       // Restore stock
       for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: {
-              increment: item.quantity,
+        if (item.variantId) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: {
+              stock: {
+                increment: item.quantity,
+              },
             },
-          },
-        });
+          });
+        } else {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                increment: item.quantity,
+              },
+            },
+          });
+        }
       }
 
       // Đơn hàng QR hay COD đều chuyển sang CANCELLED thay vì delete
       return tx.order.update({
         where: { id: orderId },
         data: { status: 'CANCELLED' },
+      });
+    });
+  }
+
+  async deleteOrder(userId: string, orderId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id: orderId, userId },
+        include: { items: true },
+      });
+      if (!order) {
+        throw new NotFoundException('Không tìm thấy đơn hàng.');
+      }
+      if (order.status !== 'PENDING') {
+        throw new BadRequestException(
+          'Chỉ có thể xóa đơn hàng ở trạng thái chờ thanh toán/xác nhận.',
+        );
+      }
+
+      // Restore stock
+      for (const item of order.items) {
+        if (item.variantId) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: {
+              stock: {
+                increment: item.quantity,
+              },
+            },
+          });
+        } else {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                increment: item.quantity,
+              },
+            },
+          });
+        }
+      }
+
+      // Delete the order entirely
+      return tx.order.delete({
+        where: { id: orderId },
       });
     });
   }
@@ -861,6 +1040,7 @@ export class UsersService {
         items: {
           include: {
             product: true,
+            variant: true,
           },
         },
       },
@@ -905,11 +1085,16 @@ export class UsersService {
       }
     }
 
-    const payosItems = order.items.map((item) => ({
-      name: cleanItemNameForPayOS(item.product.name),
-      quantity: item.quantity,
-      price: Math.round(item.price),
-    }));
+    const payosItems = order.items.map((item) => {
+      const itemName = item.variant
+        ? `${item.product.name} (${item.variant.name})`
+        : item.product.name;
+      return {
+        name: cleanItemNameForPayOS(itemName),
+        quantity: item.quantity,
+        price: Math.round(item.price),
+      };
+    });
 
     try {
       const paymentLink = await this.paymentService.createPaymentLink({
@@ -936,6 +1121,12 @@ export class UsersService {
                   id: true,
                   name: true,
                   imageUrl: true,
+                },
+              },
+              variant: {
+                select: {
+                  id: true,
+                  name: true,
                 },
               },
             },

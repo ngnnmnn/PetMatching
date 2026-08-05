@@ -107,7 +107,9 @@ export class UsersController {
         ],
       },
     );
-    await this.usersService.updateProfile(req.user.id, { avatarUrl: image.url });
+    await this.usersService.updateProfile(req.user.id, {
+      avatarUrl: image.url,
+    });
     return { avatarUrl: image.url, publicId: image.publicId };
   }
 
@@ -147,10 +149,7 @@ export class UsersController {
   }
 
   @Patch('addresses/:id/default')
-  setDefaultAddress(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
+  setDefaultAddress(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.usersService.setDefaultAddress(req.user.id, id);
   }
 
@@ -160,19 +159,18 @@ export class UsersController {
   }
 
   @Post('orders')
-  createOrder(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: CreateOrderDto,
-  ) {
+  createOrder(@Req() req: AuthenticatedRequest, @Body() dto: CreateOrderDto) {
     return this.usersService.createOrder(req.user.id, dto);
   }
 
   @Patch('orders/:id/cancel')
-  cancelOrder(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
+  cancelOrder(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.usersService.cancelOrder(req.user.id, id);
+  }
+
+  @Delete('orders/:id')
+  deleteOrder(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.usersService.deleteOrder(req.user.id, id);
   }
 
   @Put('orders/:id/shipping')
@@ -185,10 +183,7 @@ export class UsersController {
   }
 
   @Post('orders/:id/retry-payment')
-  retryPayment(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
+  retryPayment(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.usersService.retryPayment(req.user.id, id);
   }
 
@@ -196,15 +191,22 @@ export class UsersController {
   requestRefund(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() body: { bankCode: string; accountNumber: string; accountName: string; reason: string },
+    @Body()
+    body: {
+      bankCode: string;
+      accountNumber: string;
+      accountName: string;
+      reason: string;
+    },
   ) {
     return this.usersService.requestRefund(req.user.id, id, body);
   }
 
   @Post('bank-lookup')
-  lookupBankAccount(
-    @Body() body: { bankCode: string; accountNumber: string },
-  ) {
-    return this.usersService.lookupBankAccount(body.bankCode, body.accountNumber);
+  lookupBankAccount(@Body() body: { bankCode: string; accountNumber: string }) {
+    return this.usersService.lookupBankAccount(
+      body.bankCode,
+      body.accountNumber,
+    );
   }
 }

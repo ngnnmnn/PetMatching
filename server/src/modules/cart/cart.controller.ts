@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -32,18 +33,17 @@ export class CartController {
   }
 
   @Post()
-  addToCart(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: AddToCartDto,
-  ) {
-    return this.cartService.addToCart(req.user.id, dto.productId, dto.quantity);
+  addToCart(@Req() req: AuthenticatedRequest, @Body() dto: AddToCartDto) {
+    return this.cartService.addToCart(
+      req.user.id,
+      dto.productId,
+      dto.quantity,
+      dto.variantId,
+    );
   }
 
   @Post('merge')
-  mergeCart(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: MergeCartDto,
-  ) {
+  mergeCart(@Req() req: AuthenticatedRequest, @Body() dto: MergeCartDto) {
     return this.cartService.mergeCart(req.user.id, dto.items);
   }
 
@@ -53,15 +53,21 @@ export class CartController {
     @Param('productId') productId: string,
     @Body() dto: UpdateCartDto,
   ) {
-    return this.cartService.updateQuantity(req.user.id, productId, dto.quantity);
+    return this.cartService.updateQuantity(
+      req.user.id,
+      productId,
+      dto.quantity,
+      dto.variantId,
+    );
   }
 
   @Delete(':productId')
   removeFromCart(
     @Req() req: AuthenticatedRequest,
     @Param('productId') productId: string,
+    @Query('variantId') variantId?: string,
   ) {
-    return this.cartService.removeFromCart(req.user.id, productId);
+    return this.cartService.removeFromCart(req.user.id, productId, variantId);
   }
 
   @Delete()

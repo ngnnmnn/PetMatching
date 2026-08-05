@@ -72,40 +72,42 @@ export default function ProductFilterSidebar({
     setLocalPrices(selectedPrices);
   }, [selectedPrices]);
 
-  // Toggle handlers for local states
+  // Toggle handlers for local states (apply instantly to parent)
   const handleSpeciesToggle = (value: string) => {
     setLocalSpecies(value);
+    onSpeciesChange(value);
   };
 
   const handleCategoryToggle = (catValue: string) => {
+    let nextCategories: string[];
     if (localCategories.includes(catValue)) {
-      setLocalCategories(localCategories.filter((c) => c !== catValue));
+      nextCategories = localCategories.filter((c) => c !== catValue);
     } else {
-      setLocalCategories([...localCategories, catValue]);
+      nextCategories = [...localCategories, catValue];
     }
+    setLocalCategories(nextCategories);
+    onCategoriesChange(nextCategories);
   };
 
   const handleAllCategoriesToggle = () => {
     setLocalCategories([]);
+    onCategoriesChange([]);
   };
 
   const handlePriceToggle = (priceValue: string) => {
+    let nextPrices: string[];
     if (localPrices.includes(priceValue)) {
-      setLocalPrices(localPrices.filter((p) => p !== priceValue));
+      nextPrices = localPrices.filter((p) => p !== priceValue);
     } else {
-      setLocalPrices([...localPrices, priceValue]);
+      nextPrices = [...localPrices, priceValue];
     }
+    setLocalPrices(nextPrices);
+    onPricesChange(nextPrices);
   };
 
   const handleAllPricesToggle = () => {
     setLocalPrices([]);
-  };
-
-  // Submit all filters to the parent
-  const handleApplyFilters = () => {
-    onSpeciesChange(localSpecies);
-    onCategoriesChange(localCategories);
-    onPricesChange(localPrices);
+    onPricesChange([]);
   };
 
   // Clear all local and parent filters
@@ -268,22 +270,15 @@ export default function ProductFilterSidebar({
         </div>
       </div>
 
-      {/* Action Buttons: Apply & Clear */}
-      <div className="pt-4 border-t border-[#F4F4F4] space-y-2">
-        <button
-          type="button"
-          onClick={handleApplyFilters}
-          className="w-full h-10 rounded-lg bg-[var(--primary-color)] hover:bg-[#cf5017] text-white font-extrabold text-xs shadow-md shadow-[rgba(228,93,28,0.18)] transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center"
-        >
-          Áp dụng bộ lọc
-        </button>
+      {/* Action Buttons: Reset */}
+      <div className="pt-4 border-t border-[#F4F4F4]">
         <button
           type="button"
           onClick={handleResetFilters}
-          className="w-full h-9 rounded-lg border border-[var(--border-color)] bg-white hover:bg-[#FAF9F5] text-[var(--text-muted)] hover:text-[var(--text-main)] font-semibold text-xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+          className="w-full h-10 rounded-lg border border-[var(--border-color)] bg-white hover:bg-[#FAF9F5] text-[var(--text-muted)] hover:text-[var(--text-main)] font-semibold text-xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
         >
           <RotateCcw className="size-3.5" />
-          Thiết lập lại
+          Thiết lập lại bộ lọc
         </button>
       </div>
     </aside>

@@ -1,5 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsNotEmpty, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 class MergeCartItemDto {
   @IsNotEmpty()
@@ -10,6 +18,10 @@ class MergeCartItemDto {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsString()
+  variantId?: string;
 }
 
 export class MergeCartDto {

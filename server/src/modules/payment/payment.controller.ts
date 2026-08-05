@@ -43,7 +43,8 @@ export class PaymentController {
     }
 
     // Double check with PayOS API
-    const paymentInfo = await this.paymentService.getPaymentLinkInformation(orderCode);
+    const paymentInfo =
+      await this.paymentService.getPaymentLinkInformation(orderCode);
     if (paymentInfo && paymentInfo.status === 'PAID') {
       await this.prisma.order.update({
         where: { id: order.id },
@@ -69,7 +70,9 @@ export class PaymentController {
     });
 
     if (!order) {
-      console.warn(`PayOS webhook received for unknown orderCode: ${orderCode}`);
+      console.warn(
+        `PayOS webhook received for unknown orderCode: ${orderCode}`,
+      );
       return { success: false, message: 'Không tìm thấy đơn hàng tương ứng.' };
     }
 
@@ -78,7 +81,10 @@ export class PaymentController {
       console.log(
         `Order ${order.id} is already in status ${order.status}. Ignoring webhook to prevent status regression.`,
       );
-      return { success: true, message: `Đơn hàng đã được xử lý (trạng thái: ${order.status}).` };
+      return {
+        success: true,
+        message: `Đơn hàng đã được xử lý (trạng thái: ${order.status}).`,
+      };
     }
 
     // PayOS success code is "00"

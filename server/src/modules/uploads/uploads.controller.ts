@@ -86,4 +86,3 @@ export class UploadsController {
     return `petmatching/users/${userId}/${folderByPurpose[purpose]}`;
   }
 }
-

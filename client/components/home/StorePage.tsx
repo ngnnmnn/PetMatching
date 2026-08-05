@@ -9,6 +9,60 @@ import Hero from './Hero';
 import Footer from '@/components/layout/Footer';
 import Link from 'next/link';
 
+// Filter out test/system products (e.g. vouchers, shipping fees, debug products, gibberish keyboard mashes)
+const isTestOrSystemProduct = (product: any) => {
+  const nameLower = product.name.toLowerCase();
+  const brandLower = (product.brand || '').toLowerCase();
+  const descLower = (product.description || '').toLowerCase();
+
+  const hasKeyword = (
+    nameLower.includes('test') ||
+    nameLower.includes('freeship') ||
+    nameLower.includes('voucher') ||
+    nameLower.includes('coupon') ||
+    nameLower.includes('phí ship') ||
+    nameLower.includes('phí vận chuyển') ||
+    nameLower.includes('thử nghiệm') ||
+    nameLower.includes('thu nghiem') ||
+    nameLower.includes('nháp') ||
+    nameLower.includes('nhap') ||
+    nameLower.includes('demo') ||
+    nameLower.includes('excel') ||
+    brandLower.includes('test') ||
+    brandLower.includes('demo') ||
+    descLower.includes('test') ||
+    descLower.includes('thử nghiệm') ||
+    descLower.includes('demo')
+  );
+
+  if (hasKeyword) return true;
+
+  const isGibberish = (str: string): boolean => {
+    const s = str.toLowerCase();
+    const mashes = [
+      'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl', 'jklm',
+      'ádf', 'sdf', 'dfg', 'fgh', 'ghj', 'hjk', 'jkl',
+      'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
+      'zxcv', 'xcvb', 'cvbn', 'vbnm',
+      'abcde', 'bcdef', 'cdefg', 'defgh', 'efghi', 'fghij',
+      'xyz', 'qwe', 'asd', 'zxc', 'abc', '123', '456', '789'
+    ];
+    if (mashes.some(m => s.includes(m))) return true;
+    const clean = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (mashes.some(m => clean.includes(m))) return true;
+    if (/[bcdfghjklmnpqrstvwxz]{4,}/.test(clean)) return true;
+    const words = clean.split(/[^a-z0-9]+/);
+    for (const w of words) {
+      if (w.length > 2 && !/[aeiouy0-9]/.test(w)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  return isGibberish(product.name) || (product.brand && isGibberish(product.brand));
+};
+
 export default function StorePage() {
   const router = useRouter();
   const { featuredProducts, featuredLoading, error } = useProducts({ 
@@ -64,9 +118,12 @@ export default function StorePage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {featuredProducts.slice(0, 4).map((product) => (
-                  <ProductCard key={product.id} product={product} />
-                ))}
+                {featuredProducts
+                  .filter((product) => (product.stock ?? 0) > 0 && !isTestOrSystemProduct(product))
+                  .slice(0, 4)
+                  .map((product) => (
+                    <ProductCard key={product.id} product={product} />
+                  ))}
               </div>
             )}
           </section>

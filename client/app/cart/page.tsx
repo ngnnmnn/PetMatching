@@ -151,9 +151,16 @@ export default function CartPage() {
 
                 <div className="divide-y divide-[var(--border-color)]">
                   {cartItems.map((item) => {
-                    const price = item.product.salePrice ?? item.product.sellingPrice;
+                    const price = item.variant
+                      ? (item.variant.salePrice ?? item.variant.sellingPrice)
+                      : (item.product.salePrice ?? item.product.sellingPrice);
+                    const originalPrice = item.variant
+                      ? item.variant.sellingPrice
+                      : item.product.sellingPrice;
                     const itemSubtotal = price * item.quantity;
-                    const isDiscounted = item.product.salePrice && item.product.salePrice < item.product.sellingPrice;
+                    const isDiscounted = item.variant
+                      ? (item.variant.salePrice && item.variant.salePrice < item.variant.sellingPrice)
+                      : (item.product.salePrice && item.product.salePrice < item.product.sellingPrice);
 
                     return (
                       <div key={item.id} className="p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
@@ -168,9 +175,9 @@ export default function CartPage() {
                         </div>
 
                         {/* Product Image */}
-                        <Link href={`/home/product/${item.id}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)]">
+                        <Link href={`/home/product/${item.productId}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)]">
                           <img
-                            src={item.product.imageUrl || '/placeholder.svg'}
+                            src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
                             className="w-full h-full object-cover"
                           />
@@ -179,9 +186,14 @@ export default function CartPage() {
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</p>
-                          <Link href={`/home/product/${item.id}`} className="block text-sm font-black text-[var(--text-main)] hover:text-primary transition line-clamp-1 mt-0.5">
+                          <Link href={`/home/product/${item.productId}`} className="block text-sm font-black text-[var(--text-main)] hover:text-primary transition line-clamp-1 mt-0.5">
                             {item.product.name}
                           </Link>
+                          {item.variant && (
+                            <p className="text-[11px] text-[#0F766E] font-extrabold mt-0.5 bg-[#EEF8F5] px-2 py-0.5 rounded inline-block">
+                              Phân loại: {item.variant.name}
+                            </p>
+                          )}
                           {item.product.unit && (
                             <p className="text-xs text-[var(--text-muted)] mt-0.5">Đơn vị: {item.product.unit}</p>
                           )}
@@ -190,7 +202,7 @@ export default function CartPage() {
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-sm font-bold text-[var(--primary-color)]">{formatCurrency(price)}</span>
                             {isDiscounted && (
-                              <span className="text-xs text-[var(--text-muted)] line-through">{formatCurrency(item.product.sellingPrice)}</span>
+                              <span className="text-xs text-[var(--text-muted)] line-through">{formatCurrency(originalPrice)}</span>
                             )}
                           </div>
                         </div>
@@ -250,15 +262,20 @@ export default function CartPage() {
                     <span className="text-[var(--text-main)]">{formatCurrency(selectedTotal)}</span>
                   </div>
                   <div className="flex justify-between text-[var(--text-muted)]">
-                    <span>Phí vận chuyển</span>
+                    <span>Phí vận chuyển (Tạm tính)</span>
                     <span className="text-[var(--text-main)]">
-                      {shippingFee === 0 ? (selectedTotal > 500000 ? 'Miễn phí' : 'Tính khi giao') : formatCurrency(shippingFee)}
+                      {shippingFee === 0 ? 'Miễn phí' : formatCurrency(shippingFee)}
                     </span>
                   </div>
                   {shippingFee > 0 && (
-                    <p className="text-[10px] text-amber-600 font-extrabold mt-0.5">
-                      Mua thêm {formatCurrency(500000 - selectedTotal)} để được Miễn phí vận chuyển!
-                    </p>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-amber-600 font-extrabold mt-0.5">
+                        Mua thêm {formatCurrency(500000 - selectedTotal)} để được Miễn phí vận chuyển!
+                      </p>
+                      <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
+                        * Phí vận chuyển thực tế sẽ được tính chính xác tại trang thanh toán dựa trên địa chỉ giao hàng của bạn.
+                      </p>
+                    </div>
                   )}
                   
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end">

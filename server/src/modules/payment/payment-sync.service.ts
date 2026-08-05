@@ -12,7 +12,9 @@ export class PaymentSyncService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
-    console.log('PaymentSyncService initialized. Running initial database payment status sync...');
+    console.log(
+      'PaymentSyncService initialized. Running initial database payment status sync...',
+    );
     // Run immediate sync when application starts
     await this.syncPendingOrders();
 
@@ -48,29 +50,39 @@ export class PaymentSyncService implements OnApplicationBootstrap {
         return;
       }
 
-      console.log(`Found ${pendingOrders.length} pending QR orders to sync status.`);
+      console.log(
+        `Found ${pendingOrders.length} pending QR orders to sync status.`,
+      );
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
 
       for (const order of pendingOrders) {
         if (!order.orderCode) continue;
 
         try {
-          const paymentInfo = await this.paymentService.getPaymentLinkInformation(
-            order.orderCode,
-          );
+          const paymentInfo =
+            await this.paymentService.getPaymentLinkInformation(
+              order.orderCode,
+            );
 
           if (paymentInfo && paymentInfo.status === 'PAID') {
             await this.prisma.order.update({
               where: { id: order.id },
               data: { status: 'PROCESSING' },
             });
-            console.log(`Order ${order.id} automatically synced to PROCESSING (PAID).`);
+            console.log(
+              `Order ${order.id} automatically synced to PROCESSING (PAID).`,
+            );
           } else if (
             order.createdAt < fifteenMinsAgo ||
-            (paymentInfo && (paymentInfo.status === 'CANCELLED' || paymentInfo.status === 'EXPIRED'))
+            (paymentInfo &&
+              (paymentInfo.status === 'CANCELLED' ||
+                paymentInfo.status === 'EXPIRED'))
           ) {
-            const targetStatus = (paymentInfo && paymentInfo.status === 'CANCELLED') ? 'CANCELLED' : 'EXPIRED';
-            
+            const targetStatus =
+              paymentInfo && paymentInfo.status === 'CANCELLED'
+                ? 'CANCELLED'
+                : 'EXPIRED';
+
             // Update status and restore stock
             await this.prisma.$transaction(async (tx) => {
               await tx.order.update({
@@ -89,10 +101,15 @@ export class PaymentSyncService implements OnApplicationBootstrap {
                 });
               }
             });
-            console.log(`Order ${order.id} automatically marked as ${targetStatus} (Expired/Cancelled) and stock restored.`);
+            console.log(
+              `Order ${order.id} automatically marked as ${targetStatus} (Expired/Cancelled) and stock restored.`,
+            );
           }
         } catch (err) {
-          console.error(`Error syncing status for order ${order.id} via PayOS:`, err.message);
+          console.error(
+            `Error syncing status for order ${order.id} via PayOS:`,
+            err.message,
+          );
         }
       }
     } catch (error) {

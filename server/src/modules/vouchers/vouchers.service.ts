@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 @Injectable()
@@ -35,9 +39,10 @@ export class VouchersService {
       code: voucher.code,
       type: voucher.type,
       value: voucher.value,
-      message: voucher.type === 'FREE_SHIP' 
-        ? 'Áp dụng mã miễn phí vận chuyển thành công!' 
-        : `Áp dụng mã giảm giá thành công!`,
+      message:
+        voucher.type === 'FREE_SHIP'
+          ? 'Áp dụng mã miễn phí vận chuyển thành công!'
+          : `Áp dụng mã giảm giá thành công!`,
     };
   }
 }

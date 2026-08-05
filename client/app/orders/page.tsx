@@ -35,6 +35,11 @@ interface OrderItem {
     name: string;
     imageUrl?: string | null;
   };
+  variantId?: string | null;
+  variant?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 interface Order {
@@ -233,7 +238,7 @@ export default function OrdersPage() {
 
   const handleCancelQROrder = async (orderId: string) => {
     try {
-      await usersApi.cancelOrder(orderId);
+      await usersApi.deleteOrder(orderId);
       loadOrders();
       toast.info('Đã hủy thanh toán.');
     } catch (err) {
@@ -749,6 +754,11 @@ export default function OrdersPage() {
                         <h4 className="text-sm font-black text-[var(--text-main)] line-clamp-1">
                           {item.product?.name || 'Sản phẩm'}
                         </h4>
+                        {item.variant && (
+                          <p className="text-[10px] text-[#0F766E] font-extrabold mt-0.5 bg-[#EEF8F5] px-1.5 py-0.5 rounded inline-block w-fit">
+                            Phân loại: {item.variant.name}
+                          </p>
+                        )}
                         <p className="text-xs text-[var(--text-muted)] font-semibold mt-1">
                           Giá mua: {formatCurrency(item.price)}
                         </p>

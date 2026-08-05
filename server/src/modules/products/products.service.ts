@@ -45,7 +45,7 @@ export class ProductsService {
 
     if (sortBy === 'price_asc' || sortBy === 'price_desc') {
       const [allProducts, total] = await this.prisma.$transaction([
-        this.prisma.product.findMany({ where }),
+        this.prisma.product.findMany({ where, include: { variants: true } }),
         this.prisma.product.count({ where }),
       ]);
 
@@ -53,7 +53,8 @@ export class ProductsService {
         .sort((a, b) => {
           const priceA = a.salePrice ?? (a.sellingPrice || 0);
           const priceB = b.salePrice ?? (b.sellingPrice || 0);
-          const priceCompare = sortBy === 'price_asc' ? priceA - priceB : priceB - priceA;
+          const priceCompare =
+            sortBy === 'price_asc' ? priceA - priceB : priceB - priceA;
 
           return priceCompare || b.reviewCount - a.reviewCount;
         })
@@ -76,6 +77,7 @@ export class ProductsService {
         orderBy,
         skip,
         take: limit,
+        include: { variants: true },
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -104,7 +106,10 @@ export class ProductsService {
 
     const sorted = products
       .map((p) => {
-        const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+        const sales = p.orderItems.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        );
         return { ...p, sales };
       })
       .sort((a, b) => b.sales - a.sales);
@@ -113,7 +118,15 @@ export class ProductsService {
   }
 
   async getProductById(id: string) {
-    return this.prisma.product.findUnique({ where: { id } });
+    return this.prisma.product.findUnique({
+      where: { id },
+      include: {
+        variants: {
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
   }
 
   async getCategories() {
@@ -165,7 +178,11 @@ export class ProductsService {
     return !!deliveredOrder;
   }
 
-  async createReview(userId: string, productId: string, dto: { rating: number; comment?: string }) {
+  async createReview(
+    userId: string,
+    productId: string,
+    dto: { rating: number; comment?: string },
+  ) {
     const { rating, comment } = dto;
     if (rating < 1 || rating > 5) {
       throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5.');
@@ -173,7 +190,9 @@ export class ProductsService {
 
     const eligible = await this.canReview(userId, productId);
     if (!eligible) {
-      throw new BadRequestException('Bạn chỉ có thể đánh giá sản phẩm sau khi đã nhận được hàng và chưa đánh giá sản phẩm này.');
+      throw new BadRequestException(
+        'Bạn chỉ có thể đánh giá sản phẩm sau khi đã nhận được hàng và chưa đánh giá sản phẩm này.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {

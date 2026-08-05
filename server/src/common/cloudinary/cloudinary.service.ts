@@ -34,7 +34,9 @@ export class CloudinaryService {
         },
         (error: any, uploaded: UploadApiResponse | undefined) => {
           if (error || !uploaded) {
-            reject(error ?? new Error('Cloudinary did not return an upload result.'));
+            reject(
+              error ?? new Error('Cloudinary did not return an upload result.'),
+            );
             return;
           }
           resolve(uploaded);
@@ -53,7 +55,10 @@ export class CloudinaryService {
     };
   }
 
-  async uploadDataUrl(dataUrl: string, folder: string): Promise<CloudinaryImage> {
+  async uploadDataUrl(
+    dataUrl: string,
+    folder: string,
+  ): Promise<CloudinaryImage> {
     const result = await this.client.uploader.upload(dataUrl, {
       folder,
       resource_type: 'image',
@@ -104,4 +109,3 @@ export class CloudinaryService {
     }
   }
 }
-

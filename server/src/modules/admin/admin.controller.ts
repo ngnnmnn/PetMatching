@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -201,15 +213,15 @@ export class AdminController {
   }
 
   @Delete('breeds/:id')
-  deleteBreed(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
+  deleteBreed(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.adminService.deleteBreed(request.user, id);
   }
 
   @Patch('matching-reports/:id/resolve')
-  resolveMatchingReport(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+  resolveMatchingReport(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
     return this.adminService.resolveMatchingReport(request.user, id);
   }
 
@@ -226,7 +238,13 @@ export class AdminController {
   @Put('store-settings')
   updateStoreSettings(
     @Req() request: AuthenticatedRequest,
-    @Body() dto: { name: string; phone?: string; address?: string; description?: string },
+    @Body()
+    dto: {
+      name: string;
+      phone?: string;
+      address?: string;
+      description?: string;
+    },
   ) {
     return this.adminService.updateStoreSettings(request.user, dto);
   }
@@ -264,7 +282,14 @@ export class AdminController {
   @Put('spa-settings')
   updateSpaSettings(
     @Req() request: AuthenticatedRequest,
-    @Body() dto: { name: string; phone?: string; address: string; description?: string; status?: ApprovalStatus },
+    @Body()
+    dto: {
+      name: string;
+      phone?: string;
+      address: string;
+      description?: string;
+      status?: ApprovalStatus;
+    },
   ) {
     return this.adminService.updateSpaSettings(request.user, dto);
   }
@@ -284,7 +309,10 @@ export class AdminController {
   }
 
   @Get('complaints')
-  getComplaints(@Query('type') type?: ComplaintType, @Query('status') status?: ComplaintStatus) {
+  getComplaints(
+    @Query('type') type?: ComplaintType,
+    @Query('status') status?: ComplaintStatus,
+  ) {
     return this.adminService.getComplaints({ type, status });
   }
 
@@ -296,5 +324,4 @@ export class AdminController {
   ) {
     return this.adminService.resolveComplaint(request.user, id, dto);
   }
-
 }

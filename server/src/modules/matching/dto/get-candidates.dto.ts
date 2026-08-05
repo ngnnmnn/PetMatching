@@ -1,4 +1,9 @@
-import { IsBooleanString, IsNumberString, IsOptional, IsString } from 'class-validator';
+import {
+  IsBooleanString,
+  IsNumberString,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class GetCandidatesDto {
   @IsString()

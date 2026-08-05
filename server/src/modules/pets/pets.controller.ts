@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { CreatePetDto } from './dto/create-pet.dto';
@@ -26,10 +35,6 @@ export class PetsController {
     @Param('id') id: string,
     @Body() dto: UpdateAvailabilityDto,
   ) {
-    return this.petsService.updateAvailability(
-      request.user.id,
-      id,
-      dto,
-    );
+    return this.petsService.updateAvailability(request.user.id, id, dto);
   }
 }

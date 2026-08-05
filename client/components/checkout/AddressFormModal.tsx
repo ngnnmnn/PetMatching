@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Province {
   provinceId: number;
@@ -43,6 +44,19 @@ function removeDiacritics(str: string) {
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D');
 }
+
+const cleanAddressName = (name: string, type: 'province' | 'district' | 'ward') => {
+  let s = removeDiacritics(name).toLowerCase().trim();
+  if (type === 'province') {
+    s = s.replace(/^(tinh|thanh pho|tp)\s+/g, '');
+  } else if (type === 'district') {
+    s = s.replace(/^(quan|huyen|thi xa|thanh pho|tp)\s+/g, '');
+  } else if (type === 'ward') {
+    s = s.replace(/^(phuong|xa|thi tran)\s+/g, '');
+  }
+  return s.trim();
+};
+
 
 function CustomSelect({
   label,
@@ -241,11 +255,17 @@ export default function AddressFormModal({
         setProvinces(list);
 
         if (initialData?.province && !initialData?.provinceId) {
-          const match = list.find((p: Province) => {
-            const apiName = removeDiacritics(p.provinceName).toLowerCase();
-            const initName = removeDiacritics(initialData.province!).toLowerCase();
-            return apiName.includes(initName) || initName.includes(apiName);
-          });
+          const cleanInit = cleanAddressName(initialData.province, 'province');
+          // 1. Try exact cleaned name match first
+          let match = list.find((p: Province) => cleanAddressName(p.provinceName, 'province') === cleanInit);
+          // 2. Fallback to fuzzy match
+          if (!match) {
+            match = list.find((p: Province) => {
+              const apiName = removeDiacritics(p.provinceName).toLowerCase();
+              const initName = removeDiacritics(initialData.province!).toLowerCase();
+              return apiName.includes(initName) || initName.includes(apiName);
+            });
+          }
           if (match) {
             setProvinceId(match.provinceId);
             setProvinceName(match.provinceName);
@@ -283,11 +303,17 @@ export default function AddressFormModal({
         setWardCode(undefined);
 
         if (initialData?.district && !initialData?.districtId && list.length > 0) {
-          const match = list.find((d: District) => {
-            const apiName = removeDiacritics(d.districtName).toLowerCase();
-            const initName = removeDiacritics(initialData.district!).toLowerCase();
-            return apiName.includes(initName) || initName.includes(apiName);
-          });
+          const cleanInit = cleanAddressName(initialData.district, 'district');
+          // 1. Try exact cleaned name match first
+          let match = list.find((d: District) => cleanAddressName(d.districtName, 'district') === cleanInit);
+          // 2. Fallback to fuzzy match
+          if (!match) {
+            match = list.find((d: District) => {
+              const apiName = removeDiacritics(d.districtName).toLowerCase();
+              const initName = removeDiacritics(initialData.district!).toLowerCase();
+              return apiName.includes(initName) || initName.includes(apiName);
+            });
+          }
           if (match) {
             setDistrictId(match.districtId);
             setDistrictName(match.districtName);
@@ -321,11 +347,17 @@ export default function AddressFormModal({
         setWards(list);
 
         if (initialData?.ward && !initialData?.wardCode && list.length > 0) {
-          const match = list.find((w: Ward) => {
-            const apiName = removeDiacritics(w.wardName).toLowerCase();
-            const initName = removeDiacritics(initialData.ward!).toLowerCase();
-            return apiName.includes(initName) || initName.includes(apiName);
-          });
+          const cleanInit = cleanAddressName(initialData.ward, 'ward');
+          // 1. Try exact cleaned name match first
+          let match = list.find((w: Ward) => cleanAddressName(w.wardName, 'ward') === cleanInit);
+          // 2. Fallback to fuzzy match
+          if (!match) {
+            match = list.find((w: Ward) => {
+              const apiName = removeDiacritics(w.wardName).toLowerCase();
+              const initName = removeDiacritics(initialData.ward!).toLowerCase();
+              return apiName.includes(initName) || initName.includes(apiName);
+            });
+          }
           if (match) {
             setWardCode(match.wardCode);
             setWardName(match.wardName);
@@ -370,6 +402,18 @@ export default function AddressFormModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!receiverName.trim() || !receiverPhone.trim() || !detail.trim() || !provinceName || !districtName || !wardName) {
+      toast.error('Vui lòng điền đầy đủ các thông tin bắt buộc.');
+      return;
+    }
+
+    if (!provinceId || !districtId || !wardCode) {
+      toast.error('Vui lòng chọn địa chỉ Tỉnh/Thành, Quận/Huyện, và Phường/Xã từ danh sách gợi ý của GHN.');
+      return;
+    }
+
+    const phoneRegex = /^(0[3|5|7|8|9])[0-9]{8}$/;
+    if (!phoneRegex.test(receiverPhone.trim())) {
+      toast.error('Số điện thoại không hợp lệ! Vui lòng nhập số điện thoại Việt Nam gồm 10 chữ số (ví dụ: 0987654321).');
       return;
     }
 
@@ -455,7 +499,7 @@ export default function AddressFormModal({
                 required
                 placeholder="Nhập số điện thoại"
                 value={receiverPhone}
-                onChange={(e) => setReceiverPhone(e.target.value)}
+                onChange={(e) => setReceiverPhone(e.target.value.replace(/[^0-9]/g, ''))}
                 className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
               />
             </div>

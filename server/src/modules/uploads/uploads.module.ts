@@ -3,4 +3,3 @@ import { UploadsController } from './uploads.controller';
 
 @Module({ controllers: [UploadsController] })
 export class UploadsModule {}
-

@@ -1,9 +1,19 @@
-import { IsArray, IsNumber, IsString, ValidateNested, IsOptional } from 'class-validator';
+import {
+  IsArray,
+  IsNumber,
+  IsString,
+  ValidateNested,
+  IsOptional,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class CreateOrderItemDto {
   @IsString()
   productId: string;
+
+  @IsString()
+  @IsOptional()
+  variantId?: string;
 
   @IsNumber()
   quantity: number;

@@ -146,7 +146,9 @@ export class MatchingService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const latestByMalePetId = new Map(history.map((item) => [item.malePetId, item]));
+    const latestByMalePetId = new Map(
+      history.map((item) => [item.malePetId, item]),
+    );
 
     // Filter candidates và tính compatibility score (async)
     const eligibleCandidates = candidates.filter((candidate) => {
@@ -154,7 +156,9 @@ export class MatchingService {
       if (!latest) return true;
 
       const latestProfileUpdate =
-        femalePet.updatedAt > candidate.updatedAt ? femalePet.updatedAt : candidate.updatedAt;
+        femalePet.updatedAt > candidate.updatedAt
+          ? femalePet.updatedAt
+          : candidate.updatedAt;
 
       return latest.createdAt < latestProfileUpdate;
     });
@@ -168,7 +172,11 @@ export class MatchingService {
 
     // Tính compatibility scores & distanceKm đồng bộ trong bộ nhớ
     let data = eligibleCandidates.map((candidate) => {
-      const compatibility = this.calculateCompatibilityScoreSync(femalePet, candidate, breedRules);
+      const compatibility = this.calculateCompatibilityScoreSync(
+        femalePet,
+        candidate,
+        breedRules,
+      );
 
       let distanceKm = 10;
       if (
@@ -186,13 +194,15 @@ export class MatchingService {
       } else if (
         femalePet.district &&
         candidate.district &&
-        femalePet.district.trim().toLowerCase() === candidate.district.trim().toLowerCase()
+        femalePet.district.trim().toLowerCase() ===
+          candidate.district.trim().toLowerCase()
       ) {
         distanceKm = 3.5;
       } else if (
         femalePet.location &&
         candidate.location &&
-        femalePet.location.trim().toLowerCase() === candidate.location.trim().toLowerCase()
+        femalePet.location.trim().toLowerCase() ===
+          candidate.location.trim().toLowerCase()
       ) {
         distanceKm = 12.0;
       } else {
@@ -263,7 +273,9 @@ export class MatchingService {
     });
 
     if (existingPending) {
-      throw new ConflictException('A pending request already exists for this pair.');
+      throw new ConflictException(
+        'A pending request already exists for this pair.',
+      );
     }
 
     const request = await this.prisma.matchingRequest.create({
@@ -305,7 +317,10 @@ export class MatchingService {
   }
 
   async acceptRequest(userId: string, requestId: string) {
-    const request = await this.getPendingOwnedIncomingRequest(userId, requestId);
+    const request = await this.getPendingOwnedIncomingRequest(
+      userId,
+      requestId,
+    );
     const [pet1Id, pet2Id] = [request.femalePetId, request.malePetId].sort();
 
     const compatibility = await this.calculateCompatibilityScore(
@@ -367,8 +382,16 @@ export class MatchingService {
         OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
       },
       include: {
-        pet1: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
-        pet2: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
+        pet1: {
+          include: {
+            owner: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        },
+        pet2: {
+          include: {
+            owner: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        },
         messages: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: { updatedAt: 'desc' },
@@ -388,7 +411,9 @@ export class MatchingService {
       throw new ForbiddenException('You do not own this pet.');
     }
     if (pet.gender !== Gender.FEMALE) {
-      throw new BadRequestException('Only female pets can send matching requests.');
+      throw new BadRequestException(
+        'Only female pets can send matching requests.',
+      );
     }
     if (pet.status !== PetStatus.ACTIVE) {
       throw new BadRequestException('Only active pets can join matching.');
@@ -406,7 +431,9 @@ export class MatchingService {
       throw new NotFoundException('Male pet not found.');
     }
     if (pet.gender !== Gender.MALE) {
-      throw new BadRequestException('Only male pets can receive matching requests.');
+      throw new BadRequestException(
+        'Only male pets can receive matching requests.',
+      );
     }
     if (pet.status !== PetStatus.ACTIVE || !pet.isAvailableForMatching) {
       throw new BadRequestException('This pet is not available for matching.');
@@ -436,7 +463,10 @@ export class MatchingService {
    * Chó cái: nghỉ 6 tháng sau mỗi lần phối.
    * Mèo cái: nghỉ 3 tháng sau mỗi lần phối.
    */
-  private checkBreedingCycle(pet: Pet): { canBreed: boolean; nextAvailable?: Date } {
+  private checkBreedingCycle(pet: Pet): {
+    canBreed: boolean;
+    nextAvailable?: Date;
+  } {
     if (!pet.lastBreedingAt) {
       return { canBreed: true };
     }
@@ -466,7 +496,10 @@ export class MatchingService {
     }
   }
 
-  private async getPendingOwnedIncomingRequest(userId: string, requestId: string) {
+  private async getPendingOwnedIncomingRequest(
+    userId: string,
+    requestId: string,
+  ) {
     const request = await this.prisma.matchingRequest.findUnique({
       where: { id: requestId },
       include: {
@@ -549,7 +582,11 @@ export class MatchingService {
       reasons.push('similar_weight');
     }
 
-    const breedRule = await this.findBreedRule(femalePet.species, femalePet.breed, malePet.breed);
+    const breedRule = await this.findBreedRule(
+      femalePet.species,
+      femalePet.breed,
+      malePet.breed,
+    );
     return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
   }
 
@@ -587,11 +624,12 @@ export class MatchingService {
       reasons.push('similar_weight');
     }
 
-    const breedRule = breedRules.find(
-      (r) =>
-        (r.breedA === femalePet.breed && r.breedB === malePet.breed) ||
-        (r.breedA === malePet.breed && r.breedB === femalePet.breed),
-    ) || null;
+    const breedRule =
+      breedRules.find(
+        (r) =>
+          (r.breedA === femalePet.breed && r.breedB === malePet.breed) ||
+          (r.breedA === malePet.breed && r.breedB === femalePet.breed),
+      ) || null;
 
     return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
   }
@@ -659,8 +697,16 @@ export class MatchingService {
   private requestInclude() {
     return {
       requester: { select: { id: true, name: true, email: true } },
-      femalePet: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
-      malePet: { include: { owner: { select: { id: true, name: true, avatarUrl: true } } } },
+      femalePet: {
+        include: {
+          owner: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      },
+      malePet: {
+        include: {
+          owner: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      },
     } satisfies Prisma.MatchingRequestInclude;
   }
 

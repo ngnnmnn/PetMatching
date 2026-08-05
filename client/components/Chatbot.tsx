@@ -33,10 +33,47 @@ function formatCurrency(value: number) {
 
 export default function Chatbot() {
   const pathname = usePathname();
-  const hiddenRoutes = ['/login', '/register', '/admin', '/verify-email'];
-  const shouldHide = hiddenRoutes.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`)
-  );
+  
+  // Show chatbot ONLY on shop-related pages
+  const isShopPage =
+    pathname === '/shop' ||
+    pathname.startsWith('/shop/') ||
+    pathname === '/home' ||
+    pathname.startsWith('/home/product/') ||
+    pathname === '/cart' ||
+    pathname.startsWith('/cart/') ||
+    pathname === '/checkout' ||
+    pathname.startsWith('/checkout/') ||
+    pathname === '/orders' ||
+    pathname.startsWith('/orders/');
+
+  const [isStaffOrAdmin, setIsStaffOrAdmin] = useState(false);
+
+  useEffect(() => {
+    const checkUserRole = () => {
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        try {
+          const user = JSON.parse(stored);
+          const role = user?.role;
+          const staffRoles = ['ADMIN', 'STORE_MANAGER', 'SPA_MANAGER', 'SPA_STAFF'];
+          if (role && staffRoles.includes(role)) {
+            setIsStaffOrAdmin(true);
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to parse user in Chatbot', e);
+        }
+      }
+      setIsStaffOrAdmin(false);
+    };
+
+    checkUserRole();
+    window.addEventListener('auth-change', checkUserRole);
+    return () => window.removeEventListener('auth-change', checkUserRole);
+  }, []);
+
+  const shouldHide = !isShopPage || isStaffOrAdmin;
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -69,7 +106,7 @@ export default function Chatbot() {
         {
           id: 'welcome',
           role: 'assistant',
-          content: 'Xin chào! Mình là **Trợ lý AI PetMatch** 🐾. Mình có thể giúp gì cho bạn hôm nay? Mình có thể tư vấn chăm sóc thú cưng và gợi ý những sản phẩm phù hợp nhất cho bé cưng nhà bạn đấy!',
+          content: 'Xin chào! Mình là **Trợ lý AI Cửa hàng PetMatch** 🐾. Mình có thể giúp gì cho bạn hôm nay? Mình có thể tư vấn chọn thức ăn, đồ chơi, phụ kiện và gợi ý các sản phẩm phù hợp nhất cho bé cưng nhà bạn đấy!',
           timestamp: new Date(),
         },
       ]);
