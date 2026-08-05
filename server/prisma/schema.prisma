@@ -196,22 +196,29 @@ model MatchingRequest {
 }
 
 model Match {
-  id                 String      @id @default(cuid())
-  pet1Id             String
-  pet2Id             String
+  id                      String      @id @default(cuid())
+  pet1Id                  String
+  pet2Id                  String
   /// Điểm tương thích 0-100 (tính bởi matching engine)
-  compatibilityScore Int         @default(0)
+  compatibilityScore      Int         @default(0)
   /// Lý do match (JSON): ["same_breed", "both_pedigree", "breed_compatible", "near_location"]
-  matchReasons       Json?
-  status             MatchStatus @default(ACTIVE)
+  matchReasons            Json?
+  status                  MatchStatus @default(ACTIVE)
+  pet1MeetingConfirmedAt  DateTime?
+  pet2MeetingConfirmedAt  DateTime?
+  firstMeetingConfirmerId String?
   /// Ghi chú kết quả sau khi phối giống xong (COMPLETED)
-  breedingNote       String?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-  completedAt        DateTime?
-  pet1               Pet         @relation("MatchPet1", fields: [pet1Id], references: [id])
-  pet2               Pet         @relation("MatchPet2", fields: [pet2Id], references: [id])
-  messages           Message[]
+  breedingNote            String?
+  expectedDueDate         DateTime?
+  completedAt             DateTime?
+  endedAt                 DateTime?
+  endedById               String?
+  endReason               String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+  pet1                    Pet         @relation("MatchPet1", fields: [pet1Id], references: [id])
+  pet2                    Pet         @relation("MatchPet2", fields: [pet2Id], references: [id])
+  messages                Message[]
 
   @@unique([pet1Id, pet2Id])
   @@index([pet1Id, status])
@@ -513,17 +520,17 @@ model SpaBooking {
 }
 
 model SpaFeedback {
-  id           String     @id @default(cuid())
-  bookingId    String     @unique @map("booking_id")
-  userId       String     @map("user_id")
-  rateStaff    Int        @map("rate_staff")
-  rateServices Int        @map("rate_services")
+  id           String   @id @default(cuid())
+  bookingId    String   @unique @map("booking_id")
+  userId       String   @map("user_id")
+  rateStaff    Int      @map("rate_staff")
+  rateServices Int      @map("rate_services")
   comment      String?
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  booking      SpaBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking SpaBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("spa_feedbacks")
 }
@@ -673,6 +680,7 @@ enum Gender {
 
 enum PetStatus {
   ACTIVE
+  BREAKDOWN
   HIDDEN
   INACTIVE
 }
@@ -703,6 +711,7 @@ enum LikeStatus {
 /// CANCELLED - Một trong hai huỷ
 enum MatchStatus {
   ACTIVE
+  MET
   COMPLETED
   CANCELLED
 }
