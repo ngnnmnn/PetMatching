@@ -76,6 +76,12 @@ const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
 // Chu kỳ nghỉ phối giống (tháng)
 const BREEDING_COOLDOWN_MONTHS = { DOG: 6, CAT: 3 } as const;
 
+const CHAT_ENABLED_MATCH_STATUSES: MatchStatus[] = [
+  MatchStatus.ACTIVE,
+  MatchStatus.MET,
+  MatchStatus.COMPLETED,
+];
+
 function calculateHaversineDistance(
   lat1: number,
   lon1: number,
@@ -685,13 +691,15 @@ export class MatchingService {
   }
 
   async sendMessage(userId: string, matchId: string, content: string) {
-    await this.getOwnedActiveMatch(userId, matchId);
     const normalizedContent = content.trim();
     if (!normalizedContent) {
       throw new BadRequestException('Message content cannot be empty.');
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const match = await this.getLockedMatch(tx, matchId);
+      this.ensureMatchAllowsChat(match, userId);
+
       const message = await tx.message.create({
         data: { matchId, senderId: userId, content: normalizedContent },
         include: {
@@ -725,6 +733,9 @@ export class MatchingService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const match = await this.getLockedMatch(tx, matchId);
+        this.ensureMatchAllowsChat(match, userId);
+
         const message = await tx.message.create({
           data: {
             matchId,
@@ -752,9 +763,7 @@ export class MatchingService {
     const match = await this.prisma.match.findFirst({
       where: {
         id: matchId,
-        status: {
-          in: [MatchStatus.ACTIVE, MatchStatus.MET, MatchStatus.COMPLETED],
-        },
+        status: { in: CHAT_ENABLED_MATCH_STATUSES },
         OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
       },
       select: { id: true },
@@ -765,6 +774,21 @@ export class MatchingService {
       );
     }
     return match;
+  }
+
+  private ensureMatchAllowsChat(
+    match: MatchWithParticipants,
+    userId: string,
+  ): void {
+    const isParticipant =
+      match.pet1.ownerId === userId || match.pet2.ownerId === userId;
+    const allowsChat = CHAT_ENABLED_MATCH_STATUSES.includes(match.status);
+
+    if (!isParticipant || !allowsChat) {
+      throw new NotFoundException(
+        'Không tìm thấy match đang cho phép trò chuyện.',
+      );
+    }
   }
 
   private async getLockedMatch(tx: Prisma.TransactionClient, matchId: string) {
