@@ -64,6 +64,17 @@ export class UsersService {
     private cloudinary: CloudinaryService,
   ) {}
 
+  private async syncProductStockTx(tx: any, productId: string) {
+    const variants = await tx.productVariant.findMany({
+      where: { productId },
+    });
+    const totalStock = variants.reduce((sum: number, v: any) => sum + v.stock, 0);
+    await tx.product.update({
+      where: { id: productId },
+      data: { stock: totalStock },
+    });
+  }
+
   async findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
@@ -539,6 +550,7 @@ export class UsersService {
                     },
                   },
                 });
+                await this.syncProductStockTx(tx, item.productId);
               } else {
                 await tx.product.update({
                   where: { id: item.productId },
@@ -694,6 +706,7 @@ export class UsersService {
               },
             },
           });
+          await this.syncProductStockTx(tx, item.productId);
 
           itemName = `${product.name} (${variant.name})`;
         } else {
@@ -946,6 +959,7 @@ export class UsersService {
               },
             },
           });
+          await this.syncProductStockTx(tx, item.productId);
         } else {
           await tx.product.update({
             where: { id: item.productId },
@@ -992,6 +1006,7 @@ export class UsersService {
               },
             },
           });
+          await this.syncProductStockTx(tx, item.productId);
         } else {
           await tx.product.update({
             where: { id: item.productId },

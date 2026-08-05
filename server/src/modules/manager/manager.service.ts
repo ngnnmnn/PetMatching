@@ -18,6 +18,17 @@ export class ManagerService {
     private cloudinaryService: CloudinaryService,
   ) {}
 
+  private async syncProductStockTx(tx: any, productId: string) {
+    const variants = await tx.productVariant.findMany({
+      where: { productId },
+    });
+    const totalStock = variants.reduce((sum: number, v: any) => sum + v.stock, 0);
+    await tx.product.update({
+      where: { id: productId },
+      data: { stock: totalStock },
+    });
+  }
+
   private generateSlug(name: string): string {
     return (
       name
@@ -394,37 +405,82 @@ export class ManagerService {
       // If transition to CANCELLED from a non-CANCELLED state
       if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
         for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stock: {
-                increment: item.quantity,
+          if (item.variantId) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: {
+                stock: {
+                  increment: item.quantity,
+                },
               },
-            },
-          });
+            });
+            await this.syncProductStockTx(tx, item.productId);
+          } else {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: {
+                  increment: item.quantity,
+                },
+              },
+            });
+          }
         }
       }
       // If transition FROM CANCELLED to something else (e.g. processing)
       else if (order.status === 'CANCELLED' && status !== 'CANCELLED') {
         for (const item of order.items) {
-          // Check stock before decrementing
-          const product = await tx.product.findUnique({
-            where: { id: item.productId },
-          });
-          if (product && product.stock < item.quantity) {
-            throw new BadRequestException(
-              `Không thể đổi trạng thái đơn hàng. Sản phẩm "${product.name}" hiện không đủ hàng trong kho (chỉ còn ${product.stock} cái).`,
-            );
-          }
+          if (item.variantId) {
+            const variant = await tx.productVariant.findUnique({
+              where: { id: item.variantId },
+            });
+            if (!variant) {
+              throw new NotFoundException(
+                `Không tìm thấy biến thể sản phẩm cho mã ${item.variantId}.`,
+              );
+            }
+            if (variant.stock < item.quantity) {
+              throw new BadRequestException(
+                `Không thể đổi trạng thái đơn hàng. Biến thể "${variant.name}" hiện không đủ hàng trong kho (chỉ còn ${variant.stock} cái).`,
+              );
+            }
 
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stock: {
-                decrement: item.quantity,
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: {
+                stock: {
+                  decrement: item.quantity,
+                },
               },
-            },
-          });
+            });
+            await this.syncProductStockTx(tx, item.productId);
+          } else {
+            // Check stock before decrementing
+            const product = await tx.product.findUnique({
+              where: { id: item.productId },
+            });
+            if (
+              product &&
+              product.stock !== null &&
+              product.stock !== undefined &&
+              product.stock < item.quantity
+            ) {
+              throw new BadRequestException(
+                `Không thể đổi trạng thái đơn hàng. Sản phẩm "${product.name}" hiện không đủ hàng trong kho (chỉ còn ${product.stock} cái).`,
+              );
+            }
+
+            if (product && product.stock !== null && product.stock !== undefined) {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: {
+                  stock: {
+                    decrement: item.quantity,
+                  },
+                },
+              });
+            }
+          }
         }
       }
 
@@ -818,7 +874,7 @@ export class ManagerService {
     const errors: string[] = [];
 
     for (let i = 0; i < rawRows.length; i++) {
-      const row = rawRows[i];
+      const row = rawRows[i] as any;
       const rowNum = i + 2; // Dòng thứ i+2 trong Excel do có dòng tiêu đề
 
       const name = (row['Tên sản phẩm'] ?? row['name'] ?? '').toString().trim();

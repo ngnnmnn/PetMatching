@@ -18,6 +18,17 @@ export class ShippingService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private async syncProductStockTx(tx: any, productId: string) {
+    const variants = await tx.productVariant.findMany({
+      where: { productId },
+    });
+    const totalStock = variants.reduce((sum: number, v: any) => sum + v.stock, 0);
+    await tx.product.update({
+      where: { id: productId },
+      data: { stock: totalStock },
+    });
+  }
+
   private get headers() {
     return {
       'Content-Type': 'application/json',
@@ -389,13 +400,52 @@ export class ShippingService {
         break;
     }
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        shippingStatus: status,
-        status: newOrderStatus,
-      },
-    });
+    if (newOrderStatus === 'CANCELLED' && order.status !== 'CANCELLED') {
+      await this.prisma.$transaction(async (tx) => {
+        const orderItems = await tx.orderItem.findMany({
+          where: { orderId: order.id },
+        });
+
+        for (const item of orderItems) {
+          if (item.variantId) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: {
+                stock: {
+                  increment: item.quantity,
+                },
+              },
+            });
+            await this.syncProductStockTx(tx, item.productId);
+          } else {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: {
+                  increment: item.quantity,
+                },
+              },
+            });
+          }
+        }
+
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            shippingStatus: status,
+            status: newOrderStatus,
+          },
+        });
+      });
+    } else {
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          shippingStatus: status,
+          status: newOrderStatus,
+        },
+      });
+    }
 
     this.logger.log(
       `Đã cập nhật đơn hàng ${order.id}: GHN Status=${status}, OrderStatus=${newOrderStatus}`,

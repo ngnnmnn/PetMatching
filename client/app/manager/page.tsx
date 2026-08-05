@@ -801,6 +801,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
       handleCancelEditVariant();
       loadVariants(currentProduct.id);
+      const prodRes = await managerApi.getProducts();
+      setProducts(prodRes.data);
     } catch (error) {
       console.error('Failed to submit variant form', error);
       toast.error('Lỗi khi lưu biến thể.');
@@ -819,6 +821,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       await managerApi.deleteProductVariant(variantId);
       toast.success('Xóa biến thể thành công!');
       loadVariants(currentProduct.id);
+      const prodRes = await managerApi.getProducts();
+      setProducts(prodRes.data);
     } catch (error) {
       console.error('Failed to delete variant', error);
       toast.error('Lỗi khi xóa biến thể.');
