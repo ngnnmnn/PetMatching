@@ -268,22 +268,24 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, unitsRes] = await Promise.all([
-        managerApi.getDashboardStats(),
-        managerApi.getProducts(),
-        managerApi.getOrders(),
-        managerApi.getCustomers(),
-        managerApi.getStoreSettings(),
-        productsApi.getCategories(),
-        managerApi.getProductUnits(),
-      ]);
-      setStats(statsRes.data);
-      setProducts(productsRes.data);
-      setOrders(ordersRes.data);
-      setCustomers(customersRes.data);
-      setStoreInfo(settingsRes.data);
-      setCategories(categoriesRes.data);
-      setUnits(unitsRes.data);
+      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, unitsRes] =
+        await Promise.allSettled([
+          managerApi.getDashboardStats(),
+          managerApi.getProducts(),
+          managerApi.getOrders(),
+          managerApi.getCustomers(),
+          managerApi.getStoreSettings(),
+          productsApi.getCategories(),
+          managerApi.getProductUnits(),
+        ]);
+
+      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
+      if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
+      if (ordersRes.status === 'fulfilled') setOrders(ordersRes.value.data);
+      if (customersRes.status === 'fulfilled') setCustomers(customersRes.value.data);
+      if (settingsRes.status === 'fulfilled') setStoreInfo(settingsRes.value.data);
+      if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
+      if (unitsRes.status === 'fulfilled') setUnits(unitsRes.value.data);
     } catch (error) {
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
