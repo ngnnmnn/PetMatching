@@ -402,6 +402,8 @@ model Order {
   refundAccountName   String?
   refundReason        String?
   refundedAt          DateTime?
+  deliveryProofUrl    String?
+  shippingNote        String?
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
   items               OrderItem[]
@@ -662,6 +664,7 @@ enum PetStatus {
   ACTIVE
   HIDDEN
   INACTIVE
+  BREAKDOWN
 }
 
 /// Hình thức phối giống:
@@ -692,6 +695,7 @@ enum MatchStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+  MET
 }
 
 enum MatchingRequestStatus {
@@ -720,6 +724,7 @@ enum AccountStatus {
 
 enum OrderStatus {
   PENDING
+  PACKED
   PROCESSING
   SHIPPED
   DELIVERED

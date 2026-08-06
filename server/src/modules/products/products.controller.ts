@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -55,5 +57,21 @@ export class ProductsController {
     @Body() dto: { rating: number; comment?: string },
   ) {
     return this.productsService.createReview(req.user.id, productId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('reviews/:id')
+  updateReview(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: { rating: number; comment?: string },
+  ) {
+    return this.productsService.updateReview(req.user.id, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('reviews/:id')
+  deleteReview(@Req() req: any, @Param('id') id: string) {
+    return this.productsService.deleteReview(req.user.id, id);
   }
 }

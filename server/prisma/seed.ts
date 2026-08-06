@@ -22,6 +22,9 @@ async function main() {
   console.log('\n--- Running create-demo-user.js ---');
   execSync(`node "${path.join(prismaDir, '../scripts/create-demo-user.js')}"`, { stdio: 'inherit' });
   
+  console.log('\n--- Running seed-variants.ts ---');
+  execSync(`npx ts-node "${path.join(prismaDir, 'seed-variants.ts')}"`, { stdio: 'inherit' });
+
   console.log('\nDatabase seeding completed successfully!');
 }
 

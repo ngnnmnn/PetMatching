@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GetProductsDto } from './dto/get-products.dto';
@@ -226,6 +231,105 @@ export class ProductsService {
       });
 
       return review;
+    });
+  }
+
+  async updateReview(
+    userId: string,
+    reviewId: string,
+    dto: { rating: number; comment?: string },
+  ) {
+    const { rating, comment } = dto;
+    if (rating < 1 || rating > 5) {
+      throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5.');
+    }
+
+    const review = await this.prisma.productReview.findUnique({
+      where: { id: reviewId },
+    });
+
+    if (!review) {
+      throw new NotFoundException('Không tìm thấy đánh giá.');
+    }
+
+    if (review.userId !== userId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa đánh giá này.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedReview = await tx.productReview.update({
+        where: { id: reviewId },
+        data: { rating, comment },
+      });
+
+      const aggregate = await tx.productReview.aggregate({
+        where: { productId: review.productId },
+        _avg: { rating: true },
+        _count: { id: true },
+      });
+
+      const averageRating = aggregate._avg.rating ?? 0;
+      const reviewCount = aggregate._count.id ?? 0;
+
+      await tx.product.update({
+        where: { id: review.productId },
+        data: {
+          rating: averageRating,
+          reviewCount: reviewCount,
+        },
+      });
+
+      return updatedReview;
+    });
+  }
+
+  async deleteReview(userId: string, reviewId: string) {
+    const review = await this.prisma.productReview.findUnique({
+      where: { id: reviewId },
+    });
+
+    if (!review) {
+      throw new NotFoundException('Không tìm thấy đánh giá.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    const isOwner = review.userId === userId;
+    const isAdminOrMod =
+      user?.role === 'ADMIN' ||
+      user?.role === 'MODERATOR' ||
+      user?.role === 'STORE_MANAGER';
+
+    if (!isOwner && !isAdminOrMod) {
+      throw new ForbiddenException('Bạn không có quyền xóa đánh giá này.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.productReview.delete({
+        where: { id: reviewId },
+      });
+
+      const aggregate = await tx.productReview.aggregate({
+        where: { productId: review.productId },
+        _avg: { rating: true },
+        _count: { id: true },
+      });
+
+      const averageRating = aggregate._avg.rating ?? 0;
+      const reviewCount = aggregate._count.id ?? 0;
+
+      await tx.product.update({
+        where: { id: review.productId },
+        data: {
+          rating: averageRating,
+          reviewCount: reviewCount,
+        },
+      });
+
+      return { success: true, message: 'Đã xóa đánh giá thành công.' };
     });
   }
 }

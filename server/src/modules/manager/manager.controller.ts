@@ -11,10 +11,11 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFiles,
+  UploadedFile,
   Query,
   Res,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ManagerGuard } from '../../common/auth/manager.guard';
@@ -102,9 +103,28 @@ export class ManagerController {
     return this.managerService.getOrders();
   }
 
+  @Post('orders/upload-delivery-proof')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    }),
+  )
+  uploadDeliveryProof(@UploadedFile() file: Express.Multer.File) {
+    return this.managerService.uploadDeliveryProof(file);
+  }
+
   @Patch('orders/:id/status')
-  updateOrderStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.managerService.updateOrderStatus(id, status);
+  updateOrderStatus(
+    @Param('id') id: string,
+    @Body() dto: { status: string; deliveryProofUrl?: string; shippingNote?: string },
+  ) {
+    return this.managerService.updateOrderStatus(
+      id,
+      dto.status,
+      dto.deliveryProofUrl,
+      dto.shippingNote,
+    );
   }
 
   @Get('customers')

@@ -20,6 +20,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import AppHeader from '@/components/layout/AppHeader';
 import { usersApi } from '@/lib/api/users';
 import AddressFormModal from '@/components/checkout/AddressFormModal';
@@ -45,7 +46,7 @@ interface OrderItem {
 interface Order {
   id: string;
   orderCode?: number | null;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
+  status: 'PENDING' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
   shippingFee?: number;
   shippingAddress: string;
@@ -53,6 +54,8 @@ interface Order {
   paymentUrl?: string | null;
   ghnOrderCode?: string | null;
   shippingStatus?: string | null;
+  deliveryProofUrl?: string | null;
+  shippingNote?: string | null;
   refundStatus?: string | null;
   refundBankCode?: string | null;
   refundAccountNumber?: string | null;
@@ -182,6 +185,7 @@ export default function OrdersPage() {
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
 
   const [editOrder, setEditOrder] = useState<Order | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [tempAddressData, setTempAddressData] = useState<any>(null);
   
@@ -368,8 +372,14 @@ export default function OrdersPage() {
     setCancelling(true);
 
     try {
-      await usersApi.cancelOrder(cancelOrderId);
-      toast.success('Đơn hàng đã được hủy thành công.');
+      const targetOrder = orders.find((o) => o.id === cancelOrderId);
+      if (targetOrder && targetOrder.paymentMethod === 'QR' && targetOrder.status === 'PENDING') {
+        await usersApi.deleteOrder(cancelOrderId);
+        toast.success('Đơn hàng QR chưa hoàn tất đã được xóa khỏi hệ thống.');
+      } else {
+        await usersApi.cancelOrder(cancelOrderId);
+        toast.success('Đơn hàng đã được hủy thành công.');
+      }
       setCancelOrderId(null);
       await loadOrders();
     } catch (err: any) {
@@ -380,8 +390,15 @@ export default function OrdersPage() {
     }
   };
 
-  const handleAddressEditClick = (order: Order) => {
+  const handleAddressEditClick = async (order: Order) => {
     setEditOrder(order);
+    try {
+      const res = await usersApi.getAddresses();
+      setSavedAddresses(res.data || []);
+    } catch (e) {
+      console.error('Failed to load saved addresses', e);
+      setSavedAddresses([]);
+    }
     setIsAddressModalOpen(true);
   };
 
@@ -399,25 +416,33 @@ export default function OrdersPage() {
     }
   };
 
-  const handleAddressFormSubmit = (data: any) => {
+  const handleAddressFormSubmit = async (data: any) => {
+    if (!editOrder) return;
     setIsAddressModalOpen(false);
-    
-    // Construct final address string with prefixes so it can be parsed next time
+
     let addressStr = `Tên: ${data.receiverName} | SĐT: ${data.receiverPhone} | Địa chỉ: ${data.detail}, ${data.wardName}, ${data.districtName}, ${data.provinceName}`;
-    
-    // Carry over user notes if present
-    const parsedOld = editOrder ? parseAddressString(editOrder.shippingAddress) : { note: '' };
+
+    const parsedOld = parseAddressString(editOrder.shippingAddress);
     if (parsedOld.note) {
       addressStr += ` (Ghi chú: ${parsedOld.note})`;
     }
-    
-    setTempAddressData({
-      addressStr,
-      receiverName: data.receiverName,
-      receiverPhone: data.receiverPhone,
-      displayAddress: `${data.detail}, ${data.wardName}, ${data.districtName}, ${data.provinceName}`
-    });
-    setShowAddressConfirmModal(true);
+
+    setUpdatingAddress(true);
+    try {
+      await usersApi.updateOrderShipping(editOrder.id, {
+        shippingAddress: addressStr,
+        districtId: data.districtId,
+        wardCode: data.wardCode,
+      });
+      toast.success('Đã cập nhật địa chỉ giao hàng và tính lại phí ship mới thành công!');
+      setEditOrder(null);
+      await loadOrders();
+    } catch (err: any) {
+      console.error('Failed to update address', err);
+      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật địa chỉ giao hàng.');
+    } finally {
+      setUpdatingAddress(false);
+    }
   };
 
   const handleUpdateAddressConfirm = async () => {
@@ -445,21 +470,22 @@ export default function OrdersPage() {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-extrabold text-green-700">
             <CheckCircle className="size-3.5" />
-            Đã giao hàng
+            Đã nhận hàng
           </span>
         );
+      case 'PACKED':
       case 'PROCESSING':
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2.5 py-1 text-xs font-extrabold text-orange-700">
-            <Clock className="size-3.5" />
-            Đang chuẩn bị
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700">
+            <Package className="size-3.5" />
+            Đã gói hàng
           </span>
         );
       case 'SHIPPED':
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700">
             <Truck className="size-3.5" />
-            Đã gửi bên giao hàng
+            Đã gửi bên vận chuyển
           </span>
         );
       case 'CANCELLED':
@@ -487,7 +513,7 @@ export default function OrdersPage() {
       default:
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700">
-            <AlertTriangle className="size-3.5" />
+            <Clock className="size-3.5" />
             Chờ xác nhận
           </span>
         );
@@ -634,12 +660,6 @@ export default function OrdersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {order.ghnOrderCode && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 border border-teal-200 px-2 py-1 text-xs font-extrabold text-teal-800">
-                        <Truck className="size-3.5 text-teal-600" />
-                        GHN: {order.ghnOrderCode}
-                      </span>
-                    )}
                     {getStatusBadge(order.status)}
                     {getPaymentStatusBadge(order)}
                     
@@ -774,30 +794,96 @@ export default function OrdersPage() {
                 </div>
 
                 {/* Order Footer Info */}
-                <div className="bg-[#FAF9F5]/40 px-6 py-4 border-t border-[var(--border-color)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-xs">
-                  <div className="flex items-start gap-2 max-w-lg font-semibold">
-                    <MapPin className="size-4 text-[#0F766E] shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-[var(--text-muted)]">Địa chỉ giao hàng:</span>
-                      <p className="text-[var(--text-main)] mt-0.5 leading-relaxed">
-                        {formatAddressForDisplay(order.shippingAddress)}
-                      </p>
+                <div className="bg-[#FAF9F5]/40 px-6 py-4 border-t border-[var(--border-color)] space-y-3 text-xs">
+                  {/* Status Step Tracker */}
+                  {order.status !== 'CANCELLED' && order.status !== 'EXPIRED' && order.status !== 'PAYMENT_ERROR' && (
+                    <div className="bg-white p-3 rounded-xl border border-[var(--border-color)] space-y-1.5">
+                      <p className="font-extrabold text-[var(--text-muted)] uppercase tracking-wider text-[9px]">Tiến trình vận chuyển</p>
+                      <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-black">
+                        {(() => {
+                          const statusOrder = ['PENDING', 'PACKED', 'SHIPPED', 'DELIVERED'];
+                          let currentIdx = statusOrder.indexOf(order.status);
+                          if (order.status === 'PROCESSING') currentIdx = 1;
+
+                          const steps = [
+                            { label: 'Chờ xác nhận', icon: '1' },
+                            { label: 'Đã gói hàng', icon: '2' },
+                            { label: 'Đã gửi vận chuyển', icon: '3' },
+                            { label: 'Đã nhận hàng', icon: '4' },
+                          ];
+
+                          return steps.map((step, idx) => {
+                            const isDone = idx <= currentIdx;
+                            const isCurrent = idx === currentIdx;
+                            return (
+                              <div
+                                key={idx}
+                                className={cn(
+                                  'flex flex-col items-center gap-1 p-1.5 rounded-lg border transition',
+                                  isDone ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-gray-50 border-gray-100 text-gray-400',
+                                  isCurrent && 'ring-1 ring-[#0F766E]',
+                                )}
+                              >
+                                <span className={cn('size-3.5 rounded-full flex items-center justify-center text-[8px]', isDone ? 'bg-emerald-600 text-white' : 'bg-gray-300 text-gray-600')}>
+                                  {isDone ? '✓' : step.icon}
+                                </span>
+                                <span className="line-clamp-1">{step.label}</span>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
                     </div>
-                  </div>
-                  <div className="shrink-0 text-right font-black flex items-center gap-4">
-                    <div>
-                      <span className="text-xs text-[var(--text-muted)] font-bold block sm:inline mr-1">Tổng cộng:</span>
-                      <span className="text-lg text-[var(--primary-color)]">{formatCurrency(order.totalAmount)}</span>
+                  )}
+
+                  {order.shippingNote && (
+                    <div className="bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 text-xs">
+                      <span className="font-black text-blue-800 uppercase tracking-wider text-[9px] block">Ghi chú giao hàng:</span>
+                      <p className="text-xs font-bold text-blue-900 mt-0.5">{order.shippingNote}</p>
                     </div>
-                    {order.status === 'DELIVERED' && (
-                      <button
-                        type="button"
-                        onClick={() => handleReviewOrderClick(order)}
-                        className="rounded-xl bg-[var(--primary-color)] px-4 py-2 font-black text-white hover:bg-[#cf5017] transition shadow-sm cursor-pointer text-xs"
-                      >
-                        Viết đánh giá
-                      </button>
-                    )}
+                  )}
+
+                  {order.deliveryProofUrl && (
+                    <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 text-xs space-y-1">
+                      <span className="font-black text-emerald-800 uppercase tracking-wider text-[10px] flex items-center gap-1">
+                        <CheckCircle className="size-3.5 text-emerald-600" />
+                        Ảnh bằng chứng giao hàng từ Shop
+                      </span>
+                      <a href={order.deliveryProofUrl} target="_blank" rel="noreferrer" className="block mt-1">
+                        <img
+                          src={order.deliveryProofUrl}
+                          alt="Ảnh xác nhận giao hàng"
+                          className="w-full max-h-48 object-cover rounded-lg border border-emerald-300 hover:opacity-90 transition cursor-pointer"
+                        />
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
+                    <div className="flex items-start gap-2 max-w-lg font-semibold">
+                      <MapPin className="size-4 text-[#0F766E] shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-[var(--text-muted)]">Địa chỉ giao hàng:</span>
+                        <p className="text-[var(--text-main)] mt-0.5 leading-relaxed">
+                          {formatAddressForDisplay(order.shippingAddress)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right font-black flex items-center gap-4">
+                      <div>
+                        <span className="text-xs text-[var(--text-muted)] font-bold block sm:inline mr-1">Tổng cộng:</span>
+                        <span className="text-lg text-[var(--primary-color)]">{formatCurrency(order.totalAmount)}</span>
+                      </div>
+                      {order.status === 'DELIVERED' && (
+                        <button
+                          type="button"
+                          onClick={() => handleReviewOrderClick(order)}
+                          className="rounded-xl bg-[var(--primary-color)] px-4 py-2 font-black text-white hover:bg-[#cf5017] transition shadow-sm cursor-pointer text-xs"
+                        >
+                          Viết đánh giá
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -814,6 +900,9 @@ export default function OrdersPage() {
             setIsAddressModalOpen(false);
             setEditOrder(null);
           }}
+          savedAddresses={savedAddresses}
+          itemsSubtotal={editOrder.items.reduce((sum, item) => sum + item.price * item.quantity, 0)}
+          currentShippingFee={editOrder.shippingFee || 0}
           onSubmit={handleAddressFormSubmit}
           showSaveOptions={false}
           title={`Sửa địa chỉ giao hàng - Đơn hàng #${editOrder.id}`}

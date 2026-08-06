@@ -1,8 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
+import { X, MapPin, ChevronDown, Search, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 
 interface Province {
   provinceId: number;
@@ -174,7 +183,9 @@ interface AddressFormModalProps {
     wardCode?: string;
     saveAddressToDb: boolean;
     setAsDefault: boolean;
+    calculatedShippingFee?: number;
   }) => void;
+  savedAddresses?: any[];
   initialData?: {
     receiverName?: string;
     receiverPhone?: string;
@@ -188,17 +199,27 @@ interface AddressFormModalProps {
   };
   title?: string;
   showSaveOptions?: boolean;
+  itemsSubtotal?: number;
+  currentShippingFee?: number;
 }
 
 export default function AddressFormModal({
   isOpen,
   onClose,
   onSubmit,
+  savedAddresses,
   initialData,
   title = 'Nhập địa chỉ giao hàng',
   showSaveOptions = false,
+  itemsSubtotal,
+  currentShippingFee,
 }: AddressFormModalProps) {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+  const [addressTab, setAddressTab] = useState<'saved' | 'new'>(
+    savedAddresses && savedAddresses.length > 0 ? 'saved' : 'new',
+  );
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string | null>(null);
 
   const [receiverName, setReceiverName] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
@@ -223,24 +244,70 @@ export default function AddressFormModal({
   const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [loadingWards, setLoadingWards] = useState(false);
 
+  // Fee calculation state
+  const [calculatedShippingFee, setCalculatedShippingFee] = useState<number | null>(null);
+  const [calculatingFee, setCalculatingFee] = useState(false);
+
   // Reset form when opening
   useEffect(() => {
     if (isOpen) {
-      setReceiverName(initialData?.receiverName || '');
-      setReceiverPhone(initialData?.receiverPhone || '');
-      setDetail(initialData?.detail || '');
-      setProvinceName(initialData?.province || '');
-      setDistrictName(initialData?.district || '');
-      setWardName(initialData?.ward || '');
+      if (savedAddresses && savedAddresses.length > 0) {
+        setAddressTab('saved');
+        const defaultAddr = savedAddresses.find((a) => a.isDefault) || savedAddresses[0];
+        handleSelectSavedAddress(defaultAddr);
+      } else {
+        setAddressTab('new');
+        setReceiverName(initialData?.receiverName || '');
+        setReceiverPhone(initialData?.receiverPhone || '');
+        setDetail(initialData?.detail || '');
+        setProvinceName(initialData?.province || '');
+        setDistrictName(initialData?.district || '');
+        setWardName(initialData?.ward || '');
 
-      setProvinceId(initialData?.provinceId);
-      setDistrictId(initialData?.districtId);
-      setWardCode(initialData?.wardCode);
+        setProvinceId(initialData?.provinceId);
+        setDistrictId(initialData?.districtId);
+        setWardCode(initialData?.wardCode);
+      }
 
       setDistricts([]);
       setWards([]);
     }
-  }, [initialData, isOpen]);
+  }, [initialData, isOpen, savedAddresses]);
+
+  // Live Shipping Fee Calculation
+  useEffect(() => {
+    if (!districtId || !wardCode) {
+      setCalculatedShippingFee(null);
+      return;
+    }
+
+    const fetchFee = async () => {
+      setCalculatingFee(true);
+      try {
+        const res = await fetch(`${apiBaseUrl}/shipping/calculate-fee`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toDistrictId: Number(districtId),
+            toWardCode: String(wardCode),
+          }),
+        });
+        const data = await res.json();
+        if (data && typeof data.total === 'number') {
+          setCalculatedShippingFee(data.total);
+        } else {
+          setCalculatedShippingFee(null);
+        }
+      } catch (err) {
+        console.error('Failed to calculate shipping fee', err);
+        setCalculatedShippingFee(null);
+      } finally {
+        setCalculatingFee(false);
+      }
+    };
+
+    fetchFee();
+  }, [districtId, wardCode, apiBaseUrl]);
 
   // Fetch GHN Provinces
   useEffect(() => {
@@ -256,9 +323,7 @@ export default function AddressFormModal({
 
         if (initialData?.province && !initialData?.provinceId) {
           const cleanInit = cleanAddressName(initialData.province, 'province');
-          // 1. Try exact cleaned name match first
           let match = list.find((p: Province) => cleanAddressName(p.provinceName, 'province') === cleanInit);
-          // 2. Fallback to fuzzy match
           if (!match) {
             match = list.find((p: Province) => {
               const apiName = removeDiacritics(p.provinceName).toLowerCase();
@@ -302,11 +367,9 @@ export default function AddressFormModal({
         setWards([]);
         setWardCode(undefined);
 
-        if (initialData?.district && !initialData?.districtId && list.length > 0) {
+        if (initialData?.district && !initialData?.districtId) {
           const cleanInit = cleanAddressName(initialData.district, 'district');
-          // 1. Try exact cleaned name match first
           let match = list.find((d: District) => cleanAddressName(d.districtName, 'district') === cleanInit);
-          // 2. Fallback to fuzzy match
           if (!match) {
             match = list.find((d: District) => {
               const apiName = removeDiacritics(d.districtName).toLowerCase();
@@ -346,11 +409,9 @@ export default function AddressFormModal({
         const list = Array.isArray(data) ? data : [];
         setWards(list);
 
-        if (initialData?.ward && !initialData?.wardCode && list.length > 0) {
+        if (initialData?.ward && !initialData?.wardCode) {
           const cleanInit = cleanAddressName(initialData.ward, 'ward');
-          // 1. Try exact cleaned name match first
           let match = list.find((w: Ward) => cleanAddressName(w.wardName, 'ward') === cleanInit);
-          // 2. Fallback to fuzzy match
           if (!match) {
             match = list.find((w: Ward) => {
               const apiName = removeDiacritics(w.wardName).toLowerCase();
@@ -374,7 +435,18 @@ export default function AddressFormModal({
     fetchWards();
   }, [districtId, initialData?.ward, apiBaseUrl]);
 
-  if (!isOpen) return null;
+  const handleSelectSavedAddress = (addr: any) => {
+    setSelectedSavedAddressId(addr.id);
+    setReceiverName(addr.receiverName || addr.name || '');
+    setReceiverPhone(addr.phone || addr.receiverPhone || '');
+    setDetail(addr.detail || '');
+    setProvinceName(addr.province || '');
+    setDistrictName(addr.district || '');
+    setWardName(addr.ward || '');
+    setProvinceId(addr.provinceId || undefined);
+    setDistrictId(addr.districtId || undefined);
+    setWardCode(addr.wardCode || undefined);
+  };
 
   const handleProvinceSelect = (val: string | number, label: string) => {
     const pId = Number(val);
@@ -402,18 +474,18 @@ export default function AddressFormModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!receiverName.trim() || !receiverPhone.trim() || !detail.trim() || !provinceName || !districtName || !wardName) {
-      toast.error('Vui lòng điền đầy đủ các thông tin bắt buộc.');
+      toast.error('Vui lòng chọn hoặc điền đầy đủ các thông tin địa chỉ.');
       return;
     }
 
     if (!provinceId || !districtId || !wardCode) {
-      toast.error('Vui lòng chọn địa chỉ Tỉnh/Thành, Quận/Huyện, và Phường/Xã từ danh sách gợi ý của GHN.');
+      toast.error('Vui lòng chọn địa chỉ Tỉnh/Thành, Quận/Huyện, và Phường/Xã từ hệ thống GHN để tính phí ship.');
       return;
     }
 
     const phoneRegex = /^(0[3|5|7|8|9])[0-9]{8}$/;
     if (!phoneRegex.test(receiverPhone.trim())) {
-      toast.error('Số điện thoại không hợp lệ! Vui lòng nhập số điện thoại Việt Nam gồm 10 chữ số (ví dụ: 0987654321).');
+      toast.error('Số điện thoại không hợp lệ! Vui lòng nhập số điện thoại gồm 10 chữ số.');
       return;
     }
 
@@ -429,6 +501,7 @@ export default function AddressFormModal({
       wardCode,
       saveAddressToDb,
       setAsDefault,
+      calculatedShippingFee: calculatedShippingFee ?? undefined,
     });
   };
 
@@ -453,12 +526,14 @@ export default function AddressFormModal({
     label: w.wardName,
   }));
 
+  if (!isOpen) return null;
+
   return (
     <div
       onClick={handleOverlayClick}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
     >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-visible rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 text-left">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
           <h2 className="text-lg font-black text-[var(--text-main)] flex items-center gap-2">
@@ -474,108 +549,222 @@ export default function AddressFormModal({
           </button>
         </div>
 
+        {/* Saved Addresses Tabs */}
+        {savedAddresses && savedAddresses.length > 0 && (
+          <div className="flex border-b border-[var(--border-color)] text-xs font-extrabold gap-4 pb-2">
+            <button
+              type="button"
+              onClick={() => {
+                setAddressTab('saved');
+                if (savedAddresses.length > 0) {
+                  handleSelectSavedAddress(savedAddresses[0]);
+                }
+              }}
+              className={`pb-2 transition border-b-2 ${
+                addressTab === 'saved'
+                  ? 'border-[#0F766E] text-[#0F766E]'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              📋 Địa chỉ đã lưu ({savedAddresses.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddressTab('new');
+                setSelectedSavedAddressId(null);
+              }}
+              className={`pb-2 transition border-b-2 ${
+                addressTab === 'new'
+                  ? 'border-[#0F766E] text-[#0F766E]'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              ✍️ Nhập địa chỉ mới
+            </button>
+          </div>
+        )}
+
+        {/* Tab 1: Saved Addresses List */}
+        {addressTab === 'saved' && savedAddresses && savedAddresses.length > 0 && (
+          <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+            {savedAddresses.map((addr) => {
+              const isSelected = selectedSavedAddressId === addr.id;
+              const fullStr = `${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
+              return (
+                <div
+                  key={addr.id}
+                  onClick={() => handleSelectSavedAddress(addr)}
+                  className={cn(
+                    'p-3.5 rounded-xl border transition cursor-pointer flex items-start gap-3',
+                    isSelected
+                      ? 'border-[#0F766E] bg-teal-50/50 ring-1 ring-[#0F766E]'
+                      : 'border-[#EFEAE2] bg-[#FAF9F5] hover:bg-gray-100',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="selectedAddressModal"
+                    checked={isSelected}
+                    onChange={() => handleSelectSavedAddress(addr)}
+                    className="size-4 accent-[#0F766E] mt-0.5"
+                  />
+                  <div className="flex-1 text-xs space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-sm text-[var(--text-main)]">{addr.receiverName || addr.name}</span>
+                      <span className="text-gray-400">•</span>
+                      <span className="font-mono text-gray-600">{addr.phone || addr.receiverPhone}</span>
+                      {addr.isDefault && (
+                        <span className="bg-[#0F766E]/10 text-[#0F766E] text-[10px] font-black px-1.5 py-0.5 rounded">
+                          Mặc định
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-700 font-semibold leading-relaxed">{fullStr}</p>
+                    {(!addr.districtId || !addr.wardCode) && (
+                      <p className="text-[10px] text-amber-700 font-bold italic">
+                        ⚠️ Địa chỉ này cần xác nhận lại Phường/Xã để tính phí ship chính xác.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
-                Tên người nhận *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Nhập tên người nhận"
-                value={receiverName}
-                onChange={(e) => setReceiverName(e.target.value)}
-                className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
-                Số điện thoại *
-              </label>
-              <input
-                type="tel"
-                required
-                placeholder="Nhập số điện thoại"
-                value={receiverPhone}
-                onChange={(e) => setReceiverPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
-              />
-            </div>
-          </div>
+          {addressTab === 'new' && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
+                    Tên người nhận *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nhập tên người nhận"
+                    value={receiverName}
+                    onChange={(e) => setReceiverName(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
+                    Số điện thoại *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="Nhập số điện thoại"
+                    value={receiverPhone}
+                    onChange={(e) => setReceiverPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                    className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                  />
+                </div>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Custom Province Select */}
-            <CustomSelect
-              label="Tỉnh / Thành"
-              placeholder="Chọn Tỉnh/Thành"
-              options={provinceOptions}
-              value={provinceId}
-              onChange={handleProvinceSelect}
-              loading={loadingProvinces}
-              required
-            />
-
-            {/* Custom District Select */}
-            <CustomSelect
-              label="Quận / Huyện"
-              placeholder="Chọn Quận/Huyện"
-              options={districtOptions}
-              value={districtId}
-              onChange={handleDistrictSelect}
-              disabled={!provinceId}
-              loading={loadingDistricts}
-              required
-            />
-
-            {/* Custom Ward Select */}
-            <CustomSelect
-              label="Phường / Xã"
-              placeholder="Chọn Phường/Xã"
-              options={wardOptions}
-              value={wardCode}
-              onChange={handleWardSelect}
-              disabled={!districtId}
-              loading={loadingWards}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
-              Địa chỉ chi tiết (số nhà, đường) *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="Ví dụ: Số 2h, ngõ 81 Duy Tân"
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-              className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
-            />
-          </div>
-
-          {showSaveOptions && (
-            <div className="flex flex-col gap-2 pt-1 text-xs font-bold">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={saveAddressToDb}
-                  onChange={(e) => setSaveAddressToDb(e.target.checked)}
-                  className="accent-[var(--primary-color)]"
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Custom Province Select */}
+                <CustomSelect
+                  label="Tỉnh / Thành"
+                  placeholder="Chọn Tỉnh/Thành"
+                  options={provinceOptions}
+                  value={provinceId}
+                  onChange={handleProvinceSelect}
+                  loading={loadingProvinces}
+                  required
                 />
-                Lưu địa chỉ này vào sổ địa chỉ
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={setAsDefault}
-                  onChange={(e) => setSetAsDefault(e.target.checked)}
-                  className="accent-[var(--primary-color)]"
+
+                {/* Custom District Select */}
+                <CustomSelect
+                  label="Quận / Huyện"
+                  placeholder="Chọn Quận/Huyện"
+                  options={districtOptions}
+                  value={districtId}
+                  onChange={handleDistrictSelect}
+                  disabled={!provinceId}
+                  loading={loadingDistricts}
+                  required
                 />
-                Đặt làm địa chỉ mặc định
-              </label>
+
+                {/* Custom Ward Select */}
+                <CustomSelect
+                  label="Phường / Xã"
+                  placeholder="Chọn Phường/Xã"
+                  options={wardOptions}
+                  value={wardCode}
+                  onChange={handleWardSelect}
+                  disabled={!districtId}
+                  loading={loadingWards}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
+                  Địa chỉ chi tiết (số nhà, đường) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Số 2h, ngõ 81 Duy Tân"
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                />
+              </div>
+
+              {showSaveOptions && (
+                <div className="flex flex-col gap-2 pt-1 text-xs font-bold">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveAddressToDb}
+                      onChange={(e) => setSaveAddressToDb(e.target.checked)}
+                      className="accent-[var(--primary-color)]"
+                    />
+                    Lưu địa chỉ này vào sổ địa chỉ
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={setAsDefault}
+                      onChange={(e) => setSetAsDefault(e.target.checked)}
+                      className="accent-[var(--primary-color)]"
+                    />
+                    Đặt làm địa chỉ mặc định
+                  </label>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Live Recalculated Shipping Fee & Total Order Preview Box */}
+          {((districtId && wardCode) || calculatedShippingFee !== null) && (
+            <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
+              <div className="flex justify-between items-center font-extrabold text-emerald-900">
+                <span>Phí vận chuyển mới (tính tự động từ GHN):</span>
+                <span className="text-sm font-black text-[#0F766E]">
+                  {calculatingFee ? (
+                    <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Đang tính phí...</span>
+                  ) : calculatedShippingFee !== null ? (
+                    formatCurrency(calculatedShippingFee)
+                  ) : (
+                    '—'
+                  )}
+                </span>
+              </div>
+              {itemsSubtotal !== undefined && calculatedShippingFee !== null && (
+                <div className="flex justify-between items-center font-black text-gray-900 pt-1.5 border-t border-emerald-200/60 text-sm">
+                  <span>Tổng thanh toán đơn hàng sau khi đổi địa chỉ:</span>
+                  <span className="text-lg text-[var(--primary-color)] font-mono">
+                    {formatCurrency(itemsSubtotal + calculatedShippingFee)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -592,7 +781,7 @@ export default function AddressFormModal({
               type="submit"
               className="rounded-xl bg-[#0F766E] px-5 py-2.5 text-sm font-extrabold text-white hover:bg-[#115E59] transition"
             >
-              Xác nhận
+              Xác nhận đổi địa chỉ
             </button>
           </div>
         </form>

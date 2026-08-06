@@ -13,6 +13,7 @@ import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaymentService } from '../payment/payment.service';
+import { ShippingService } from '../shipping/shipping.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 
 type User = {
@@ -62,6 +63,7 @@ export class UsersService {
     private prisma: PrismaService,
     private paymentService: PaymentService,
     private cloudinary: CloudinaryService,
+    private shippingService: ShippingService,
   ) {}
 
   private async syncProductStockTx(tx: any, productId: string) {
@@ -1029,7 +1031,7 @@ export class UsersService {
   async updateOrderShipping(
     userId: string,
     orderId: string,
-    data: { shippingAddress: string },
+    data: { shippingAddress: string; districtId?: number; wardCode?: string },
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
@@ -1042,9 +1044,38 @@ export class UsersService {
         'Chỉ có thể thay đổi thông tin đơn hàng ở trạng thái chờ xác nhận.',
       );
     }
+
+    let newShippingFee = Number(order.shippingFee || 0);
+
+    if (data.districtId && data.wardCode) {
+      try {
+        const feeRes = await this.shippingService.calculateShippingFee({
+          toDistrictId: Number(data.districtId),
+          toWardCode: String(data.wardCode),
+        });
+        if (feeRes && typeof feeRes.total === 'number') {
+          newShippingFee = feeRes.total;
+        }
+      } catch (err) {
+        console.error('Failed to recalculate shipping fee on address update:', err);
+      }
+    }
+
+    const oldShippingFee = Number(order.shippingFee || 0);
+    const newTotalAmount = Math.max(
+      0,
+      Number(order.totalAmount) - oldShippingFee + newShippingFee,
+    );
+
     return this.prisma.order.update({
       where: { id: orderId },
-      data: { shippingAddress: data.shippingAddress },
+      data: {
+        shippingAddress: data.shippingAddress,
+        districtId: data.districtId ? Number(data.districtId) : order.districtId,
+        wardCode: data.wardCode ? String(data.wardCode) : order.wardCode,
+        shippingFee: newShippingFee,
+        totalAmount: newTotalAmount,
+      },
     });
   }
 

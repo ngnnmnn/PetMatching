@@ -392,7 +392,23 @@ export class ManagerService {
     );
   }
 
-  async updateOrderStatus(id: string, status: string) {
+  async uploadDeliveryProof(file: Express.Multer.File): Promise<{ url: string }> {
+    if (!file) {
+      throw new BadRequestException('Không có file ảnh nào được gửi lên.');
+    }
+    const result = await this.cloudinaryService.uploadBuffer(
+      file.buffer,
+      'petmatching/delivery_proofs',
+    );
+    return { url: result.url };
+  }
+
+  async updateOrderStatus(
+    id: string,
+    status: string,
+    deliveryProofUrl?: string,
+    shippingNote?: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id },
@@ -427,7 +443,7 @@ export class ManagerService {
           }
         }
       }
-      // If transition FROM CANCELLED to something else (e.g. processing)
+      // If transition FROM CANCELLED to something else
       else if (order.status === 'CANCELLED' && status !== 'CANCELLED') {
         for (const item of order.items) {
           if (item.variantId) {
@@ -455,7 +471,6 @@ export class ManagerService {
             });
             await this.syncProductStockTx(tx, item.productId);
           } else {
-            // Check stock before decrementing
             const product = await tx.product.findUnique({
               where: { id: item.productId },
             });
@@ -484,27 +499,21 @@ export class ManagerService {
         }
       }
 
+      const updateData: any = { status: status as any };
+      if (deliveryProofUrl !== undefined) {
+        updateData.deliveryProofUrl = deliveryProofUrl;
+      }
+      if (shippingNote !== undefined) {
+        updateData.shippingNote = shippingNote;
+      }
+
       const updatedOrder = await tx.order.update({
         where: { id },
-        data: { status: status as any },
+        data: updateData,
       });
 
       return updatedOrder;
     });
-
-    // Auto-create GHN order if status is set to SHIPPED and has GHN districtId/wardCode
-    if (status === 'SHIPPED') {
-      const order = await this.prisma.order.findUnique({ where: { id } });
-      if (order?.districtId && order?.wardCode && !order?.ghnOrderCode) {
-        try {
-          await this.shippingService.createShippingOrder(id);
-        } catch (err) {
-          console.error('Failed to auto-create GHN shipping order:', err);
-        }
-      }
-    }
-
-    return this.prisma.order.findUnique({ where: { id } });
   }
 
   async getCustomers() {
@@ -1282,10 +1291,11 @@ export class ManagerService {
       }
 
       const statusLabels: Record<string, string> = {
-        PENDING: 'Đang xử lý',
-        CONFIRMED: 'Đã xác nhận',
-        SHIPPED: 'Đang giao hàng',
-        DELIVERED: 'Đã hoàn thành',
+        PENDING: 'Chờ xác nhận',
+        PACKED: 'Đã gói hàng',
+        PROCESSING: 'Đã gói hàng',
+        SHIPPED: 'Đã gửi bên vận chuyển',
+        DELIVERED: 'Đã nhận hàng',
         CANCELLED: 'Đã hủy',
       };
 
@@ -1299,7 +1309,7 @@ export class ManagerService {
         'Tổng thanh toán': o.totalAmount,
         'Lợi nhuận đơn': orderProfit,
         'Trạng thái': statusLabels[o.status] || o.status,
-        'Mã vận đơn GHN': o.ghnOrderCode || 'Chưa gửi',
+        'Ghi chú vận chuyển': o.shippingNote || '',
         'STK Nhận hoàn tiền': o.refundAccountNumber || '',
         'Ngân hàng Nhận hoàn tiền': o.refundBankCode
           ? bankMap.get(o.refundBankCode) || o.refundBankCode

@@ -66,9 +66,10 @@ const CATEGORY_MAP: Record<string, string> = {
 
 const ORDER_STATUS_MAP: Record<string, string> = {
   PENDING: 'Chờ xác nhận',
-  PROCESSING: 'Đang chuẩn bị',
-  SHIPPED: 'Đã gửi bên giao hàng',
-  DELIVERED: 'Đã hoàn thành',
+  PACKED: 'Đã gói hàng',
+  PROCESSING: 'Đã gói hàng',
+  SHIPPED: 'Đã gửi bên vận chuyển',
+  DELIVERED: 'Đã nhận hàng',
   CANCELLED: 'Đã hủy',
 };
 
@@ -494,33 +495,82 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
-  const handleOrderStatusChange = async (orderId: string, newStatus: string) => {
+  // Shipping & Delivery Modal States
+  const [shipModalOrder, setShipModalOrder] = useState<ManagerOrder | null>(null);
+  const [shippingNoteInput, setShippingNoteInput] = useState<string>('');
+  const [submittingShipNote, setSubmittingShipNote] = useState<boolean>(false);
+
+  const [deliveryModalOrder, setDeliveryModalOrder] = useState<ManagerOrder | null>(null);
+  const [deliveryProofFile, setDeliveryProofFile] = useState<File | null>(null);
+  const [deliveryProofPreview, setDeliveryProofPreview] = useState<string | null>(null);
+  const [deliveryNoteInput, setDeliveryNoteInput] = useState<string>('');
+  const [submittingDeliveryProof, setSubmittingDeliveryProof] = useState<boolean>(false);
+
+  const handleOrderStatusChange = async (
+    orderId: string,
+    newStatus: string,
+    deliveryProofUrl?: string,
+    shippingNote?: string,
+  ) => {
     try {
-      await managerApi.updateOrderStatus(orderId, newStatus);
+      await managerApi.updateOrderStatus(orderId, newStatus, deliveryProofUrl, shippingNote);
       toast.success('Cập nhật trạng thái đơn hàng thành công!');
-      // Refresh only orders
       const res = await managerApi.getOrders();
       setOrders(res.data);
+      if (selectedOrderDetails?.id === orderId) {
+        setSelectedOrderDetails(res.data.find((o) => o.id === orderId) || null);
+      }
     } catch (error) {
       console.error('Failed to update order status', error);
       toast.error('Lỗi khi cập nhật trạng thái đơn hàng.');
     }
   };
 
-  const [sendingGhnId, setSendingGhnId] = useState<string | null>(null);
-
-  const handleSendToGhn = async (orderId: string) => {
-    setSendingGhnId(orderId);
+  const handleConfirmShip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shipModalOrder) return;
+    setSubmittingShipNote(true);
     try {
-      await managerApi.createShippingOrder(orderId);
-      toast.success('Gửi đơn hàng sang GHN thành công!');
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
-    } catch (error: any) {
-      console.error('Failed to create shipping order', error);
-      toast.error(error.response?.data?.message || 'Lỗi khi tạo vận đơn GHN.');
+      await handleOrderStatusChange(
+        shipModalOrder.id,
+        'SHIPPED',
+        undefined,
+        shippingNoteInput.trim() || undefined,
+      );
+      setShipModalOrder(null);
+      setShippingNoteInput('');
+    } catch (err) {
+      // handled
     } finally {
-      setSendingGhnId(null);
+      setSubmittingShipNote(false);
+    }
+  };
+
+  const handleConfirmDelivery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deliveryModalOrder) return;
+    setSubmittingDeliveryProof(true);
+    try {
+      let imageUrl: string | undefined = undefined;
+      if (deliveryProofFile) {
+        const uploadRes = await managerApi.uploadDeliveryProof(deliveryProofFile);
+        imageUrl = uploadRes.data.url;
+      }
+      await handleOrderStatusChange(
+        deliveryModalOrder.id,
+        'DELIVERED',
+        imageUrl,
+        deliveryNoteInput.trim() || undefined,
+      );
+      setDeliveryModalOrder(null);
+      setDeliveryProofFile(null);
+      setDeliveryProofPreview(null);
+      setDeliveryNoteInput('');
+    } catch (err: any) {
+      console.error('Failed to confirm delivery', err);
+      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật giao hàng.');
+    } finally {
+      setSubmittingDeliveryProof(false);
     }
   };
 
@@ -560,40 +610,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     } finally {
       setRefundingId(null);
     }
-  };
-
-  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
-  const [isBulkShipping, setIsBulkShipping] = useState<boolean>(false);
-
-  const handleBulkSendToGhn = async () => {
-    if (selectedOrderIds.length === 0) return;
-    setIsBulkShipping(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const orderId of selectedOrderIds) {
-      try {
-        await managerApi.createShippingOrder(orderId);
-        successCount++;
-      } catch (err) {
-        console.error(`Failed to send order ${orderId} to GHN`, err);
-        failCount++;
-      }
-    }
-
-    setIsBulkShipping(false);
-    setSelectedOrderIds([]);
-
-    if (successCount > 0) {
-      toast.success(`Đã gửi thành công ${successCount} đơn hàng sang GHN! Trạng thái: "Đã gửi bên giao hàng"`);
-    }
-    if (failCount > 0) {
-      toast.error(`Có ${failCount} đơn hàng không gửi được do thiếu thông tin địa chỉ GHN.`);
-    }
-
-    // Refresh orders
-    const res = await managerApi.getOrders();
-    setOrders(res.data);
   };
 
   const handleUpdateSettings = async (e: React.FormEvent) => {
@@ -3053,57 +3069,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           </div>
 
-          {/* Bulk Action Bar */}
-          {selectedOrderIds.length > 0 && (
-            <div className="flex items-center justify-between bg-[#0F766E]/10 border border-[#0F766E]/30 rounded-xl px-4 py-3 animate-in fade-in duration-150">
-              <div className="text-xs font-bold text-[#0F766E] flex items-center gap-2">
-                <span>Đã chọn <strong>{selectedOrderIds.length}</strong> đơn hàng chưa gửi GHN</span>
-              </div>
-              <button
-                type="button"
-                disabled={isBulkShipping}
-                onClick={handleBulkSendToGhn}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-extrabold text-white bg-[#0F766E] hover:bg-[#115E59] rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
-              >
-                {isBulkShipping ? (
-                  <>
-                    <Loader2 className="size-3.5 animate-spin" /> Đang gửi GHN...
-                  </>
-                ) : (
-                  <>
-                    🚚 Gửi {selectedOrderIds.length} đơn sang GHN
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border border-[#EFEAE2] bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#EFEAE2] bg-[#F9F8F6] text-xs font-black uppercase text-[#8A8980]">
-                    <th className="px-4 py-4 text-center w-10">
-                      <input
-                        type="checkbox"
-                        disabled={eligibleOrdersForGhn.length === 0}
-                        checked={
-                          eligibleOrdersForGhn.length > 0 &&
-                          eligibleOrdersForGhn.every((o) => selectedOrderIds.includes(o.id))
-                        }
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedOrderIds(eligibleOrdersForGhn.map((o) => o.id));
-                          } else {
-                            setSelectedOrderIds([]);
-                          }
-                        }}
-                        className="size-4 accent-[#0F766E] rounded cursor-pointer disabled:cursor-not-allowed"
-                        title="Chọn tất cả đơn chưa gửi GHN"
-                      />
-                    </th>
-
                     <th className="px-6 py-4">Mã đơn</th>
                     <th className="px-6 py-4">Khách hàng</th>
                     <th className="px-6 py-4">SĐT</th>
@@ -3111,7 +3082,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     <th className="px-6 py-4">Sản phẩm mua</th>
                     <th className="px-6 py-4">Ngày đặt</th>
                     <th className="px-6 py-4 text-right">Tổng thanh toán</th>
-                    <th className="px-6 py-4 text-center">Trạng thái</th>
+                    <th className="px-6 py-4 text-center">Thao tác / Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEAE2]">
@@ -3124,27 +3095,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           onClick={() => setSelectedOrderDetails(o)}
                           className="transition hover:bg-gray-50 cursor-pointer"
                         >
-                          <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                            {!o.ghnOrderCode &&
-                            o.status !== 'CANCELLED' &&
-                            o.status !== 'SHIPPED' &&
-                            o.status !== 'DELIVERED' &&
-                            o.refundStatus !== 'PENDING' &&
-                            o.refundStatus !== 'REFUNDED' ? (
-                              <input
-                                type="checkbox"
-                                checked={selectedOrderIds.includes(o.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedOrderIds((prev) => [...prev, o.id]);
-                                  } else {
-                                    setSelectedOrderIds((prev) => prev.filter((id) => id !== o.id));
-                                  }
-                                }}
-                                className="size-4 accent-[#0F766E] rounded cursor-pointer"
-                              />
-                            ) : null}
-                          </td>
                           <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]" title={o.id}>
                             <div className="flex flex-col gap-1">
                               <span>{o.id.length > 15 ? o.id.slice(0, 12) + '...' : o.id}</span>
@@ -3195,28 +3145,40 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-red-50 border border-red-200 text-red-700 shadow-sm">
                                 ❌ Đã hủy
                               </span>
-                            ) : o.status === 'DELIVERED' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm">
-                                🎉 Đã hoàn thành
-                              </span>
-                            ) : o.ghnOrderCode || o.status === 'SHIPPED' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-blue-50 text-blue-700 border border-blue-200 shadow-sm">
-                                Đã gửi GHN {o.ghnOrderCode ? `(${o.ghnOrderCode})` : ''}
-                              </span>
-                            ) : (
+                            ) : o.status === 'PENDING' ? (
                               <button
                                 type="button"
-                                disabled={sendingGhnId === o.id}
-                                onClick={() => handleSendToGhn(o.id)}
-                                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-black text-white bg-[#0F766E] rounded-xl hover:bg-[#115E59] shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
+                                onClick={() => handleOrderStatusChange(o.id, 'PACKED')}
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-amber-600 rounded-xl hover:bg-amber-700 shadow-md transition active:scale-95 cursor-pointer"
                               >
-                                {sendingGhnId === o.id ? (
-                                  <Loader2 className="size-3 animate-spin text-white" />
-                                ) : (
-                                  '🚚 '
-                                )}
-                                Gửi GHN
+                                📦 Đã gói hàng
                               </button>
+                            ) : o.status === 'PACKED' || o.status === 'PROCESSING' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShipModalOrder(o);
+                                  setShippingNoteInput(o.shippingNote || '');
+                                }}
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md transition active:scale-95 cursor-pointer"
+                              >
+                                🚚 Gửi vận chuyển
+                              </button>
+                            ) : o.status === 'SHIPPED' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeliveryModalOrder(o);
+                                  setDeliveryNoteInput(o.shippingNote || '');
+                                }}
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 shadow-md transition active:scale-95 cursor-pointer"
+                              >
+                                ✅ Đã nhận hàng
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm">
+                                🎉 Đã nhận hàng
+                              </span>
                             )}
                           </td>
                         </tr>
@@ -3406,6 +3368,71 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </div>
                 )}
 
+                {/* Status Step Tracker */}
+                {selectedOrderDetails.status !== 'CANCELLED' && (
+                  <div className="bg-[#F9F8F6] p-3.5 rounded-xl border border-[#EFEAE2] space-y-2">
+                    <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Tiến trình đơn hàng</p>
+                    <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-extrabold">
+                      {(() => {
+                        const statusOrder = ['PENDING', 'PACKED', 'SHIPPED', 'DELIVERED'];
+                        let currentIdx = statusOrder.indexOf(selectedOrderDetails.status);
+                        if (selectedOrderDetails.status === 'PROCESSING') currentIdx = 1;
+
+                        const steps = [
+                          { label: 'Chờ xác nhận', icon: '1' },
+                          { label: 'Đã gói hàng', icon: '2' },
+                          { label: 'Đã gửi vận chuyển', icon: '3' },
+                          { label: 'Đã nhận hàng', icon: '4' },
+                        ];
+
+                        return steps.map((step, idx) => {
+                          const isDone = idx <= currentIdx;
+                          const isCurrent = idx === currentIdx;
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                'flex flex-col items-center gap-1 p-1.5 rounded-lg border transition',
+                                isDone ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 'bg-white border-gray-200 text-gray-400',
+                                isCurrent && 'ring-2 ring-[#0F766E] shadow-sm',
+                              )}
+                            >
+                              <span className={cn('size-4 rounded-full flex items-center justify-center text-[9px]', isDone ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-600')}>
+                                {isDone ? '✓' : step.icon}
+                              </span>
+                              <span className="line-clamp-1">{step.label}</span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Delivery Proof Image Section */}
+                {selectedOrderDetails.deliveryProofUrl && (
+                  <div className="space-y-1.5 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 text-xs">
+                    <p className="font-black text-emerald-800 uppercase tracking-wider text-[10px] flex items-center gap-1">
+                      <CheckCircle2 className="size-3.5 text-emerald-600" />
+                      Ảnh xác nhận giao hàng (Delivery Proof)
+                    </p>
+                    <a href={selectedOrderDetails.deliveryProofUrl} target="_blank" rel="noreferrer" className="block mt-1">
+                      <img
+                        src={selectedOrderDetails.deliveryProofUrl}
+                        alt="Bằng chứng giao hàng"
+                        className="w-full max-h-48 object-cover rounded-lg border border-emerald-300 hover:opacity-90 transition cursor-pointer"
+                      />
+                    </a>
+                  </div>
+                )}
+
+                {selectedOrderDetails.shippingNote && (
+                  <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200 text-xs">
+                    <p className="font-black text-blue-800 uppercase tracking-wider text-[10px]">Ghi chú vận chuyển</p>
+                    <p className="text-xs font-bold text-blue-900 mt-0.5">{selectedOrderDetails.shippingNote}</p>
+                  </div>
+                )}
+
                 {/* Order Status & Financial Summary */}
                 <div className="flex justify-between items-center pt-2 border-t text-xs font-semibold">
                   <div>
@@ -3414,7 +3441,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       'inline-flex rounded-full px-2.5 py-0.5 text-xs font-black uppercase mt-1.5',
                       selectedOrderDetails.status === 'DELIVERED' && 'bg-green-50 text-green-700',
                       selectedOrderDetails.status === 'PENDING' && 'bg-yellow-50 text-yellow-700',
-                      selectedOrderDetails.status === 'PROCESSING' && 'bg-blue-50 text-blue-700',
+                      (selectedOrderDetails.status === 'PACKED' || selectedOrderDetails.status === 'PROCESSING') && 'bg-amber-50 text-amber-700',
                       selectedOrderDetails.status === 'SHIPPED' && 'bg-purple-50 text-purple-700',
                       selectedOrderDetails.status === 'CANCELLED' && 'bg-red-50 text-red-700',
                     )}>
@@ -3461,6 +3488,167 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     Đóng
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Gửi bên vận chuyển */}
+          {shipModalOrder && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+              onClick={() => setShipModalOrder(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 animate-scaleIn"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b pb-3">
+                  <h3 className="text-base font-black text-gray-800 flex items-center gap-2">
+                    🚚 Gửi bên vận chuyển
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShipModalOrder(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleConfirmShip} className="space-y-4 text-xs font-semibold">
+                  <p className="text-gray-600">
+                    Chuyển trạng thái đơn hàng <strong className="font-mono text-black">{shipModalOrder.id.slice(0, 12)}...</strong> sang <strong>"Đã gửi bên vận chuyển"</strong>.
+                  </p>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8A8980] mb-1">
+                      Ghi chú Shipper / Đơn vị giao hàng (Không bắt buộc)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="VD: Shipper Zalo Nam - 0901234567 hoặc Grab Express"
+                      value={shippingNoteInput}
+                      onChange={(e) => setShippingNoteInput(e.target.value)}
+                      className="w-full rounded-xl border border-[#EFEAE2] px-3 py-2 text-xs focus:outline-none focus:border-[#0F766E]"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t">
+                    <button
+                      type="button"
+                      onClick={() => setShipModalOrder(null)}
+                      className="px-4 py-2 rounded-xl border font-bold text-gray-600 hover:bg-gray-50"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingShipNote}
+                      className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {submittingShipNote && <Loader2 className="size-3.5 animate-spin" />}
+                      Xác nhận đã gửi hàng
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Đã nhận hàng & Upload Ảnh bằng chứng */}
+          {deliveryModalOrder && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto"
+              onClick={() => setDeliveryModalOrder(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 animate-scaleIn my-8 relative text-left"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b pb-3">
+                  <h3 className="text-base font-black text-gray-800 flex items-center gap-2">
+                    ✅ Xác nhận Đã nhận hàng
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryModalOrder(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleConfirmDelivery} className="space-y-4 text-xs font-semibold">
+                  <p className="text-gray-600">
+                    Chuyển trạng thái đơn hàng <strong className="font-mono text-black">{deliveryModalOrder.id.slice(0, 12)}...</strong> sang <strong>"Đã nhận hàng"</strong> (Hoàn thành).
+                  </p>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8A8980] mb-1">
+                      Ảnh bằng chứng giao hàng từ Shipper/Zalo (Không bắt buộc)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setDeliveryProofFile(file);
+                        if (file) {
+                          setDeliveryProofPreview(URL.createObjectURL(file));
+                        } else {
+                          setDeliveryProofPreview(null);
+                        }
+                      }}
+                      className="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0F766E]/10 file:text-[#0F766E] hover:file:bg-[#0F766E]/20"
+                    />
+                    {deliveryProofPreview && (
+                      <div className="mt-2 relative rounded-xl overflow-hidden border">
+                        <img src={deliveryProofPreview} alt="Preview ảnh giao hàng" className="w-full h-40 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeliveryProofFile(null);
+                            setDeliveryProofPreview(null);
+                          }}
+                          className="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-full hover:bg-black"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8A8980] mb-1">
+                      Ghi chú hoàn thành (Không bắt buộc)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="VD: Khách đã nhận đủ 2 sản phẩm và thanh toán COD"
+                      value={deliveryNoteInput}
+                      onChange={(e) => setDeliveryNoteInput(e.target.value)}
+                      className="w-full rounded-xl border border-[#EFEAE2] px-3 py-2 text-xs focus:outline-none focus:border-[#0F766E]"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t">
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryModalOrder(null)}
+                      className="px-4 py-2 rounded-xl border font-bold text-gray-600 hover:bg-gray-50"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingDeliveryProof}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {submittingDeliveryProof && <Loader2 className="size-3.5 animate-spin text-white" />}
+                      Xác nhận Đã nhận hàng
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

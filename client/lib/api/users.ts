@@ -34,8 +34,10 @@ export const usersApi = {
   }) => api.post<any>('/users/orders', data),
   cancelOrder: (id: string) => api.patch<any>(`/users/orders/${id}/cancel`),
   deleteOrder: (id: string) => api.delete<any>(`/users/orders/${id}`),
-  updateOrderShipping: (id: string, shippingAddress: string) =>
-    api.put<any>(`/users/orders/${id}/shipping`, { shippingAddress }),
+  updateOrderShipping: (
+    id: string,
+    data: { shippingAddress: string; districtId?: number; wardCode?: string },
+  ) => api.put<any>(`/users/orders/${id}/shipping`, data),
   retryPayment: (id: string) => api.post<any>(`/users/orders/${id}/retry-payment`),
   requestRefund: (
     id: string,

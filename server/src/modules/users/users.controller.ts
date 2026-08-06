@@ -177,7 +177,7 @@ export class UsersController {
   updateOrderShipping(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() body: { shippingAddress: string },
+    @Body() body: { shippingAddress: string; districtId?: number; wardCode?: string },
   ) {
     return this.usersService.updateOrderShipping(req.user.id, id, body);
   }

@@ -62,6 +62,8 @@ export interface ManagerOrder {
     };
   }[];
   ghnOrderCode?: string | null;
+  deliveryProofUrl?: string | null;
+  shippingNote?: string | null;
   refundStatus?: string | null;
   refundBankCode?: string | null;
   refundAccountNumber?: string | null;
@@ -117,10 +119,17 @@ export const managerApi = {
   deleteProduct: (id: string) => api.delete(`/manager/products/${id}`),
 
   getOrders: () => api.get<ManagerOrder[]>('/manager/orders'),
-  updateOrderStatus: (id: string, status: string) => api.patch<ManagerOrder>(`/manager/orders/${id}/status`, { status }),
+  updateOrderStatus: (id: string, status: string, deliveryProofUrl?: string, shippingNote?: string) =>
+    api.patch<ManagerOrder>(`/manager/orders/${id}/status`, { status, deliveryProofUrl, shippingNote }),
+  uploadDeliveryProof: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<{ url: string }>('/manager/orders/upload-delivery-proof', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   approveRefund: (id: string) => api.post<any>(`/manager/orders/${id}/approve-refund`),
   rejectRefund: (id: string) => api.post<any>(`/manager/orders/${id}/reject-refund`),
-  createShippingOrder: (orderId: string) => api.post<any>('/shipping/create-order', { orderId }),
   exportOrders: (params: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean; onlyRefunded?: boolean }) =>
     api.get<Blob>('/manager/orders/export', {
       params,

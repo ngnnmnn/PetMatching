@@ -19,14 +19,18 @@ import {
   Store,
   Loader2,
   Zap,
-  X
+  X,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
 import Footer from '@/components/layout/Footer';
 import { productsApi } from '@/lib/api/products';
+import { usersApi } from '@/lib/api/users';
 import { Product, ProductVariant, ProductCategory, ProductReview } from '@/types';
 import ProductCard from '@/components/home/ProductCard';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 
@@ -70,6 +74,15 @@ export default function ProductDetailPage() {
   const [submitComment, setSubmitComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
 
+  // Current logged in user & review edit/delete states
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [editingReview, setEditingReview] = useState<ProductReview | null>(null);
+  const [editRating, setEditRating] = useState(5);
+  const [editComment, setEditComment] = useState('');
+  const [submittingEdit, setSubmittingEdit] = useState(false);
+  const [deletingReviewId, setDeletingReviewId] = useState<string | null>(null);
+  const [deletingReviewLoading, setDeletingReviewLoading] = useState(false);
+
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const isWishlisted = product ? isInWishlist(product.id) : false;
@@ -85,6 +98,22 @@ export default function ProductDetailPage() {
       }, 600);
     }
   }, [shouldScrollToReview, canUserReview]);
+
+  const refreshReviewData = async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const [prodRes, reviewsRes, eligibilityRes] = await Promise.all([
+        productsApi.getById(productId),
+        productsApi.getReviews(productId),
+        token ? productsApi.canReview(productId).catch(() => ({ data: false })) : Promise.resolve({ data: false }),
+      ]);
+      setProduct(prodRes.data);
+      setReviews(reviewsRes.data);
+      setCanUserReview(eligibilityRes.data);
+    } catch (e) {
+      console.error('Failed to refresh review data', e);
+    }
+  };
 
   // Load product detail and related products
   useEffect(() => {
@@ -111,6 +140,10 @@ export default function ProductDetailPage() {
 
         // Fetch secondary data concurrently in parallel (non-blocking)
         const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        if (token) {
+          usersApi.getProfile().then((res) => setCurrentUser(res.data)).catch(() => setCurrentUser(null));
+        }
+
         setRelatedLoading(true);
 
         const [reviewsRes, eligibilityRes, relatedRes] = await Promise.allSettled([
@@ -199,20 +232,54 @@ export default function ProductDetailPage() {
       setSubmitComment('');
       setSubmitRating(5);
       
-      // Reload reviews, product info, and eligibility
-      const [prodRes, reviewsRes, eligibilityRes] = await Promise.all([
-        productsApi.getById(productId),
-        productsApi.getReviews(productId),
-        productsApi.canReview(productId).catch(() => ({ data: false })),
-      ]);
-      setProduct(prodRes.data);
-      setReviews(reviewsRes.data);
-      setCanUserReview(eligibilityRes.data);
+      await refreshReviewData();
     } catch (err: any) {
       console.error(err);
       toast.error(err.response?.data?.message || 'Có lỗi xảy ra khi gửi đánh giá.');
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const handleOpenEditReview = (review: ProductReview) => {
+    setEditingReview(review);
+    setEditRating(review.rating);
+    setEditComment(review.comment || '');
+  };
+
+  const handleUpdateReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReview) return;
+    setSubmittingEdit(true);
+    try {
+      await productsApi.updateReview(editingReview.id, {
+        rating: editRating,
+        comment: editComment,
+      });
+      toast.success('Cập nhật nhận xét thành công!');
+      setEditingReview(null);
+      await refreshReviewData();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Có lỗi xảy ra khi cập nhật nhận xét.');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
+  const handleDeleteReviewConfirm = async () => {
+    if (!deletingReviewId) return;
+    setDeletingReviewLoading(true);
+    try {
+      await productsApi.deleteReview(deletingReviewId);
+      toast.success('Đã xóa đánh giá! Bạn có thể viết lại nhận xét mới cho sản phẩm này.');
+      setDeletingReviewId(null);
+      await refreshReviewData();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Lỗi khi xóa nhận xét.');
+    } finally {
+      setDeletingReviewLoading(false);
     }
   };
 
@@ -748,22 +815,115 @@ export default function ProductDetailPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-0.5 text-[#F59E0B]">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star
-                          key={i}
-                          className={`h-3.5 w-3.5 ${
-                            i < review.rating ? 'fill-[#F59E0B] text-[#F59E0B]' : 'text-gray-200'
-                          }`}
-                        />
-                      ))}
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0.5 text-[#F59E0B]">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`h-3.5 w-3.5 ${
+                              i < review.rating ? 'fill-[#F59E0B] text-[#F59E0B]' : 'text-gray-200'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      {(currentUser?.id === review.userId ||
+                        currentUser?.role === 'ADMIN' ||
+                        currentUser?.role === 'MODERATOR' ||
+                        currentUser?.role === 'STORE_MANAGER') && (
+                        <div className="flex items-center gap-1 ml-2 border-l border-gray-200 pl-2">
+                          {currentUser?.id === review.userId && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditReview(review)}
+                              className="p-1 rounded-lg text-gray-400 hover:text-[#0F766E] hover:bg-teal-50 transition cursor-pointer"
+                              title="Chỉnh sửa đánh giá"
+                            >
+                              <Edit2 className="size-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setDeletingReviewId(review.id)}
+                            className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                            title="Xóa đánh giá"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {review.comment && (
-                    <p className="text-sm text-[var(--text-main)] font-semibold leading-relaxed bg-[#FAF9F6] p-3.5 rounded-xl border border-[#F4EBE0]/50 italic">
-                      "{review.comment}"
-                    </p>
+                  {editingReview?.id === review.id ? (
+                    <form onSubmit={handleUpdateReviewSubmit} className="mt-3 p-4 rounded-xl bg-amber-50/60 border border-amber-200 space-y-3 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-amber-900">Chỉnh sửa đánh giá của bạn</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingReview(null)}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700">Chọn số sao:</label>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: 5 }).map((_, i) => {
+                            const starValue = i + 1;
+                            return (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => setEditRating(starValue)}
+                                className="p-0.5 text-[#F59E0B] hover:scale-110 transition cursor-pointer"
+                              >
+                                <Star
+                                  className={`h-6 w-6 ${
+                                    starValue <= editRating
+                                      ? 'fill-[#F59E0B] text-[#F59E0B]'
+                                      : 'text-gray-300'
+                                  }`}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700">Nhận xét:</label>
+                        <textarea
+                          rows={2}
+                          value={editComment}
+                          onChange={(e) => setEditComment(e.target.value)}
+                          className="w-full rounded-xl border border-gray-200 bg-white p-2.5 text-xs focus:border-[#0F766E] focus:outline-none"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingReview(null)}
+                          className="px-3 py-1.5 rounded-lg border font-bold text-xs text-gray-600 hover:bg-gray-50 cursor-pointer"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={submittingEdit}
+                          className="px-4 py-1.5 rounded-lg bg-[#0F766E] text-white font-bold text-xs hover:bg-[#115E59] disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                        >
+                          {submittingEdit && <Loader2 className="size-3 animate-spin text-white" />}
+                          Lưu thay đổi
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    review.comment && (
+                      <p className="text-sm text-[var(--text-main)] font-semibold leading-relaxed bg-[#FAF9F6] p-3.5 rounded-xl border border-[#F4EBE0]/50 italic">
+                        "{review.comment}"
+                      </p>
+                    )
                   )}
                 </div>
               ))
@@ -774,6 +934,18 @@ export default function ProductDetailPage() {
             )}
           </div>
         </section>
+
+        {/* Delete Review Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={!!deletingReviewId}
+          onClose={() => setDeletingReviewId(null)}
+          onConfirm={handleDeleteReviewConfirm}
+          title="Xóa nhận xét sản phẩm"
+          message="Bạn có chắc chắn muốn xóa nhận xét này không? Sau khi xóa, bạn có thể viết lại nhận xét mới cho sản phẩm này."
+          confirmText="Xác nhận xóa"
+          isDanger={true}
+          loading={deletingReviewLoading}
+        />
 
         {/* Related Products Section */}
         {relatedProducts.length > 0 && (

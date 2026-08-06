@@ -124,10 +124,10 @@ function CheckoutPageContent() {
 
   const handleCancelQROrder = async (orderId: string) => {
     try {
-      await usersApi.cancelOrder(orderId);
+      await usersApi.deleteOrder(orderId);
       toast.info('Đã hủy giao dịch thanh toán QR. Đơn hàng chưa được lưu.');
     } catch (err) {
-      console.error('Failed to cancel QR order', err);
+      console.error('Failed to delete unpaid QR order', err);
     }
   };
 

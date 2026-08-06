@@ -54,6 +54,7 @@ export interface Order {
   userId: string;
   status:
     | "PENDING"
+    | "PACKED"
     | "PROCESSING"
     | "SHIPPED"
     | "DELIVERED"
@@ -67,6 +68,8 @@ export interface Order {
   wardCode?: string | null;
   ghnOrderCode?: string | null;
   shippingStatus?: string | null;
+  deliveryProofUrl?: string | null;
+  shippingNote?: string | null;
   paymentMethod?: string;
   orderCode?: number | null;
   paymentUrl?: string | null;

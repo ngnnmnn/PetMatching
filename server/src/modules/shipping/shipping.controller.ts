@@ -35,15 +35,4 @@ export class ShippingController {
   async calculateShippingFee(@Body() dto: CalculateFeeDto) {
     return this.shippingService.calculateShippingFee(dto);
   }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('create-order')
-  async createShippingOrder(@Body() dto: CreateShippingOrderDto) {
-    return this.shippingService.createShippingOrder(dto.orderId);
-  }
-
-  @Post('webhook')
-  async handleWebhook(@Body() payload: any) {
-    return this.shippingService.handleWebhook(payload);
-  }
 }

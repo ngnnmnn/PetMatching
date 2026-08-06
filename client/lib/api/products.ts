@@ -26,4 +26,10 @@ export const productsApi = {
 
   submitReview: (productId: string, data: { rating: number; comment?: string }) =>
     api.post<ProductReview>(`/products/${productId}/reviews`, data),
+
+  updateReview: (reviewId: string, data: { rating: number; comment?: string }) =>
+    api.put<ProductReview>(`/products/reviews/${reviewId}`, data),
+
+  deleteReview: (reviewId: string) =>
+    api.delete<{ success: boolean; message: string }>(`/products/reviews/${reviewId}`),
 };
