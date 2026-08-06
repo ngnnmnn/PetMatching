@@ -1,4 +1,7 @@
 import axios from "axios";
+import { toast } from "sonner";
+
+let isRedirectingToLogin = false;
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api",
@@ -30,9 +33,20 @@ api.interceptors.response.use(
       url.includes("/auth/complete-google-profile");
 
     if (error.response?.status === 401 && !isAuthRequest) {
+      const errorCode = error.response?.data?.code;
       localStorage.removeItem("accessToken");
       localStorage.removeItem("user");
-      if (typeof window !== "undefined") {
+      if (typeof window !== "undefined" && !isRedirectingToLogin) {
+        isRedirectingToLogin = true;
+        if (errorCode === "ACCOUNT_SUSPENDED") {
+          toast.error("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        }
+        sessionStorage.setItem(
+          "auth_notice",
+          errorCode === "ACCOUNT_SUSPENDED"
+            ? "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên."
+            : "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+        );
         window.location.href = "/login";
       }
     }

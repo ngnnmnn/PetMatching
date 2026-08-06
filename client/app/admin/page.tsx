@@ -171,8 +171,8 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <HeroStat icon={CircleDollarSign} label="Doanh thu cửa hàng" value={currency.format(data.stats.store.revenue)} />
-            <HeroStat icon={CircleDollarSign} label="Doanh thu Spa" value={currency.format(data.stats.spa.revenue)} />
+            <HeroStat icon={CircleDollarSign} label="Doanh thu đơn đã giao" value={currency.format(data.stats.store.revenue)} />
+            <HeroStat icon={CircleDollarSign} label="Doanh thu Spa hoàn thành" value={currency.format(data.stats.spa.revenue)} />
             <HeroStat icon={ShoppingBag} label="Tổng đơn hàng" value={data.stats.store.totalOrders} />
             <HeroStat icon={CalendarDays} label="Tổng lịch Spa" value={data.stats.spa.totalBookings} />
           </div>

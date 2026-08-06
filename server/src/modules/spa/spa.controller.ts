@@ -1,23 +1,6 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
-  Req,
-  Patch,
-  Param,
-  Query,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import {
-  CreateBookingDto,
-  AddSubServicesDto,
-  ManagerReassignDto,
-  ManagerRescheduleDto,
-  ManagerUpdateServicesDto,
-} from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -38,14 +21,8 @@ export class SpaController {
   }
 
   @Get('services')
-  getServices(
-    @Query('species') species?: Species,
-    @Query('weight') weight?: string,
-  ) {
-    return this.spaService.getServices(
-      species,
-      weight ? Number(weight) : undefined,
-    );
+  getServices(@Query('species') species?: Species, @Query('weight') weight?: string) {
+    return this.spaService.getServices(species, weight ? Number(weight) : undefined);
   }
 
   @Get('staff-list')
@@ -66,10 +43,7 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard)
   @Post('bookings')
-  createBooking(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: CreateBookingDto,
-  ) {
+  createBooking(@Req() req: AuthenticatedRequest, @Body() dto: CreateBookingDto) {
     return this.spaService.createBooking(req.user.id, dto);
   }
 
@@ -81,11 +55,18 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('bookings/:id/cancel')
-  cancelBooking(
+  cancelBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
+    return this.spaService.cancelBooking(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('bookings/:id/feedback')
+  createFeedback(
     @Req() req: AuthenticatedRequest,
     @Param('id') bookingId: string,
+    @Body() dto: CreateSpaFeedbackDto,
   ) {
-    return this.spaService.cancelBooking(req.user.id, bookingId);
+    return this.spaService.createFeedback(req.user.id, bookingId, dto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -96,10 +77,7 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('staff/bookings/:id/checkin')
-  staffCheckIn(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') bookingId: string,
-  ) {
+  staffCheckIn(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.staffCheckIn(req.user.id, bookingId);
   }
 
@@ -110,11 +88,7 @@ export class SpaController {
     @Param('id') bookingId: string,
     @Body() dto: AddSubServicesDto,
   ) {
-    return this.spaService.staffAddSubServices(
-      req.user.id,
-      bookingId,
-      dto.subServiceIds,
-    );
+    return this.spaService.staffAddSubServices(req.user.id, bookingId, dto.subServiceIds);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -122,8 +96,7 @@ export class SpaController {
   updateStaffBooking(
     @Req() req: AuthenticatedRequest,
     @Param('id') bookingId: string,
-    @Body()
-    dto: {
+    @Body() dto: {
       status?: any;
       petConditionAfter?: string;
       photoAfter?: string;
@@ -167,10 +140,7 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Delete('manager/categories/:id')
-  deleteManagerCategory(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') categoryId: string,
-  ) {
+  deleteManagerCategory(@Req() req: AuthenticatedRequest, @Param('id') categoryId: string) {
     return this.spaService.deleteManagerCategory(req.user.id, categoryId);
   }
 
@@ -182,10 +152,7 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/dashboard-stats')
-  getManagerDashboardStats(
-    @Req() req: AuthenticatedRequest,
-    @Query('branchId') branchId: string,
-  ) {
+  getManagerDashboardStats(@Req() req: AuthenticatedRequest, @Query('branchId') branchId: string) {
     return this.spaService.getManagerDashboardStats(req.user.id, branchId);
   }
 
@@ -213,10 +180,7 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/bookings')
-  getManagerBookings(
-    @Req() req: AuthenticatedRequest,
-    @Query('branchId') branchId: string,
-  ) {
+  getManagerBookings(@Req() req: AuthenticatedRequest, @Query('branchId') branchId: string) {
     return this.spaService.getManagerBookings(req.user.id, branchId);
   }
 
@@ -227,11 +191,7 @@ export class SpaController {
     @Param('id') bookingId: string,
     @Body() dto: ManagerRescheduleDto,
   ) {
-    return this.spaService.rescheduleBooking(
-      req.user.id,
-      bookingId,
-      dto.scheduledAt,
-    );
+    return this.spaService.rescheduleBooking(req.user.id, bookingId, dto.scheduledAt);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
@@ -241,11 +201,7 @@ export class SpaController {
     @Param('id') bookingId: string,
     @Body() dto: ManagerReassignDto,
   ) {
-    return this.spaService.managerReassignStaff(
-      req.user.id,
-      bookingId,
-      dto.staffId,
-    );
+    return this.spaService.managerReassignStaff(req.user.id, bookingId, dto.staffId);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
@@ -264,12 +220,7 @@ export class SpaController {
     @Param('id') bookingId: string,
     @Body() dto: ManagerUpdateServicesDto,
   ) {
-    return this.spaService.managerUpdateBookingServices(
-      req.user.id,
-      bookingId,
-      dto.mainServiceId,
-      dto.subServiceIds,
-    );
+    return this.spaService.managerUpdateBookingServices(req.user.id, bookingId, dto.mainServiceId, dto.subServiceIds);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
@@ -279,28 +230,18 @@ export class SpaController {
     @Query('branchId') branchId: string,
     @Query('filter') filter?: 'ALL' | 'ON_TIME' | 'LATE',
   ) {
-    return this.spaService.getManagerStaffPerformance(
-      req.user.id,
-      branchId,
-      filter,
-    );
+    return this.spaService.getManagerStaffPerformance(req.user.id, branchId, filter);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Patch('manager/bookings/:id/confirm')
-  confirmBooking(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') bookingId: string,
-  ) {
+  confirmBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.confirmBooking(req.user.id, bookingId);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/bookings/:id/available-staff')
-  getAvailableStaffForBooking(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') bookingId: string,
-  ) {
+  getAvailableStaffForBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.getAvailableStaffForBooking(req.user.id, bookingId);
   }
 
@@ -311,20 +252,31 @@ export class SpaController {
     @Param('id') bookingId: string,
     @Body('staffId') staffId: string,
   ) {
-    return this.spaService.assignStaffToBooking(
-      req.user.id,
-      bookingId,
-      staffId,
-    );
+    return this.spaService.assignStaffToBooking(req.user.id, bookingId, staffId);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/staffs')
-  getManagerStaffs(
-    @Req() req: AuthenticatedRequest,
-    @Query('branchId') branchId: string,
-  ) {
+  getManagerStaffs(@Req() req: AuthenticatedRequest, @Query('branchId') branchId: string) {
     return this.spaService.getManagerStaffs(req.user.id, branchId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Post('manager/staffs')
+  createManagerStaff(@Req() req: AuthenticatedRequest, @Body() dto: CreateStaffDto) {
+    return this.spaService.createManagerStaff(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/staffs/:id/toggle-status')
+  toggleStaffStatus(@Req() req: AuthenticatedRequest, @Param('id') staffId: string) {
+    return this.spaService.toggleStaffStatus(req.user.id, staffId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Get('manager/feedbacks')
+  getManagerFeedbacks(@Req() req: AuthenticatedRequest, @Query('branchId') branchId?: string) {
+    return this.spaService.getManagerFeedbacks(req.user.id, branchId);
   }
 
   // =============================================================
@@ -337,10 +289,6 @@ export class SpaController {
     @Query('date') dateStr: string,
     @Query('durationMin') durationMin?: string,
   ) {
-    return this.spaService.getAvailability(
-      branchId,
-      dateStr,
-      durationMin ? Number(durationMin) : 30,
-    );
+    return this.spaService.getAvailability(branchId, dateStr, durationMin ? Number(durationMin) : 30);
   }
 }

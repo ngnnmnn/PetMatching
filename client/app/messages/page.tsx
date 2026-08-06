@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   BadgeCheck,
   Check,
@@ -20,11 +20,21 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
 import AppHeader from '@/components/layout/AppHeader';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ImageLightbox } from '@/components/ui/image-lightbox';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -53,32 +63,76 @@ type MatchingRequest = {
 
 type Match = {
   id: string;
+  status: 'ACTIVE' | 'MET' | 'COMPLETED' | 'CANCELLED';
   compatibilityScore: number;
+  pet1MeetingConfirmedAt?: string | null;
+  pet2MeetingConfirmedAt?: string | null;
+  breedingNote?: string | null;
+  expectedDueDate?: string | null;
+  completedAt?: string | null;
+  endedAt?: string | null;
+  endReason?: string | null;
   createdAt: string;
   pet1: {
     id: string;
     name: string;
     breed: string;
+    gender: 'MALE' | 'FEMALE';
     avatarUrl?: string | null;
-    owner: { name: string };
+    owner: { id: string; name: string };
   };
   pet2: {
     id: string;
     name: string;
     breed: string;
+    gender: 'MALE' | 'FEMALE';
     avatarUrl?: string | null;
-    owner: { name: string };
+    owner: { id: string; name: string };
   };
+  messages?: Array<{
+    id: string;
+    content: string;
+    senderId: string;
+    createdAt: string;
+    isRead: boolean;
+    imageUrl?: string | null;
+    sender: { id: string; name: string };
+  }>;
+  _count?: { messages: number };
 };
 
 type ChatMessage = {
   id: string;
-  sender: 'system' | 'me' | 'partner';
-  senderName: string;
-  text: string;
-  imageUrl?: string;
-  time: string;
+  content: string;
+  senderId: string;
+  createdAt: string;
+  sender: { id: string; name: string; avatarUrl?: string | null };
+  isRead: boolean;
+  imageUrl?: string | null;
+  senderName?: string;
+  time?: string;
+  deliveryStatus?: 'sending' | 'sent' | 'failed';
 };
+
+type MatchActionResult = Pick<
+  Match,
+  | 'id'
+  | 'status'
+  | 'pet1MeetingConfirmedAt'
+  | 'pet2MeetingConfirmedAt'
+  | 'breedingNote'
+  | 'expectedDueDate'
+  | 'completedAt'
+  | 'endedAt'
+  | 'endReason'
+>;
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  return (
+    (error as { response?: { data?: { message?: string } } }).response?.data
+      ?.message || fallback
+  );
+}
 
 export default function MessagesPage() {
   const [activeTab, setActiveTab] = useState<'CHAT' | 'INCOMING' | 'OUTGOING'>('CHAT');
@@ -89,39 +143,134 @@ export default function MessagesPage() {
 
   // Active chat state
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({
-    default: [
-      {
-        id: 'sys-1',
-        sender: 'system',
-        senderName: 'Hệ thống',
-        text: '🎉 Hai bên đã ghép đôi thành công! Hãy trao đổi về thời gian và địa điểm phối giống.',
-        time: 'Hôm nay',
-      },
-    ],
-  });
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({});
   const [inputText, setInputText] = useState('');
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
+  const [pregnancyDialogOpen, setPregnancyDialogOpen] = useState(false);
+  const [endDialogOpen, setEndDialogOpen] = useState(false);
+  const [matchAction, setMatchAction] = useState<'MEETING' | 'PREGNANCY' | 'END' | null>(null);
+  const [pregnancyNote, setPregnancyNote] = useState('');
+  const [expectedDueDate, setExpectedDueDate] = useState('');
+  const [endReason, setEndReason] = useState('');
 
   const loadData = () => {
     setLoading(true);
-    Promise.all([
+    Promise.allSettled([
       api.get<MatchingRequest[]>('/matching/requests/incoming'),
       api.get<MatchingRequest[]>('/matching/requests/outgoing'),
       api.get<Match[]>('/matching/matches'),
     ])
-      .then(([reqRes, outRes, matchRes]) => {
-        setIncomingRequests(reqRes.data || []);
-        setOutgoingRequests(outRes.data || []);
-        setMatches(matchRes.data || []);
-        if (matchRes.data && matchRes.data.length > 0 && !selectedMatch) {
-          setSelectedMatch(matchRes.data[0]);
+      .then(([reqResult, outResult, matchResult]) => {
+        if (reqResult.status === 'fulfilled') setIncomingRequests(reqResult.value.data || []);
+        if (outResult.status === 'fulfilled') setOutgoingRequests(outResult.value.data || []);
+        if (matchResult.status === 'fulfilled') {
+          const loadedMatches = matchResult.value.data || [];
+          setMatches(loadedMatches);
+          setSelectedMatch((current) =>
+            current
+              ? (loadedMatches.find((match) => match.id === current.id) ?? loadedMatches[0] ?? null)
+              : (loadedMatches[0] ?? null),
+          );
+        }
+        const failedSections = [
+          reqResult.status === 'rejected' ? 'yêu cầu đến' : '',
+          outResult.status === 'rejected' ? 'yêu cầu đã gửi' : '',
+          matchResult.status === 'rejected' ? 'danh sách ghép đôi' : '',
+        ].filter(Boolean);
+        if (failedSections.length > 0) {
+          toast.error(`Không tải được: ${failedSections.join(', ')}.`);
         }
       })
-      .catch(() => toast.error('Không tải được danh sách ghép đôi và tin nhắn.'))
       .finally(() => setLoading(false));
   };
 
   useEffect(loadData, []);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) return;
+    try {
+      setCurrentUserId((JSON.parse(storedUser) as { id?: string }).id || '');
+    } catch {
+      setCurrentUserId('');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMatch) return;
+    const matchId = selectedMatch.id;
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const hasCachedMessages = Object.prototype.hasOwnProperty.call(chatMessages, matchId);
+    if (!hasCachedMessages) setLoadingMessages(true);
+
+    const loadMessages = async (showError = false) => {
+      try {
+        const res = await api.get<ChatMessage[]>(`/matching/matches/${matchId}/messages`, { timeout: 10000 });
+        if (cancelled) return;
+        const persistedMessages = (res.data || []).map((message) => ({
+          ...message,
+          senderName: message.senderId === currentUserId ? 'Bạn' : message.sender.name,
+          time: new Date(message.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        }));
+        setChatMessages((prev) => {
+          const localPending = (prev[matchId] || []).filter((message) => message.id.startsWith('temp-'));
+          return { ...prev, [matchId]: [...persistedMessages, ...localPending] };
+        });
+        setMatches((prev) => prev.map((match) => match.id === matchId
+          ? { ...match, _count: { messages: 0 } }
+          : match));
+      } catch {
+        if (showError && !cancelled) toast.error('Không tải được lịch sử trò chuyện.');
+      } finally {
+        if (!cancelled) {
+          setLoadingMessages(false);
+          timeoutId = window.setTimeout(() => loadMessages(), 5000);
+        }
+      }
+    };
+
+    loadMessages(true);
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+    // Only restart when switching conversation; polling must not react to refreshed match objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMatch?.id, currentUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const refreshMatches = async () => {
+      try {
+        const res = await api.get<Match[]>('/matching/matches', { timeout: 10000 });
+        if (cancelled) return;
+        const loadedMatches = res.data || [];
+        setMatches(loadedMatches);
+        setSelectedMatch((current) => current
+          ? loadedMatches.find((match) => match.id === current.id) || current
+          : loadedMatches[0] || null);
+      } catch {
+        // Keep the latest successful conversation list on transient network errors.
+      } finally {
+        if (!cancelled) timeoutId = window.setTimeout(refreshMatches, 5000);
+      }
+    };
+    timeoutId = window.setTimeout(refreshMatches, 5000);
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   const respondRequest = async (id: string, action: 'accept' | 'reject') => {
     try {
@@ -133,31 +282,187 @@ export default function MessagesPage() {
     }
   };
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleImageSelect = (file?: File) => {
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh không được vượt quá 5 MB.');
+      return;
+    }
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    setSelectedImage(file);
+    setSelectedImagePreview(URL.createObjectURL(file));
+  };
+
+  const clearSelectedImage = () => {
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    setSelectedImage(null);
+    setSelectedImagePreview(null);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !selectedMatch) return;
-
-    const newMsg: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'me',
-      senderName: 'Bạn',
-      text: inputText.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
+    const content = inputText.trim();
+    if ((!content && !selectedImage) || !selectedMatch || sendingMessage) return;
     const currentMatchId = selectedMatch.id;
-    setChatMessages((prev) => ({
-      ...prev,
-      [currentMatchId]: [...(prev[currentMatchId] || prev['default'] || []), newMsg],
-    }));
-
+    const imageFile = selectedImage;
+    const imagePreview = selectedImagePreview;
+    const temporaryId = `temp-${crypto.randomUUID()}`;
+    const optimisticMessage: ChatMessage = {
+      id: temporaryId,
+      content,
+      senderId: currentUserId,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+      imageUrl: imagePreview,
+      sender: { id: currentUserId, name: 'Bạn' },
+      senderName: 'Bạn',
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      deliveryStatus: 'sending',
+    };
+    setChatMessages((prev) => ({ ...prev, [currentMatchId]: [...(prev[currentMatchId] || []), optimisticMessage] }));
     setInputText('');
+    setSendingMessage(true);
+    try {
+      let res;
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append('file', imageFile);
+        if (content) formData.append('content', content);
+        res = await api.post<ChatMessage>(
+          `/matching/matches/${currentMatchId}/messages/image`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 30000 },
+        );
+      } else {
+        res = await api.post<ChatMessage>(`/matching/matches/${currentMatchId}/messages`, { content }, { timeout: 10000 });
+      }
+      const savedMessage: ChatMessage = {
+        ...res.data,
+        senderName: 'Bạn',
+        time: new Date(res.data.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        deliveryStatus: 'sent',
+      };
+      setChatMessages((prev) => ({
+        ...prev,
+        [currentMatchId]: (() => {
+          const withoutTemporary = (prev[currentMatchId] || []).filter((message) => message.id !== temporaryId);
+          return withoutTemporary.some((message) => message.id === savedMessage.id)
+            ? withoutTemporary
+            : [...withoutTemporary, savedMessage];
+        })(),
+      }));
+      clearSelectedImage();
+    } catch {
+      setChatMessages((prev) => ({
+        ...prev,
+        [currentMatchId]: (prev[currentMatchId] || []).map((message) => message.id === temporaryId ? { ...message, deliveryStatus: 'failed' } : message),
+      }));
+      toast.error('Không thể gửi tin nhắn. Vui lòng thử lại.');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  const applyMatchUpdate = (update: MatchActionResult) => {
+    setMatches((current) => current.map((match) => (
+      match.id === update.id ? { ...match, ...update } : match
+    )));
+    setSelectedMatch((current) => (
+      current?.id === update.id ? { ...current, ...update } : current
+    ));
+  };
+
+  const handleConfirmMeeting = async () => {
+    if (!selectedMatch || matchAction) return;
+    setMatchAction('MEETING');
+    try {
+      const response = await api.post<MatchActionResult>(
+        `/matching/matches/${selectedMatch.id}/confirm-meeting`,
+      );
+      applyMatchUpdate(response.data);
+      setMeetingDialogOpen(false);
+      toast.success(
+        response.data.status === 'MET'
+          ? 'Hai bên đã hoàn tất xác nhận gặp mặt.'
+          : 'Đã xác nhận. Đang chờ phía còn lại.',
+      );
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Không thể xác nhận gặp mặt.'));
+    } finally {
+      setMatchAction(null);
+    }
+  };
+
+  const handleConfirmPregnancy = async () => {
+    if (!selectedMatch || matchAction) return;
+    setMatchAction('PREGNANCY');
+    try {
+      const response = await api.post<MatchActionResult>(
+        `/matching/matches/${selectedMatch.id}/confirm-pregnancy`,
+        {
+          note: pregnancyNote.trim() || undefined,
+          expectedDueDate: expectedDueDate || undefined,
+        },
+      );
+      applyMatchUpdate(response.data);
+      setPregnancyDialogOpen(false);
+      setPregnancyNote('');
+      setExpectedDueDate('');
+      toast.success('Đã ghi nhận kết quả mang thai. Phòng chat vẫn tiếp tục hoạt động.');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Không thể xác nhận mang thai.'));
+    } finally {
+      setMatchAction(null);
+    }
+  };
+
+  const handleEndMatch = async () => {
+    if (!selectedMatch || matchAction) return;
+    setMatchAction('END');
+    try {
+      const response = await api.post<MatchActionResult>(
+        `/matching/matches/${selectedMatch.id}/end`,
+        { reason: endReason.trim() || undefined },
+      );
+      applyMatchUpdate(response.data);
+      setEndDialogOpen(false);
+      setEndReason('');
+      toast.success('Đã kết thúc match. Lịch sử trò chuyện được giữ ở chế độ chỉ đọc.');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Không thể kết thúc match.'));
+    } finally {
+      setMatchAction(null);
+    }
   };
 
   const currentMatchMessages = useMemo(() => {
     if (!selectedMatch) return [];
-    return chatMessages[selectedMatch.id] || chatMessages['default'] || [];
+    return chatMessages[selectedMatch.id] || [];
   }, [selectedMatch, chatMessages]);
+
+  const currentUserOwnsPet1 = selectedMatch?.pet1.owner.id === currentUserId;
+  const myMeetingConfirmedAt = selectedMatch
+    ? (currentUserOwnsPet1
+      ? selectedMatch.pet1MeetingConfirmedAt
+      : selectedMatch.pet2MeetingConfirmedAt)
+    : null;
+  const otherMeetingConfirmedAt = selectedMatch
+    ? (currentUserOwnsPet1
+      ? selectedMatch.pet2MeetingConfirmedAt
+      : selectedMatch.pet1MeetingConfirmedAt)
+    : null;
+  const currentUserOwnsFemalePet = selectedMatch
+    ? (currentUserOwnsPet1 ? selectedMatch.pet1.gender : selectedMatch.pet2.gender) === 'FEMALE'
+    : false;
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [selectedMatch?.id, currentMatchMessages.length]);
 
   return (
     <main className="min-h-screen bg-background text-foreground flex flex-col">
@@ -251,16 +556,18 @@ export default function MessagesPage() {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[720px] rounded-3xl border bg-card overflow-hidden shadow-xl">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[min(720px,calc(100vh-280px))] min-h-[520px] rounded-3xl border bg-card overflow-hidden shadow-xl">
               {/* Sidebar Matches List (Left 4 cols) */}
-              <div className="lg:col-span-4 border-r flex flex-col bg-muted/20">
+              <div className="lg:col-span-4 min-h-0 border-r flex flex-col bg-muted/20">
                 <div className="p-4 border-b">
                   <h3 className="font-extrabold text-base">Danh sách Cặp đôi ({matches.length})</h3>
                   <p className="text-xs text-muted-foreground">Chọn cuộc trò chuyện để trao đổi</p>
                 </div>
-                <div className="flex-1 overflow-y-auto divide-y">
+                <div className="min-h-0 flex-1 overflow-y-auto divide-y">
                   {matches.map((m) => {
                     const isSelected = selectedMatch?.id === m.id;
+                    const lastMessage = m.messages?.[0];
+                    const unreadCount = m._count?.messages || 0;
                     return (
                       <button
                         key={m.id}
@@ -286,13 +593,39 @@ export default function MessagesPage() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between">
                             <h4 className="font-extrabold text-sm truncate">{m.pet1.name} ❤️ {m.pet2.name}</h4>
-                            <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                              {m.compatibilityScore}%
-                            </span>
+                            <div className="ml-2 flex shrink-0 items-center gap-1.5">
+                              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                                {m.compatibilityScore}%
+                              </span>
+                              {unreadCount > 0 && !isSelected && (
+                                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-black text-primary-foreground shadow-sm">
+                                  {unreadCount > 99 ? '99+' : unreadCount}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <p className="text-xs text-muted-foreground truncate mt-0.5">
                             {m.pet1.breed} & {m.pet2.breed}
                           </p>
+                          <p className={cn(
+                            'mt-1 text-[10px] font-bold',
+                            m.status === 'CANCELLED' ? 'text-muted-foreground' : 'text-emerald-600',
+                          )}>
+                            {m.status === 'ACTIVE' && 'Đang hoạt động'}
+                            {m.status === 'MET' && 'Đã gặp'}
+                            {m.status === 'COMPLETED' && 'Mang thai / Thành công'}
+                            {m.status === 'CANCELLED' && 'Đã kết thúc'}
+                          </p>
+                          {lastMessage && (
+                            <div className="mt-1 flex items-center justify-between gap-2">
+                              <p className={cn('min-w-0 flex-1 truncate text-xs', unreadCount > 0 && !isSelected ? 'font-extrabold text-foreground' : 'text-muted-foreground')}>
+                                {lastMessage.senderId === currentUserId ? 'Bạn: ' : ''}{lastMessage.content || (lastMessage.imageUrl ? '🖼️ Hình ảnh' : '')}
+                              </p>
+                              <time className="shrink-0 text-[10px] text-muted-foreground">
+                                {new Date(lastMessage.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                              </time>
+                            </div>
+                          )}
                         </div>
                       </button>
                     );
@@ -302,9 +635,9 @@ export default function MessagesPage() {
 
               {/* Active Chat Window (Right 8 cols) */}
               {selectedMatch ? (
-                <div className="lg:col-span-8 flex flex-col h-full bg-card">
+                <div className="lg:col-span-8 min-h-0 flex flex-col h-full bg-card overflow-hidden">
                   {/* Chat Header */}
-                  <div className="flex items-center justify-between border-b p-4 bg-muted/10">
+                  <div className="shrink-0 flex items-center justify-between gap-3 border-b p-4 bg-muted/10">
                     <div className="flex items-center gap-3">
                       <div className="flex -space-x-2">
                         <img src={selectedMatch.pet1.avatarUrl || '/placeholder.svg'} alt={selectedMatch.pet1.name} className="size-10 rounded-full border object-cover" />
@@ -314,9 +647,18 @@ export default function MessagesPage() {
                         <h3 className="font-black text-base leading-tight">
                           {selectedMatch.pet1.name} ({selectedMatch.pet1.owner.name}) & {selectedMatch.pet2.name} ({selectedMatch.pet2.owner.name})
                         </h3>
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                          <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                          Ghép đôi thành công · Phối giống Active
+                        <span className={cn(
+                          'inline-flex items-center gap-1 text-[11px] font-bold',
+                          selectedMatch.status === 'CANCELLED' ? 'text-muted-foreground' : 'text-emerald-600',
+                        )}>
+                          <span className={cn(
+                            'size-2 rounded-full',
+                            selectedMatch.status === 'CANCELLED' ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
+                          )} />
+                          {selectedMatch.status === 'ACTIVE' && 'Ghép đôi thành công · Phối giống Active'}
+                          {selectedMatch.status === 'MET' && 'Hai bên đã xác nhận gặp mặt'}
+                          {selectedMatch.status === 'COMPLETED' && 'Mang thai / Phối giống thành công'}
+                          {selectedMatch.status === 'CANCELLED' && 'Match đã kết thúc · Chỉ đọc'}
                         </span>
                       </div>
                     </div>
@@ -324,51 +666,157 @@ export default function MessagesPage() {
                       <span className="rounded-xl border bg-card px-3 py-1.5 text-xs font-extrabold text-primary shadow-sm">
                         {selectedMatch.compatibilityScore}% Phù hợp
                       </span>
+                      {selectedMatch.status !== 'CANCELLED' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl text-xs font-bold text-destructive hover:text-destructive"
+                          onClick={() => setEndDialogOpen(true)}
+                        >
+                          Kết thúc
+                        </Button>
+                      )}
                     </div>
                   </div>
 
+                  {selectedMatch.status === 'ACTIVE' && (
+                    <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b bg-primary/5 px-4 py-3">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        {!myMeetingConfirmedAt && !otherMeetingConfirmedAt && 'Hai bên chưa xác nhận gặp mặt.'}
+                        {myMeetingConfirmedAt && !otherMeetingConfirmedAt && 'Bạn đã xác nhận, đang chờ phía còn lại.'}
+                        {!myMeetingConfirmedAt && otherMeetingConfirmedAt && 'Đối phương đã xác nhận, đang chờ bạn.'}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="rounded-xl text-xs font-bold"
+                        disabled={Boolean(myMeetingConfirmedAt)}
+                        onClick={() => setMeetingDialogOpen(true)}
+                      >
+                        <Check className="mr-1 size-4" />
+                        {myMeetingConfirmedAt ? 'Đã xác nhận' : 'Xác nhận đã gặp mặt'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {selectedMatch.status === 'MET' && (
+                    <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3">
+                      <p className="text-xs font-bold text-emerald-800">Hai bên đã xác nhận gặp mặt thành công.</p>
+                      {currentUserOwnsFemalePet && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="rounded-xl text-xs font-bold"
+                          onClick={() => setPregnancyDialogOpen(true)}
+                        >
+                          Xác nhận mang thai
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedMatch.status === 'COMPLETED' && (
+                    <div className="shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
+                      Đã ghi nhận mang thai / phối giống thành công. Phòng chat vẫn đang hoạt động.
+                      {selectedMatch.expectedDueDate && (
+                        <span className="ml-1">Ngày dự sinh: {new Date(selectedMatch.expectedDueDate).toLocaleDateString('vi-VN')}.</span>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedMatch.status === 'CANCELLED' && (
+                    <div className="shrink-0 border-b bg-muted px-4 py-3 text-xs font-semibold text-muted-foreground">
+                      Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.
+                      {selectedMatch.endReason && <span className="ml-1">Lý do: {selectedMatch.endReason}</span>}
+                    </div>
+                  )}
+
                   {/* Messages Stream */}
-                  <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gradient-to-b from-transparent to-muted/20">
+                  <div className="min-h-0 flex-1 p-4 overflow-y-auto overscroll-contain space-y-4 bg-gradient-to-b from-transparent to-muted/20">
+                    {loadingMessages && <p className="py-6 text-center text-sm text-muted-foreground">Đang tải lịch sử trò chuyện...</p>}
+                    {!loadingMessages && currentMatchMessages.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.</p>}
                     {currentMatchMessages.map((msg) => (
                       <div
                         key={msg.id}
                         className={cn(
                           'flex flex-col',
-                          msg.sender === 'system'
-                            ? 'items-center my-3'
-                            : msg.sender === 'me'
-                            ? 'items-end'
-                            : 'items-start',
+                          msg.senderId === currentUserId ? 'items-end' : 'items-start',
                         )}
                       >
-                        {msg.sender === 'system' ? (
-                          <div className="rounded-2xl border bg-primary/5 px-4 py-2 text-center text-xs font-bold text-primary shadow-sm max-w-md">
-                            {msg.text}
-                          </div>
-                        ) : (
-                          <div className="max-w-[75%] space-y-1">
+                        <div className="max-w-[75%] space-y-1">
                             <span className="text-[10px] font-bold text-muted-foreground px-1">
                               {msg.senderName} · {msg.time}
                             </span>
                             <div
                               className={cn(
                                 'rounded-2xl px-4 py-3 text-sm font-medium leading-relaxed shadow-sm',
-                                msg.sender === 'me'
+                                msg.senderId === currentUserId
                                   ? 'bg-primary text-primary-foreground rounded-tr-none'
                                   : 'bg-card border text-foreground rounded-tl-none',
                               )}
                             >
-                              {msg.text}
+                              {msg.imageUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingImageUrl(msg.imageUrl || null)}
+                                  className="group relative mb-2 block cursor-zoom-in overflow-hidden rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  aria-label="Xem ảnh lớn"
+                                >
+                                  <img
+                                    src={msg.imageUrl}
+                                    alt="Ảnh trong cuộc trò chuyện"
+                                    className="max-h-80 w-auto max-w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
+                                  />
+                                  <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
+                                </button>
+                              )}
+                              {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                             </div>
-                          </div>
-                        )}
+                            {msg.senderId === currentUserId && (
+                              <span className={cn('block px-1 text-right text-[10px] font-semibold', msg.deliveryStatus === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>
+                                {msg.deliveryStatus === 'sending'
+                                  ? 'Đang gửi...'
+                                  : msg.deliveryStatus === 'failed'
+                                    ? 'Gửi thất bại'
+                                    : msg.isRead
+                                      ? 'Đã đọc'
+                                      : 'Đã gửi'}
+                              </span>
+                            )}
+                        </div>
                       </div>
                     ))}
+                    <div ref={messagesEndRef} aria-hidden="true" />
                   </div>
 
                   {/* Chat Input Bar */}
-                  <form onSubmit={handleSendMessage} className="p-4 border-t flex items-center gap-2 bg-card">
-                    <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground">
+                  {selectedMatch.status === 'CANCELLED' ? (
+                    <div className="shrink-0 border-t bg-muted/30 p-4 text-center text-xs font-bold text-muted-foreground">
+                      Phòng chat chỉ đọc
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSendMessage} className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-t bg-card p-4">
+                    {selectedImagePreview && (
+                      <div className="col-span-3 flex items-center gap-3 rounded-xl border bg-muted/30 p-2">
+                        <img src={selectedImagePreview} alt="Ảnh chuẩn bị gửi" className="size-16 rounded-lg object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold">{selectedImage?.name}</p>
+                          <p className="text-xs text-muted-foreground">{selectedImage ? `${(selectedImage.size / 1024 / 1024).toFixed(2)} MB` : ''}</p>
+                        </div>
+                        <Button type="button" variant="ghost" size="icon" onClick={clearSelectedImage} disabled={sendingMessage} aria-label="Bỏ ảnh đã chọn">
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    )}
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      onChange={(event) => handleImageSelect(event.target.files?.[0])}
+                    />
+                    <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" onClick={() => imageInputRef.current?.click()} disabled={sendingMessage} aria-label="Chọn ảnh để gửi">
                       <Paperclip className="size-5" />
                     </Button>
                     <Input
@@ -377,11 +825,12 @@ export default function MessagesPage() {
                       placeholder="Nhập tin nhắn trao đổi thời gian, địa điểm phối giống..."
                       className="flex-1 rounded-xl font-medium"
                     />
-                    <Button type="submit" className="rounded-xl font-bold shadow-md shadow-primary/20 shrink-0">
+                    <Button type="submit" disabled={sendingMessage || (!inputText.trim() && !selectedImage)} className="rounded-xl font-bold shadow-md shadow-primary/20 shrink-0">
                       <Send className="size-4 mr-1" />
                       Gửi
                     </Button>
-                  </form>
+                    </form>
+                  )}
                 </div>
               ) : (
                 <div className="lg:col-span-8 flex items-center justify-center text-muted-foreground">
@@ -513,6 +962,91 @@ export default function MessagesPage() {
           )
         )}
       </section>
+
+      <ConfirmDialog
+        open={meetingDialogOpen}
+        onCancel={() => setMeetingDialogOpen(false)}
+        onConfirm={handleConfirmMeeting}
+        title="Xác nhận đã gặp mặt"
+        description="Bạn xác nhận hai thú cưng đã gặp nhau? Hành động này không thể hoàn tác."
+        confirmText="Xác nhận"
+        loading={matchAction === 'MEETING'}
+      />
+
+      <Dialog open={pregnancyDialogOpen} onOpenChange={setPregnancyDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xác nhận mang thai</DialogTitle>
+            <DialogDescription>
+              Ghi nhận kết quả phối giống. Phòng chat sẽ tiếp tục hoạt động sau khi xác nhận.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="messages-expected-due-date" className="text-xs font-bold">Ngày dự sinh (không bắt buộc)</label>
+              <Input
+                id="messages-expected-due-date"
+                type="date"
+                value={expectedDueDate}
+                onChange={(event) => setExpectedDueDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="messages-pregnancy-note" className="text-xs font-bold">Ghi chú (không bắt buộc)</label>
+              <Textarea
+                id="messages-pregnancy-note"
+                maxLength={2000}
+                value={pregnancyNote}
+                onChange={(event) => setPregnancyNote(event.target.value)}
+                placeholder="Thông tin bổ sung về kết quả..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPregnancyDialogOpen(false)} disabled={matchAction === 'PREGNANCY'}>
+              Hủy
+            </Button>
+            <Button type="button" onClick={handleConfirmPregnancy} disabled={matchAction === 'PREGNANCY'}>
+              {matchAction === 'PREGNANCY' ? 'Đang lưu...' : 'Xác nhận mang thai'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={endDialogOpen} onOpenChange={setEndDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kết thúc match</DialogTitle>
+            <DialogDescription>
+              Phòng chat sẽ chuyển sang chế độ chỉ đọc. Lịch sử tin nhắn vẫn được giữ lại.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label htmlFor="messages-end-match-reason" className="text-xs font-bold">Lý do (không bắt buộc)</label>
+            <Textarea
+              id="messages-end-match-reason"
+              maxLength={1000}
+              value={endReason}
+              onChange={(event) => setEndReason(event.target.value)}
+              placeholder="Nhập lý do kết thúc match..."
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEndDialogOpen(false)} disabled={matchAction === 'END'}>
+              Hủy
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleEndMatch} disabled={matchAction === 'END'}>
+              {matchAction === 'END' ? 'Đang kết thúc...' : 'Kết thúc match'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ImageLightbox
+        imageUrl={viewingImageUrl}
+        alt="Ảnh trong cuộc trò chuyện"
+        onClose={() => setViewingImageUrl(null)}
+      />
     </main>
   );
 }

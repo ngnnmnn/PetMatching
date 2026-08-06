@@ -129,6 +129,13 @@ function SpaBookingWizard() {
   const [addresses, setAddresses] = useState<AddressSpaType[]>([]);
   const [pets, setPets] = useState<PetType[]>([]);
 
+  const getLocalDateString = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Selected Booking form state
   const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [customSpecies, setCustomSpecies] = useState<'DOG' | 'CAT'>('DOG');
@@ -137,7 +144,7 @@ function SpaBookingWizard() {
   const [selectedSubServiceIds, setSelectedSubServiceIds] = useState<string[]>([]);
 
   const [selectedAddressSpaId, setSelectedAddressSpaId] = useState<string>('');
-  const [bookingDate, setBookingDate] = useState<string>(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [bookingDate, setBookingDate] = useState<string>(getLocalDateString());
   const [bookingTime, setBookingTime] = useState<string>('');
   const [bookingNote, setBookingNote] = useState<string>('');
 
@@ -164,48 +171,79 @@ function SpaBookingWizard() {
         setMainServices(mains);
         setSubServices(subs);
 
-        // Auto select service passed from query params
+        // Auto select service passed from query params (with strict matching priority)
         if (initialServiceId || initialBrandId || initialTitle) {
-          let matched = mains.find(
-            (m) =>
-              (initialServiceId && m.id === initialServiceId) ||
-              (initialBrandId && m.brandId === initialBrandId)
-          );
+          const normTitle = initialTitle ? initialTitle.toLowerCase().trim() : '';
+          const normServiceId = initialServiceId ? initialServiceId.toLowerCase().trim() : '';
 
-          if (!matched && initialTitle) {
-            const targetTitle = initialTitle.toLowerCase().trim();
+          // 1. Try exact ID match in main services
+          let matched = initialServiceId ? mains.find((m) => m.id === initialServiceId) : undefined;
+
+          // 2. Try exact ID or category/brand ID match
+          if (!matched && initialServiceId) {
+            matched = mains.find(
+              (m) =>
+                m.id.toLowerCase() === normServiceId ||
+                (m.categoryId && m.categoryId.toLowerCase() === normServiceId)
+            );
+          }
+
+          // 3. Try matching title/name in main services
+          if (!matched && normTitle) {
             matched = mains.find((m) => {
               const name = (m.name || '').toLowerCase();
               const brandName = (m.brand?.name || '').toLowerCase();
-              return name.includes(targetTitle) || brandName.includes(targetTitle) || targetTitle.includes(brandName);
+              return (
+                name.includes(normTitle) ||
+                normTitle.includes(name) ||
+                (brandName && (brandName.includes(normTitle) || normTitle.includes(brandName)))
+              );
             });
           }
 
-          if (!matched && initialServiceId) {
-            const targetIdStr = initialServiceId.toLowerCase().trim();
+          // 4. Try matching title with initialServiceId if initialServiceId is descriptive text
+          if (!matched && normServiceId) {
             matched = mains.find((m) => {
               const name = (m.name || '').toLowerCase();
-              const brandName = (m.brand?.name || '').toLowerCase();
-              return name.includes(targetIdStr) || brandName.includes(targetIdStr);
+              return name.includes(normServiceId) || normServiceId.includes(name);
             });
+          }
+
+          // 5. Fallback to brandId match ONLY if neither ID nor Title produced a match
+          if (!matched && initialBrandId) {
+            matched = mains.find((m) => m.brandId === initialBrandId);
           }
 
           if (matched) {
             setSelectedMainServiceId(matched.id);
           } else {
-            let matchedSub = subs.find(
-              (s) =>
-                (initialServiceId && s.id === initialServiceId) ||
-                (initialBrandId && s.brandId === initialBrandId)
-            );
-            if (!matchedSub && initialTitle) {
-              const targetTitle = initialTitle.toLowerCase().trim();
-              matchedSub = subs.find((s) => (s.name || '').toLowerCase().includes(targetTitle));
+            // Check sub-services if not matched in main services
+            let matchedSub = initialServiceId ? subs.find((s) => s.id === initialServiceId) : undefined;
+
+            if (!matchedSub && normTitle) {
+              matchedSub = subs.find((s) => {
+                const name = (s.name || '').toLowerCase();
+                return name.includes(normTitle) || normTitle.includes(name);
+              });
             }
+
+            if (!matchedSub && normServiceId) {
+              matchedSub = subs.find((s) => {
+                const name = (s.name || '').toLowerCase();
+                return name.includes(normServiceId) || normServiceId.includes(name);
+              });
+            }
+
+            if (!matchedSub && initialBrandId) {
+              matchedSub = subs.find((s) => s.brandId === initialBrandId);
+            }
+
             if (matchedSub) {
               setSelectedSubServiceIds([matchedSub.id]);
             }
           }
+        } else if (mains.length > 0 && !selectedMainServiceId) {
+          setSelectedMainServiceId(mains[0].id);
         }
       } catch (err) {
         console.error('Failed to load filtered services', err);
@@ -218,17 +256,17 @@ function SpaBookingWizard() {
     if (!bookingDate) return [];
     const base = new Date(bookingDate);
     if (isNaN(base.getTime())) return [];
-    
+
     const day = base.getDay();
     const diff = base.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(base.setDate(diff));
-    
+
     const days = [];
     const weekdays = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(d);
       const weekdayStr = weekdays[d.getDay()];
       const dayNum = d.getDate();
       days.push({ dateStr, weekdayStr, dayNum });
@@ -245,19 +283,44 @@ function SpaBookingWizard() {
   }, [selectedMainServiceId, selectedSubServiceIds, mainServices, subServices]);
 
   const filteredValidSlots = useMemo(() => {
+    const todayStr = getLocalDateString();
+    const isToday = bookingDate === todayStr;
+
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
     return availableSlots.filter((slot) => {
       // 1. Hide slot if no staff is available during this window
-      if (!slot.isAvailable || slot.remainingSlots <= 0) {
+      if (!slot.isAvailable || slot.remainingSlots <= 0 || !slot.availableStaffs || slot.availableStaffs.length === 0) {
         return false;
       }
 
-      // 2. Hide slot if completion time exceeds 18:00
+      // 2. Hide slot if start time < 09:00 or completion time exceeds 18:00
       const [h, m] = slot.time.split(':').map(Number);
       const startMins = h * 60 + m;
       const endMins = startMins + totalDurationMinutes;
-      return startMins >= 9 * 60 && endMins <= 18 * 60;
+      if (startMins < 9 * 60 || endMins > 18 * 60) {
+        return false;
+      }
+
+      // 3. If selected date is TODAY, only display time slots at or after current time (hour & minute)
+      if (isToday && startMins < currentMins) {
+        return false;
+      }
+
+      return true;
     });
-  }, [availableSlots, totalDurationMinutes]);
+  }, [availableSlots, totalDurationMinutes, bookingDate]);
+
+  // Auto-deselect selected booking time if it is no longer valid/available
+  useEffect(() => {
+    if (bookingTime) {
+      const isValid = filteredValidSlots.some((s) => s.time === bookingTime);
+      if (!isValid) {
+        setBookingTime('');
+      }
+    }
+  }, [filteredValidSlots, bookingTime]);
 
   useEffect(() => {
     const fetchSlots = async () => {
@@ -297,9 +360,7 @@ function SpaBookingWizard() {
           setSelectedPetId(myPets[0].id);
         }
 
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        setBookingDate(tomorrow.toISOString().split('T')[0]);
+        setBookingDate(getLocalDateString());
       } catch {
         toast.error('Không thể tải thông tin Spa. Vui lòng thử lại.');
       } finally {
@@ -472,11 +533,10 @@ function SpaBookingWizard() {
                         <div
                           key={pet.id}
                           onClick={() => setSelectedPetId(pet.id)}
-                          className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${
-                            selectedPetId === pet.id
+                          className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${selectedPetId === pet.id
                               ? 'border-primary bg-primary/5 ring-1 ring-primary'
                               : 'border-gray-200 bg-white'
-                          }`}
+                            }`}
                         >
                           <input
                             type="radio"
@@ -573,11 +633,10 @@ function SpaBookingWizard() {
                             <div
                               key={service.id}
                               onClick={() => setSelectedMainServiceId(isSelected ? '' : service.id)}
-                              className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between space-y-2 ${
-                                isSelected
+                              className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between space-y-2 ${isSelected
                                   ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/30'
                                   : 'border-gray-200 bg-white hover:border-purple-200'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start justify-between">
                                 <div className="space-y-1">
@@ -614,11 +673,6 @@ function SpaBookingWizard() {
                         <Plus className="size-4 text-green-600" />
                         Dịch vụ phụ / Dịch vụ lẻ (Chọn thêm hoặc không)
                       </label>
-                      {selectedMainService && subServices.length > availableSubServices.length && (
-                        <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
-                          ✨ Đã ẩn các dịch vụ lẻ đã có sẵn trong gói combo đã chọn
-                        </span>
-                      )}
                     </div>
 
                     {availableSubServices.length === 0 ? (
@@ -633,11 +687,10 @@ function SpaBookingWizard() {
                             <div
                               key={sub.id}
                               onClick={() => handleSubServiceToggle(sub.id)}
-                              className={`p-3.5 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${
-                                isChecked
+                              className={`p-3.5 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${isChecked
                                   ? 'border-green-600 bg-green-50/80 ring-1 ring-green-500/30'
                                   : 'border-gray-200 bg-white hover:border-green-200 hover:bg-gray-50'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start gap-3">
                                 <input
@@ -691,11 +744,17 @@ function SpaBookingWizard() {
                       <label className="text-xs font-black uppercase text-gray-800 tracking-wider">Chọn ngày đặt lịch *</label>
                       <input
                         type="date"
-                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                        min={getLocalDateString()}
                         value={bookingDate}
+                        onKeyDown={(e) => e.preventDefault()}
                         onChange={(e) => {
-                          if (e.target.value) {
-                            setBookingDate(e.target.value);
+                          const val = e.target.value;
+                          const todayStr = getLocalDateString();
+                          if (val && val >= todayStr) {
+                            setBookingDate(val);
+                            setBookingTime('');
+                          } else if (val && val < todayStr) {
+                            setBookingDate(todayStr);
                             setBookingTime('');
                           }
                         }}
@@ -706,8 +765,8 @@ function SpaBookingWizard() {
                     <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
                       {carouselDays.map((day) => {
                         const active = bookingDate === day.dateStr;
-                        const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-                        const isPast = day.dateStr < tomorrowStr;
+                        const todayStr = getLocalDateString();
+                        const isPast = day.dateStr < todayStr;
 
                         return (
                           <button
@@ -718,13 +777,12 @@ function SpaBookingWizard() {
                               setBookingDate(day.dateStr);
                               setBookingTime('');
                             }}
-                            className={`flex flex-col items-center justify-center p-3 rounded-xl border min-w-[76px] transition-all cursor-pointer ${
-                              isPast
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border min-w-[76px] transition-all cursor-pointer ${isPast
                                 ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
                                 : active
-                                ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
-                                : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
-                            }`}
+                                  ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
+                                  : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
+                              }`}
                           >
                             <span className="text-[10px] uppercase font-bold tracking-wider">{day.weekdayStr}</span>
                             <span className="text-lg font-black mt-0.5">{day.dayNum}</span>
@@ -763,13 +821,12 @@ function SpaBookingWizard() {
                               type="button"
                               disabled={!hasChuyen}
                               onClick={() => setBookingTime(slot.time)}
-                              className={`py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${
-                                !hasChuyen
+                              className={`py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${!hasChuyen
                                   ? 'bg-gray-50 border-gray-150 text-gray-300 cursor-not-allowed'
                                   : isSelected
-                                  ? 'bg-primary border-primary text-white shadow-md font-bold'
-                                  : 'bg-white border-gray-250 text-gray-700 hover:border-primary'
-                              }`}
+                                    ? 'bg-primary border-primary text-white shadow-md font-bold'
+                                    : 'bg-white border-gray-250 text-gray-700 hover:border-primary'
+                                }`}
                             >
                               <span className="text-sm font-black">{slot.time}</span>
                               {hasChuyen ? (
@@ -892,7 +949,7 @@ function SpaBookingWizard() {
   );
 }
 
-export default function SpaBookingWizardPage() {
+export default function SpaBooking() {
   return (
     <Suspense
       fallback={

@@ -28,6 +28,12 @@ export default function LoginForm() {
     : `${apiBaseUrl}/auth/google`;
 
   useEffect(() => {
+    const authNotice = sessionStorage.getItem("auth_notice");
+    if (authNotice) {
+      setError(authNotice);
+      sessionStorage.removeItem("auth_notice");
+    }
+
     const redirect = searchParams.get("redirect");
     if (redirect) {
       localStorage.setItem("login_redirect_url", redirect);
@@ -60,8 +66,10 @@ export default function LoginForm() {
         const role = response.data.user?.role;
         if (role === "ADMIN") {
           router.push("/admin");
-        } else if (role === "STORE_MANAGER" || role === "SPA_MANAGER") {
+        } else if (role === "STORE_MANAGER") {
           router.push("/manager");
+        } else if (role === "SPA_MANAGER") {
+          router.push("/managerSpa");
         } else if (role === "SPA_STAFF") {
           router.push("/spa/staff");
         } else if (redirectUrl) {

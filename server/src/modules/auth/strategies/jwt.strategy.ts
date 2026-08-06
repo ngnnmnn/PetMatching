@@ -1,10 +1,12 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { AccountStatus } from '@prisma/client';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -12,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: {
+  async validate(payload: {
     sub?: string;
     email?: string;
     role?: string;
@@ -24,12 +26,37 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token đăng nhập không hợp lệ.');
     }
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        accountStatus: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException({
+        code: 'ACCOUNT_NOT_FOUND',
+        message: 'Tài khoản không còn tồn tại.',
+      });
+    }
+
+    if (user.accountStatus === AccountStatus.SUSPENDED) {
+      throw new UnauthorizedException({
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
+      });
+    }
+
     return {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      accountStatus: payload.accountStatus,
-      name: payload.name,
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      accountStatus: user.accountStatus,
+      name: user.name,
     };
   }
 }

@@ -13,8 +13,10 @@ export default function RootPage() {
 
     if (token && user?.role === 'ADMIN') {
       router.replace('/admin');
-    } else if (token && (user?.role === 'STORE_MANAGER' || user?.role === 'SPA_MANAGER')) {
+    } else if (token && user?.role === 'STORE_MANAGER') {
       router.replace('/manager');
+    } else if (token && user?.role === 'SPA_MANAGER') {
+      router.replace('/managerSpa');
     } else if (token && user?.role === 'SPA_STAFF') {
       router.replace('/spa/staff');
     } else {

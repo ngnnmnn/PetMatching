@@ -38,7 +38,7 @@ const PRESET_PHOTOS = [
   { label: 'Bé mèo sạch sẽ', url: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&h=400&fit=crop' }
 ];
 
-export default function SpaStaffPage() {
+export default function SpaStaff() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [bookings, setBookings] = useState<SpaBookingType[]>([]);
@@ -448,8 +448,16 @@ export default function SpaStaffPage() {
               type="date"
               value={selectedDate}
               min={todayStr}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="h-10 rounded-lg border border-[var(--border-color)] bg-white px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-700"
+              onKeyDown={(e) => e.preventDefault()}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val || val >= todayStr) {
+                  setSelectedDate(val);
+                } else {
+                  setSelectedDate(todayStr);
+                }
+              }}
+              className="h-10 rounded-lg border border-[var(--border-color)] bg-white px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-700 cursor-pointer"
             />
             {selectedDate !== todayStr && (
               <Button

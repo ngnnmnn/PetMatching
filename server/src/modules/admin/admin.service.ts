@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -29,7 +25,6 @@ import {
   ResolveComplaintDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
-  UpdateApprovalStatusDto,
   UpdateUserRoleDto,
   UpdateBreedRuleDto,
   CreateBreedDto,
@@ -41,11 +36,39 @@ type AdminActor = {
   name?: string;
 };
 
+const ACTIONABLE_DOCUMENT_STATUSES: DocumentStatus[] = [
+  DocumentStatus.PENDING,
+  DocumentStatus.REVIEWING,
+  DocumentStatus.NEED_MORE_INFO,
+];
+
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private recognizedStoreRevenueWhere(storeId?: string): Prisma.OrderWhereInput {
+    return {
+      storeId: storeId ?? '__missing__',
+      status: OrderStatus.DELIVERED,
+      OR: [
+        { refundStatus: null },
+        { refundStatus: { not: 'REFUNDED' } },
+      ],
+    };
+  }
+
+  private recognizedSpaRevenueWhere(addressSpaId?: string): Prisma.SpaBookingWhereInput {
+    return {
+      addressSpaId: addressSpaId ?? '__missing__',
+      status: SpaBookingStatus.COMPLETED,
+    };
+  }
+
   async getDashboard() {
+    const [primaryStore, primarySpa] = await Promise.all([
+      this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }),
+      this.prisma.addressSpa.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }),
+    ]);
     const [
       totalUsers,
       totalPets,
@@ -70,18 +93,17 @@ export class AdminService {
       pendingSpaComplaints,
       storeRevenue,
       spaRevenue,
+      legacySpaRevenue,
       recentUsers,
       recentPets,
       recentDocuments,
       recentComplaints,
-    ] = await this.prisma.$transaction([
+    ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.pet.count(),
-      this.prisma.pet.count({
-        where: { verificationBadge: VerificationBadge.VERIFIED },
-      }),
+      this.prisma.pet.count({ where: { verificationBadge: VerificationBadge.VERIFIED } }),
       this.prisma.petDocument.count({
-        where: { status: DocumentStatus.PENDING },
+        where: { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
       }),
       this.prisma.match.count(),
       this.prisma.petReport.count({ where: { isResolved: false } }),
@@ -97,29 +119,29 @@ export class AdminService {
         where: { type: ComplaintType.STORE, status: ComplaintStatus.PENDING },
       }),
       this.prisma.addressSpa.count(),
-      this.prisma.addressSpa.count({
-        where: { status: ApprovalStatus.ACTIVE },
-      }),
-      this.prisma.addressSpa.count({
-        where: { status: ApprovalStatus.PENDING },
-      }),
+      this.prisma.addressSpa.count({ where: { status: ApprovalStatus.ACTIVE } }),
+      this.prisma.addressSpa.count({ where: { status: ApprovalStatus.PENDING } }),
       this.prisma.spaService.count(),
       this.prisma.spaBooking.count(),
       this.prisma.complaint.count({
         where: { type: ComplaintType.SPA, status: ComplaintStatus.PENDING },
       }),
-      this.prisma.order.aggregate({ _sum: { totalAmount: true } }),
-      this.prisma.spaBooking.aggregate({ _sum: { priceSnapshot: true } }),
+      this.prisma.order.aggregate({
+        where: this.recognizedStoreRevenueWhere(primaryStore?.id),
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.spaBooking.aggregate({
+        where: this.recognizedSpaRevenueWhere(primarySpa?.id),
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.spaBooking.aggregate({
+        where: { ...this.recognizedSpaRevenueWhere(primarySpa?.id), totalPrice: 0 },
+        _sum: { priceSnapshot: true },
+      }),
       this.prisma.user.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          createdAt: true,
-        },
+        select: { id: true, name: true, email: true, role: true, createdAt: true },
       }),
       this.prisma.pet.findMany({
         orderBy: { createdAt: 'desc' },
@@ -130,36 +152,31 @@ export class AdminService {
           species: true,
           verificationBadge: true,
           createdAt: true,
-          owner: { select: { id: true, name: true, email: true } },
         },
       }),
       this.prisma.petDocument.findMany({
+        where: { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
         orderBy: { createdAt: 'desc' },
         take: 5,
-        include: {
-          pet: {
-            select: {
-              id: true,
-              name: true,
-              owner: { select: { id: true, name: true, email: true } },
-            },
-          },
+        select: {
+          id: true,
+          status: true,
+          type: true,
+          createdAt: true,
+          pet: { select: { name: true } },
         },
       }),
       this.prisma.complaint.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
+        select: { id: true, type: true, status: true, title: true, createdAt: true },
       }),
     ]);
 
     return {
       stats: {
         users: { total: totalUsers },
-        pets: {
-          total: totalPets,
-          verified: verifiedPets,
-          pendingVerification: pendingPetDocuments,
-        },
+        pets: { total: totalPets, verified: verifiedPets, pendingVerification: pendingPetDocuments },
         matching: { totalMatches, pendingReports: pendingMatchingReports },
         store: {
           totalStores,
@@ -180,7 +197,7 @@ export class AdminService {
           totalServices: totalSpaServices,
           totalBookings: totalSpaBookings,
           pendingComplaints: pendingSpaComplaints,
-          revenue: spaRevenue._sum.priceSnapshot ?? 0,
+          revenue: (spaRevenue._sum.totalPrice ?? 0) + (legacySpaRevenue._sum.priceSnapshot ?? 0),
         },
       },
       recentActivities: {
@@ -192,11 +209,7 @@ export class AdminService {
     };
   }
 
-  getUsers(query: {
-    role?: UserRole;
-    accountStatus?: AccountStatus;
-    search?: string;
-  }) {
+  getUsers(query: { role?: UserRole; accountStatus?: AccountStatus; search?: string }) {
     const where: Prisma.UserWhereInput = { role: { not: UserRole.ADMIN } };
 
     if (query.role === UserRole.ADMIN) {
@@ -248,77 +261,58 @@ export class AdminService {
     });
 
     if (!user) throw new NotFoundException('User not found.');
-    if (user.role === UserRole.ADMIN)
-      throw new NotFoundException('User not found.');
+    if (user.role === UserRole.ADMIN) throw new NotFoundException('User not found.');
     return user;
   }
 
-  async updateUserRole(
-    actor: AdminActor,
-    userId: string,
-    dto: UpdateUserRoleDto,
-  ) {
+  async updateUserRole(actor: AdminActor, userId: string, dto: UpdateUserRoleDto) {
     if (dto.role === UserRole.ADMIN) {
-      throw new BadRequestException(
-        'Cannot assign ADMIN role from user management.',
-      );
+      throw new BadRequestException('Cannot assign ADMIN role from user management.');
     }
 
     const currentUser = await this.ensureManagedUser(userId);
 
-    if (
-      currentUser.role === UserRole.SPA_STAFF ||
-      dto.role === UserRole.SPA_STAFF
-    ) {
-      throw new BadRequestException(
-        'Tài khoản nhân viên Spa chỉ được quản lý bởi Spa Manager.',
-      );
+    if (currentUser.role === UserRole.SPA_MANAGER || dto.role === UserRole.SPA_MANAGER) {
+      throw new BadRequestException('Hãy sử dụng quy trình cấp hoặc thu hồi quyền Spa Manager.');
     }
 
-    if (
-      currentUser.role === UserRole.SPA_MANAGER ||
-      dto.role === UserRole.SPA_MANAGER
-    ) {
-      throw new BadRequestException(
-        'Hãy sử dụng quy trình cấp hoặc thu hồi quyền Spa Manager.',
-      );
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { role: dto.role },
+        select: { id: true, email: true, name: true, role: true, accountStatus: true },
+      });
 
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role: dto.role },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        accountStatus: true,
-      },
-    });
+      if (dto.role === UserRole.SPA_STAFF) {
+        await tx.spaStaff.upsert({
+          where: { userId },
+          update: {},
+          create: { id: userId, userId },
+        });
+      } else if (currentUser.role === UserRole.SPA_STAFF) {
+        await tx.spaStaff.deleteMany({ where: { userId } });
+      }
 
-    await this.audit(actor.id, 'ADMIN_UPDATE_USER_ROLE', 'User', userId, {
-      role: dto.role,
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_UPDATE_USER_ROLE',
+          targetType: 'User',
+          targetId: userId,
+          metadata: { previousRole: currentUser.role, role: dto.role },
+        },
+      });
+      return user;
     });
-    return user;
   }
 
-  async updateAccountStatus(
-    actor: AdminActor,
-    userId: string,
-    dto: UpdateAccountStatusDto,
-  ) {
+  async updateAccountStatus(actor: AdminActor, userId: string, dto: UpdateAccountStatusDto) {
     await this.ensureManagedUser(userId);
 
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { accountStatus: dto.accountStatus },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        accountStatus: true,
-      },
+      select: { id: true, email: true, name: true, role: true, accountStatus: true },
     });
 
     await this.audit(actor.id, 'ADMIN_UPDATE_ACCOUNT_STATUS', 'User', userId, {
@@ -327,16 +321,10 @@ export class AdminService {
     return user;
   }
 
-  async grantSpaManager(
-    actor: AdminActor,
-    userId: string,
-    dto: GrantSpaManagerDto,
-  ) {
+  async grantSpaManager(actor: AdminActor, userId: string, dto: GrantSpaManagerDto) {
     const user = await this.ensureManagedUser(userId);
-    if (user.role !== UserRole.USER) {
-      throw new BadRequestException(
-        'Chỉ có thể cấp quyền Spa Manager cho tài khoản người dùng.',
-      );
+    if (user.role !== UserRole.USER && user.role !== UserRole.SPA_STAFF) {
+      throw new BadRequestException('Chỉ có thể cấp quyền Spa Manager cho tài khoản người dùng hoặc nhân viên Spa.');
     }
 
     const spa = await this.prisma.addressSpa.findFirst({
@@ -350,25 +338,17 @@ export class AdminService {
 
     const isReassignment = Boolean(spa.managerId && spa.managerId !== userId);
     if (isReassignment && !dto.allowReassignment) {
-      throw new BadRequestException(
-        'Spa đã có Manager. Vui lòng xác nhận chuyển giao.',
-      );
+      throw new BadRequestException('Spa đã có Manager. Vui lòng xác nhận chuyển giao.');
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (user.role === UserRole.SPA_STAFF) {
+        await tx.spaStaff.deleteMany({ where: { userId } });
+      }
       const manager = await tx.user.update({
         where: { id: userId },
-        data: {
-          role: UserRole.SPA_MANAGER,
-          accountStatus: AccountStatus.ACTIVE,
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          accountStatus: true,
-        },
+        data: { role: UserRole.SPA_MANAGER, accountStatus: AccountStatus.ACTIVE },
+        select: { id: true, name: true, email: true, role: true, accountStatus: true },
       });
 
       await tx.addressSpa.updateMany({
@@ -393,11 +373,7 @@ export class AdminService {
     });
   }
 
-  async revokeSpaManager(
-    actor: AdminActor,
-    userId: string,
-    dto: RevokeSpaManagerDto,
-  ) {
+  async revokeSpaManager(actor: AdminActor, userId: string, dto: RevokeSpaManagerDto) {
     const user = await this.ensureManagedUser(userId);
     if (user.role !== UserRole.SPA_MANAGER) {
       throw new BadRequestException('Tài khoản này không phải Spa Manager.');
@@ -406,9 +382,7 @@ export class AdminService {
     let replacementManagerId: string | null = null;
     if (dto.mode === 'TRANSFER') {
       if (!dto.newManagerId || dto.newManagerId === userId) {
-        throw new BadRequestException(
-          'Vui lòng chọn một Spa Manager khác để chuyển giao.',
-        );
+        throw new BadRequestException('Vui lòng chọn một Spa Manager khác để chuyển giao.');
       }
 
       const replacement = await this.prisma.user.findFirst({
@@ -420,9 +394,7 @@ export class AdminService {
         select: { id: true },
       });
       if (!replacement) {
-        throw new BadRequestException(
-          'Người nhận chuyển giao không hợp lệ hoặc đang bị khóa.',
-        );
+        throw new BadRequestException('Người nhận chuyển giao không hợp lệ hoặc đang bị khóa.');
       }
       replacementManagerId = replacement.id;
     }
@@ -448,13 +420,7 @@ export class AdminService {
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: { role: UserRole.USER },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          accountStatus: true,
-        },
+        select: { id: true, name: true, email: true, role: true, accountStatus: true },
       });
 
       await tx.auditLog.create({
@@ -479,10 +445,8 @@ export class AdminService {
     const where: Prisma.PetWhereInput = {};
 
     if (query.status) where.status = query.status;
-    if (query.verified === 'true')
-      where.verificationBadge = VerificationBadge.VERIFIED;
-    if (query.verified === 'false')
-      where.NOT = { verificationBadge: VerificationBadge.VERIFIED };
+    if (query.verified === 'true') where.verificationBadge = VerificationBadge.VERIFIED;
+    if (query.verified === 'false') where.NOT = { verificationBadge: VerificationBadge.VERIFIED };
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -495,16 +459,8 @@ export class AdminService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        owner: {
-          select: { id: true, name: true, email: true, accountStatus: true },
-        },
-        _count: {
-          select: {
-            documents: true,
-            sentMatchingRequests: true,
-            receivedMatchingRequests: true,
-          },
-        },
+        owner: { select: { id: true, name: true, email: true, accountStatus: true } },
+        _count: { select: { documents: true, sentMatchingRequests: true, receivedMatchingRequests: true } },
       },
     });
   }
@@ -513,9 +469,7 @@ export class AdminService {
     const pet = await this.prisma.pet.findUnique({
       where: { id },
       include: {
-        owner: {
-          select: { id: true, name: true, email: true, accountStatus: true },
-        },
+        owner: { select: { id: true, name: true, email: true, accountStatus: true } },
         documents: { orderBy: { createdAt: 'desc' } },
       },
     });
@@ -544,9 +498,7 @@ export class AdminService {
       throw new BadRequestException('Hồ sơ thú cưng đã được ẩn trước đó.');
     }
     if (currentPet.status === PetStatus.INACTIVE) {
-      throw new BadRequestException(
-        'Không thể ẩn hồ sơ đã được chủ sở hữu ngừng hoạt động.',
-      );
+      throw new BadRequestException('Không thể ẩn hồ sơ đã được chủ sở hữu ngừng hoạt động.');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -585,9 +537,7 @@ export class AdminService {
       throw new BadRequestException('Chỉ có thể khôi phục hồ sơ đang bị ẩn.');
     }
     if (pet.owner.accountStatus !== AccountStatus.ACTIVE) {
-      throw new BadRequestException(
-        'Không thể khôi phục vì tài khoản chủ sở hữu không hoạt động.',
-      );
+      throw new BadRequestException('Không thể khôi phục vì tài khoản chủ sở hữu không hoạt động.');
     }
 
     const [unresolvedReportCount, lastHideAction] = await Promise.all([
@@ -600,23 +550,16 @@ export class AdminService {
     ]);
 
     if (unresolvedReportCount > 0) {
-      throw new BadRequestException(
-        'Hãy xử lý toàn bộ báo cáo chưa giải quyết trước khi khôi phục hồ sơ.',
-      );
+      throw new BadRequestException('Hãy xử lý toàn bộ báo cáo chưa giải quyết trước khi khôi phục hồ sơ.');
     }
 
-    const hideMetadata = lastHideAction?.metadata as
-      | Prisma.JsonObject
-      | null
-      | undefined;
+    const hideMetadata = lastHideAction?.metadata as Prisma.JsonObject | null | undefined;
     if (hideMetadata?.reason === 'DOCUMENT_FRAUD') {
       const approvedDocumentCount = await this.prisma.petDocument.count({
         where: { petId, status: DocumentStatus.APPROVED },
       });
       if (approvedDocumentCount === 0) {
-        throw new BadRequestException(
-          'Hồ sơ cần có ít nhất một giấy tờ đã được duyệt trước khi khôi phục.',
-        );
+        throw new BadRequestException('Hồ sơ cần có ít nhất một giấy tờ đã được duyệt trước khi khôi phục.');
       }
     }
 
@@ -649,15 +592,7 @@ export class AdminService {
     return this.prisma.petDocument.findMany({
       where: query.status
         ? { status: query.status }
-        : {
-            status: {
-              in: [
-                DocumentStatus.PENDING,
-                DocumentStatus.REVIEWING,
-                DocumentStatus.NEED_MORE_INFO,
-              ],
-            },
-          },
+        : { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
       orderBy: { createdAt: 'desc' },
       include: {
         pet: {
@@ -674,20 +609,14 @@ export class AdminService {
     });
   }
 
-  async reviewPetDocument(
-    actor: AdminActor,
-    documentId: string,
-    dto: ReviewPetDocumentDto,
-  ) {
+  async reviewPetDocument(actor: AdminActor, documentId: string, dto: ReviewPetDocumentDto) {
     const allowedStatuses: DocumentStatus[] = [
       DocumentStatus.APPROVED,
       DocumentStatus.REJECTED,
       DocumentStatus.NEED_MORE_INFO,
     ];
     if (!allowedStatuses.includes(dto.status)) {
-      throw new BadRequestException(
-        'Only APPROVED, REJECTED, or NEED_MORE_INFO are allowed.',
-      );
+      throw new BadRequestException('Only APPROVED, REJECTED, or NEED_MORE_INFO are allowed.');
     }
 
     const document = await this.prisma.petDocument.update({
@@ -703,15 +632,9 @@ export class AdminService {
     });
 
     await this.refreshPetVerification(document.petId);
-    await this.audit(
-      actor.id,
-      'ADMIN_REVIEW_PET_DOCUMENT',
-      'PetDocument',
-      documentId,
-      {
-        status: dto.status,
-      },
-    );
+    await this.audit(actor.id, 'ADMIN_REVIEW_PET_DOCUMENT', 'PetDocument', documentId, {
+      status: dto.status,
+    });
 
     return this.prisma.petDocument.findUnique({
       where: { id: documentId },
@@ -741,27 +664,14 @@ export class AdminService {
       where: { id: reportId },
       data: { isResolved: true },
     });
-    await this.audit(
-      actor.id,
-      'ADMIN_RESOLVE_MATCHING_REPORT',
-      'PetReport',
-      reportId,
-    );
+    await this.audit(actor.id, 'ADMIN_RESOLVE_MATCHING_REPORT', 'PetReport', reportId);
     return report;
   }
 
-  getBreedRules(query: {
-    species?: Species;
-    active?: string;
-    search?: string;
-  }) {
+  getBreedRules(query: { species?: Species; active?: string; search?: string }) {
     const search = query.search?.trim();
     const active =
-      query.active === 'true'
-        ? true
-        : query.active === 'false'
-          ? false
-          : undefined;
+      query.active === 'true' ? true : query.active === 'false' ? false : undefined;
 
     return this.prisma.breedRule.findMany({
       where: {
@@ -783,48 +693,23 @@ export class AdminService {
 
   async createBreedRule(actor: AdminActor, dto: CreateBreedRuleDto) {
     const data = this.normalizeBreedRule(dto);
-    await this.ensureBreedRulePairAvailable(
-      data.species,
-      data.breedA,
-      data.breedB,
-    );
+    await this.ensureBreedRulePairAvailable(data.species, data.breedA, data.breedB);
 
     const rule = await this.prisma.breedRule.create({ data });
-    await this.audit(
-      actor.id,
-      'ADMIN_CREATE_BREED_RULE',
-      'BreedRule',
-      rule.id,
-      data,
-    );
+    await this.audit(actor.id, 'ADMIN_CREATE_BREED_RULE', 'BreedRule', rule.id, data);
     return rule;
   }
 
-  async updateBreedRule(
-    actor: AdminActor,
-    ruleId: string,
-    dto: UpdateBreedRuleDto,
-  ) {
+  async updateBreedRule(actor: AdminActor, ruleId: string, dto: UpdateBreedRuleDto) {
     await this.ensureBreedRuleExists(ruleId);
     const data = this.normalizeBreedRule(dto);
-    await this.ensureBreedRulePairAvailable(
-      data.species,
-      data.breedA,
-      data.breedB,
-      ruleId,
-    );
+    await this.ensureBreedRulePairAvailable(data.species, data.breedA, data.breedB, ruleId);
 
     const rule = await this.prisma.breedRule.update({
       where: { id: ruleId },
       data,
     });
-    await this.audit(
-      actor.id,
-      'ADMIN_UPDATE_BREED_RULE',
-      'BreedRule',
-      ruleId,
-      data,
-    );
+    await this.audit(actor.id, 'ADMIN_UPDATE_BREED_RULE', 'BreedRule', ruleId, data);
     return rule;
   }
 
@@ -848,7 +733,9 @@ export class AdminService {
     const officialBreeds = await this.prisma.breed.findMany({
       where: {
         ...(query.species ? { species: query.species } : {}),
-        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        ...(search
+          ? { name: { contains: search, mode: 'insensitive' } }
+          : {}),
       },
       orderBy: [{ species: 'asc' }, { name: 'asc' }],
     });
@@ -866,8 +753,7 @@ export class AdminService {
 
     const customBreeds = userPets
       .filter(
-        (p) =>
-          !officialBreedSet.has(`${p.species}_${p.breed.trim().toLowerCase()}`),
+        (p) => !officialBreedSet.has(`${p.species}_${p.breed.trim().toLowerCase()}`),
       )
       .map((p) => ({
         species: p.species,
@@ -887,9 +773,7 @@ export class AdminService {
       where: { species_name: { species: dto.species, name } },
     });
     if (existing) {
-      throw new BadRequestException(
-        'Giống thú cưng này đã tồn tại trong danh mục.',
-      );
+      throw new BadRequestException('Giống thú cưng này đã tồn tại trong danh mục.');
     }
 
     const breed = await this.prisma.breed.create({
@@ -900,21 +784,15 @@ export class AdminService {
       },
     });
 
-    await this.audit(actor.id, 'ADMIN_CREATE_BREED', 'Breed', breed.id, {
-      species: dto.species,
-      name,
-    });
+    await this.audit(actor.id, 'ADMIN_CREATE_BREED', 'Breed', breed.id, { species: dto.species, name });
     return breed;
   }
 
   async updateBreed(actor: AdminActor, id: string, dto: UpdateBreedDto) {
     const existing = await this.prisma.breed.findUnique({ where: { id } });
-    if (!existing)
-      throw new NotFoundException('Không tìm thấy giống thú cưng.');
+    if (!existing) throw new NotFoundException('Không tìm thấy giống thú cưng.');
 
-    const name = dto.name
-      ? dto.name.trim().replace(/\s+/g, ' ')
-      : existing.name;
+    const name = dto.name ? dto.name.trim().replace(/\s+/g, ' ') : existing.name;
 
     const breed = await this.prisma.breed.update({
       where: { id },
@@ -930,25 +808,19 @@ export class AdminService {
 
   async deleteBreed(actor: AdminActor, id: string) {
     const existing = await this.prisma.breed.findUnique({ where: { id } });
-    if (!existing)
-      throw new NotFoundException('Không tìm thấy giống thú cưng.');
+    if (!existing) throw new NotFoundException('Không tìm thấy giống thú cưng.');
 
     await this.prisma.breed.delete({ where: { id } });
-    await this.audit(actor.id, 'ADMIN_DELETE_BREED', 'Breed', id, {
-      species: existing.species,
-      name: existing.name,
-    });
+    await this.audit(actor.id, 'ADMIN_DELETE_BREED', 'Breed', id, { species: existing.species, name: existing.name });
     return { success: true };
   }
 
   async getStores(_query: { status?: ApprovalStatus }) {
-    const [store, totalProducts, totalOrders] = await this.prisma.$transaction([
+    const [store, totalProducts, totalOrders] = await Promise.all([
       this.prisma.store.findFirst({
         orderBy: { createdAt: 'asc' },
         include: {
-          manager: {
-            select: { id: true, name: true, email: true, role: true },
-          },
+          manager: { select: { id: true, name: true, email: true, role: true } },
         },
       }),
       this.prisma.product.count(),
@@ -958,6 +830,58 @@ export class AdminService {
     return store
       ? [{ ...store, _count: { products: totalProducts, orders: totalOrders } }]
       : [];
+  }
+
+  async getSystemProfile() {
+    const [store, spa] = await Promise.all([
+      this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } }),
+      this.prisma.addressSpa.findFirst({ orderBy: { createdAt: 'asc' } }),
+    ]);
+
+    return {
+      name: store?.name || spa?.name || 'PetMatching',
+      description: store?.description || spa?.description || '',
+      address: store?.address?.trim() || spa?.address?.trim() || '',
+      phone: store?.phone?.trim() || spa?.phone?.trim() || '',
+      storeStatus: store?.status ?? ApprovalStatus.ACTIVE,
+      spaStatus: spa?.status ?? ApprovalStatus.ACTIVE,
+    };
+  }
+
+  async updateSystemProfile(
+    actor: AdminActor,
+    dto: {
+      name: string;
+      description?: string;
+      address: string;
+      phone: string;
+      storeStatus: ApprovalStatus;
+      spaStatus: ApprovalStatus;
+    },
+  ) {
+    const shared = {
+      name: dto.name?.trim(),
+      description: dto.description?.trim() || null,
+      address: dto.address?.trim(),
+      phone: dto.phone?.trim(),
+    };
+    if (!shared.name || !shared.address || !shared.phone) {
+      throw new BadRequestException('Tên, địa chỉ và số điện thoại không được để trống.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const [stores, spas] = await Promise.all([
+        tx.store.updateMany({ data: { ...shared, status: dto.storeStatus } }),
+        tx.addressSpa.updateMany({ data: { ...shared, status: dto.spaStatus } }),
+      ]);
+      if (!stores.count || !spas.count) {
+        throw new NotFoundException('Không tìm thấy dữ liệu Store hoặc Spa để cập nhật.');
+      }
+    });
+
+    const profile = { ...shared, storeStatus: dto.storeStatus, spaStatus: dto.spaStatus };
+    await this.audit(actor.id, 'ADMIN_UPDATE_SYSTEM_PROFILE', 'SystemProfile', 'shared', profile);
+    return profile;
   }
 
   getStoreProducts(storeId?: string) {
@@ -975,11 +899,7 @@ export class AdminService {
       include: {
         user: { select: { id: true, name: true, email: true } },
         store: { select: { id: true, name: true, status: true } },
-        items: {
-          include: {
-            product: { select: { id: true, name: true, imageUrl: true } },
-          },
-        },
+        items: { include: { product: { select: { id: true, name: true, imageUrl: true } } } },
       },
     });
   }
@@ -1002,63 +922,32 @@ export class AdminService {
       include: { manager: { select: { id: true, name: true, email: true } } },
     });
     const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      23,
-      59,
-      59,
-      999,
-    );
-    const storeFilter = store
-      ? { storeId: store.id }
-      : { storeId: '__missing__' };
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const storeFilter = store ? { storeId: store.id } : { storeId: '__missing__' };
 
-    const [
-      products,
-      activeProducts,
-      outOfStockProducts,
-      todayOrders,
-      pendingOrders,
-      completedOrders,
-      revenue,
-      recentOrders,
-    ] = await this.prisma.$transaction([
-      this.prisma.product.count({ where: storeFilter }),
-      this.prisma.product.count({ where: { ...storeFilter, isActive: true } }),
-      this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
-      this.prisma.order.count({
-        where: {
-          ...storeFilter,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-      }),
-      this.prisma.order.count({
-        where: { ...storeFilter, status: OrderStatus.PENDING },
-      }),
-      this.prisma.order.count({
-        where: { ...storeFilter, status: OrderStatus.DELIVERED },
-      }),
-      this.prisma.order.aggregate({
-        where: { ...storeFilter, status: { not: OrderStatus.CANCELLED } },
-        _sum: { totalAmount: true },
-      }),
-      this.prisma.order.findMany({
-        where: storeFilter,
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        include: {
-          user: { select: { name: true } },
-          items: { select: { quantity: true } },
-        },
-      }),
-    ]);
+    const [products, activeProducts, outOfStockProducts, todayOrders, pendingOrders, completedOrders, revenue, recentOrders] =
+      await Promise.all([
+        this.prisma.product.count({ where: storeFilter }),
+        this.prisma.product.count({ where: { ...storeFilter, isActive: true } }),
+        this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
+        this.prisma.order.count({ where: { ...storeFilter, createdAt: { gte: startOfDay, lte: endOfDay } } }),
+        this.prisma.order.count({ where: { ...storeFilter, status: OrderStatus.PENDING } }),
+        this.prisma.order.count({ where: { ...storeFilter, status: OrderStatus.DELIVERED } }),
+        this.prisma.order.aggregate({
+          where: this.recognizedStoreRevenueWhere(store?.id),
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.findMany({
+          where: storeFilter,
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          include: {
+            user: { select: { name: true } },
+            items: { select: { quantity: true } },
+          },
+        }),
+      ]);
 
     return {
       store,
@@ -1081,64 +970,36 @@ export class AdminService {
       include: { manager: { select: { id: true, name: true, email: true } } },
     });
     const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      23,
-      59,
-      59,
-      999,
-    );
-    const addressFilter = spa
-      ? { addressSpaId: spa.id }
-      : { addressSpaId: '__missing__' };
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const addressFilter = spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' };
 
-    const [
-      services,
-      staffs,
-      todayBookings,
-      pendingBookings,
-      completedBookings,
-      revenue,
-      upcomingBookings,
-    ] = await this.prisma.$transaction([
-      this.prisma.spaService.count({ where: { isActive: true } }),
-      this.prisma.spaStaff.count({
-        where: spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' },
-      }),
-      this.prisma.spaBooking.count({
-        where: {
-          ...addressFilter,
-          scheduledAt: { gte: startOfDay, lte: endOfDay },
-        },
-      }),
-      this.prisma.spaBooking.count({
-        where: { ...addressFilter, status: SpaBookingStatus.PENDING },
-      }),
-      this.prisma.spaBooking.count({
-        where: { ...addressFilter, status: SpaBookingStatus.COMPLETED },
-      }),
-      this.prisma.spaBooking.aggregate({
-        where: { ...addressFilter, status: SpaBookingStatus.COMPLETED },
-        _sum: { priceSnapshot: true },
-      }),
-      this.prisma.spaBooking.findMany({
-        where: { ...addressFilter, scheduledAt: { gte: now } },
-        orderBy: { scheduledAt: 'asc' },
-        take: 5,
-        include: {
-          user: { select: { name: true } },
-          staff: { select: { name: true } },
-          service: { select: { name: true } },
-        },
-      }),
-    ]);
+    const [services, staffs, todayBookings, pendingBookings, completedBookings, revenue, legacyRevenue, upcomingBookings] =
+      await Promise.all([
+        this.prisma.spaService.count({ where: { isActive: true } }),
+        this.prisma.spaStaff.count({ where: spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' } }),
+        this.prisma.spaBooking.count({ where: { ...addressFilter, scheduledAt: { gte: startOfDay, lte: endOfDay } } }),
+        this.prisma.spaBooking.count({ where: { ...addressFilter, status: SpaBookingStatus.PENDING } }),
+        this.prisma.spaBooking.count({ where: { ...addressFilter, status: SpaBookingStatus.COMPLETED } }),
+        this.prisma.spaBooking.aggregate({
+          where: this.recognizedSpaRevenueWhere(spa?.id),
+          _sum: { totalPrice: true },
+        }),
+        this.prisma.spaBooking.aggregate({
+          where: { ...this.recognizedSpaRevenueWhere(spa?.id), totalPrice: 0 },
+          _sum: { priceSnapshot: true },
+        }),
+        this.prisma.spaBooking.findMany({
+          where: { ...addressFilter, scheduledAt: { gte: now } },
+          orderBy: { scheduledAt: 'asc' },
+          take: 5,
+          include: {
+            user: { select: { name: true } },
+            staff: { select: { name: true } },
+            service: { select: { name: true } },
+          },
+        }),
+      ]);
 
     return {
       spa,
@@ -1148,7 +1009,7 @@ export class AdminService {
         todayBookings,
         pendingBookings,
         completedBookings,
-        revenue: revenue._sum.priceSnapshot ?? 0,
+        revenue: (revenue._sum.totalPrice ?? 0) + (legacyRevenue._sum.priceSnapshot ?? 0),
       },
       upcomingBookings,
     };
@@ -1157,17 +1018,12 @@ export class AdminService {
   getSpaServices() {
     return this.prisma.spaService.findMany({
       orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
-      include: {
-        category: { select: { name: true } },
-        _count: { select: { bookings: true } },
-      },
+      include: { category: { select: { name: true } }, _count: { select: { bookings: true } } },
     });
   }
 
   async getSpaStaffSchedule() {
-    const spa = await this.prisma.addressSpa.findFirst({
-      orderBy: { createdAt: 'asc' },
-    });
+    const spa = await this.prisma.addressSpa.findFirst({ orderBy: { createdAt: 'asc' } });
     return this.prisma.spaBooking.findMany({
       where: { addressSpaId: spa?.id ?? '__missing__', staffId: { not: null } },
       orderBy: { scheduledAt: 'desc' },
@@ -1180,117 +1036,6 @@ export class AdminService {
     });
   }
 
-  async updateSpaSettings(
-    actor: AdminActor,
-    dto: {
-      name: string;
-      phone?: string;
-      address: string;
-      description?: string;
-      status?: ApprovalStatus;
-    },
-  ) {
-    if (!dto.name?.trim() || !dto.address?.trim()) {
-      throw new BadRequestException('Tên và địa chỉ Spa không được để trống.');
-    }
-
-    const currentSpa = await this.prisma.addressSpa.findFirst({
-      orderBy: { createdAt: 'asc' },
-    });
-    const data = {
-      name: dto.name.trim(),
-      phone: dto.phone?.trim() || null,
-      address: dto.address.trim(),
-      description: dto.description?.trim() || null,
-      status: dto.status ?? ApprovalStatus.ACTIVE,
-    };
-    const spa = currentSpa
-      ? await this.prisma.addressSpa.update({
-          where: { id: currentSpa.id },
-          data,
-        })
-      : await this.prisma.addressSpa.create({
-          data: { id: 'petmatching_main_spa', ...data },
-        });
-
-    await this.audit(
-      actor.id,
-      'ADMIN_UPDATE_SPA_SETTINGS',
-      'AddressSpa',
-      spa.id,
-    );
-    return spa;
-  }
-
-  async updateStoreSettings(
-    actor: AdminActor,
-    dto: {
-      name: string;
-      phone?: string;
-      address?: string;
-      description?: string;
-    },
-  ) {
-    if (!dto.name?.trim()) {
-      throw new BadRequestException('Tên cửa hàng không được để trống.');
-    }
-
-    const currentStore = await this.prisma.store.findFirst({
-      orderBy: { createdAt: 'asc' },
-    });
-    const store = currentStore
-      ? await this.prisma.store.update({
-          where: { id: currentStore.id },
-          data: {
-            name: dto.name.trim(),
-            phone: dto.phone?.trim() || null,
-            address: dto.address?.trim() || null,
-            description: dto.description?.trim() || null,
-          },
-        })
-      : await this.prisma.store.create({
-          data: {
-            id: 'petmatching_main_store',
-            name: dto.name.trim(),
-            phone: dto.phone?.trim() || null,
-            address: dto.address?.trim() || null,
-            description: dto.description?.trim() || null,
-            status: ApprovalStatus.ACTIVE,
-          },
-        });
-
-    await this.audit(
-      actor.id,
-      'ADMIN_UPDATE_STORE_SETTINGS',
-      'Store',
-      store.id,
-    );
-    return store;
-  }
-
-  async updateSpaBranchStatus(
-    actor: AdminActor,
-    branchId: string,
-    dto: UpdateApprovalStatusDto,
-  ) {
-    const branch = await this.prisma.addressSpa.update({
-      where: { id: branchId },
-      data: { status: dto.status },
-    });
-
-    await this.audit(
-      actor.id,
-      'ADMIN_UPDATE_SPA_BRANCH_STATUS',
-      'AddressSpa',
-      branchId,
-      {
-        status: dto.status,
-      },
-    );
-
-    return branch;
-  }
-
   getSpaBookings(categoryId?: string) {
     return this.prisma.spaBooking.findMany({
       where: categoryId ? { categoryId } : undefined,
@@ -1299,9 +1044,7 @@ export class AdminService {
         user: { select: { id: true, name: true, email: true } },
         staff: { select: { id: true, name: true, email: true } },
         category: { select: { id: true, name: true, status: true } },
-        service: {
-          select: { id: true, name: true, price: true, durationMin: true },
-        },
+        service: { select: { id: true, name: true, price: true, durationMin: true } },
       },
     });
   }
@@ -1316,11 +1059,7 @@ export class AdminService {
     });
   }
 
-  async resolveComplaint(
-    actor: AdminActor,
-    complaintId: string,
-    dto: ResolveComplaintDto,
-  ) {
+  async resolveComplaint(actor: AdminActor, complaintId: string, dto: ResolveComplaintDto) {
     const status = this.mapComplaintStatus(dto.action);
     const complaint = await this.prisma.complaint.update({
       where: { id: complaintId },
@@ -1333,55 +1072,28 @@ export class AdminService {
       },
     });
 
-    await this.audit(
-      actor.id,
-      'ADMIN_RESOLVE_COMPLAINT',
-      'Complaint',
-      complaintId,
-      {
-        action: dto.action,
-      },
-    );
+    await this.audit(actor.id, 'ADMIN_RESOLVE_COMPLAINT', 'Complaint', complaintId, {
+      action: dto.action,
+    });
     return complaint;
   }
 
   private async refreshPetVerification(petId: string) {
-    const [
-      approvedDocuments,
-      pendingDocuments,
-      approvedVaccineDocuments,
-      approvedPedigreeDocuments,
-    ] = await Promise.all([
-      this.prisma.petDocument.count({
-        where: { petId, status: DocumentStatus.APPROVED },
-      }),
-      this.prisma.petDocument.count({
-        where: {
-          petId,
-          status: {
-            in: [
-              DocumentStatus.PENDING,
-              DocumentStatus.REVIEWING,
-              DocumentStatus.NEED_MORE_INFO,
-            ],
-          },
-        },
-      }),
-      this.prisma.petDocument.count({
-        where: {
-          petId,
-          type: DocumentType.VACCINE_RECORD,
-          status: DocumentStatus.APPROVED,
-        },
-      }),
-      this.prisma.petDocument.count({
-        where: {
-          petId,
-          type: DocumentType.PEDIGREE_CERT,
-          status: DocumentStatus.APPROVED,
-        },
-      }),
-    ]);
+    const [approvedDocuments, pendingDocuments, approvedVaccineDocuments, approvedPedigreeDocuments] =
+      await Promise.all([
+        this.prisma.petDocument.count({
+          where: { petId, status: DocumentStatus.APPROVED },
+        }),
+        this.prisma.petDocument.count({
+          where: { petId, status: { in: [DocumentStatus.PENDING, DocumentStatus.REVIEWING, DocumentStatus.NEED_MORE_INFO] } },
+        }),
+        this.prisma.petDocument.count({
+          where: { petId, type: DocumentType.VACCINE_RECORD, status: DocumentStatus.APPROVED },
+        }),
+        this.prisma.petDocument.count({
+          where: { petId, type: DocumentType.PEDIGREE_CERT, status: DocumentStatus.APPROVED },
+        }),
+      ]);
 
     const data: Prisma.PetUpdateInput = {
       verificationBadge:
@@ -1407,9 +1119,7 @@ export class AdminService {
     const first = dto.breedA.trim().replace(/\s+/g, ' ');
     const second = dto.breedB.trim().replace(/\s+/g, ' ');
     if (first.localeCompare(second, 'vi', { sensitivity: 'base' }) === 0) {
-      throw new BadRequestException(
-        'Hai giống trong một quy tắc phải khác nhau.',
-      );
+      throw new BadRequestException('Hai giống trong một quy tắc phải khác nhau.');
     }
 
     const [breedA, breedB] =
@@ -1429,9 +1139,7 @@ export class AdminService {
   }
 
   private async ensureBreedRuleExists(ruleId: string) {
-    const rule = await this.prisma.breedRule.findUnique({
-      where: { id: ruleId },
-    });
+    const rule = await this.prisma.breedRule.findUnique({ where: { id: ruleId } });
     if (!rule) throw new NotFoundException('Không tìm thấy quy tắc giống.');
     return rule;
   }
@@ -1460,9 +1168,7 @@ export class AdminService {
     });
 
     if (duplicate) {
-      throw new BadRequestException(
-        'Cặp giống này đã có quy tắc trong hệ thống.',
-      );
+      throw new BadRequestException('Cặp giống này đã có quy tắc trong hệ thống.');
     }
   }
 
@@ -1480,13 +1186,7 @@ export class AdminService {
     return user;
   }
 
-  private audit(
-    actorId: string | undefined,
-    action: string,
-    targetType: string,
-    targetId?: string,
-    metadata?: object,
-  ) {
+  private audit(actorId: string | undefined, action: string, targetType: string, targetId?: string, metadata?: object) {
     return this.prisma.auditLog.create({
       data: {
         actorId,

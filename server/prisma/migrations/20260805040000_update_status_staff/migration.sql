@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "spa_staff" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'ACTIVE';

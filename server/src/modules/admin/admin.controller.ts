@@ -34,7 +34,6 @@ import {
   ResolveComplaintDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
-  UpdateApprovalStatusDto,
   UpdateUserRoleDto,
   UpdateBreedRuleDto,
   CreateBreedDto,
@@ -228,6 +227,26 @@ export class AdminController {
   @Get('stores')
   getStores(@Query('status') status?: ApprovalStatus) {
     return this.adminService.getStores({ status });
+  }
+
+  @Get('system-profile')
+  getSystemProfile() {
+    return this.adminService.getSystemProfile();
+  }
+
+  @Put('system-profile')
+  updateSystemProfile(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: {
+      name: string;
+      description?: string;
+      address: string;
+      phone: string;
+      storeStatus: ApprovalStatus;
+      spaStatus: ApprovalStatus;
+    },
+  ) {
+    return this.adminService.updateSystemProfile(request.user, dto);
   }
 
   @Get('store-dashboard')

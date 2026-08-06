@@ -95,14 +95,6 @@ export interface ManagerCustomer {
   }[];
 }
 
-export interface StoreSettings {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  description?: string;
-}
-
 export interface ProductUnit {
   id: string;
   name: string;
@@ -138,9 +130,6 @@ export const managerApi = {
 
   getCustomers: () => api.get<ManagerCustomer[]>('/manager/customers'),
 
-  getStoreSettings: () => api.get<StoreSettings>('/manager/store-settings'),
-  updateStoreSettings: (data: Partial<StoreSettings>) => api.put<StoreSettings>('/manager/store-settings', data),
-  
   createCategory: (data: { name: string }) => api.post<Category>('/manager/categories', data),
   updateCategory: (id: string, data: { name: string }) => api.put<Category>(`/manager/categories/${id}`, data),
   deleteCategory: (id: string) => api.delete(`/manager/categories/${id}`),

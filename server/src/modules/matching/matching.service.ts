@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -17,7 +18,11 @@ import {
   VerificationBadge,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { MailService } from '../../common/mail/mail.service';
+import { ConfirmPregnancyDto } from './dto/confirm-pregnancy.dto';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
+import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
 
@@ -40,11 +45,42 @@ interface CompatibilityResult {
   };
 }
 
+const matchParticipantInclude = Prisma.validator<Prisma.MatchInclude>()({
+  pet1: {
+    include: { owner: { select: { id: true, name: true, email: true } } },
+  },
+  pet2: {
+    include: { owner: { select: { id: true, name: true, email: true } } },
+  },
+});
+
+const matchActionSelect = Prisma.validator<Prisma.MatchSelect>()({
+  id: true,
+  status: true,
+  pet1MeetingConfirmedAt: true,
+  pet2MeetingConfirmedAt: true,
+  breedingNote: true,
+  expectedDueDate: true,
+  completedAt: true,
+  endedAt: true,
+  endReason: true,
+});
+
+type MatchWithParticipants = Prisma.MatchGetPayload<{
+  include: typeof matchParticipantInclude;
+}>;
+
 // Tuổi tối thiểu cho phối giống (tháng)
 const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
 
 // Chu kỳ nghỉ phối giống (tháng)
 const BREEDING_COOLDOWN_MONTHS = { DOG: 6, CAT: 3 } as const;
+
+const CHAT_ENABLED_MATCH_STATUSES: MatchStatus[] = [
+  MatchStatus.ACTIVE,
+  MatchStatus.MET,
+  MatchStatus.COMPLETED,
+];
 
 function calculateHaversineDistance(
   lat1: number,
@@ -67,7 +103,13 @@ function calculateHaversineDistance(
 
 @Injectable()
 export class MatchingService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(MatchingService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private readonly cloudinary: CloudinaryService,
+    private readonly mailService: MailService,
+  ) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
@@ -340,7 +382,18 @@ export class MatchingService {
 
       const match = await tx.match.upsert({
         where: { pet1Id_pet2Id: { pet1Id, pet2Id } },
-        update: { status: MatchStatus.ACTIVE },
+        update: {
+          status: MatchStatus.ACTIVE,
+          pet1MeetingConfirmedAt: null,
+          pet2MeetingConfirmedAt: null,
+          firstMeetingConfirmerId: null,
+          breedingNote: null,
+          expectedDueDate: null,
+          completedAt: null,
+          endedAt: null,
+          endedById: null,
+          endReason: null,
+        },
         create: {
           pet1Id,
           pet2Id,
@@ -378,7 +431,6 @@ export class MatchingService {
   getMatches(userId: string) {
     return this.prisma.match.findMany({
       where: {
-        status: MatchStatus.ACTIVE,
         OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
       },
       include: {
@@ -392,10 +444,393 @@ export class MatchingService {
             owner: { select: { id: true, name: true, avatarUrl: true } },
           },
         },
-        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { sender: { select: { id: true, name: true } } },
+        },
+        _count: {
+          select: {
+            messages: { where: { senderId: { not: userId }, isRead: false } },
+          },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  async confirmMeeting(userId: string, matchId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const match = await this.getLockedMatch(tx, matchId);
+      const participant = this.getParticipantContext(match, userId);
+
+      if (participant.ownMeetingConfirmedAt) {
+        throw new ConflictException('Bạn đã xác nhận gặp mặt trước đó.');
+      }
+      if (match.status === MatchStatus.CANCELLED) {
+        throw new BadRequestException('Match đã kết thúc.');
+      }
+      if (match.status !== MatchStatus.ACTIVE) {
+        throw new BadRequestException(
+          'Chỉ match đang hoạt động mới có thể xác nhận gặp mặt.',
+        );
+      }
+
+      const confirmedAt = new Date();
+      const isCompleted = Boolean(participant.otherMeetingConfirmedAt);
+      const confirmationData =
+        participant.side === 'pet1'
+          ? { pet1MeetingConfirmedAt: confirmedAt }
+          : { pet2MeetingConfirmedAt: confirmedAt };
+      const updatedMatch = await tx.match.update({
+        where: { id: matchId },
+        data: {
+          ...confirmationData,
+          status: isCompleted ? MatchStatus.MET : MatchStatus.ACTIVE,
+          firstMeetingConfirmerId: isCompleted
+            ? (match.firstMeetingConfirmerId ?? participant.otherOwner.id)
+            : userId,
+        },
+        select: matchActionSelect,
+      });
+
+      if (participant.ownPet.gender === Gender.MALE) {
+        await tx.pet.update({
+          where: { id: participant.ownPet.id },
+          data: {
+            status: PetStatus.BREAKDOWN,
+            isAvailableForMatching: false,
+            lastBreedingAt: confirmedAt,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'MATCH_CONFIRM_MEETING',
+          targetType: 'Match',
+          targetId: matchId,
+          metadata: {
+            side: participant.side,
+            result: isCompleted ? MatchStatus.MET : 'WAITING_FOR_OTHER_OWNER',
+            petStatus:
+              participant.ownPet.gender === Gender.MALE
+                ? PetStatus.BREAKDOWN
+                : participant.ownPet.status,
+          },
+        },
+      });
+
+      return {
+        match: updatedMatch,
+        email: {
+          completed: isCompleted,
+          email: participant.otherOwner.email,
+          recipientName: participant.otherOwner.name,
+          confirmerName: participant.ownOwner.name,
+          pet1Name: match.pet1.name,
+          pet2Name: match.pet2.name,
+        },
+      };
+    });
+
+    try {
+      if (result.email.completed) {
+        await this.mailService.sendMeetingCompletedEmail(result.email);
+      } else {
+        await this.mailService.sendMeetingConfirmationRequestedEmail(
+          result.email,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        'Không thể gửi email xác nhận gặp mặt sau khi đã lưu kết quả.',
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    return result.match;
+  }
+
+  async confirmPregnancy(
+    userId: string,
+    matchId: string,
+    dto: ConfirmPregnancyDto,
+  ) {
+    const expectedDueDate = dto.expectedDueDate
+      ? new Date(dto.expectedDueDate)
+      : null;
+    const note = dto.note?.trim() || null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const match = await this.getLockedMatch(tx, matchId);
+      const participant = this.getParticipantContext(match, userId);
+
+      if (match.status === MatchStatus.CANCELLED) {
+        throw new BadRequestException('Match đã kết thúc.');
+      }
+      if (match.status === MatchStatus.COMPLETED) {
+        throw new ConflictException(
+          'Kết quả mang thai đã được xác nhận trước đó.',
+        );
+      }
+      if (match.status !== MatchStatus.MET) {
+        throw new BadRequestException(
+          'Hai bên cần hoàn tất xác nhận gặp mặt trước.',
+        );
+      }
+      if (participant.ownPet.gender !== Gender.FEMALE) {
+        throw new ForbiddenException(
+          'Chỉ chủ của thú cưng cái mới có thể xác nhận mang thai.',
+        );
+      }
+
+      const completedAt = new Date();
+      const updatedMatch = await tx.match.update({
+        where: { id: matchId },
+        data: {
+          status: MatchStatus.COMPLETED,
+          breedingNote: note,
+          expectedDueDate,
+          completedAt,
+        },
+        select: matchActionSelect,
+      });
+      await tx.pet.update({
+        where: { id: participant.ownPet.id },
+        data: { lastBreedingAt: completedAt },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'MATCH_CONFIRM_PREGNANCY',
+          targetType: 'Match',
+          targetId: matchId,
+          metadata: { expectedDueDate: expectedDueDate?.toISOString() ?? null },
+        },
+      });
+
+      return updatedMatch;
+    });
+  }
+
+  async endMatch(userId: string, matchId: string, dto: EndMatchDto) {
+    const reason = dto.reason?.trim() || null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const match = await this.getLockedMatch(tx, matchId);
+      this.getParticipantContext(match, userId);
+
+      if (match.status === MatchStatus.CANCELLED) {
+        throw new ConflictException('Match đã kết thúc trước đó.');
+      }
+
+      const endedAt = new Date();
+      const previousStatus = match.status;
+      const updatedMatch = await tx.match.update({
+        where: { id: matchId },
+        data: {
+          status: MatchStatus.CANCELLED,
+          endedAt,
+          endedById: userId,
+          endReason: reason,
+        },
+        select: matchActionSelect,
+      });
+      await tx.pet.updateMany({
+        where: { id: { in: [match.pet1Id, match.pet2Id] } },
+        data: { updatedAt: endedAt },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'MATCH_END',
+          targetType: 'Match',
+          targetId: matchId,
+          metadata: { previousStatus, reason },
+        },
+      });
+
+      return updatedMatch;
+    });
+  }
+
+  async getMessages(userId: string, matchId: string) {
+    const match = await this.prisma.match.findFirst({
+      where: {
+        id: matchId,
+        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+      },
+      select: {
+        messages: {
+          include: {
+            sender: { select: { id: true, name: true, avatarUrl: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!match) {
+      throw new NotFoundException('Active match not found.');
+    }
+
+    const hasUnreadMessages = match.messages.some(
+      (message) => message.senderId !== userId && !message.isRead,
+    );
+    if (hasUnreadMessages) {
+      await this.prisma.message.updateMany({
+        where: { matchId, senderId: { not: userId }, isRead: false },
+        data: { isRead: true },
+      });
+    }
+
+    return match.messages.map((message) =>
+      message.senderId === userId ? message : { ...message, isRead: true },
+    );
+  }
+
+  async sendMessage(userId: string, matchId: string, content: string) {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      throw new BadRequestException('Message content cannot be empty.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const match = await this.getLockedMatch(tx, matchId);
+      this.ensureMatchAllowsChat(match, userId);
+
+      const message = await tx.message.create({
+        data: { matchId, senderId: userId, content: normalizedContent },
+        include: {
+          sender: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      });
+      await tx.match.update({
+        where: { id: matchId },
+        data: { updatedAt: new Date() },
+      });
+      return message;
+    });
+  }
+
+  async sendImageMessage(
+    userId: string,
+    matchId: string,
+    file: { buffer: Buffer; mimetype: string },
+    content?: string,
+  ) {
+    await this.getOwnedActiveMatch(userId, matchId);
+    const uploaded = await this.cloudinary.uploadBuffer(
+      file.buffer,
+      `petmatching/users/${userId}/chat/${matchId}`,
+      {
+        quality: 'auto:good',
+        fetch_format: 'auto',
+        transformation: [{ width: 1600, height: 1600, crop: 'limit' }],
+      },
+    );
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const match = await this.getLockedMatch(tx, matchId);
+        this.ensureMatchAllowsChat(match, userId);
+
+        const message = await tx.message.create({
+          data: {
+            matchId,
+            senderId: userId,
+            content: content?.trim().slice(0, 2000) || '',
+            imageUrl: uploaded.url,
+          },
+          include: {
+            sender: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        });
+        await tx.match.update({
+          where: { id: matchId },
+          data: { updatedAt: new Date() },
+        });
+        return message;
+      });
+    } catch (error) {
+      await this.cloudinary.destroyByUrl(uploaded.url);
+      throw error;
+    }
+  }
+
+  private async getOwnedActiveMatch(userId: string, matchId: string) {
+    const match = await this.prisma.match.findFirst({
+      where: {
+        id: matchId,
+        status: { in: CHAT_ENABLED_MATCH_STATUSES },
+        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+      },
+      select: { id: true },
+    });
+    if (!match) {
+      throw new NotFoundException(
+        'Không tìm thấy match đang cho phép trò chuyện.',
+      );
+    }
+    return match;
+  }
+
+  private ensureMatchAllowsChat(
+    match: MatchWithParticipants,
+    userId: string,
+  ): void {
+    const isParticipant =
+      match.pet1.ownerId === userId || match.pet2.ownerId === userId;
+    const allowsChat = CHAT_ENABLED_MATCH_STATUSES.includes(match.status);
+
+    if (!isParticipant || !allowsChat) {
+      throw new NotFoundException(
+        'Không tìm thấy match đang cho phép trò chuyện.',
+      );
+    }
+  }
+
+  private async getLockedMatch(tx: Prisma.TransactionClient, matchId: string) {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "matches" WHERE "id" = ${matchId} FOR UPDATE`,
+    );
+    const match = await tx.match.findUnique({
+      where: { id: matchId },
+      include: matchParticipantInclude,
+    });
+    if (!match) {
+      throw new NotFoundException('Không tìm thấy match.');
+    }
+    return match;
+  }
+
+  private getParticipantContext(match: MatchWithParticipants, userId: string) {
+    const side =
+      match.pet1.ownerId === userId
+        ? 'pet1'
+        : match.pet2.ownerId === userId
+          ? 'pet2'
+          : null;
+    if (!side) {
+      throw new ForbiddenException(
+        'Bạn không phải là người tham gia match này.',
+      );
+    }
+
+    const isPet1 = side === 'pet1';
+    return {
+      side,
+      ownPet: isPet1 ? match.pet1 : match.pet2,
+      ownOwner: isPet1 ? match.pet1.owner : match.pet2.owner,
+      otherOwner: isPet1 ? match.pet2.owner : match.pet1.owner,
+      ownMeetingConfirmedAt: isPet1
+        ? match.pet1MeetingConfirmedAt
+        : match.pet2MeetingConfirmedAt,
+      otherMeetingConfirmedAt: isPet1
+        ? match.pet2MeetingConfirmedAt
+        : match.pet1MeetingConfirmedAt,
+    };
   }
 
   // =============================================================

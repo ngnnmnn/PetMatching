@@ -38,6 +38,13 @@ interface Pet {
   avatarUrl?: string;
 }
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function BookingDialog({
   isOpen,
   onClose,
@@ -51,11 +58,14 @@ export default function BookingDialog({
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string>('custom');
   const [customPetName, setCustomPetName] = useState<string>('');
-  const [date, setDate] = useState<string>('');
-  const [time, setTime] = useState<string>('09:00');
+  const [date, setDate] = useState<string>(getLocalDateString());
+  const [time, setTime] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [fetchingPets, setFetchingPets] = useState<boolean>(false);
+
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -78,14 +88,60 @@ export default function BookingDialog({
         });
 
       // Reset form
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      setDate(tomorrow.toISOString().split('T')[0]);
-      setTime('09:00');
+      setDate(getLocalDateString());
+      setTime('');
       setNote('');
       setCustomPetName('');
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !branchId || !date) return;
+    setLoadingSlots(true);
+    spaApi.getAvailability(branchId, date, 30)
+      .then((res) => {
+        setAvailableSlots(res.data || []);
+      })
+      .catch(() => {
+        setAvailableSlots([]);
+      })
+      .finally(() => {
+        setLoadingSlots(false);
+      });
+  }, [isOpen, branchId, date]);
+
+  const filteredSlots = React.useMemo(() => {
+    const todayStr = getLocalDateString();
+    const isToday = date === todayStr;
+
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    return availableSlots.filter((slot) => {
+      // Hide slot if no staff available
+      if (!slot.isAvailable || slot.remainingSlots <= 0 || !slot.availableStaffs || slot.availableStaffs.length === 0) {
+        return false;
+      }
+
+      // Hide slot if earlier than current time for today
+      const [h, m] = slot.time.split(':').map(Number);
+      const startMins = h * 60 + m;
+      if (isToday && startMins < currentMins) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [availableSlots, date]);
+
+  useEffect(() => {
+    if (time) {
+      const isValid = filteredSlots.some((s) => s.time === time);
+      if (!isValid) {
+        setTime('');
+      }
+    }
+  }, [filteredSlots, time]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,10 +307,19 @@ export default function BookingDialog({
                 id="booking-date"
                 type="date"
                 value={date}
-                min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} // minimum tomorrow
-                onChange={(e) => setDate(e.target.value)}
+                min={getLocalDateString()}
+                onKeyDown={(e) => e.preventDefault()}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const todayStr = getLocalDateString();
+                  if (!val || val >= todayStr) {
+                    setDate(val);
+                  } else {
+                    setDate(todayStr);
+                  }
+                }}
                 required
-                className="bg-background border-input"
+                className="bg-background border-input cursor-pointer"
               />
             </div>
             <div className="space-y-1.5">
@@ -264,19 +329,20 @@ export default function BookingDialog({
               </Label>
               <Select value={time} onValueChange={setTime}>
                 <SelectTrigger id="booking-time" className="bg-background border-input">
-                  <SelectValue placeholder="Chọn giờ" />
+                  <SelectValue placeholder={loadingSlots ? 'Đang tải...' : 'Chọn giờ'} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="08:00">08:00 AM</SelectItem>
-                  <SelectItem value="09:00">09:00 AM</SelectItem>
-                  <SelectItem value="10:00">10:00 AM</SelectItem>
-                  <SelectItem value="11:00">11:00 AM</SelectItem>
-                  <SelectItem value="13:30">01:30 PM</SelectItem>
-                  <SelectItem value="14:30">02:30 PM</SelectItem>
-                  <SelectItem value="15:30">03:30 PM</SelectItem>
-                  <SelectItem value="16:30">04:30 PM</SelectItem>
-                  <SelectItem value="17:30">05:30 PM</SelectItem>
-                  <SelectItem value="18:30">06:30 PM</SelectItem>
+                  {filteredSlots.length > 0 ? (
+                    filteredSlots.map((slot) => (
+                      <SelectItem key={slot.time} value={slot.time}>
+                        {slot.time} ({slot.remainingSlots} NV rảnh)
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-xs text-muted-foreground text-center">
+                      Không có khung giờ rảnh
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
