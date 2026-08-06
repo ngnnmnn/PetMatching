@@ -205,10 +205,6 @@ function ShopPageContent() {
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any | null>(null);
   const [showPetRow, setShowPetRow] = useState(false);
-
-  // Product Preview Sidebar state
-  const [activePreviewProduct, setActivePreviewProduct] = useState<any | null>(null);
-  const [previewVariant, setPreviewVariant] = useState<any | null>(null);
   const { addToCart } = useCart();
 
   // Load user pets list
@@ -270,34 +266,6 @@ function ShopPageContent() {
       }
     }
   }, [queryPetId, pets, setFilters]);
-
-  // Preview Variant matching logic based on selected pet weight
-  useEffect(() => {
-    if (activePreviewProduct) {
-      if (activePreviewProduct.variants && activePreviewProduct.variants.length > 0) {
-        if (selectedPet && selectedPet.weight > 0) {
-          const w = selectedPet.weight;
-          const matched = activePreviewProduct.variants.find((v: any) => {
-            const nameLower = v.name.toLowerCase();
-            for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
-              if (w >= range.min && w <= range.max) {
-                const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-                if (regex.test(nameLower)) return true;
-              }
-            }
-            return false;
-          });
-          setPreviewVariant(matched || activePreviewProduct.variants[0]);
-        } else {
-          setPreviewVariant(activePreviewProduct.variants[0]);
-        }
-      } else {
-        setPreviewVariant(null);
-      }
-    } else {
-      setPreviewVariant(null);
-    }
-  }, [activePreviewProduct, selectedPet]);
 
   // Apply category from URL query parameters (useful when clicking quick categories from Homepage)
   useEffect(() => {
@@ -408,10 +376,7 @@ function ShopPageContent() {
 
         <main
           id="shop-main-grid"
-          className={cn(
-            "mx-auto space-y-8 px-4 py-8 sm:px-6 transition-all duration-300",
-            activePreviewProduct ? "max-w-[1600px]" : "max-w-7xl"
-          )}
+          className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 transition-all duration-300"
         >
           {/* Quick Categories Section */}
           <section className="space-y-4">
@@ -635,13 +600,7 @@ function ShopPageContent() {
               <div
                 className={cn(
                   "space-y-6 transition-all duration-300",
-                  isFilterOpen
-                    ? activePreviewProduct
-                      ? "lg:col-span-5"
-                      : "lg:col-span-9"
-                    : activePreviewProduct
-                    ? "lg:col-span-8"
-                    : "lg:col-span-12"
+                  isFilterOpen ? "lg:col-span-9" : "lg:col-span-12"
                 )}
               >
                 <SearchFilterBar
@@ -660,16 +619,8 @@ function ShopPageContent() {
                   products={paginatedProducts}
                   loading={loading}
                   selectedPet={selectedPet}
-                  onPreviewClick={(prod) => {
-                    setActivePreviewProduct(prod);
-                  }}
-                  isPreviewOpen={!!activePreviewProduct}
                   gridClassName={
-                    activePreviewProduct
-                      ? isFilterOpen
-                        ? "grid grid-cols-1 sm:grid-cols-2 gap-6"
-                        : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"
-                      : isFilterOpen
+                    isFilterOpen
                       ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
                       : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
                   }
@@ -728,217 +679,6 @@ function ShopPageContent() {
                   </div>
                 )}
               </div>
-
-              {/* Product Preview Sidebar (Right Column) */}
-              {activePreviewProduct && (
-                <div className="hidden lg:block lg:col-span-4 space-y-6 bg-white dark:bg-zinc-900 border-2 border-orange-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xl animate-in slide-in-from-right duration-350 sticky top-28 self-start animate-fadeIn max-h-[calc(100vh-140px)] overflow-y-auto scrollbar-thin">
-                  <div className="flex items-center justify-between border-b pb-3 border-[#EFEAE2] dark:border-zinc-800">
-                    <h3 className="text-sm font-black text-[var(--text-main)] flex items-center gap-1.5">
-                      <Sparkles className="size-4 text-orange-500 fill-orange-500/10 animate-pulse" />
-                      Chi tiết sản phẩm nhanh
-                    </h3>
-                    <button
-                      onClick={() => setActivePreviewProduct(null)}
-                      className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-gray-400 hover:text-gray-600 cursor-pointer transition"
-                    >
-                      <X className="size-4.5" />
-                    </button>
-                  </div>
-
-                  {/* Two Column Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                    {/* Left Column: Image and matched size badge */}
-                    <div className="space-y-4">
-                      <div className="relative aspect-square overflow-hidden rounded-2xl bg-gray-50 border border-gray-100 shadow-2xs">
-                        <img
-                          src={previewVariant?.imageUrl || activePreviewProduct.imageUrl || '/placeholder.svg'}
-                          alt={activePreviewProduct.name}
-                          className="size-full object-cover"
-                        />
-                        
-                        {/* Badge matched weight */}
-                        {(() => {
-                          const isPreviewMatched = !!(
-                            selectedPet &&
-                            selectedPet.weight > 0 &&
-                            previewVariant &&
-                            activePreviewProduct?.variants?.length > 0 &&
-                            (() => {
-                              const w = selectedPet.weight;
-                              const nameLower = previewVariant.name.toLowerCase();
-                              for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
-                                if (w >= range.min && w <= range.max) {
-                                  const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-                                  if (regex.test(nameLower)) return true;
-                                }
-                              }
-                              return false;
-                            })()
-                          );
-
-                          if (isPreviewMatched) {
-                            return (
-                              <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-[10px] font-black text-white px-2.5 py-1.5 shadow-md">
-                                <Sparkles className="size-3 fill-white/20 animate-pulse" />
-                                Phù hợp cho {selectedPet.name}
-                              </span>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </div>
-
-                      {activePreviewProduct.description && (
-                        <div className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800">
-                          <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-wider block mb-1">
-                            Mô tả sản phẩm:
-                          </span>
-                          <p className="text-xs text-[var(--text-main)] leading-relaxed line-clamp-4">
-                            {activePreviewProduct.description}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Right Column: Info details and cart operations */}
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-wider text-[#0F766E]">
-                          {activePreviewProduct.brand || 'PetMatch'}
-                        </p>
-                        <h4 className="text-lg font-black text-[var(--text-main)] leading-6 mt-1">
-                          {activePreviewProduct.name}
-                        </h4>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-xs border-b pb-3 border-[#EFEAE2] dark:border-zinc-800">
-                        <span className="inline-flex items-center gap-1 text-[var(--text-muted)]">
-                          <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
-                          <span className="font-semibold text-[var(--text-main)]">
-                            {activePreviewProduct.rating.toFixed(1)}
-                          </span>
-                          <span>({activePreviewProduct.reviewCount} đánh giá)</span>
-                        </span>
-                        {activePreviewProduct.unit && (
-                          <span className="text-[var(--text-muted)] font-bold">
-                            Đơn vị: {activePreviewProduct.unit}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Variant Selector */}
-                      {activePreviewProduct.variants && activePreviewProduct.variants.length > 0 && (
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-wider block">
-                            Chọn kích cỡ / phân loại:
-                          </span>
-                          <div className="flex flex-wrap gap-2">
-                            {activePreviewProduct.variants.map((v: any) => {
-                              const isSelected = previewVariant?.id === v.id;
-                              
-                              // Check if this specific chip is matched by pet weight
-                              const isChipMatched = selectedPet && selectedPet.weight > 0 && (() => {
-                                const w = selectedPet.weight;
-                                const nameLower = v.name.toLowerCase();
-                                for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
-                                  if (w >= range.min && w <= range.max) {
-                                    const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-                                    if (regex.test(nameLower)) return true;
-                                  }
-                                }
-                                return false;
-                              })();
-
-                              return (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  onClick={() => setPreviewVariant(v)}
-                                  className={cn(
-                                    "px-3 py-1.5 text-xs font-black rounded-xl border transition cursor-pointer flex items-center gap-1.5",
-                                    isSelected
-                                      ? "border-[var(--primary-color)] bg-[var(--primary-color)]/10 text-[var(--primary-color)] shadow-xs"
-                                      : isChipMatched
-                                      ? "border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
-                                      : "border-gray-200 bg-slate-50 hover:bg-slate-100 text-gray-600"
-                                  )}
-                                >
-                                  {isChipMatched && <Sparkles className="size-3 fill-current animate-pulse" />}
-                                  {v.name}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Price and Stock */}
-                      <div className="bg-orange-50/20 dark:bg-zinc-950/40 p-4 rounded-2xl border border-orange-100/50 dark:border-zinc-800/80 flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-[var(--text-muted)] mb-1">Giá bán:</span>
-                          <span className="text-xl font-black text-[var(--primary-color)]">
-                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(
-                              previewVariant ? (previewVariant.salePrice ?? previewVariant.sellingPrice) : (activePreviewProduct.salePrice ?? activePreviewProduct.sellingPrice)
-                            )}
-                          </span>
-                          {(() => {
-                            const currentItem = previewVariant || activePreviewProduct;
-                            if (currentItem.salePrice && currentItem.salePrice < currentItem.sellingPrice) {
-                              return (
-                                <span className="text-xs text-[var(--text-muted)] line-through mt-0.5">
-                                  {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(currentItem.sellingPrice)}
-                                </span>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs font-bold text-[var(--text-muted)] block mb-1">Tình trạng:</span>
-                          <span className="text-xs font-black text-[var(--text-main)] bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 px-3 py-1.5 rounded-xl">
-                            Còn {previewVariant !== null && previewVariant !== undefined ? previewVariant.stock : activePreviewProduct.stock} sản phẩm
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="pt-2 space-y-3">
-                        <button
-                          onClick={() => {
-                            const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-                            if (!token) {
-                              toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng.');
-                              router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-                              return;
-                            }
-                            addToCart(activePreviewProduct, 1, false, previewVariant?.id);
-                            toast.success(`Đã thêm sản phẩm "${activePreviewProduct.name}${previewVariant ? ` (${previewVariant.name})` : ''}" vào giỏ hàng!`);
-                          }}
-                          disabled={activePreviewProduct.stock === 0 || (previewVariant && previewVariant.stock === 0)}
-                          className={cn(
-                            "w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-black text-white transition active:scale-95 cursor-pointer shadow-md",
-                            (activePreviewProduct.stock === 0 || (previewVariant && previewVariant.stock === 0))
-                              ? "bg-gray-400 cursor-not-allowed opacity-80"
-                              : "bg-[var(--primary-color)] hover:bg-[#cf5017] shadow-orange-500/10"
-                          )}
-                        >
-                          <ShoppingCart className="size-4" />
-                          Thêm vào giỏ hàng
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            router.push(`/home/product/${activePreviewProduct.id}${previewVariant ? `?variantId=${previewVariant.id}` : ''}`);
-                          }}
-                          className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-black border border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 text-[var(--text-main)] transition cursor-pointer"
-                        >
-                          Xem chi tiết sản phẩm đầy đủ
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
         </main>
