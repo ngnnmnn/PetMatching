@@ -1,0 +1,70 @@
+==> Downloading cache...
+==> Cloning from https://github.com/ngnnmnn/PetMatching
+==> Checking out commit a545e946ca6660f4fc5e1f592fed744e6a208d00 in branch main
+==> Downloaded 220MB in 7s. Extraction took 4s.
+==> Using Node.js version 24.14.1 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'npm install && npm run build'...
+up to date, audited 760 packages in 1s
+151 packages are looking for funding
+  run `npm fund` for details
+5 vulnerabilities (1 moderate, 4 high)
+To address issues that do not require attention, run:
+  npm audit fix
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+Run `npm audit` for details.
+> server@0.0.1 build
+> nest build
+src/modules/payment/payment.controller.ts:29:16 - error TS2353: Object literal may only specify known properties, and 'orderCode' does not exist in type 'OrderWhereUniqueInput'.
+29       where: { orderCode },
+                  ~~~~~~~~~
+  node_modules/.prisma/client/index.d.ts:20806:5
+    20806     where: OrderWhereUniqueInput
+              ~~~~~
+    The expected type comes from property 'where' which is declared here on type '{ select?: OrderSelect<DefaultArgs> | null | undefined; omit?: OrderOmit<DefaultArgs> | null | undefined; include?: OrderInclude<DefaultArgs> | null | undefined; where: OrderWhereUniqueInput; }'
+src/modules/users/users.service.ts:417:42 - error TS2339: Property 'paymentMethod' does not exist on type '{ items: ({ product: { name: string; id: string; imageUrl: string | null; }; } & { productId: string; quantity: number; price: number; id: string; orderId: string; })[]; } & { totalAmount: number; shippingAddress: string; ... 5 more ...; status: OrderStatus; }'.
+417       (o) => o.status === 'PENDING' && o.paymentMethod === 'QR' && o.orderCode,
+                                             ~~~~~~~~~~~~~
+src/modules/users/users.service.ts:417:70 - error TS2339: Property 'orderCode' does not exist on type '{ items: ({ product: { name: string; id: string; imageUrl: string | null; }; } & { productId: string; quantity: number; price: number; id: string; orderId: string; })[]; } & { totalAmount: number; shippingAddress: string; ... 5 more ...; status: OrderStatus; }'.
+417       (o) => o.status === 'PENDING' && o.paymentMethod === 'QR' && o.orderCode,
+                                                                         ~~~~~~~~~
+src/modules/users/users.service.ts:423:20 - error TS2339: Property 'orderCode' does not exist on type '{ items: ({ product: { name: string; id: string; imageUrl: string | null; }; } & { productId: string; quantity: number; price: number; id: string; orderId: string; })[]; } & { totalAmount: number; shippingAddress: string; ... 5 more ...; status: OrderStatus; }'.
+423         if (!order.orderCode) continue;
+                       ~~~~~~~~~
+src/modules/users/users.service.ts:425:17 - error TS2339: Property 'orderCode' does not exist on type '{ items: ({ product: { name: string; id: string; imageUrl: string | null; }; } & { productId: string; quantity: number; price: number; id: string; orderId: string; })[]; } & { totalAmount: number; shippingAddress: string; ... 5 more ...; status: OrderStatus; }'.
+425           order.orderCode,
+                    ~~~~~~~~~
+src/modules/users/users.service.ts:509:22 - error TS2353: Object literal may only specify known properties, and 'orderCode' does not exist in type 'OrderWhereUniqueInput'.
+509             where: { orderCode },
+                         ~~~~~~~~~
+  node_modules/.prisma/client/index.d.ts:20806:5
+    20806     where: OrderWhereUniqueInput
+              ~~~~~
+    The expected type comes from property 'where' which is declared here on type '{ select?: OrderSelect<DefaultArgs> | null | undefined; omit?: OrderOmit<DefaultArgs> | null | undefined; include?: OrderInclude<DefaultArgs> | null | undefined; where: OrderWhereUniqueInput; }'
+src/modules/users/users.service.ts:536:11 - error TS2353: Object literal may only specify known properties, and 'paymentMethod' does not exist in type 'Without<OrderCreateInput, OrderUncheckedCreateInput> & OrderUncheckedCreateInput'.
+536           paymentMethod: dto.paymentMethod || 'COD',
+              ~~~~~~~~~~~~~
+  node_modules/.prisma/client/index.d.ts:21001:5
+    21001     data: XOR<OrderCreateInput, OrderUncheckedCreateInput>
+              ~~~~
+    The expected type comes from property 'data' which is declared here on type '{ select?: OrderSelect<DefaultArgs> | null | undefined; omit?: OrderOmit<DefaultArgs> | null | undefined; include?: OrderInclude<DefaultArgs> | null | undefined; data: (Without<...> & OrderUncheckedCreateInput) | (Without<...> & OrderCreateInput); }'
+src/modules/users/users.service.ts:563:45 - error TS2339: Property 'orderCode' does not exist on type '{ totalAmount: number; shippingAddress: string; id: string; createdAt: Date; updatedAt: Date; storeId: string | null; userId: string; status: OrderStatus; }'.
+563     if (dto.paymentMethod === 'QR' && order.orderCode) {
+                                                ~~~~~~~~~
+src/modules/users/users.service.ts:566:28 - error TS2339: Property 'orderCode' does not exist on type '{ totalAmount: number; shippingAddress: string; id: string; createdAt: Date; updatedAt: Date; storeId: string | null; userId: string; status: OrderStatus; }'.
+566           orderCode: order.orderCode,
+                               ~~~~~~~~~
+src/modules/users/users.service.ts:568:35 - error TS2339: Property 'orderCode' does not exist on type '{ totalAmount: number; shippingAddress: string; id: string; createdAt: Date; updatedAt: Date; storeId: string | null; userId: string; status: OrderStatus; }'.
+568           description: `PM${order.orderCode}`,
+                                      ~~~~~~~~~
+src/modules/users/users.service.ts:577:19 - error TS2353: Object literal may only specify known properties, and 'paymentUrl' does not exist in type '(Without<OrderUpdateInput, OrderUncheckedUpdateInput> & OrderUncheckedUpdateInput) | (Without<...> & OrderUpdateInput)'.
+577           data: { paymentUrl: paymentLink.checkoutUrl },
+                      ~~~~~~~~~~
+  node_modules/.prisma/client/index.d.ts:21057:5
+    21057     data: XOR<OrderUpdateInput, OrderUncheckedUpdateInput>
+              ~~~~
+    The expected type comes from property 'data' which is declared here on type '{ select?: OrderSelect<DefaultArgs> | null | undefined; omit?: OrderOmit<DefaultArgs> | null | undefined; include?: OrderInclude<DefaultArgs> | null | undefined; data: (Without<...> & OrderUncheckedUpdateInput) | (Without<...> & OrderUpdateInput); where: OrderWhereUniqueInput; }'
+Found 11 error(s).
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys

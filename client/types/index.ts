@@ -308,6 +308,10 @@ export interface SpaBookingType {
     name: string;
     avatarUrl?: string | null;
   } | null;
+  feedback?: {
+    rating: number;
+    comment?: string | null;
+  } | null;
   addressSpaId?: string | null;
   addressSpa?: {
     name: string;

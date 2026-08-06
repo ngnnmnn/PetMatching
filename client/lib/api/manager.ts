@@ -102,8 +102,18 @@ export interface ProductUnit {
   updatedAt?: string;
 }
 
+export interface StoreSettings {
+  id?: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  description?: string;
+}
+
 export const managerApi = {
   getDashboardStats: () => api.get<ManagerDashboardStats>('/manager/dashboard-stats'),
+  getStoreSettings: () => api.get<StoreSettings>('/admin/store-settings'),
+  updateStoreSettings: (data: Partial<StoreSettings>) => api.put<StoreSettings>('/admin/store-settings', data),
   
   getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
   createProduct: (data: Partial<ManagerProduct>) => api.post<ManagerProduct>('/manager/products', data),

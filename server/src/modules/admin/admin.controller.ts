@@ -254,20 +254,6 @@ export class AdminController {
     return this.adminService.getStoreDashboard();
   }
 
-  @Put('store-settings')
-  updateStoreSettings(
-    @Req() request: AuthenticatedRequest,
-    @Body()
-    dto: {
-      name: string;
-      phone?: string;
-      address?: string;
-      description?: string;
-    },
-  ) {
-    return this.adminService.updateStoreSettings(request.user, dto);
-  }
-
   @Get('store-products')
   getStoreProducts(@Query('storeId') storeId?: string) {
     return this.adminService.getStoreProducts(storeId);
@@ -296,30 +282,6 @@ export class AdminController {
   @Get('spa-staff-schedule')
   getSpaStaffSchedule() {
     return this.adminService.getSpaStaffSchedule();
-  }
-
-  @Put('spa-settings')
-  updateSpaSettings(
-    @Req() request: AuthenticatedRequest,
-    @Body()
-    dto: {
-      name: string;
-      phone?: string;
-      address: string;
-      description?: string;
-      status?: ApprovalStatus;
-    },
-  ) {
-    return this.adminService.updateSpaSettings(request.user, dto);
-  }
-
-  @Patch('spas/:id/status')
-  updateSpaBranchStatus(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: UpdateApprovalStatusDto,
-  ) {
-    return this.adminService.updateSpaBranchStatus(request.user, id, dto);
   }
 
   @Get('spa-bookings')

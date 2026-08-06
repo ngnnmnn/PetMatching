@@ -692,7 +692,6 @@ enum PetStatus {
   BREAKDOWN
   HIDDEN
   INACTIVE
-  BREAKDOWN
 }
 
 /// Hình thức phối giống:
@@ -724,7 +723,6 @@ enum MatchStatus {
   MET
   COMPLETED
   CANCELLED
-  MET
 }
 
 enum MatchingRequestStatus {
