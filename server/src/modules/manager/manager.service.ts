@@ -18,6 +18,26 @@ export class ManagerService {
     private cloudinaryService: CloudinaryService,
   ) {}
 
+  getStoreSettings() {
+    return {
+      id: 'default-store',
+      name: 'PetMatch Store',
+      phone: '0987654321',
+      address: 'Hà Nội, Việt Nam',
+      description: 'Cửa hàng dụng cụ & thức ăn thú cưng PetMatch',
+    };
+  }
+
+  updateStoreSettings(dto: any) {
+    return {
+      id: 'default-store',
+      name: dto.name || 'PetMatch Store',
+      phone: dto.phone || '0987654321',
+      address: dto.address || 'Hà Nội, Việt Nam',
+      description: dto.description || 'Cửa hàng dụng cụ & thức ăn thú cưng PetMatch',
+    };
+  }
+
   private async syncProductStockTx(tx: any, productId: string) {
     const variants = await tx.productVariant.findMany({
       where: { productId },

@@ -33,6 +33,16 @@ export class ManagerController {
     return this.managerService.getDashboardStats();
   }
 
+  @Get('store-settings')
+  getStoreSettings() {
+    return this.managerService.getStoreSettings();
+  }
+
+  @Put('store-settings')
+  updateStoreSettings(@Body() dto: any) {
+    return this.managerService.updateStoreSettings(dto);
+  }
+
   @Get('products')
   getProducts() {
     return this.managerService.getProducts();
