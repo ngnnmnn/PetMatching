@@ -61,20 +61,13 @@ export default function ProductCard({
   const router = useRouter();
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
   const [isHovered, setIsHovered] = useState(false);
-  const hoverTimer = useRef<NodeJS.Timeout | null>(null);
 
   const handleMouseEnter = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => {
-      setIsHovered(true);
-    }, 180);
+    setIsHovered(true);
   };
 
   const handleMouseLeave = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => {
-      setIsHovered(false);
-    }, 120);
+    setIsHovered(false);
   };
 
   const { addToCart } = useCart();
@@ -165,10 +158,10 @@ export default function ProductCard({
     <article
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="group relative overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white shadow-[0_8px_24px_rgba(26,26,26,0.04)] transition hover:-translate-y-1 hover:border-[#DED8D0] hover:shadow-[0_18px_40px_rgba(26,26,26,0.10)] flex flex-col h-full justify-between"
+      className="group relative rounded-2xl border border-[var(--border-color)] bg-white shadow-[0_8px_24px_rgba(26,26,26,0.04)] transition hover:-translate-y-1 hover:border-[#DED8D0] hover:shadow-[0_18px_40px_rgba(26,26,26,0.10)] flex flex-col h-full justify-between z-10 hover:z-50"
     >
       <div>
-        <div className="relative aspect-square overflow-hidden bg-[#F3F0EA]">
+        <div className="relative aspect-square overflow-hidden bg-[#F3F0EA] rounded-t-2xl">
           <Link href={productDetailUrl} className="block h-full w-full">
             <img
               src={productImage}
@@ -280,11 +273,18 @@ export default function ProductCard({
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)] pt-1">
-            <span className="inline-flex items-center gap-1">
-              <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
-              <span className="font-semibold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
-              <span>({product.reviewCount})</span>
-            </span>
+            {product.reviewCount > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
+                <span className="font-semibold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
+                <span>({product.reviewCount})</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-gray-400">
+                <Star className="size-3.5 text-gray-300 fill-gray-100" />
+                <span className="font-medium text-[11px]">Chưa có đánh giá</span>
+              </span>
+            )}
             <span className="inline-flex items-center gap-1 rounded-md bg-[#EEF8F5] px-2 py-1 font-semibold text-[#0F766E]">
               <PackageCheck className="size-3.5" />
               {speciesLabel}
@@ -328,77 +328,141 @@ export default function ProductCard({
         </button>
       </div>
 
-      {/* Hover Quick Info Card Overlay Popover */}
+      {/* Super Rich & Large Hover Quick Info Popover Card (2x-3x Large Floating Popover) */}
       <AnimatePresence>
         {isHovered && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="absolute inset-0 z-30 flex flex-col justify-between rounded-2xl border-2 border-orange-400 bg-white/98 backdrop-blur-md p-4 shadow-2xl overflow-y-auto scrollbar-none"
-            onClick={() => router.push(productDetailUrl)}
+            initial={{ opacity: 0, y: 12, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="hidden lg:block absolute -top-4 left-1/2 -translate-x-1/2 w-[480px] sm:w-[560px] md:w-[600px] z-50 rounded-3xl border-2 border-orange-400 bg-white p-6 shadow-[0_25px_70px_rgba(0,0,0,0.25)] backdrop-blur-2xl cursor-pointer max-h-[80vh] overflow-y-auto scrollbar-thin"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(productDetailUrl);
+            }}
           >
-            <div className="space-y-2.5">
-              {/* Header inside hover popup */}
-              <div className="flex items-start justify-between gap-2 border-b pb-2 border-gray-100">
-                <div className="pr-1">
-                  <span className="text-[10px] font-black uppercase text-[#0F766E] tracking-wider block">
-                    {product.brand || 'PetMatch'}
-                  </span>
-                  <h4 className="text-xs font-black text-[var(--text-main)] line-clamp-2 leading-tight">
+            <div className="space-y-4 text-left">
+              {/* Header: 2 Columns (Image Preview + Primary Info) */}
+              <div className="grid grid-cols-12 gap-4 items-start pb-4 border-b border-gray-100">
+                {/* Image Preview Thumbnail Column */}
+                <div className="col-span-4 relative aspect-square rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 shadow-xs">
+                  <img
+                    src={productImage}
+                    alt={product.name}
+                    className="size-full object-cover"
+                  />
+                  {discount && (
+                    <span className="absolute top-2 left-2 bg-orange-600 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-sm">
+                      -{discount}%
+                    </span>
+                  )}
+                  {featured && (
+                    <span className="absolute top-2 right-2 bg-amber-500 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-sm">
+                      HOT
+                    </span>
+                  )}
+                </div>
+
+                {/* Info Column */}
+                <div className="col-span-8 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black uppercase text-[#0F766E] tracking-wider">
+                      {product.brand || 'PetMatch'}
+                    </span>
+                    <span className="shrink-0 text-[10px] font-extrabold bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full border border-orange-200">
+                      {speciesLabel}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-black text-[var(--text-main)] leading-snug line-clamp-2">
                     {product.name}
-                  </h4>
+                  </h3>
+
+                  {/* Rating & Review Count */}
+                  <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                    {product.reviewCount > 0 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Star className="size-4 fill-[#F59E0B] text-[#F59E0B]" />
+                        <span className="font-extrabold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
+                        <span>({product.reviewCount} đánh giá)</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-gray-400">
+                        <Star className="size-4 text-gray-300 fill-gray-100" />
+                        <span className="font-bold text-gray-400">Chưa có đánh giá nào</span>
+                      </span>
+                    )}
+                    {product.unit && (
+                      <span className="font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md text-[11px]">
+                        {product.unit}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Price Section */}
+                  <div className="flex items-baseline gap-2.5 pt-1">
+                    <span className="text-2xl font-black text-orange-600">
+                      {formatCurrency(displayPrice)}
+                    </span>
+                    {discount && (
+                      <span className="text-xs text-gray-400 line-through font-semibold">
+                        {formatCurrency(selectedVariant ? selectedVariant.sellingPrice : product.sellingPrice)}
+                      </span>
+                    )}
+                    {discount && selectedVariant && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        Tiết kiệm {formatCurrency((selectedVariant.sellingPrice || product.sellingPrice) - displayPrice)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Stock Level Badge */}
+                  <div>
+                    <span className={cn(
+                      "inline-flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-xl border shadow-2xs",
+                      currentStock > 0
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : "bg-red-50 border-red-200 text-red-700"
+                    )}>
+                      <span className={cn("size-2 rounded-full", currentStock > 0 ? "bg-emerald-500" : "bg-red-500")} />
+                      {currentStock > 0 ? `Tồn kho sẵn sàng: Còn ${currentStock} sản phẩm` : 'Hiện đang tạm hết hàng'}
+                    </span>
+                  </div>
                 </div>
-                <span className="shrink-0 text-[10px] font-extrabold bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full border border-orange-200">
-                  {speciesLabel}
-                </span>
               </div>
 
-              {/* Pet recommendation highlight inside hover popup */}
+              {/* Pet Customization Recommendation Banner */}
               {isMatchedByPetWeight && selectedPet && (
-                <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 p-2 rounded-xl text-[10px] font-black text-emerald-700">
-                  <Sparkles className="size-3.5 text-emerald-600 fill-emerald-600/20 shrink-0 animate-pulse" />
-                  <span>Đề xuất cho {selectedPet.name} ({selectedPet.weight}kg)</span>
+                <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-3 rounded-2xl text-xs font-black text-emerald-800 shadow-2xs">
+                  <div className="size-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <Sparkles className="size-4 fill-white/20 animate-pulse" />
+                  </div>
+                  <div>
+                    <p className="font-black text-emerald-800">
+                      Được thiết kế & gợi ý phù hợp cho {selectedPet.name} ({selectedPet.weight}kg)
+                    </p>
+                    <p className="text-[11px] font-bold text-emerald-600/90 mt-0.5">
+                      Kích cỡ và thông số sản phẩm khớp với tiêu chuẩn cho {selectedPet.breed || 'thú cưng của bạn'}.
+                    </p>
+                  </div>
                 </div>
               )}
 
-              {/* Price & Stock */}
-              <div className="flex items-center justify-between text-xs bg-gray-50 p-2 rounded-xl border border-gray-100">
-                <div>
-                  <span className="text-[9px] text-gray-400 font-bold block">Giá bán</span>
-                  <span className="font-black text-orange-600 text-xs sm:text-sm">{formatCurrency(displayPrice)}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[9px] text-gray-400 font-bold block">Tình trạng</span>
-                  <span className={cn("font-bold text-[10px] px-2 py-0.5 rounded-md", currentStock > 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700")}>
-                    {currentStock > 0 ? `Còn ${currentStock} SP` : 'Hết hàng'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Description snippet */}
-              {product.description && (
-                <div className="space-y-0.5">
-                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">Mô tả sản phẩm:</span>
-                  <p className="text-[10px] text-gray-600 leading-snug line-clamp-3 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                    {product.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Specifications if present */}
+              {/* Specifications Grid Table */}
               {(() => {
                 const specs = getParsedSpecs(product.specifications);
                 if (specs.length > 0) {
                   return (
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">Thông số kỹ thuật:</span>
-                      <div className="grid grid-cols-2 gap-1 text-[9px] bg-amber-50/50 p-1.5 rounded-xl border border-amber-100">
-                        {specs.slice(0, 4).map((s, idx) => (
-                          <div key={idx} className="truncate">
-                            <span className="font-bold text-gray-500">{s.key}: </span>
-                            <span className="font-extrabold text-gray-800">{s.value}</span>
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider block">
+                        Thông số kỹ thuật sản phẩm:
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 text-xs bg-amber-50/40 p-3 rounded-2xl border border-amber-100">
+                        {specs.map((s, idx) => (
+                          <div key={idx} className="flex items-center justify-between border-b border-amber-200/50 pb-1 last:border-0">
+                            <span className="font-bold text-gray-500">{s.key}:</span>
+                            <span className="font-black text-gray-800 truncate pl-2">{s.value}</span>
                           </div>
                         ))}
                       </div>
@@ -407,17 +471,74 @@ export default function ProductCard({
                 }
                 return null;
               })()}
-            </div>
 
-            {/* Direct link action at bottom of hover overlay */}
-            <div className="pt-2">
-              <Link
-                href={productDetailUrl}
-                className="w-full py-2 px-3 rounded-xl bg-[#0F766E] hover:bg-[#115E59] text-white text-xs font-black transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                <span>Xem chi tiết sản phẩm</span>
-                <Eye className="size-3.5" />
-              </Link>
+              {/* Variants Breakdown Chips / List */}
+              {hasVariants && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider block">
+                    Danh sách phân loại / kích cỡ ({product.variants?.length}):
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {product.variants?.map((v: any) => {
+                      const isSelected = selectedVariant?.id === v.id;
+                      return (
+                        <div
+                          key={v.id}
+                          className={cn(
+                            "px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-2",
+                            isSelected
+                              ? "border-orange-500 bg-orange-50 text-orange-700 shadow-2xs"
+                              : "border-gray-200 bg-gray-50 text-gray-600"
+                          )}
+                        >
+                          <span className="font-black">{v.name}</span>
+                          <span className="text-[10px] text-gray-400">|</span>
+                          <span className="font-extrabold text-orange-600">{formatCurrency(v.salePrice ?? v.sellingPrice)}</span>
+                          <span className="text-[10px] text-gray-400">({v.stock} kho)</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Description Snippet */}
+              {product.description && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider block">
+                    Mô tả chi tiết:
+                  </span>
+                  <p className="text-xs text-gray-600 leading-relaxed line-clamp-4 bg-slate-50/90 p-3.5 rounded-2xl border border-slate-100 font-medium">
+                    {product.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Actions Footer */}
+              <div className="pt-2 grid grid-cols-2 gap-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={handleAddToCart}
+                  disabled={product.stock === 0 || currentStock === 0}
+                  className={cn(
+                    "py-3 px-4 rounded-2xl text-xs font-black text-white transition flex items-center justify-center gap-2 shadow-md cursor-pointer",
+                    (product.stock === 0 || currentStock === 0)
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-orange-500 hover:bg-orange-600"
+                  )}
+                >
+                  <ShoppingCart className="size-4" />
+                  <span>Thêm vào giỏ hàng</span>
+                </button>
+
+                <Link
+                  href={productDetailUrl}
+                  className="py-3 px-4 rounded-2xl bg-[#0F766E] hover:bg-[#115E59] text-white text-xs font-black transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                >
+                  <span>Trang sản phẩm đầy đủ</span>
+                  <Eye className="size-4" />
+                </Link>
+              </div>
             </div>
           </motion.div>
         )}

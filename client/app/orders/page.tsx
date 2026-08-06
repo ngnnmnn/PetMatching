@@ -173,11 +173,27 @@ const removeAccentsAndUpperCase = (str: string) => {
     .toUpperCase();
 };
 
+const ORDER_STATUS_TABS = [
+  { id: 'ALL', label: 'Tất cả' },
+  { id: 'PENDING', label: 'Chờ xử lý', statuses: ['PENDING'] },
+  { id: 'PACKED', label: 'Đã đóng gói', statuses: ['PACKED', 'PROCESSING'] },
+  { id: 'SHIPPED', label: 'Đang giao', statuses: ['SHIPPED'] },
+  { id: 'DELIVERED', label: 'Đã giao thành công', statuses: ['DELIVERED'] },
+  { id: 'CANCELLED', label: 'Đã hủy / Thất bại', statuses: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] },
+];
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
   const router = useRouter();
+
+  const filteredOrders = orders.filter((order) => {
+    if (activeTab === 'ALL') return true;
+    const tabObj = ORDER_STATUS_TABS.find((t) => t.id === activeTab);
+    return tabObj?.statuses ? tabObj.statuses.includes(order.status) : true;
+  });
 
   // Modal & Actions State
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
@@ -616,9 +632,49 @@ export default function OrdersPage() {
           Quay lại cửa hàng
         </Link>
 
-        <h1 className="text-2xl font-black tracking-tight text-[var(--text-main)] sm:text-3xl mb-8">
+        <h1 className="text-2xl font-black tracking-tight text-[var(--text-main)] sm:text-3xl mb-6">
           Lịch sử đặt hàng
         </h1>
+
+        {/* Horizontal Status Filter Tab Bar */}
+        {!loading && orders.length > 0 && (
+          <div className="flex items-center gap-2.5 overflow-x-auto pb-3 mb-6 scrollbar-none border-b border-gray-100">
+            {ORDER_STATUS_TABS.map((tab) => {
+              const count = orders.filter((order) => {
+                if (tab.id === 'ALL') return true;
+                return tab.statuses?.includes(order.status);
+              }).length;
+
+              const isActive = activeTab === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all duration-200 cursor-pointer shadow-2xs",
+                    isActive
+                      ? "bg-orange-500 text-white shadow-orange-500/20 shadow-md"
+                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+                  )}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px] font-black",
+                      isActive
+                        ? "bg-white/25 text-white"
+                        : "bg-gray-100 text-gray-500"
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center items-center py-12">
@@ -640,9 +696,26 @@ export default function OrdersPage() {
               Ghé thăm cửa hàng
             </Link>
           </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-12 text-center shadow-sm">
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+              <Package className="size-8" />
+            </div>
+            <h3 className="mb-2 text-lg font-black text-[var(--text-main)]">Không có đơn hàng nào ở trạng thái này</h3>
+            <p className="mx-auto mb-6 max-w-md text-xs text-[var(--text-muted)] font-medium">
+              Bạn không có đơn hàng nào khớp với bộ lọc đã chọn. Hãy chuyển về danh sách tất cả để xem chi tiết.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('ALL')}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 text-xs font-black text-white shadow-sm transition hover:bg-orange-600 cursor-pointer"
+            >
+              Xem tất cả đơn hàng ({orders.length})
+            </button>
+          </div>
         ) : (
           <div className="space-y-6">
-            {orders.map((order) => (
+            {filteredOrders.map((order) => (
               <div
                 key={order.id}
                 className="rounded-2xl border border-[var(--border-color)] bg-white overflow-hidden shadow-sm hover:shadow-md transition duration-200"

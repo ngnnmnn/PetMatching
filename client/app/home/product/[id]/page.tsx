@@ -461,27 +461,42 @@ export default function ProductDetailPage() {
 
               {/* Rating summary & stock */}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                <div className="flex items-center gap-0.5 text-[#F59E0B]">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star
-                      key={i}
-                      className={`h-4.5 w-4.5 ${
-                        i < Math.floor(product.rating)
-                          ? 'fill-[#F59E0B] text-[#F59E0B]'
-                          : i < product.rating
-                          ? 'fill-[#F59E0B]/50 text-[#F59E0B]'
-                          : 'text-gray-300'
-                      }`}
-                    />
-                  ))}
-                  <span className="ml-1.5 font-bold text-[var(--text-main)]">
-                    {product.rating.toFixed(1)}
-                  </span>
-                </div>
-                <span className="text-gray-300">|</span>
-                <span className="font-semibold text-[var(--text-muted)]">
-                  ({product.reviewCount} đánh giá)
-                </span>
+                {product.reviewCount > 0 ? (
+                  <>
+                    <div className="flex items-center gap-0.5 text-[#F59E0B]">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`h-4.5 w-4.5 ${
+                            i < Math.floor(product.rating)
+                              ? 'fill-[#F59E0B] text-[#F59E0B]'
+                              : i < product.rating
+                              ? 'fill-[#F59E0B]/50 text-[#F59E0B]'
+                              : 'text-gray-300'
+                          }`}
+                        />
+                      ))}
+                      <span className="ml-1.5 font-bold text-[var(--text-main)]">
+                        {product.rating.toFixed(1)}
+                      </span>
+                    </div>
+                    <span className="text-gray-300">|</span>
+                    <span className="font-semibold text-[var(--text-muted)]">
+                      ({product.reviewCount} đánh giá)
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-0.5 text-gray-300">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star key={i} className="h-4.5 w-4.5 fill-gray-100 text-gray-300" />
+                      ))}
+                    </div>
+                    <span className="font-semibold text-gray-400">
+                      (Chưa có đánh giá nào)
+                    </span>
+                  </>
+                )}
                 <span className="text-gray-300">|</span>
                 <span className="font-bold flex items-center gap-1">
                   {currentStock === null || currentStock === undefined ? (
@@ -647,19 +662,6 @@ export default function ProductDetailPage() {
                       Mua ngay
                     </>
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleToggleWishlist}
-                  className={`inline-flex size-13 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm active:scale-95 ${
-                    isWishlisted
-                      ? 'border-red-200 bg-red-50 text-red-500 hover:bg-red-100/50'
-                      : 'border-[var(--border-color)] bg-white text-[var(--text-main)] hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                  aria-label="Thêm vào yêu thích"
-                >
-                  <Heart className={`h-5.5 w-5.5 ${isWishlisted ? 'fill-red-500' : ''}`} />
                 </button>
               </div>
 

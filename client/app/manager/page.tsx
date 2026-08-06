@@ -1300,9 +1300,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       const stockVal = p.stock ?? 0;
                       const statusStr = stockVal === 0 ? 'Hết hàng' : stockVal <= 10 ? 'Sắp hết hàng' : 'Còn hàng';
                       return (
-                        <tr key={p.id} className="transition hover:bg-[#FDFDFD]">
+                        <tr
+                          key={p.id}
+                          onClick={() => handleEditClick(p)}
+                          className="transition hover:bg-orange-50/40 cursor-pointer group"
+                        >
                           <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]">{p.id.slice(0, 8)}...</td>
-                          <td className="px-6 py-4 font-bold text-[var(--text-main)]">
+                          <td className="px-6 py-4 font-bold text-[var(--text-main)] group-hover:text-[var(--primary-color)] transition-colors">
                             <div className="flex items-center gap-3">
                               {p.imageUrl && (
                                 <img src={p.imageUrl} alt={p.name} className="size-8 object-cover rounded border" />
@@ -1342,32 +1346,34 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               {statusStr}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-center">
+                          <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-2">
                               <button
-                                onClick={() => handleViewFeedback(p)}
-                                className="p-1 text-gray-500 hover:text-blue-600 transition"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewFeedback(p);
+                                }}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
                                 title="Xem đánh giá & feedback"
                               >
                                 <MessageSquare className="size-4" />
                               </button>
                               <button
-                                onClick={() => handleOpenVariantsModal(p)}
-                                className="p-1 text-gray-500 hover:text-green-600 transition"
-                                title="Quản lý biến thể (Size, Màu...)"
-                              >
-                                <Folder className="size-4" />
-                              </button>
-                              <button
-                                onClick={() => handleEditClick(p)}
-                                className="p-1 text-gray-500 hover:text-primary transition"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditClick(p);
+                                }}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
                                 title="Sửa sản phẩm"
                               >
                                 <Edit2 className="size-4" />
                               </button>
                               <button
-                                onClick={() => handleDeleteProduct(p.id)}
-                                className="p-1 text-gray-500 hover:text-red-600 transition"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteProduct(p.id);
+                                }}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
                                 title="Xóa sản phẩm"
                               >
                                 <Trash2 className="size-4" />
@@ -1441,17 +1447,14 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           )}
 
-                    {/* Product Modal */}
+          {/* Product Modal */}
           {isProductModalOpen && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
               onClick={handleCloseProductModal}
             >
               <div
-                className={cn(
-                  "w-full max-h-[92vh] flex flex-col rounded-3xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative transition-all duration-300 animate-scaleIn",
-                  showVariantsEditor ? "max-w-5xl" : "max-w-lg"
-                )}
+                className="w-full max-h-[92vh] flex flex-col rounded-3xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative transition-all duration-300 animate-scaleIn max-w-5xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Sticky Header with Title and Fixed Close Button */}
@@ -1469,7 +1472,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </button>
                 </div>
 
-                <div className={cn("overflow-y-auto flex-1 pr-1 grid gap-6", showVariantsEditor ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+                <div className="overflow-y-auto flex-1 pr-1 grid gap-6 grid-cols-1 md:grid-cols-2">
                   {/* Left Column: Product Form */}
                   <form onSubmit={handleProductSubmit} className="space-y-4 text-xs font-semibold">
                     <div>
@@ -1486,7 +1489,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-bold mb-1">Danh mục sản phẩm *</label>
+                        <label className="block text-xs font-bold mb-1">Danh mục *</label>
                         <select
                           required
                           value={productForm.category}
@@ -1501,49 +1504,35 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold mb-1">Dành cho giống loài *</label>
+                        <label className="block text-xs font-bold mb-1">Loài mục tiêu *</label>
                         <select
                           required
                           value={productForm.targetSpecies}
                           onChange={(e) => setProductForm({ ...productForm, targetSpecies: e.target.value })}
                           className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
                         >
-                          <option value="DOG">Chó</option>
-                          <option value="CAT">Mèo</option>
-                          <option value="ALL">Cả hai</option>
+                          <option value="ALL">🐾 Tất cả loài</option>
+                          <option value="DOG">🐕 Chó</option>
+                          <option value="CAT">🐈 Mèo</option>
                         </select>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-xs font-bold mb-1">Giá bán lẻ *</label>
+                        <label className="block text-xs font-bold mb-1">Giá bán lẻ (VND) *</label>
                         <input
                           type="number"
                           required
                           min="1"
-                          placeholder="Ví dụ: 150000"
+                          placeholder="Ví dụ: 120000"
                           value={productForm.sellingPrice}
                           onChange={(e) => setProductForm({ ...productForm, sellingPrice: e.target.value })}
                           className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold mb-1">Giá khuyến mãi (Tùy chọn)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="Ví dụ: 120000"
-                          value={productForm.salePrice}
-                          onChange={(e) => setProductForm({ ...productForm, salePrice: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Giá nhập (Tùy chọn)</label>
+                        <label className="block text-xs font-bold mb-1">Giá nhập (VND)</label>
                         <input
                           type="number"
                           min="1"
@@ -1569,6 +1558,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
+                        <label className="block text-xs font-bold mb-1">Giá khuyến mãi (VND)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Ví dụ: 99000"
+                          value={productForm.salePrice}
+                          onChange={(e) => setProductForm({ ...productForm, salePrice: e.target.value })}
+                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
+                        />
+                      </div>
+                      <div>
                         <label className="block text-xs font-bold mb-1">Thương hiệu</label>
                         <input
                           type="text"
@@ -1578,40 +1578,40 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Đơn vị tính *</label>
-                        <select
-                          required
-                          value={productForm.unit || ''}
-                          onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
-                          className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
-                        >
-                          <option value="">-- Chọn đơn vị tính --</option>
-                          {units.map((u) => (
-                            <option key={u.id} value={u.name}>
-                              {u.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold mb-1">Ảnh sản phẩm</label>
+                      <label className="block text-xs font-bold mb-1">Đơn vị tính</label>
+                      <select
+                        value={productForm.unit}
+                        onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
+                        className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
+                      >
+                        <option value="">Chưa chọn đơn vị</option>
+                        {units.map((u) => (
+                          <option key={u.id} value={u.name}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold mb-1">Ảnh chính sản phẩm *</label>
                       
-                      {/* Live Preview Box */}
+                      {/* Live Image Preview Box */}
                       {productForm.imageUrl && (
-                        <div className="relative mb-3 aspect-video w-full max-w-[200px] overflow-hidden rounded-xl border border-[#EFEAE2] bg-gray-50">
+                        <div className="relative aspect-video w-full max-w-[200px] overflow-hidden rounded-2xl border border-[#EFEAE2] bg-[#FAF9F7] mb-2.5 shadow-sm group">
                           <img
                             src={productForm.imageUrl}
-                            alt="Product Preview"
+                            alt="Product Main Preview"
                             className="h-full w-full object-cover"
                           />
                           <button
                             type="button"
                             onClick={() => setProductForm({ ...productForm, imageUrl: '' })}
-                            className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-                            aria-label="Xóa ảnh"
+                            className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600 transition shadow-md cursor-pointer"
+                            title="Xóa ảnh"
                           >
                             <X className="size-3.5" />
                           </button>
@@ -1620,130 +1620,114 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                       <div className="flex gap-2">
                         <input
+                          type="text"
+                          placeholder="Link URL ảnh hoặc tải file..."
+                          value={productForm.imageUrl}
+                          onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
+                          className="flex-1 rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => document.getElementById('integrated-product-image-file')?.click()}
+                          disabled={uploadingImage}
+                          className="px-4 rounded-xl border border-[#0F766E] font-bold text-[#0F766E] hover:bg-[#0F766E]/5 transition flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 cursor-pointer text-xs"
+                        >
+                          {uploadingImage ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Upload className="size-4" />
+                              Tải file
+                            </>
+                          )}
+                        </button>
+                        <input
+                          id="integrated-product-image-file"
                           type="file"
-                          id="product-image-file"
                           accept="image/*"
                           className="hidden"
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
-                            if (!file) return;
-                            setUploadingImage(true);
-                            try {
-                              const [uploaded] = await uploadImages([file], 'product');
-                              setProductForm({ ...productForm, imageUrl: uploaded.url });
-                              toast.success('Tải ảnh lên thành công!');
-                            } catch (err) {
-                              console.error('Failed to upload product image', err);
-                              toast.error('Tải ảnh lên thất bại.');
-                            } finally {
-                              setUploadingImage(false);
-                              // Clear input file value so selecting same file works again
-                              e.target.value = '';
+                            if (file) {
+                              setUploadingImage(true);
+                              try {
+                                const res = await uploadImages([file], 'product');
+                                setProductForm({ ...productForm, imageUrl: res[0].url });
+                                toast.success('Tải ảnh sản phẩm thành công!');
+                              } catch (err: any) {
+                                toast.error(err.message || 'Lỗi khi tải ảnh lên.');
+                              } finally {
+                                setUploadingImage(false);
+                              }
                             }
                           }}
-                        />
-                        <button
-                          type="button"
-                          disabled={uploadingImage}
-                          onClick={() => document.getElementById('product-image-file')?.click()}
-                          className="flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--primary-color)] px-4 font-bold text-[var(--primary-color)] transition hover:bg-[var(--primary-color)]/5 disabled:opacity-50"
-                        >
-                          {uploadingImage ? (
-                            <>
-                              <Loader2 className="size-4 animate-spin" />
-                              Đang tải lên...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="size-4" />
-                              Tải ảnh lên từ thiết bị
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="mt-2.5">
-                        <p className="text-[10px] text-[var(--text-muted)] mb-1">Hoặc điền trực tiếp đường dẫn ảnh (URL):</p>
-                        <input
-                          type="text"
-                          placeholder="https://images.unsplash.com/..."
-                          value={productForm.imageUrl}
-                          onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                         />
                       </div>
                     </div>
 
-                    {/* Specifications Editor */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-bold text-[var(--text-main)]">Thông số kỹ thuật sản phẩm (Tùy chọn)</label>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold">Thông số kỹ thuật</label>
                         <button
                           type="button"
                           onClick={() => setSpecList([...specList, { key: '', value: '' }])}
-                          className="text-xs font-bold text-[var(--primary-color)] hover:underline flex items-center gap-1 cursor-pointer"
+                          className="text-[11px] font-bold text-[#0F766E] hover:underline flex items-center gap-1 cursor-pointer"
                         >
-                          <Plus className="size-3" /> Thêm dòng mới
+                          <Plus className="size-3" /> Thêm thông số
                         </button>
                       </div>
-
-                      {specList.length > 0 ? (
-                        <div className="space-y-2 max-h-48 overflow-y-auto p-1 border border-dashed border-gray-200 rounded-xl bg-[#F9F8F6]/50">
-                          {specList.map((spec, idx) => (
-                            <div key={idx} className="flex gap-2 items-center">
-                              <input
-                                type="text"
-                                placeholder="Tên thông số (ví dụ: Chiều dài)"
-                                value={spec.key}
-                                onChange={(e) => {
-                                  const newList = [...specList];
-                                  newList[idx].key = e.target.value;
-                                  setSpecList(newList);
-                                }}
-                                className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3.5 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] text-xs font-semibold"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Giá trị (ví dụ: 100cm)"
-                                value={spec.value}
-                                onChange={(e) => {
-                                  const newList = [...specList];
-                                  newList[idx].value = e.target.value;
-                                  setSpecList(newList);
-                                }}
-                                className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3.5 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--primary-color)] text-xs font-semibold"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newList = specList.filter((_, sIdx) => sIdx !== idx);
-                                  setSpecList(newList.length > 0 ? newList : [{ key: '', value: '' }, { key: '', value: '' }]);
-                                }}
-                                className="p-1.5 text-gray-400 hover:text-red-600 transition cursor-pointer"
-                                title="Xóa thông số này"
-                              >
-                                <Trash2 className="size-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[10px] text-gray-450 italic">Chưa có thông số kỹ thuật nào. Click "Thêm dòng mới" để tạo.</p>
-                      )}
+                      <div className="space-y-2">
+                        {specList.map((spec, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              placeholder="Thuộc tính (Hạn dùng, Xuất xứ...)"
+                              value={spec.key}
+                              onChange={(e) => {
+                                const newList = [...specList];
+                                newList[idx].key = e.target.value;
+                                setSpecList(newList);
+                              }}
+                              className="flex-1 rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3 py-1.5 focus:bg-white focus:outline-none text-xs"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Giá trị (12 tháng, Pháp...)"
+                              value={spec.value}
+                              onChange={(e) => {
+                                const newList = [...specList];
+                                newList[idx].value = e.target.value;
+                                setSpecList(newList);
+                              }}
+                              className="flex-1 rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3 py-1.5 focus:bg-white focus:outline-none text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newList = specList.filter((_, i) => i !== idx);
+                                setSpecList(newList);
+                              }}
+                              className="p-1 text-gray-400 hover:text-red-500 transition"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold mb-1">Mô tả sản phẩm</label>
                       <textarea
-                        placeholder="Mô tả công dụng, thành phần, cách sử dụng..."
                         rows={3}
+                        placeholder="Nhập mô tả chi tiết sản phẩm..."
                         value={productForm.description}
                         onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
                         className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
                       />
                     </div>
 
-                    <div className="flex flex-wrap gap-4 items-center pt-2">
+                    <div className="flex items-center gap-6">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -1762,24 +1746,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         />
                         Mở bán
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowVariantsEditor(!showVariantsEditor);
-                          if (!showVariantsEditor && editingProduct) {
-                            loadVariants(editingProduct.id);
-                          }
-                        }}
-                        className={cn(
-                          "rounded-xl px-4 py-2 font-black transition cursor-pointer text-xs flex items-center gap-1.5 shadow-sm border",
-                          showVariantsEditor 
-                            ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100" 
-                            : "bg-[#0F766E]/10 border-[#0F766E]/20 text-[#0F766E] hover:bg-[#0F766E]/20"
-                        )}
-                      >
-                        <Layers className="size-3.5" />
-                        {showVariantsEditor ? 'Đóng cấu hình biến thể' : 'Cấu hình biến thể (Size, Màu, Khối lượng...)'}
-                      </button>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-3 border-t">
@@ -1801,12 +1767,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
                   </form>
 
-                  {/* Right Column: Variant Management Panel */}
-                  {showVariantsEditor && (
-                    <div className="border-t md:border-t-0 md:border-l border-[#EFEAE2] pt-6 md:pt-0 md:pl-6 space-y-4 flex flex-col h-[550px] overflow-y-auto">
-                      <h4 className="text-sm font-black text-[var(--text-main)] pb-2 border-b">
-                        Cấu hình phân loại / biến thể
-                      </h4>
+                  {/* Right Column: Variant Management Panel (Always Open) */}
+                  <div className="border-t md:border-t-0 md:border-l border-[#EFEAE2] pt-6 md:pt-0 md:pl-6 space-y-4 flex flex-col h-[550px] overflow-y-auto">
+                    <h4 className="text-sm font-black text-[var(--text-main)] pb-2 border-b">
+                      Cấu hình phân loại / biến thể
+                    </h4>
 
                       {/* Mini Variant Form */}
                       <div className="p-3 border border-[#EFEAE2] rounded-2xl bg-[#F9F8F6]/50 space-y-3">
@@ -1997,7 +1962,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         )}
                       </div>
                     </div>
-                  )}
                 </div>
               </div>
             </div>

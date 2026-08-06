@@ -893,14 +893,30 @@ export class ManagerService {
       const row = rawRows[i] as any;
       const rowNum = i + 2; // Dòng thứ i+2 trong Excel do có dòng tiêu đề
 
-      const name = (row['Tên sản phẩm'] ?? row['name'] ?? '').toString().trim();
+      const name = (row['Tên sản phẩm'] ?? row['Tên SP'] ?? row['name'] ?? '').toString().trim();
+      const variantNameExplicit = (
+        row['Phân loại'] ??
+        row['Tên phân loại'] ??
+        row['Biến thể'] ??
+        row['Tên biến thể'] ??
+        row['Kích cỡ'] ??
+        row['Màu sắc'] ??
+        row['variant'] ??
+        row['variantName'] ??
+        ''
+      ).toString().trim();
       const categoryStr = (row['Danh mục'] ?? row['category'] ?? '')
         .toString()
         .trim();
       const sellingPriceRaw = row['Giá bán'] ?? row['sellingPrice'];
       const importPriceRaw = row['Giá nhập'] ?? row['importPrice'];
       const quantityRaw =
-        row['Số lượng nhập'] ?? row['quantity'] ?? row['stock'] ?? 0;
+        row['Số lượng nhập'] ??
+        row['Số lượng'] ??
+        row['Tồn kho'] ??
+        row['quantity'] ??
+        row['stock'] ??
+        0;
       const brand =
         (row['Thương hiệu'] ?? row['brand'] ?? '').toString().trim() || null;
       const unit =
@@ -918,7 +934,7 @@ export class ManagerService {
         .toString()
         .trim()
         .toUpperCase();
-      const id = row['Mã sản phẩm'] ?? row['id'] ?? null;
+      const id = row['Mã sản phẩm'] ?? row['Mã SP'] ?? row['id'] ?? null;
       const specsRaw = row['Thông số kỹ thuật'] ?? row['specifications'] ?? '';
 
       if (!name) {
@@ -1015,12 +1031,14 @@ export class ManagerService {
       }
 
       let productName = name;
-      let variantName = '';
+      let variantName = variantNameExplicit;
 
-      const match = name.match(/^(.+?)\s*\((.+?)\)$/);
-      if (match) {
-        productName = match[1].trim();
-        variantName = match[2].trim();
+      if (!variantName) {
+        const match = name.match(/^(.+?)\s*\((.+?)\)$/);
+        if (match) {
+          productName = match[1].trim();
+          variantName = match[2].trim();
+        }
       }
 
       let product = null;
@@ -1041,16 +1059,95 @@ export class ManagerService {
         });
       }
 
-      // Match images for this product (filename starts with product ID or name slug)
       const cleanIdForImage = id ? id.toString().trim() : '';
+      const cleanSlugForImage = generatedSlug.toLowerCase();
+      const cleanVariantName = variantName ? variantName.trim().toLowerCase() : '';
+      const cleanVariantSlug = variantName
+        ? variantName
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[đĐ]/g, 'd')
+            .replace(/[^a-z0-9]/g, '')
+        : '';
+
+      // 1. Search for variant specific image files (Folder: ID-VariantName e.g. 128222-Size M or filename ID-VariantName.jpg)
+      let variantImageUrl: string | null = null;
+      if (variantName) {
+        const matchedVariantImageFile = imageFiles.find((img) => {
+          const pathLower = img.originalname.toLowerCase().replace(/\\/g, '/');
+          const fileNameNoExt = pathLower.split('/').pop()?.split('.')[0] || '';
+          const folderParts = pathLower.split('/');
+          const folderName = folderParts.length > 1 ? folderParts[folderParts.length - 2] : '';
+
+          const cleanFolder = folderName.trim().toLowerCase();
+          const cleanId = cleanIdForImage.toLowerCase();
+
+          if (cleanFolder) {
+            if (
+              (cleanId && cleanFolder === `${cleanId}-${cleanVariantName}`) ||
+              (cleanId && cleanFolder === `${cleanId}_${cleanVariantName}`) ||
+              (cleanId && cleanFolder === `${cleanId}-${cleanVariantSlug}`) ||
+              (cleanId && cleanFolder === `${cleanId}_${cleanVariantSlug}`) ||
+              cleanFolder.endsWith(`-${cleanVariantName}`) ||
+              cleanFolder.endsWith(`_${cleanVariantName}`) ||
+              cleanFolder.endsWith(`-${cleanVariantSlug}`) ||
+              cleanFolder.endsWith(`_${cleanVariantSlug}`)
+            ) {
+              return true;
+            }
+          }
+
+          if (
+            (cleanId && pathLower.includes(`${cleanId}-${cleanVariantName}`)) ||
+            (cleanId && pathLower.includes(`${cleanId}_${cleanVariantName}`)) ||
+            (cleanId && pathLower.includes(`${cleanId}-${cleanVariantSlug}`)) ||
+            (cleanId && pathLower.includes(`${cleanId}_${cleanVariantSlug}`)) ||
+            (cleanVariantSlug && fileNameNoExt.includes(cleanVariantSlug))
+          ) {
+            return true;
+          }
+
+          return false;
+        });
+
+        if (matchedVariantImageFile) {
+          try {
+            const uploadRes = await this.cloudinaryService.uploadBuffer(
+              matchedVariantImageFile.buffer,
+              'products',
+            );
+            variantImageUrl = uploadRes.url;
+          } catch (err) {
+            errors.push(
+              `Dòng ${rowNum}: Cảnh báo: Lỗi khi tải ảnh biến thể ${matchedVariantImageFile.originalname} lên Cloudinary: ${err.message || err}`,
+            );
+          }
+        }
+      }
+
+      // 2. Search for main product image files (Folder: ID e.g. 128222 or filename 128222_1.jpg)
       const matchedImages = imageFiles.filter((img) => {
-        const originalName = img.originalname.toLowerCase();
+        const pathLower = img.originalname.toLowerCase().replace(/\\/g, '/');
+        const folderParts = pathLower.split('/');
+        const folderName = folderParts.length > 1 ? folderParts[folderParts.length - 2] : '';
+
         const cleanId = cleanIdForImage.toLowerCase();
-        const cleanSlug = generatedSlug.toLowerCase();
-        return (
-          (cleanId && originalName.startsWith(`${cleanId}_`)) ||
-          originalName.startsWith(`${cleanSlug}_`)
-        );
+        const cleanFolder = folderName.trim().toLowerCase();
+
+        // Exclude variant folder files
+        if (cleanFolder.includes('-') || cleanFolder.includes('_')) {
+          if (cleanId && (cleanFolder.startsWith(`${cleanId}-`) || cleanFolder.startsWith(`${cleanId}_`))) {
+            return false;
+          }
+        }
+
+        const isProductFolder = cleanId && cleanFolder === cleanId;
+        const isProductFile =
+          (cleanId && (pathLower.includes(`/${cleanId}_`) || pathLower.includes(`/${cleanId}-`) || pathLower.includes(`/${cleanId}.`))) ||
+          pathLower.includes(cleanSlugForImage);
+
+        return isProductFolder || isProductFile;
       });
 
       const imageUrls: string[] = [];
@@ -1077,7 +1174,7 @@ export class ManagerService {
           );
         }
         if (!matchedVariant && !variantName) {
-          // If no variant name is in parentheses, try to match the row's whole name with a variant name
+          // If no variant name is in parentheses or column, try to match the row's whole name with a variant name
           matchedVariant = product.variants.find(
             (v) => v.name.toLowerCase() === name.toLowerCase(),
           );
@@ -1092,7 +1189,7 @@ export class ManagerService {
               sellingPrice,
               salePrice: salePrice || null,
               stock: quantity,
-              imageUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+              imageUrl: variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : null),
               isActive: true,
             },
           });
@@ -1107,7 +1204,7 @@ export class ManagerService {
               salePrice: salePrice || null,
               stock: currentVariantStock + quantity,
               imageUrl:
-                imageUrls.length > 0 ? imageUrls[0] : matchedVariant.imageUrl,
+                variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : matchedVariant.imageUrl),
             },
           });
         } else if (product.variants.length > 0) {
@@ -1118,6 +1215,7 @@ export class ManagerService {
             where: { id: firstVariant.id },
             data: {
               stock: currentVariantStock + quantity,
+              imageUrl: variantImageUrl || firstVariant.imageUrl,
             },
           });
         }
@@ -1175,7 +1273,7 @@ export class ManagerService {
           const newId = id
             ? id.toString().trim()
             : await this.generateProductId();
-          await this.prisma.product.create({
+          const newProduct = await this.prisma.product.create({
             data: {
               id: newId,
               storeId: store.id,
@@ -1197,6 +1295,20 @@ export class ManagerService {
               images: imageUrls.length > 0 ? imageUrls : [],
             },
           });
+
+          if (variantName) {
+            await this.prisma.productVariant.create({
+              data: {
+                productId: newProduct.id,
+                name: variantName,
+                sellingPrice,
+                salePrice: salePrice || null,
+                stock: quantity,
+                imageUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+                isActive: true,
+              },
+            });
+          }
           createdCount++;
         }
       }
