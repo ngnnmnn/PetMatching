@@ -630,12 +630,38 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
+  const resetVariantState = () => {
+    setVariantForm({
+      name: '',
+      sellingPrice: '',
+      salePrice: '',
+      stock: '',
+      imageUrl: '',
+    });
+    setEditingVariant(null);
+    setEditingLocalVariantIndex(null);
+    setUploadingVariantImage(false);
+  };
+
+  const handleCloseProductModal = () => {
+    setIsProductModalOpen(false);
+    setEditingProduct(null);
+    setShowVariantsEditor(false);
+    resetVariantState();
+  };
+
+  const handleCloseVariantsModal = () => {
+    setIsVariantModalOpen(false);
+    setSelectedProductForVariants(null);
+    resetVariantState();
+  };
+
   const handleAddClick = () => {
     setEditingProduct(null);
     setSpecList([{ key: '', value: '' }, { key: '', value: '' }]);
     setShowVariantsEditor(false);
     setLocalVariants([]);
-    setEditingLocalVariantIndex(null);
+    resetVariantState();
     setProductForm({
       name: '',
       category: categories[0]?.slug || 'ACCESSORY',
@@ -657,7 +683,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const handleEditClick = (product: ManagerProduct) => {
     setEditingProduct(product);
     setShowVariantsEditor(false);
-    setEditingLocalVariantIndex(null);
+    resetVariantState();
     if (product.variants) {
       setVariants(product.variants);
     } else {
@@ -729,14 +755,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const handleOpenVariantsModal = (product: ManagerProduct) => {
     setSelectedProductForVariants(product);
-    setVariantForm({
-      name: '',
-      sellingPrice: '',
-      salePrice: '',
-      stock: '',
-      imageUrl: '',
-    });
-    setEditingVariant(null);
+    resetVariantState();
     setIsVariantModalOpen(true);
     loadVariants(product.id);
   };
@@ -1424,23 +1443,33 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                     {/* Product Modal */}
           {isProductModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-              <div className={cn(
-                "w-full rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 my-8 relative transition-all duration-300",
-                showVariantsEditor ? "max-w-5xl" : "max-w-lg"
-              )}>
-                <button
-                  type="button"
-                  onClick={() => setIsProductModalOpen(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition z-50 cursor-pointer"
-                >
-                  <X className="size-5" />
-                </button>
-                <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
-                  {editingProduct ? 'Sửa thông tin sản phẩm' : 'Thêm sản phẩm mới'}
-                </h3>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+              onClick={handleCloseProductModal}
+            >
+              <div
+                className={cn(
+                  "w-full max-h-[92vh] flex flex-col rounded-3xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative transition-all duration-300 animate-scaleIn",
+                  showVariantsEditor ? "max-w-5xl" : "max-w-lg"
+                )}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Sticky Header with Title and Fixed Close Button */}
+                <div className="sticky top-0 z-50 flex items-center justify-between pb-3 border-b bg-white shrink-0">
+                  <h3 className="text-lg font-black text-[var(--text-main)]">
+                    {editingProduct ? 'Sửa thông tin sản phẩm' : 'Thêm sản phẩm mới'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleCloseProductModal}
+                    className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition cursor-pointer shrink-0"
+                    title="Đóng modal"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
 
-                <div className={cn("grid gap-6", showVariantsEditor ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+                <div className={cn("overflow-y-auto flex-1 pr-1 grid gap-6", showVariantsEditor ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
                   {/* Left Column: Product Form */}
                   <form onSubmit={handleProductSubmit} className="space-y-4 text-xs font-semibold">
                     <div>
@@ -1756,8 +1785,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     <div className="flex justify-end gap-3 pt-3 border-t">
                       <button
                         type="button"
-                        onClick={() => setIsProductModalOpen(false)}
-                        className="rounded-xl border px-5 py-2.5 font-bold hover:bg-gray-50 transition"
+                        onClick={handleCloseProductModal}
+                        className="rounded-xl border px-5 py-2.5 font-bold hover:bg-gray-50 transition cursor-pointer"
                       >
                         Hủy
                       </button>
@@ -2581,25 +2610,35 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                     {/* Variant Management Modal */}
           {isVariantModalOpen && selectedProductForVariants && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-              <div className="w-full max-w-4xl rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 my-8 relative">
-                <button
-                  type="button"
-                  onClick={() => setIsVariantModalOpen(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition z-50 cursor-pointer"
-                >
-                  <X className="size-5" />
-                </button>
-                <div className="flex items-center gap-3 pb-2 border-b">
-                  <span className="text-[10px] bg-[var(--primary-color)]/10 text-[var(--primary-color)] font-black uppercase tracking-wider px-2 py-0.5 rounded">
-                    Phân loại biến thể
-                  </span>
-                  <h3 className="text-lg font-black text-[var(--text-main)]">
-                    Quản lý biến thể: {selectedProductForVariants.name}
-                  </h3>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+              onClick={handleCloseVariantsModal}
+            >
+              <div
+                className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 relative animate-scaleIn"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Sticky Header with Title and Fixed Close Button */}
+                <div className="sticky top-0 z-50 flex items-center justify-between pb-3 border-b bg-white shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] bg-[var(--primary-color)]/10 text-[var(--primary-color)] font-black uppercase tracking-wider px-2 py-0.5 rounded">
+                      Phân loại biến thể
+                    </span>
+                    <h3 className="text-lg font-black text-[var(--text-main)] truncate max-w-md">
+                      Quản lý biến thể: {selectedProductForVariants.name}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseVariantsModal}
+                    className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition flex items-center justify-center cursor-pointer shrink-0"
+                    title="Đóng modal"
+                  >
+                    <X className="size-5" />
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="overflow-y-auto flex-1 pr-1 grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Left panel: Add/Edit Variant Form */}
                   <form onSubmit={handleVariantSubmit} className="space-y-4 text-xs font-semibold">
                     <p className="font-bold text-[11px] uppercase tracking-wider text-gray-500 pb-1 border-b">
