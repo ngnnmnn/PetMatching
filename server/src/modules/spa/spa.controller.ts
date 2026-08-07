@@ -35,6 +35,11 @@ export class SpaController {
     return this.spaService.getSpaAddresses();
   }
 
+  @Get('feedbacks')
+  getPublicFeedbacks() {
+    return this.spaService.getPublicFeedbacks();
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('staff/profile')
   getStaffProfile(@Req() req: AuthenticatedRequest) {
