@@ -276,6 +276,8 @@ export default function SpaStaff() {
     try {
       const res = await spaApi.updateStaffBooking(bookingId, {
         status: 'COMPLETED',
+        isPaid: true,
+        paymentMethod: paymentMethod === 'CASH' ? 'CASH' : 'TRANSFER',
         petConditionAfter: state.petConditionAfter,
         photoAfter: state.photoAfter || null,
         issueReported: state.issueReported || null
