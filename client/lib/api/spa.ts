@@ -43,6 +43,8 @@ export const spaApi = {
     api.post<SpaBookingType>(`/spa/staff/bookings/${id}/sub-services`, { subServiceIds }),
   updateStaffBooking: (id: string, data: {
     status?: string;
+    isPaid?: boolean;
+    paymentMethod?: string;
     petConditionAfter?: string;
     photoAfter?: string | null;
     issueReported?: string | null;

@@ -263,6 +263,8 @@ export interface SpaBookingType {
   priceSnapshot: number | null;
   totalPrice?: number;
   discountAmount?: number;
+  isPaid?: boolean;
+  paymentMethod?: string | null;
   timeStartExpected?: string | null;
   timeEndExpected?: string | null;
   timeStartReal?: string | null;
@@ -272,6 +274,7 @@ export interface SpaBookingType {
   petConditionAfter?: string | null;
   photoAfter?: string | null;
   issueReported?: string | null;
+  feedback?: any;
   createdAt: string;
   updatedAt: string;
   category?: {

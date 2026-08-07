@@ -529,7 +529,14 @@ export class SpaService {
         const timeEndExpected = booking.timeEndExpected || new Date(booking.scheduledAt.getTime() + 45 * 60 * 1000);
         const completionDiffMinutes = Math.round((timeEndReal.getTime() - timeEndExpected.getTime()) / 60000);
         updatedData.completionDiffMinutes = completionDiffMinutes;
+        updatedData.isPaid = true;
       }
+    }
+    if ((dto as any).isPaid !== undefined) {
+      updatedData.isPaid = (dto as any).isPaid;
+    }
+    if ((dto as any).paymentMethod !== undefined) {
+      updatedData.paymentMethod = (dto as any).paymentMethod;
     }
     if (dto.petConditionAfter !== undefined) {
       updatedData.petConditionAfter = dto.petConditionAfter;
@@ -743,9 +750,9 @@ export class SpaService {
       return isToday || isPendingOrConfirmed;
     });
 
-    const completedBookings = bookings.filter((b) => b.status === SpaBookingStatus.COMPLETED);
-    // totalRevenue uses the actual totalPrice stored in DB (= mainPrice + subServicesTotal at booking time)
-    const totalRevenue = completedBookings.reduce((sum, b) => sum + (b.totalPrice ?? b.priceSnapshot ?? 0), 0);
+    const paidBookings = bookings.filter((b) => b.isPaid || b.status === SpaBookingStatus.COMPLETED);
+    // totalRevenue calculated based on paid bookings in DB
+    const totalRevenue = paidBookings.reduce((sum, b) => sum + (b.totalPrice ?? b.priceSnapshot ?? 0), 0);
 
     const categoriesList = await this.prisma.spaCategory.findMany({
       orderBy: { createdAt: 'asc' },
@@ -784,7 +791,7 @@ export class SpaService {
       || categoriesList[categoriesList.length - 1]?.id
       || '';
 
-    completedBookings.forEach((b) => {
+    paidBookings.forEach((b) => {
       const targetId = b.serviceId || b.mainServiceId;
       const mainService = b.service || (targetId ? servicesMap.get(targetId) : null);
       const resolvedSubServices = (b.subServiceIds || []).map((id) => servicesMap.get(id)).filter(Boolean);
@@ -859,10 +866,14 @@ export class SpaService {
       (b) => b.status === SpaBookingStatus.PENDING
     ).length;
 
+    const completedBookingsCount = bookings.filter(
+      (b) => b.status === SpaBookingStatus.COMPLETED
+    ).length;
+
     return {
       todayBookingsCount: todayBookings.length,
       unconfirmedBookingsCount,
-      completedBookingsCount: completedBookings.length,
+      completedBookingsCount,
       totalRevenue,
       staffCount,
       revenueByService: categoryBreakdown,
@@ -1507,19 +1518,18 @@ export class SpaService {
       },
     });
 
-    const staffIds = staffs.map((s) => s.userId);
+    const allStaffKeys = Array.from(new Set(staffs.flatMap((s) => [s.userId, s.id])));
 
     const start = booking.timeStartExpected || new Date(booking.scheduledAt);
     const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
 
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
-        staffId: { in: staffIds },
+        staffId: { in: allStaffKeys },
         status: {
           in: [
             SpaBookingStatus.ASSIGNED,
             SpaBookingStatus.IN_PROGRESS,
-            SpaBookingStatus.COMPLETED,
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.CHECK_IN,
             SpaBookingStatus.LATE,
@@ -1533,7 +1543,7 @@ export class SpaService {
 
     const availableStaffs = [];
     for (const staff of staffs) {
-      const staffBookings = activeBookings.filter((b) => b.staffId === staff.userId);
+      const staffBookings = activeBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
       const busy = isStaffBusy(staffBookings, start, end);
       if (!busy) {
         availableStaffs.push({
@@ -1571,6 +1581,17 @@ export class SpaService {
     });
     if (!staff) {
       throw new BadRequestException('Nhân viên không thuộc chi nhánh này.');
+    }
+
+    const currentlyBusyBooking = await this.prisma.spaBooking.findFirst({
+      where: {
+        staffId: staff.userId,
+        status: { in: [SpaBookingStatus.IN_PROGRESS, SpaBookingStatus.CHECK_IN] },
+        id: { not: bookingId },
+      },
+    });
+    if (currentlyBusyBooking) {
+      throw new BadRequestException('Nhân viên này đang bận thực hiện một dịch vụ khác (Đang làm). Không thể phân công lúc này.');
     }
 
     return this.prisma.spaBooking.update({
@@ -1686,11 +1707,11 @@ export class SpaService {
       },
     });
 
-    const staffIds = staffs.map((s) => s.userId);
+    const allStaffKeys = Array.from(new Set(staffs.flatMap((s) => [s.userId, s.id])));
 
     const bookings = await this.prisma.spaBooking.findMany({
       where: {
-        staffId: { in: staffIds },
+        staffId: { in: allStaffKeys },
         ...(targetBranch ? { addressSpaId: targetBranch } : {}),
       },
       include: {
@@ -1702,7 +1723,7 @@ export class SpaService {
     });
 
     return staffs.map((staff) => {
-      const staffBookings = bookings.filter((b) => b.staffId === staff.userId);
+      const staffBookings = bookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
       const completed = staffBookings.filter((b) => b.status === SpaBookingStatus.COMPLETED);
       const active = staffBookings.filter((b) =>
         b.status === SpaBookingStatus.ASSIGNED ||
@@ -1710,6 +1731,12 @@ export class SpaService {
         b.status === SpaBookingStatus.CHECK_IN ||
         b.status === SpaBookingStatus.LATE
       );
+
+      const currentlyDoing = staffBookings.find(
+        (b) => b.status === SpaBookingStatus.IN_PROGRESS || b.status === SpaBookingStatus.CHECK_IN
+      );
+      const isBusy = !!currentlyDoing;
+      const workStatus = isBusy ? 'BUSY' : 'AVAILABLE';
 
       const ratedBookings = staffBookings.filter((b) => b.feedback && typeof b.feedback.rateStaff === 'number');
       const averageRating = ratedBookings.length > 0
@@ -1719,7 +1746,8 @@ export class SpaService {
       const onTimeBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) <= 0);
       const lateBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) > 0);
       const onTimeRate = completed.length > 0 ? Math.round((onTimeBookings.length / completed.length) * 100) : 100;
-      const revenue = completed.reduce((sum, b) => sum + (b.totalPrice || b.priceSnapshot || b.service?.price || 0), 0);
+      const paidBookings = staffBookings.filter((b) => b.isPaid || b.status === SpaBookingStatus.COMPLETED);
+      const revenue = paidBookings.reduce((sum, b) => sum + (b.totalPrice || b.priceSnapshot || b.service?.price || 0), 0);
 
       return {
         id: staff.id,
@@ -1728,6 +1756,13 @@ export class SpaService {
         email: staff.user?.email || '',
         avatarUrl: staff.user?.avatarUrl || null,
         status: staff.status || 'ACTIVE',
+        workStatus,
+        isBusy,
+        currentBooking: currentlyDoing ? {
+          id: currentlyDoing.id,
+          petName: currentlyDoing.petName,
+          status: currentlyDoing.status,
+        } : null,
         completedCount: completed.length,
         activeCount: active.length,
         onTimeCount: onTimeBookings.length,
@@ -1962,20 +1997,20 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
   for (const b of staffBookings) {
     if (
       b.status === SpaBookingStatus.CANCELLED ||
-      b.status === SpaBookingStatus.NO_SHOW
+      b.status === SpaBookingStatus.NO_SHOW ||
+      b.status === SpaBookingStatus.COMPLETED
     ) {
       continue;
     }
-    let start = new Date(b.timeStartExpected || b.scheduledAt);
-    const duration = b.service ? (b.service.durationMax || b.service.durationMin || 30) : 30;
-    let end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
 
-    if (b.status === SpaBookingStatus.IN_PROGRESS && b.timeStartReal) {
-      start = new Date(b.timeStartReal);
-      end = new Date(start.getTime() + duration * 60 * 1000);
-    } else if (b.status === SpaBookingStatus.COMPLETED && b.timeEndReal) {
-      end = new Date(b.timeEndReal);
+    // Staff currently doing a service (IN_PROGRESS or CHECK_IN) is busy!
+    if (b.status === SpaBookingStatus.IN_PROGRESS || b.status === SpaBookingStatus.CHECK_IN) {
+      return true;
     }
+
+    let start = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+    const duration = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+    let end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
 
     if (start < candidateEnd && end > candidateStart) {
       return true; // Overlaps - staff is busy
