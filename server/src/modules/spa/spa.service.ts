@@ -616,6 +616,31 @@ export class SpaService {
     });
   }
 
+  async getPublicFeedbacks() {
+    return this.prisma.spaFeedback.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+          },
+        },
+        booking: {
+          include: {
+            service: {
+              select: { id: true, name: true },
+            },
+            category: {
+              select: { id: true, name: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
   // =============================================================
   // SPA MANAGER ENDPOINTS & LOGIC
   // =============================================================
