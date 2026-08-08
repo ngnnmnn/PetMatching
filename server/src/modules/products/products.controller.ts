@@ -54,7 +54,7 @@ export class ProductsController {
   createReview(
     @Req() req: any,
     @Param('productId') productId: string,
-    @Body() dto: { rating: number; comment?: string },
+    @Body() dto: { rating: number; comment?: string; images?: string[] },
   ) {
     return this.productsService.createReview(req.user.id, productId, dto);
   }
@@ -64,7 +64,7 @@ export class ProductsController {
   updateReview(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: { rating: number; comment?: string },
+    @Body() dto: { rating: number; comment?: string; images?: string[] },
   ) {
     return this.productsService.updateReview(req.user.id, id, dto);
   }

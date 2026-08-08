@@ -355,6 +355,17 @@ function SpaManagerConsoleContent() {
     fetchRescheduleSlots();
   }, [rescheduleBooking, rescheduleDate]);
 
+  // Fetch available staff list whenever selectedBookingDetail opens
+  useEffect(() => {
+    if (selectedBookingDetail && selectedBookingDetail.id) {
+      spaApi.getAvailableStaffForBooking(selectedBookingDetail.id)
+        .then((res) => {
+          setAvailableStaffsMap((prev) => ({ ...prev, [selectedBookingDetail.id]: res.data || [] }));
+        })
+        .catch(console.error);
+    }
+  }, [selectedBookingDetail]);
+
   // Confirm booking to CONFIRMED
   const handleConfirmBooking = async (bookingId: string) => {
     try {
@@ -1563,7 +1574,7 @@ function SpaManagerConsoleContent() {
                             </div>
                           )}
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
                               <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${
                                 s.status === 'ACTIVE'
@@ -1572,9 +1583,18 @@ function SpaManagerConsoleContent() {
                               }`}>
                                 ● {s.status === 'ACTIVE' ? 'Hoạt động' : 'Tạm dừng'}
                               </span>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${
+                                s.isBusy || s.workStatus === 'BUSY'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              }`}>
+                                {s.isBusy || s.workStatus === 'BUSY' ? '🔴 Đang làm (Bận)' : '🟢 Đang rảnh'}
+                              </span>
                             </div>
                             <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
-                            <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
+                            <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                              {s.currentBooking ? `✨ Đang làm pet: ${s.currentBooking.petName || 'Thú cưng'}` : 'Nhân viên Spa'}
+                            </span>
                           </div>
                         </div>
 

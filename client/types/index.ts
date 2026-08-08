@@ -73,9 +73,28 @@ export interface Order {
   paymentMethod?: string;
   orderCode?: number | null;
   paymentUrl?: string | null;
+  refundStatus?: string | null;
+  refundBankCode?: string | null;
+  refundAccountNumber?: string | null;
+  refundAccountName?: string | null;
+  refundReason?: string | null;
+  refundedAt?: string | null;
+  refundProofUrl?: string | null;
+  payment?: Payment | null;
   items: OrderItem[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Payment {
+  id: string;
+  sourceType: 'STORE_ORDER' | 'SPA_BOOKING';
+  method: 'COD' | 'QR';
+  status: 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR' | 'REFUNDED';
+  amount: number;
+  orderCode?: number | null;
+  paymentUrl?: string | null;
+  paidAt?: string | null;
 }
 
 export interface ProfileResponse extends User {
@@ -128,6 +147,7 @@ export interface ProductReview {
   id: string;
   rating: number;
   comment?: string | null;
+  images?: string[];
   userId: string;
   productId: string;
   createdAt: string;
@@ -170,6 +190,7 @@ export interface Product {
   unit?: string;
   rating: number;
   reviewCount: number;
+  soldCount?: number;
   stock?: number | null;
   isActive: boolean;
   isFeatured: boolean;
@@ -263,6 +284,7 @@ export interface SpaBookingType {
   priceSnapshot: number | null;
   totalPrice?: number;
   discountAmount?: number;
+  payment?: Payment | null;
   timeStartExpected?: string | null;
   timeEndExpected?: string | null;
   timeStartReal?: string | null;

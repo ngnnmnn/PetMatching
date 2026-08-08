@@ -21,6 +21,8 @@ import {
   X,
   History,
   Search,
+  Banknote,
+  QrCode,
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -29,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBookingType, SpaServiceType } from '@/types';
+import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 
 // Preset sample photos for easy mock upload
 const PRESET_PHOTOS = [
@@ -57,6 +60,11 @@ export default function SpaStaff() {
   // History modal state
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
+
+  // Payment completion modal states
+  const [completingBooking, setCompletingBooking] = useState<SpaBookingType | null>(null);
+  const [paymentMethodStep, setPaymentMethodStep] = useState<'METHOD_SELECT' | 'CASH' | null>(null);
+  const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -162,7 +170,7 @@ export default function SpaStaff() {
       setBookings(bookingsRes.data || []);
       setStaffProfile(profileRes.data || null);
       setAllSubServices((servicesRes.data || []).filter((s) => !s.isMain));
-      
+
       const initialStates: typeof editStates = {};
       bookingsRes.data.forEach((b) => {
         initialStates[b.id] = {
@@ -244,26 +252,48 @@ export default function SpaStaff() {
     }
   };
 
-  const handleCompleteBooking = async (bookingId: string) => {
+  const handleCompleteBooking = (booking: SpaBookingType) => {
+    const state = editStates[booking.id];
+    if (!state || !state.petConditionAfter?.trim()) {
+      toast.error('Vui lòng nhập tình trạng thú cưng sau dịch vụ.');
+      return;
+    }
+    setCompletingBooking(booking);
+    setPaymentMethodStep('METHOD_SELECT');
+  };
+
+  const handleFinalizeComplete = async (bookingId: string, method: 'COD' | 'QR') => {
     const state = editStates[bookingId];
-    if (!state || !state.petConditionAfter.trim()) {
+    if (!state || !state.petConditionAfter?.trim()) {
       toast.error('Vui lòng nhập tình trạng thú cưng sau dịch vụ.');
       return;
     }
 
     setActionLoading(bookingId);
     try {
-      const res = await spaApi.updateStaffBooking(bookingId, {
-        status: 'COMPLETED',
+      const res = await spaApi.completeStaffBooking(bookingId, {
+        method,
         petConditionAfter: state.petConditionAfter,
         photoAfter: state.photoAfter || null,
         issueReported: state.issueReported || null
       });
 
-      toast.success('Hoàn thành dịch vụ Spa thành công!');
+      if (method === 'QR' && res.data.qrData) {
+        setPayOSQRData({
+          ...res.data.qrData,
+          checkoutUrl: res.data.checkoutUrl,
+        });
+        setPaymentMethodStep(null);
+        return;
+      }
+
+      toast.success('Xác nhận thanh toán COD và hoàn thành dịch vụ thành công!');
+
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, ...res.data } : b))
       );
+      setCompletingBooking(null);
+      setPaymentMethodStep(null);
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Không thể hoàn thành dịch vụ.';
       toast.error(msg);
@@ -294,7 +324,7 @@ export default function SpaStaff() {
     if (activeTab === 'ASSIGNED') return b.status === 'ASSIGNED';
     if (activeTab === 'IN_PROGRESS') return b.status === 'IN_PROGRESS';
     if (activeTab === 'COMPLETED') return b.status === 'COMPLETED';
-    
+
     return true;
   });
 
@@ -325,7 +355,7 @@ export default function SpaStaff() {
   const formatTimeSlot = (dateStr: string) => {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '00:00 - 00:00';
-    
+
     const startHour = d.getHours();
     const endHour = startHour + 1;
     const pad = (n: number) => n.toString().padStart(2, '0');
@@ -440,7 +470,7 @@ export default function SpaStaff() {
 
       {/* Main Content */}
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
-        
+
         {/* Controls: Date Picker & Filters */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-5">
           <div className="flex flex-wrap items-center gap-2">
@@ -491,11 +521,10 @@ export default function SpaStaff() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                  activeTab === tab.id
-                    ? 'bg-white text-purple-700 shadow-xs'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeTab === tab.id
+                  ? 'bg-white text-purple-700 shadow-xs'
+                  : 'text-gray-500 hover:text-gray-800'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -504,140 +533,140 @@ export default function SpaStaff() {
         </div>
 
         {/* History Modal for Completed Bookings */}
-      {historyModalOpen && (() => {
-        const completedBookings = bookings.filter((b) => b.status === 'COMPLETED');
-        const filteredHistory = completedBookings.filter((b) => {
-          if (!historySearchQuery.trim()) return true;
-          const q = historySearchQuery.toLowerCase().trim();
-          return (
-            (b.petName && b.petName.toLowerCase().includes(q)) ||
-            (b.user?.name && b.user.name.toLowerCase().includes(q)) ||
-            (b.service?.name && b.service.name.toLowerCase().includes(q)) ||
-            b.id.toLowerCase().includes(q)
+        {historyModalOpen && (() => {
+          const completedBookings = bookings.filter((b) => b.status === 'COMPLETED');
+          const filteredHistory = completedBookings.filter((b) => {
+            if (!historySearchQuery.trim()) return true;
+            const q = historySearchQuery.toLowerCase().trim();
+            return (
+              (b.petName && b.petName.toLowerCase().includes(q)) ||
+              (b.user?.name && b.user.name.toLowerCase().includes(q)) ||
+              (b.service?.name && b.service.name.toLowerCase().includes(q)) ||
+              b.id.toLowerCase().includes(q)
+            );
+          });
+
+          const totalRevenue = completedBookings.reduce(
+            (sum, b) => sum + (b.totalPrice || b.priceSnapshot || 0),
+            0
           );
-        });
 
-        const totalRevenue = completedBookings.reduce(
-          (sum, b) => sum + (b.totalPrice || b.priceSnapshot || 0),
-          0
-        );
-
-        return (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl max-w-3xl w-full p-6 space-y-5 shadow-2xl border border-gray-200 max-h-[85vh] flex flex-col">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b pb-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-black text-lg text-purple-950 flex items-center gap-2">
-                      <History className="size-5 text-purple-600" /> Lịch Sử Đơn Cũ Đã Hoàn Thành
-                    </h3>
-                    <span className="text-xs font-bold bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full border border-green-200">
-                      {completedBookings.length} ca đã làm
-                    </span>
+          return (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+              <div className="bg-white rounded-2xl max-w-3xl w-full p-6 space-y-5 shadow-2xl border border-gray-200 max-h-[85vh] flex flex-col">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-lg text-purple-950 flex items-center gap-2">
+                        <History className="size-5 text-purple-600" /> Lịch Sử Đơn Cũ Đã Hoàn Thành
+                      </h3>
+                      <span className="text-xs font-bold bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full border border-green-200">
+                        {completedBookings.length} ca đã làm
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Tổng doanh thu dịch vụ đã xử lý: <strong className="text-purple-800">{totalRevenue.toLocaleString('vi-VN')}đ</strong>
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    Tổng doanh thu dịch vụ đã xử lý: <strong className="text-purple-800">{totalRevenue.toLocaleString('vi-VN')}đ</strong>
-                  </p>
+                  <button
+                    onClick={() => setHistoryModalOpen(false)}
+                    className="rounded-full p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+                  >
+                    <X className="size-5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setHistoryModalOpen(false)}
-                  className="rounded-full p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
 
-              {/* Search input */}
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
-                <Input
-                  type="text"
-                  placeholder="Tìm theo tên thú cưng, tên khách hàng hoặc mã đơn..."
-                  value={historySearchQuery}
-                  onChange={(e) => setHistorySearchQuery(e.target.value)}
-                  className="pl-10 h-10 text-xs bg-gray-50/80 border-gray-200"
-                />
-              </div>
+                {/* Search input */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Tìm theo tên thú cưng, tên khách hàng hoặc mã đơn..."
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    className="pl-10 h-10 text-xs bg-gray-50/80 border-gray-200"
+                  />
+                </div>
 
-              {/* History items list */}
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[250px]">
-                {filteredHistory.length === 0 ? (
-                  <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed text-gray-400">
-                    <p className="text-xs font-semibold">Chưa tìm thấy đơn hoàn thành nào phù hợp.</p>
-                  </div>
-                ) : (
-                  filteredHistory.map((b) => {
-                    const subList = getBookingSubServices(b);
-                    return (
-                      <div
-                        key={b.id}
-                        className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-2xs hover:border-purple-300 transition"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-gray-800">
-                              📅 {formatDateVietnamese(b.scheduledAt.split('T')[0])} ({formatTimeSlot(b.scheduledAt)})
-                            </span>
-                            <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border">
-                              #{b.id.slice(-6).toUpperCase()}
+                {/* History items list */}
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[250px]">
+                  {filteredHistory.length === 0 ? (
+                    <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed text-gray-400">
+                      <p className="text-xs font-semibold">Chưa tìm thấy đơn hoàn thành nào phù hợp.</p>
+                    </div>
+                  ) : (
+                    filteredHistory.map((b) => {
+                      const subList = getBookingSubServices(b);
+                      return (
+                        <div
+                          key={b.id}
+                          className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-2xs hover:border-purple-300 transition"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-gray-800">
+                                📅 {formatDateVietnamese(b.scheduledAt.split('T')[0])} ({formatTimeSlot(b.scheduledAt)})
+                              </span>
+                              <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border">
+                                #{b.id.slice(-6).toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="text-xs font-black text-purple-800">
+                              {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
                             </span>
                           </div>
-                          <span className="text-xs font-black text-purple-800">
-                            {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                          </span>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            {/* Pet & Customer */}
+                            <div className="space-y-1">
+                              <p className="font-extrabold text-purple-950 flex items-center gap-1.5">
+                                🐾 {b.petName} ({b.petSpecies === 'CAT' ? 'Mèo' : 'Chó'} • {b.petWeight || 3}kg)
+                              </p>
+                              <p className="text-gray-500 flex items-center gap-1">
+                                <UserIcon className="size-3 text-gray-400" /> Khách: {b.user?.name || 'Khách hàng'}
+                              </p>
+                            </div>
+
+                            {/* Services */}
+                            <div className="space-y-1">
+                              <p className="font-bold text-gray-900">✂️ Gói chính: {b.service?.name || 'Chăm sóc Spa'}</p>
+                              {subList.length > 0 && (
+                                <div className="text-[11px] text-green-700 font-semibold space-y-0.5">
+                                  {subList.map((sub, i) => (
+                                    <span key={i} className="block">+ {sub.name} ({(sub.price || 0).toLocaleString('vi-VN')}đ)</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Condition report after grooming */}
+                          {b.petConditionAfter && (
+                            <div className="p-2.5 bg-green-50/60 border border-green-200 rounded-lg text-xs text-green-950 space-y-1">
+                              <span className="font-bold text-green-800 block text-[11px]">Báo cáo kết quả:</span>
+                              <p className="text-[11px] leading-relaxed">{b.petConditionAfter}</p>
+                            </div>
+                          )}
                         </div>
+                      );
+                    })
+                  )}
+                </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                          {/* Pet & Customer */}
-                          <div className="space-y-1">
-                            <p className="font-extrabold text-purple-950 flex items-center gap-1.5">
-                              🐾 {b.petName} ({b.petSpecies === 'CAT' ? 'Mèo' : 'Chó'} • {b.petWeight || 3}kg)
-                            </p>
-                            <p className="text-gray-500 flex items-center gap-1">
-                              <UserIcon className="size-3 text-gray-400" /> Khách: {b.user?.name || 'Khách hàng'}
-                            </p>
-                          </div>
-
-                          {/* Services */}
-                          <div className="space-y-1">
-                            <p className="font-bold text-gray-900">✂️ Gói chính: {b.service?.name || 'Chăm sóc Spa'}</p>
-                            {subList.length > 0 && (
-                              <div className="text-[11px] text-green-700 font-semibold space-y-0.5">
-                                {subList.map((sub, i) => (
-                                  <span key={i} className="block">+ {sub.name} ({(sub.price || 0).toLocaleString('vi-VN')}đ)</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Condition report after grooming */}
-                        {b.petConditionAfter && (
-                          <div className="p-2.5 bg-green-50/60 border border-green-200 rounded-lg text-xs text-green-950 space-y-1">
-                            <span className="font-bold text-green-800 block text-[11px]">Báo cáo kết quả:</span>
-                            <p className="text-[11px] leading-relaxed">{b.petConditionAfter}</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="flex justify-end pt-3 border-t">
-                <Button
-                  onClick={() => setHistoryModalOpen(false)}
-                  className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-extrabold px-6"
-                >
-                  Đóng
-                </Button>
+                {/* Modal Footer */}
+                <div className="flex justify-end pt-3 border-t">
+                  <Button
+                    onClick={() => setHistoryModalOpen(false)}
+                    className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-extrabold px-6"
+                  >
+                    Đóng
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
         {/* Dashboard Bookings Listing */}
         {filteredBookings.length === 0 ? (
@@ -666,11 +695,10 @@ export default function SpaStaff() {
               return (
                 <div
                   key={booking.id}
-                  className={`bg-white border rounded-2xl p-6 shadow-xs transition hover:shadow-md ${
-                    isCompleted ? 'border-green-150' : 'border-purple-100'
-                  }`}
+                  className={`bg-white border rounded-2xl p-6 shadow-xs transition hover:shadow-md ${isCompleted ? 'border-green-150' : 'border-purple-100'
+                    }`}
                 >
-                  
+
                   {/* Header info */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 border-gray-100">
                     <div className="flex items-center gap-2.5">
@@ -702,7 +730,7 @@ export default function SpaStaff() {
 
                   {/* Core details */}
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pt-5">
-                    
+
                     {/* Left details pane */}
                     <div className="md:col-span-5 space-y-4 border-r border-gray-150 pr-0 md:pr-6 border-dashed">
                       {/* Pet details */}
@@ -870,18 +898,17 @@ export default function SpaStaff() {
                                 onChange={(e) => handleFieldChange(booking.id, 'photoAfter', e.target.value)}
                                 className="text-xs h-9 bg-white"
                               />
-                              
+
                               <div className="flex flex-wrap items-center gap-1 pt-1">
                                 {PRESET_PHOTOS.map((p) => (
                                   <button
                                     key={p.label}
                                     type="button"
                                     onClick={() => handleFieldChange(booking.id, 'photoAfter', p.url)}
-                                    className={`px-2 py-0.5 text-[9px] rounded border font-bold hover:bg-gray-50 transition ${
-                                      currentEditState.photoAfter === p.url
-                                        ? 'border-purple-650 bg-purple-50 text-purple-750 font-black'
-                                        : 'border-gray-200 text-gray-500'
-                                    }`}
+                                    className={`px-2 py-0.5 text-[9px] rounded border font-bold hover:bg-gray-50 transition ${currentEditState.photoAfter === p.url
+                                      ? 'border-purple-650 bg-purple-50 text-purple-750 font-black'
+                                      : 'border-gray-200 text-gray-500'
+                                      }`}
                                   >
                                     {p.label}
                                   </button>
@@ -892,7 +919,7 @@ export default function SpaStaff() {
 
                           <div className="flex justify-end pt-2">
                             <Button
-                              onClick={() => handleCompleteBooking(booking.id)}
+                              onClick={() => handleCompleteBooking(booking)}
                               disabled={actionLoading === booking.id || !currentEditState.petConditionAfter.trim()}
                               className="bg-green-600 hover:bg-green-700 text-white font-extrabold text-xs h-9 px-6 rounded-lg shadow-sm"
                             >
@@ -902,9 +929,14 @@ export default function SpaStaff() {
                         </div>
                       ) : booking.status === 'COMPLETED' ? (
                         <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-4">
-                          <h4 className="text-xs font-black uppercase text-green-950 tracking-wider flex items-center gap-1.5">
-                            <CheckCircle className="size-4 text-green-600" /> Kết quả dịch vụ (Hoàn thành)
-                          </h4>
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-black uppercase text-green-950 tracking-wider flex items-center gap-1.5">
+                              <CheckCircle className="size-4 text-green-600" /> Kết quả dịch vụ (Hoàn thành)
+                            </h4>
+                            <span className="px-2.5 py-0.5 text-[10px] font-black bg-green-600 text-white rounded-full shadow-sm">
+                              Đã thanh toán
+                            </span>
+                          </div>
                           <div className="text-xs text-green-900 space-y-2 font-semibold">
                             <p><span className="font-black text-green-950">Tình trạng:</span> {booking.petConditionAfter || 'Được báo cáo tốt.'}</p>
                             {booking.issueReported && (
@@ -987,11 +1019,10 @@ export default function SpaStaff() {
                             prev.includes(sub.id) ? prev.filter((i) => i !== sub.id) : [...prev, sub.id]
                           )
                         }
-                        className={`p-3 border rounded-xl cursor-pointer flex items-center justify-between transition ${
-                          isSelected
-                            ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-500/30'
-                            : 'border-gray-200 bg-white hover:bg-gray-50'
-                        }`}
+                        className={`p-3 border rounded-xl cursor-pointer flex items-center justify-between transition ${isSelected
+                          ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-500/30'
+                          : 'border-gray-200 bg-white hover:bg-gray-50'
+                          }`}
                       >
                         <div className="space-y-0.5">
                           <span className="font-extrabold text-xs text-gray-900 block">{sub.name}</span>
@@ -1024,6 +1055,138 @@ export default function SpaStaff() {
           </div>
         );
       })()}
+
+      {/* Payment Selection & Confirmation Modal */}
+      {completingBooking && paymentMethodStep && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-gray-100 transition-all transform animate-in fade-in zoom-in duration-200">
+
+            {/* Step 1: SELECT METHOD */}
+            {paymentMethodStep === 'METHOD_SELECT' && (
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900">Xác Nhận Thanh Toán</h3>
+                    <p className="text-xs text-gray-500 font-medium">Vui lòng chọn phương thức thanh toán của khách hàng</p>
+                  </div>
+                  <button
+                    onClick={() => { setCompletingBooking(null); setPaymentMethodStep(null); }}
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <div className="bg-purple-50/60 border border-purple-100 rounded-2xl p-4 space-y-2">
+                  <div className="flex justify-between text-xs text-gray-700">
+                    <span className="font-medium text-gray-500">Dịch vụ:</span>
+                    <span className="font-bold text-gray-900">{completingBooking.service?.name || 'Dịch vụ Spa'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-700">
+                    <span className="font-medium text-gray-500">Thú cưng:</span>
+                    <span className="font-bold text-gray-900">{completingBooking.petName || completingBooking.pet?.name || 'Thú cưng'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm pt-2 border-t border-purple-100">
+                    <span className="font-bold text-purple-950">Tổng tiền cần thanh toán:</span>
+                    <span className="text-base font-black text-purple-700">
+                      {(completingBooking.totalPrice || completingBooking.priceSnapshot || 0).toLocaleString('vi-VN')} đ
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <button
+                    onClick={() => setPaymentMethodStep('CASH')}
+                    className="flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-green-200 bg-green-50/50 hover:bg-green-100/70 hover:border-green-400 transition-all group"
+                  >
+                    <div className="p-3 bg-green-600 text-white rounded-2xl mb-3 shadow-md group-hover:scale-110 transition-transform">
+                      <Banknote className="size-7" />
+                    </div>
+                    <span className="font-black text-sm text-green-950">Tiền mặt</span>
+                    <span className="text-[11px] text-green-700 font-medium">Thanh toán trực tiếp</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleFinalizeComplete(completingBooking.id, 'QR')}
+                    className="flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-blue-200 bg-blue-50/50 hover:bg-blue-100/70 hover:border-blue-400 transition-all group"
+                  >
+                    <div className="p-3 bg-blue-600 text-white rounded-2xl mb-3 shadow-md group-hover:scale-110 transition-transform">
+                      <QrCode className="size-7" />
+                    </div>
+                    <span className="font-black text-sm text-blue-950">Chuyển khoản</span>
+                    <span className="text-[11px] text-blue-700 font-medium">Quét mã QR VietQR</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: CASH POPUP */}
+            {paymentMethodStep === 'CASH' && (
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-green-100 text-green-700 rounded-xl">
+                      <Banknote className="size-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-gray-900">Thanh Toán Tiền Mặt</h3>
+                      <p className="text-xs text-gray-500 font-medium">Thu tiền mặt trực tiếp từ khách hàng</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setPaymentMethodStep('METHOD_SELECT')}
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-6 text-center space-y-2">
+                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Số tiền cần thanh toán</span>
+                  <div className="text-3xl font-black text-emerald-700">
+                    {(completingBooking.totalPrice || completingBooking.priceSnapshot || 0).toLocaleString('vi-VN')} đ
+                  </div>
+                  <p className="text-xs text-emerald-600 font-medium pt-1">
+                    Nhân viên vui lòng kiểm tra và nhận đủ tiền mặt trước khi bấm xác nhận.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <button
+                    onClick={() => setPaymentMethodStep('METHOD_SELECT')}
+                    className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-700 transition"
+                  >
+                    Quay lại
+                  </button>
+                  <Button
+                    onClick={() => handleFinalizeComplete(completingBooking.id, 'COD')}
+                    disabled={actionLoading === completingBooking.id}
+                    className="bg-green-600 hover:bg-green-700 text-white font-black text-xs h-10 px-6 rounded-xl shadow-md"
+                  >
+                    {actionLoading === completingBooking.id ? 'Đang lưu...' : 'Xác nhận'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      <PayOSQRModal
+        isOpen={!!payOSQRData}
+        qrData={payOSQRData}
+        onClose={() => {
+          setPayOSQRData(null);
+          setCompletingBooking(null);
+        }}
+        onSuccess={async () => {
+          toast.success('Thanh toán PayOS thành công!');
+          setPayOSQRData(null);
+          setCompletingBooking(null);
+          await fetchBookings();
+        }}
+      />
 
       {/* Logout Confirmation Dialog */}
       <ConfirmDialog

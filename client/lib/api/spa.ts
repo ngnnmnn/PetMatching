@@ -32,6 +32,7 @@ export const spaApi = {
   createBooking: (data: CreateBookingData) => api.post<any>('/spa/bookings', data),
   getMyBookings: () => api.get<SpaBookingType[]>('/spa/bookings/my'),
   cancelBooking: (id: string) => api.patch<any>(`/spa/bookings/${id}/cancel`),
+  getPublicFeedbacks: () => api.get<any[]>('/spa/feedbacks'),
   createFeedback: (id: string, data: { rateStaff: number; rateServices: number; comment?: string }) =>
     api.post<any>(`/spa/bookings/${id}/feedback`, data),
   
@@ -46,6 +47,15 @@ export const spaApi = {
     photoAfter?: string | null;
     issueReported?: string | null;
   }) => api.patch<SpaBookingType>(`/spa/staff/bookings/${id}`, data),
+  completeStaffBooking: (id: string, data: {
+    method: 'COD' | 'QR';
+    petConditionAfter: string;
+    photoAfter?: string | null;
+    issueReported?: string | null;
+  }) => api.post<SpaBookingType & { qrData?: any; checkoutUrl?: string }>(
+    `/spa/staff/bookings/${id}/complete-payment`,
+    data,
+  ),
 
   // Spa Manager API Methods
   getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),

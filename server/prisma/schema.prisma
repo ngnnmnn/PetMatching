@@ -402,20 +402,19 @@ model Order {
   ghnOrderCode        String?
   shippingStatus      String?
   storeId             String?
-  paymentMethod       String      @default("COD")
-  orderCode           Int?        @unique
-  paymentUrl          String?
   refundStatus        String?
   refundBankCode      String?
   refundAccountNumber String?
   refundAccountName   String?
   refundReason        String?
   refundedAt          DateTime?
+  refundProofUrl      String?
   deliveryProofUrl    String?
   shippingNote        String?
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
   items               OrderItem[]
+  payment             Payment?
   store               Store?      @relation(fields: [storeId], references: [id])
   user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -518,11 +517,33 @@ model SpaBooking {
   staff                 User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
   user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   feedback              SpaFeedback?
+  payment               Payment?
 
   @@index([categoryId, status])
   @@index([userId])
   @@index([staffId])
   @@map("spa_bookings")
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  sourceType   PaymentSource @map("source_type")
+  method       PaymentMethod
+  status       PaymentStatus @default(PENDING)
+  amount       Float
+  orderCode    Int?          @unique @map("order_code")
+  paymentUrl   String?       @map("payment_url")
+  paidAt       DateTime?     @map("paid_at")
+  refundedAt   DateTime?     @map("refunded_at")
+  orderId      String?       @unique @map("order_id")
+  spaBookingId String?       @unique @map("spa_booking_id")
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  spaBooking   SpaBooking?   @relation(fields: [spaBookingId], references: [id], onDelete: Cascade)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@index([sourceType, status, paidAt])
+  @@map("payments")
 }
 
 model SpaFeedback {
@@ -664,6 +685,7 @@ model ProductReview {
   id        String   @id @default(cuid())
   rating    Int
   comment   String?
+  images    String[] @default([])
   userId    String
   productId String
   createdAt DateTime @default(now())
@@ -758,6 +780,25 @@ enum OrderStatus {
   CANCELLED
   EXPIRED
   PAYMENT_ERROR
+}
+
+enum PaymentSource {
+  STORE_ORDER
+  SPA_BOOKING
+}
+
+enum PaymentMethod {
+  COD
+  QR
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+  EXPIRED
+  PAYMENT_ERROR
+  REFUNDED
 }
 
 /// Loại giấy tờ cần duyệt:

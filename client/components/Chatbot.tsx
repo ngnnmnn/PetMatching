@@ -39,7 +39,7 @@ export default function Chatbot() {
     pathname === '/shop' ||
     pathname.startsWith('/shop/') ||
     pathname === '/home' ||
-    pathname.startsWith('/home/product/') ||
+    pathname.startsWith('/product/') ||
     pathname === '/cart' ||
     pathname.startsWith('/cart/') ||
     pathname === '/checkout' ||
@@ -336,7 +336,7 @@ export default function Chatbot() {
                           {suggestedProducts.map(product => (
                             <Link
                               key={product.id}
-                              href={`/home/product/${product.id}`}
+                              href={`/product/${product.id}`}
                               onClick={() => {
                                 if (window.innerWidth < 768) {
                                   setIsOpen(false);

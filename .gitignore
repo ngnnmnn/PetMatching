@@ -14,8 +14,10 @@ yarn-error.log*
 coverage/
 
 # Env
-.env
-.env.*
+# Temp and installers
+*.msi
+scratch/
+.env*
 db.env
 
 # Build outputs

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, MapPin, Phone, Search, Sparkles, Star } from 'lucide-react';
+import { Calendar, MapPin, Phone, Search, Sparkles, Star, X } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
@@ -72,18 +72,24 @@ export default function SpaHome() {
     branchName: string;
   } | null>(null);
 
+  // Service Detail Popup modal state
+  const [detailCard, setDetailCard] = useState<any | null>(null);
+  const [publicFeedbacks, setPublicFeedbacks] = useState<any[]>([]);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [branchesRes, servicesRes, categoriesRes] = await Promise.all([
+        const [branchesRes, servicesRes, categoriesRes, feedbacksRes] = await Promise.all([
           spaApi.getSpaAddresses(),
           spaApi.getServices(),
           spaApi.getCategories().catch(() => ({ data: [] })),
+          spaApi.getPublicFeedbacks().catch(() => ({ data: [] })),
         ]);
         setBranches(branchesRes.data || []);
         setServices(servicesRes.data || []);
         setCategoriesList(categoriesRes.data || []);
+        setPublicFeedbacks(feedbacksRes.data || []);
       } catch (error) {
         console.error('Failed to load spa data', error);
       } finally {
@@ -238,11 +244,10 @@ export default function SpaHome() {
             <button
               key={cat.value}
               onClick={() => setSelectedCategory(cat.value)}
-              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${
-                selectedCategory === cat.value
+              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${selectedCategory === cat.value
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
-              }`}
+                }`}
             >
               {cat.label}
             </button>
@@ -315,13 +320,14 @@ export default function SpaHome() {
                   return (
                     <article
                       key={card.id}
-                      className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-card shadow-xs transition-all duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col h-full"
+                      onClick={() => setDetailCard(card)}
+                      className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-card shadow-xs transition-all duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col h-full cursor-pointer group"
                     >
                       <div className="relative aspect-video bg-muted overflow-hidden">
                         <img
                           src={img}
                           alt={card.title}
-                          className="size-full object-cover transition-transform duration-300 hover:scale-105"
+                          className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
                         <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-xs px-3 py-1 text-[10px] font-extrabold text-white uppercase tracking-wider">
                           {card.categoryLabel}
@@ -335,7 +341,7 @@ export default function SpaHome() {
 
                       <div className="p-5 flex flex-col flex-1 space-y-3 justify-between">
                         <div className="space-y-1.5">
-                          <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-1">
+                          <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-1 group-hover:text-primary transition-colors">
                             {card.title}
                           </h3>
                           <p className="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
@@ -358,7 +364,10 @@ export default function SpaHome() {
                           </div>
                           <Button
                             type="button"
-                            onClick={() => handleBookClick(card.id, card.title, card.brandId)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBookClick(card.id, card.title, card.brandId);
+                            }}
                             className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl cursor-pointer"
                           >
                             Đặt lịch
@@ -373,6 +382,180 @@ export default function SpaHome() {
           })()
         )}
       </section>
+
+      {/* Service Detail Popup Modal */}
+      {detailCard && (() => {
+        const targetTitle = detailCard.title.trim().toLowerCase();
+
+        const matchingVariants = safeServices.filter((s) => {
+          const sCategoryName = (s.category?.name || s.brand?.name || '').trim().toLowerCase();
+          const sBaseName = s.name.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+          return sCategoryName === targetTitle || sBaseName === targetTitle;
+        });
+
+        const getSpeciesLabel = (s?: any) => {
+          if (s?.species === 'DOG') return 'Chó 🐶';
+          if (s?.species === 'CAT') return 'Mèo 🐱';
+          const nameLower = ((s?.name || '') + ' ' + (s?.description || '') + ' ' + (detailCard.title || '')).toLowerCase();
+          if (nameLower.includes('mèo')) return 'Mèo 🐱';
+          if (nameLower.includes('chó')) return 'Chó 🐶';
+          return 'Chó & Mèo 🐶🐱';
+        };
+
+        const weightRows = matchingVariants.length > 0
+          ? matchingVariants.map((s) => {
+            let label = s.name;
+            if (!/\([^)]+\)/.test(label)) {
+              const weightText = s.description ? s.description : 'Tiêu chuẩn';
+              label = `${s.name} (${weightText})`;
+            }
+            return {
+              serviceLabel: label,
+              speciesLabel: getSpeciesLabel(s),
+              price: s.price,
+              duration: `${s.durationMin || 45} phút`,
+            };
+          })
+          : [
+            { serviceLabel: `${detailCard.title} (< 5 kg)`, speciesLabel: getSpeciesLabel(), price: detailCard.minPrice, duration: '45 phút' },
+            { serviceLabel: `${detailCard.title} (5 – 10 kg)`, speciesLabel: getSpeciesLabel(), price: Math.round((detailCard.minPrice * 1.33) / 1000) * 1000, duration: '60 phút' },
+            { serviceLabel: `${detailCard.title} (10 – 15 kg)`, speciesLabel: getSpeciesLabel(), price: Math.round((detailCard.minPrice * 1.66) / 1000) * 1000, duration: '75 phút' },
+            { serviceLabel: `${detailCard.title} (> 15 kg)`, speciesLabel: getSpeciesLabel(), price: Math.round((detailCard.minPrice * 2.0) / 1000) * 1000, duration: '90 phút' },
+          ];
+
+        const matchedReviews = publicFeedbacks.filter((f) => {
+          const sName = f.booking?.service?.name || f.booking?.category?.name || '';
+          const sBaseName = sName.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+          return sBaseName === targetTitle;
+        });
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 flex flex-col transition-all transform animate-in fade-in zoom-in duration-200">
+
+              {/* Header (Tên dịch vụ ở giữa trên cùng) */}
+              <div className="relative px-6 py-4 border-b border-gray-100 flex items-center justify-center bg-purple-50/40">
+                <h3 className="text-lg md:text-xl font-black text-purple-950 text-center">
+                  {detailCard.title}
+                </h3>
+                <button
+                  onClick={() => setDetailCard(null)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200/60 transition"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+                {/* 1. Chi tiết dịch vụ */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="size-4 text-purple-600" /> Chi tiết dịch vụ
+                  </h4>
+                  <div className="bg-purple-50/50 border border-purple-100 rounded-2xl p-4 text-xs text-gray-700 leading-relaxed font-medium">
+                    {detailCard.description}
+                  </div>
+                </div>
+
+                {/* 2. Bảng giá dịch vụ theo cân nặng */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                    ⚖️ Bảng giá dịch vụ theo cân nặng
+                  </h4>
+                  <div className="overflow-hidden border border-gray-200 rounded-2xl shadow-2xs">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-gray-100/90 text-gray-700 font-extrabold border-b border-gray-200 uppercase text-[11px] tracking-wider">
+                        <tr>
+                          <th className="py-3 px-4">Dịch vụ & Mốc cân nặng</th>
+                          <th className="py-3 px-3 text-center">Loại thú cưng</th>
+                          <th className="py-3 px-4 text-center">Giá dịch vụ</th>
+                          <th className="py-3 px-4 text-right">Thời gian thực hiện</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 font-semibold text-gray-800 bg-white">
+                        {weightRows.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-purple-50/30 transition">
+                            <td className="py-3 px-4 font-bold text-gray-900">{row.serviceLabel}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-bold text-[10px] ${row.speciesLabel.includes('Mèo')
+                                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                  : row.speciesLabel.includes('Chó')
+                                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                    : 'bg-purple-50 text-purple-800 border border-purple-200'
+                                }`}>
+                                {row.speciesLabel}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center font-black text-purple-700">
+                              {row.price.toLocaleString('vi-VN')}đ
+                            </td>
+                            <td className="py-3 px-4 text-right text-gray-500">{row.duration}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 3. Đánh giá dịch vụ */}
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                    ⭐ Đánh giá dịch vụ
+                  </h4>
+
+                  {matchedReviews.length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50/80 rounded-2xl border border-dashed border-gray-200 text-gray-400 space-y-1">
+                      <p className="text-xs font-bold text-gray-500">hiện chưa có đánh giá cho dịch này</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {matchedReviews.map((rev: any, idx: number) => (
+                        <div key={idx} className="p-3.5 bg-gray-50/80 border border-gray-200 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="size-7 rounded-full bg-purple-200 text-purple-800 font-black text-xs flex items-center justify-center">
+                                {rev.user?.name ? rev.user.name.charAt(0).toUpperCase() : 'K'}
+                              </div>
+                              <span className="font-bold text-xs text-gray-900">{rev.user?.name || 'Khách hàng'}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-amber-500 font-bold text-xs">
+                              <Star className="size-3.5 fill-amber-400 text-amber-400" />
+                              <span>{rev.rateServices || rev.rateStaff || 5}.0</span>
+                            </div>
+                          </div>
+                          {rev.comment && (
+                            <p className="text-xs text-gray-600 font-medium italic pl-9">
+                              "{rev.comment}"
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Footer: Góc dưới cùng bên phải có 1 nút đặt lịch */}
+              <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end items-center">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    handleBookClick(detailCard.id, detailCard.title, detailCard.brandId);
+                    setDetailCard(null);
+                  }}
+                  className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-6 h-10 shadow-md rounded-xl cursor-pointer"
+                >
+                  Đặt lịch
+                </Button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Booking Dialog Modal */}
       {selectedService && (
