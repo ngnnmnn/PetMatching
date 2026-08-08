@@ -25,7 +25,10 @@ import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
 import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
-import { ReportMatchDto } from './dto/report-match.dto';
+import {
+  MATCH_REPORT_REASONS_BY_TARGET,
+  ReportMatchDto,
+} from './dto/report-match.dto';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -513,8 +516,7 @@ export class MatchingService {
         },
         reports: {
           where: { userId },
-          select: { id: true },
-          take: 1,
+          select: { targetType: true },
         },
       },
       orderBy: { updatedAt: 'desc' },
@@ -532,7 +534,7 @@ export class MatchingService {
           : match.pet1.ownerId;
       return {
         ...match,
-        reportedByMe: reports.length > 0,
+        reportedTargetTypes: reports.map((report) => report.targetType),
         blockedByMe: blocks.some(
           (block) => block.blockedId === otherUserId,
         ),
@@ -541,6 +543,13 @@ export class MatchingService {
   }
 
   async reportMatch(userId: string, matchId: string, dto: ReportMatchDto) {
+    const allowedReasons = MATCH_REPORT_REASONS_BY_TARGET[dto.targetType];
+    if (!(allowedReasons as readonly string[]).includes(dto.reason)) {
+      throw new BadRequestException(
+        'Lý do báo cáo không phù hợp với đối tượng đã chọn.',
+      );
+    }
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const match = await this.getLockedMatch(tx, matchId);
@@ -548,24 +557,40 @@ export class MatchingService {
         const detail = dto.detail?.trim() || null;
 
         const existingReport = await tx.petReport.findUnique({
-          where: { matchId_userId: { matchId, userId } },
+          where: {
+            matchId_userId_targetType: {
+              matchId,
+              userId,
+              targetType: dto.targetType,
+            },
+          },
           select: { id: true },
         });
         if (existingReport) {
-          throw new ConflictException('Bạn đã báo cáo người dùng này trong match này.');
+          throw new ConflictException(
+            `Bạn đã báo cáo ${dto.targetType === 'USER' ? 'người dùng' : 'thú cưng'} này trong match này.`,
+          );
         }
 
+        const reportedPetId =
+          participant.side === 'pet1' ? match.pet2Id : match.pet1Id;
         const report = await tx.petReport.create({
           data: {
             matchId,
             userId,
             reportedUserId: participant.otherOwner.id,
-            petId:
-              participant.side === 'pet1' ? match.pet2Id : match.pet1Id,
+            petId: reportedPetId,
+            targetType: dto.targetType,
             reason: dto.reason,
             detail,
           },
-          select: { id: true, reason: true, detail: true, createdAt: true },
+          select: {
+            id: true,
+            targetType: true,
+            reason: true,
+            detail: true,
+            createdAt: true,
+          },
         });
         await tx.auditLog.create({
           data: {
@@ -573,7 +598,12 @@ export class MatchingService {
             action: 'USER_CREATE_MATCHING_REPORT',
             targetType: 'PetReport',
             targetId: report.id,
-            metadata: { matchId, reportedUserId: participant.otherOwner.id },
+            metadata: {
+              matchId,
+              targetType: dto.targetType,
+              reportedUserId: participant.otherOwner.id,
+              reportedPetId,
+            },
           },
         });
 
@@ -584,7 +614,9 @@ export class MatchingService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('Bạn đã báo cáo người dùng này trong match này.');
+        throw new ConflictException(
+          `Bạn đã báo cáo ${dto.targetType === 'USER' ? 'người dùng' : 'thú cưng'} này trong match này.`,
+        );
       }
       throw error;
     }

@@ -522,8 +522,16 @@ function MatchingReportDialog({
           <div className="grid min-h-0 gap-4 overflow-y-auto pr-1">
             <div className="grid gap-3 rounded-xl border bg-[#F8FAFC] p-4 text-sm sm:grid-cols-2">
               <p><span className="font-black">Người báo cáo:</span> {report.reporter?.name ?? report.userId}</p>
-              <p><span className="font-black">Người bị báo cáo:</span> {report.reportedUser?.name ?? '-'}</p>
-              <p><span className="font-black">Thú cưng:</span> {report.pet?.name ?? report.petId}</p>
+              <p><span className="font-black">Loại đối tượng:</span> {formatComplaintTarget(report.targetType)}</p>
+              <p>
+                <span className="font-black">Đối tượng:</span>{' '}
+                {report.targetType === 'PET'
+                  ? (report.pet?.name ?? report.petId)
+                  : (report.reportedUser?.name ?? report.reportedUserId ?? '-')}
+              </p>
+              {report.targetType === 'PET' && (
+                <p><span className="font-black">Chủ thú cưng:</span> {report.reportedUser?.name ?? '-'}</p>
+              )}
               <p><span className="font-black">Lý do:</span> {formatMatchingReportReason(report.reason)}</p>
               <p className="sm:col-span-2"><span className="font-black">Chi tiết:</span> {report.detail || 'Không có'}</p>
             </div>
@@ -1583,8 +1591,10 @@ async function loadAllReports(): Promise<{ data: Row[] }> {
       status: report.isResolved ? 'RESOLVED' : 'PENDING',
       title: formatMatchingReportReason(report.reason),
       reporterId: report.userId,
-      targetType: 'USER',
-      targetId: report.reportedUser?.name ?? report.reportedUserId ?? report.pet?.name ?? report.petId,
+      targetType: report.targetType ?? 'USER',
+      targetId: report.targetType === 'PET'
+        ? (report.pet?.name ?? report.petId)
+        : (report.reportedUser?.name ?? report.reportedUserId),
       actionTaken: report.isResolved ? 'RESOLVE' : null,
     }))
     : [];
