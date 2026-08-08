@@ -70,12 +70,21 @@ export interface Order {
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
-  paymentMethod?: string;
-  orderCode?: number | null;
-  paymentUrl?: string | null;
+  payment?: Payment | null;
   items: OrderItem[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Payment {
+  id: string;
+  sourceType: 'STORE_ORDER' | 'SPA_BOOKING';
+  method: 'COD' | 'QR';
+  status: 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR' | 'REFUNDED';
+  amount: number;
+  orderCode?: number | null;
+  paymentUrl?: string | null;
+  paidAt?: string | null;
 }
 
 export interface ProfileResponse extends User {
@@ -263,8 +272,7 @@ export interface SpaBookingType {
   priceSnapshot: number | null;
   totalPrice?: number;
   discountAmount?: number;
-  isPaid?: boolean;
-  paymentMethod?: string | null;
+  payment?: Payment | null;
   timeStartExpected?: string | null;
   timeEndExpected?: string | null;
   timeStartReal?: string | null;
@@ -274,7 +282,6 @@ export interface SpaBookingType {
   petConditionAfter?: string | null;
   photoAfter?: string | null;
   issueReported?: string | null;
-  feedback?: any;
   createdAt: string;
   updatedAt: string;
   category?: {

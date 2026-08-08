@@ -6,7 +6,6 @@ import {
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ShippingService } from '../shipping/shipping.service';
-import { PaymentService } from '../payment/payment.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 
 @Injectable()
@@ -14,7 +13,6 @@ export class ManagerService {
   constructor(
     private prisma: PrismaService,
     private shippingService: ShippingService,
-    private paymentService: PaymentService,
     private cloudinaryService: CloudinaryService,
   ) {}
 
@@ -98,12 +96,11 @@ export class ManagerService {
   }
 
   async getDashboardStats() {
-    // Monthly revenue: Sum totalAmount of orders that are not CANCELLED
-    const revenueSum = await this.prisma.order.aggregate({
-      where: { status: { not: 'CANCELLED' } },
-      _sum: { totalAmount: true },
+    const revenueSum = await this.prisma.payment.aggregate({
+      where: { sourceType: 'STORE_ORDER', status: 'PAID' },
+      _sum: { amount: true },
     });
-    const totalRevenue = revenueSum._sum.totalAmount ?? 0;
+    const totalRevenue = revenueSum._sum.amount ?? 0;
 
     // Total orders
     const totalOrders = await this.prisma.order.count();
@@ -118,7 +115,7 @@ export class ManagerService {
 
     // Total products sold: sum order item quantities where order status is not CANCELLED
     const itemsSold = await this.prisma.orderItem.aggregate({
-      where: { order: { status: { not: 'CANCELLED' } } },
+      where: { order: { payment: { status: 'PAID' } } },
       _sum: { quantity: true },
     });
     const totalProductsSold = itemsSold._sum.quantity ?? 0;
@@ -130,7 +127,7 @@ export class ManagerService {
 
     // Calculate total profit
     const orderItems = await this.prisma.orderItem.findMany({
-      where: { order: { status: { not: 'CANCELLED' } } },
+      where: { order: { payment: { status: 'PAID' } } },
       select: {
         quantity: true,
         price: true,
@@ -379,6 +376,7 @@ export class ManagerService {
     const orders = await this.prisma.order.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
+        payment: true,
         user: {
           select: {
             id: true,
@@ -408,7 +406,7 @@ export class ManagerService {
     });
 
     return orders.filter(
-      (o) => !(o.status === 'PENDING' && o.paymentMethod === 'QR'),
+      (o) => !(o.payment?.method === 'QR' && o.payment.status === 'PENDING'),
     );
   }
 
@@ -432,7 +430,7 @@ export class ManagerService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id },
-        include: { items: true },
+        include: { items: true, payment: true },
       });
       if (!order) {
         throw new NotFoundException('Không tìm thấy đơn hàng.');
@@ -527,9 +525,31 @@ export class ManagerService {
         updateData.shippingNote = shippingNote;
       }
 
+      if (order.payment) {
+        if (
+          status === 'DELIVERED' &&
+          order.payment.method === 'COD' &&
+          order.payment.status !== 'PAID'
+        ) {
+          await tx.payment.update({
+            where: { id: order.payment.id },
+            data: { status: 'PAID', paidAt: new Date() },
+          });
+        } else if (
+          status === 'CANCELLED' &&
+          order.payment.status !== 'PAID'
+        ) {
+          await tx.payment.update({
+            where: { id: order.payment.id },
+            data: { status: 'CANCELLED' },
+          });
+        }
+      }
+
       const updatedOrder = await tx.order.update({
         where: { id },
         data: updateData,
+        include: { payment: true },
       });
 
       return updatedOrder;
@@ -542,6 +562,7 @@ export class ManagerService {
       include: {
         orders: {
           include: {
+            payment: true,
             items: {
               include: {
                 product: true,
@@ -556,7 +577,9 @@ export class ManagerService {
     });
 
     return users.map((u) => {
-      const completedOrders = u.orders.filter((o) => o.status !== 'CANCELLED');
+      const completedOrders = u.orders.filter(
+        (o) => o.payment?.status === 'PAID',
+      );
       const cancelledOrders = u.orders.filter((o) => o.status === 'CANCELLED');
 
       const totalOrders = completedOrders.length;
@@ -777,7 +800,7 @@ export class ManagerService {
   async approveRefund(orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true },
+      include: { items: true, payment: true },
     });
 
     if (!order) {
@@ -807,6 +830,13 @@ export class ManagerService {
                 increment: item.quantity,
               },
             },
+          });
+        }
+
+        if (order.payment) {
+          await tx.payment.update({
+            where: { id: order.payment.id },
+            data: { status: 'REFUNDED', refundedAt: new Date() },
           });
         }
 

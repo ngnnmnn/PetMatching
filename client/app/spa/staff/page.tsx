@@ -23,9 +23,6 @@ import {
   Search,
   Banknote,
   QrCode,
-  Copy,
-  Check,
-  Maximize2,
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -34,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBookingType, SpaServiceType } from '@/types';
+import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 
 // Preset sample photos for easy mock upload
 const PRESET_PHOTOS = [
@@ -65,9 +63,8 @@ export default function SpaStaff() {
 
   // Payment completion modal states
   const [completingBooking, setCompletingBooking] = useState<SpaBookingType | null>(null);
-  const [paymentMethodStep, setPaymentMethodStep] = useState<'METHOD_SELECT' | 'CASH' | 'TRANSFER' | null>(null);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [zoomedQrUrl, setZoomedQrUrl] = useState<string | null>(null);
+  const [paymentMethodStep, setPaymentMethodStep] = useState<'METHOD_SELECT' | 'CASH' | null>(null);
+  const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -265,7 +262,7 @@ export default function SpaStaff() {
     setPaymentMethodStep('METHOD_SELECT');
   };
 
-  const handleFinalizeComplete = async (bookingId: string, paymentMethod: 'CASH' | 'TRANSFER') => {
+  const handleFinalizeComplete = async (bookingId: string, method: 'COD' | 'QR') => {
     const state = editStates[bookingId];
     if (!state || !state.petConditionAfter?.trim()) {
       toast.error('Vui lòng nhập tình trạng thú cưng sau dịch vụ.');
@@ -274,17 +271,23 @@ export default function SpaStaff() {
 
     setActionLoading(bookingId);
     try {
-      const res = await spaApi.updateStaffBooking(bookingId, {
-        status: 'COMPLETED',
-        isPaid: true,
-        paymentMethod: paymentMethod === 'CASH' ? 'CASH' : 'TRANSFER',
+      const res = await spaApi.completeStaffBooking(bookingId, {
+        method,
         petConditionAfter: state.petConditionAfter,
         photoAfter: state.photoAfter || null,
         issueReported: state.issueReported || null
       });
 
-      const methodLabel = paymentMethod === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản QR';
-      toast.success(`Xác nhận thanh toán (${methodLabel}) & hoàn thành dịch vụ thành công!`);
+      if (method === 'QR' && res.data.qrData) {
+        setPayOSQRData({
+          ...res.data.qrData,
+          checkoutUrl: res.data.checkoutUrl,
+        });
+        setPaymentMethodStep(null);
+        return;
+      }
+
+      toast.success('Xác nhận thanh toán COD và hoàn thành dịch vụ thành công!');
 
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, ...res.data } : b))
@@ -1104,7 +1107,7 @@ export default function SpaStaff() {
                   </button>
 
                   <button
-                    onClick={() => setPaymentMethodStep('TRANSFER')}
+                    onClick={() => handleFinalizeComplete(completingBooking.id, 'QR')}
                     className="flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-blue-200 bg-blue-50/50 hover:bg-blue-100/70 hover:border-blue-400 transition-all group"
                   >
                     <div className="p-3 bg-blue-600 text-white rounded-2xl mb-3 shadow-md group-hover:scale-110 transition-transform">
@@ -1156,7 +1159,7 @@ export default function SpaStaff() {
                     Quay lại
                   </button>
                   <Button
-                    onClick={() => handleFinalizeComplete(completingBooking.id, 'CASH')}
+                    onClick={() => handleFinalizeComplete(completingBooking.id, 'COD')}
                     disabled={actionLoading === completingBooking.id}
                     className="bg-green-600 hover:bg-green-700 text-white font-black text-xs h-10 px-6 rounded-xl shadow-md"
                   >
@@ -1166,159 +1169,24 @@ export default function SpaStaff() {
               </div>
             )}
 
-            {/* Step 3: TRANSFER POPUP */}
-            {paymentMethodStep === 'TRANSFER' && (() => {
-              const amount = completingBooking.totalPrice || completingBooking.priceSnapshot || 0;
-              const serviceName = completingBooking.service?.name || 'dịch vụ';
-              const petName = completingBooking.petName || completingBooking.pet?.name || 'thú cưng';
-              const description = `${serviceName} cho thú cưng ${petName}`;
-              const bankBin = 'TCB';
-              const bankName = 'Techcombank';
-              const accountNo = '19070729916012';
-              const accountName = 'PETMATCHING SPA';
-
-              const qrUrl = `https://img.vietqr.io/image/${bankBin}-${accountNo}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(description)}&accountName=${encodeURIComponent(accountName)}`;
-
-              const copyToClipboard = (text: string, fieldName: string) => {
-                navigator.clipboard.writeText(text);
-                setCopiedField(fieldName);
-                toast.success(`Đã sao chép ${fieldName}!`);
-                setTimeout(() => setCopiedField(null), 2000);
-              };
-
-              return (
-                <div className="p-6 space-y-5">
-                  <div className="flex items-center justify-between border-b pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
-                        <QrCode className="size-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-black text-gray-900">Thanh Toán Chuyển Khoản QR</h3>
-                        <p className="text-xs text-gray-500 font-medium">Quét mã QR để hoàn tất thanh toán</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setPaymentMethodStep('METHOD_SELECT')}
-                      className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition"
-                    >
-                      <X className="size-5" />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-center gap-5 bg-blue-50/50 border border-blue-100 rounded-2xl p-4">
-                    <div
-                      onClick={() => setZoomedQrUrl(qrUrl)}
-                      className="w-44 h-44 bg-white p-2 rounded-xl shadow-md border border-blue-200 flex-shrink-0 flex items-center justify-center cursor-pointer hover:border-blue-400 transition group relative"
-                      title="Nhấn để phóng to mã QR"
-                    >
-                      <img
-                        src={qrUrl}
-                        alt="Mã QR VietQR"
-                        className="w-full h-full object-contain"
-                      />
-                      <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition rounded-xl flex items-center justify-center">
-                        <Maximize2 className="size-6 text-blue-700 bg-white/90 p-1 rounded-full shadow-sm" />
-                      </div>
-                    </div>
-
-                    <div className="flex-1 space-y-2.5 w-full text-xs">
-                      <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-blue-100">
-                        <span className="text-gray-500 font-semibold">Ngân hàng:</span>
-                        <span className="font-bold text-gray-900">{bankName}</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-blue-100">
-                        <span className="text-gray-500 font-semibold">Số tài khoản:</span>
-                        <div className="flex items-center gap-1">
-                          <span className="font-bold text-gray-900">{accountNo}</span>
-                          <button
-                            onClick={() => copyToClipboard(accountNo, 'Số tài khoản')}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                            title="Sao chép"
-                          >
-                            {copiedField === 'Số tài khoản' ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-blue-100">
-                        <span className="text-gray-500 font-semibold">Số tiền:</span>
-                        <span className="font-black text-blue-700 text-sm">{amount.toLocaleString('vi-VN')} đ</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-blue-100">
-                        <span className="text-gray-500 font-semibold">Nội dung:</span>
-                        <div className="flex items-center gap-1 max-w-[170px] truncate">
-                          <span className="font-bold text-gray-900 truncate" title={description}>{description}</span>
-                          <button
-                            onClick={() => copyToClipboard(description, 'Nội dung')}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-500 shrink-0"
-                            title="Sao chép"
-                          >
-                            {copiedField === 'Nội dung' ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t">
-                    <button
-                      onClick={() => setPaymentMethodStep('METHOD_SELECT')}
-                      className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-700 transition"
-                    >
-                      Quay lại
-                    </button>
-                    <Button
-                      onClick={() => handleFinalizeComplete(completingBooking.id, 'TRANSFER')}
-                      disabled={actionLoading === completingBooking.id}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs h-10 px-6 rounded-xl shadow-md"
-                    >
-                      {actionLoading === completingBooking.id ? 'Đang lưu...' : 'Xác nhận'}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         </div>
       )}
 
-      {/* Zoomed QR Code Image Modal */}
-      {zoomedQrUrl && (
-        <div
-          onClick={() => setZoomedQrUrl(null)}
-          className="fixed inset-0 bg-black/80 backdrop-blur-md z-[70] flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm sm:max-w-md w-full relative border border-gray-100 cursor-default text-center space-y-4"
-          >
-            <button
-              onClick={() => setZoomedQrUrl(null)}
-              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-700 bg-gray-100 rounded-full hover:bg-gray-200 transition"
-            >
-              <X className="size-5" />
-            </button>
-
-            <div className="space-y-1 pt-1">
-              <h4 className="font-black text-gray-900 text-lg">Mã QR Thanh Toán</h4>
-              <p className="text-xs text-gray-500 font-medium">Nhấn ra vùng ngoài để đóng ảnh</p>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border-2 border-blue-100 shadow-inner flex items-center justify-center max-w-[320px] mx-auto">
-              <img
-                src={zoomedQrUrl}
-                alt="Mã QR Phóng To"
-                className="w-full h-auto object-contain rounded-lg"
-              />
-            </div>
-
-            <div className="text-xs text-gray-600 bg-blue-50/70 p-3 rounded-xl border border-blue-100 font-semibold">
-              <span>{completingBooking?.service?.name} • </span>
-              <strong className="text-blue-700">{(completingBooking?.totalPrice || completingBooking?.priceSnapshot || 0).toLocaleString('vi-VN')} đ</strong>
-            </div>
-          </div>
-        </div>
-      )}
+      <PayOSQRModal
+        isOpen={!!payOSQRData}
+        qrData={payOSQRData}
+        onClose={() => {
+          setPayOSQRData(null);
+          setCompletingBooking(null);
+        }}
+        onSuccess={async () => {
+          toast.success('Thanh toán PayOS thành công!');
+          setPayOSQRData(null);
+          setCompletingBooking(null);
+          await fetchBookings();
+        }}
+      />
 
       {/* Logout Confirmation Dialog */}
       <ConfirmDialog

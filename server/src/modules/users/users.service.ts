@@ -247,6 +247,7 @@ export class UsersService {
         orders: {
           orderBy: { createdAt: 'desc' },
           include: {
+            payment: true,
             items: {
               include: {
                 product: {
@@ -490,6 +491,7 @@ export class UsersService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
+        payment: true,
         items: {
           include: {
             product: {
@@ -510,98 +512,7 @@ export class UsersService {
       },
     });
 
-    // Check and sync status for PENDING QR orders
-    const pendingQrOrders = orders.filter(
-      (o) => o.status === 'PENDING' && o.paymentMethod === 'QR' && o.orderCode,
-    );
-
-    if (pendingQrOrders.length > 0) {
-      let needsReload = false;
-      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-
-      for (const order of pendingQrOrders) {
-        if (!order.orderCode) continue;
-        const paymentInfo = await this.paymentService.getPaymentLinkInformation(
-          order.orderCode,
-        );
-        if (paymentInfo && paymentInfo.status === 'PAID') {
-          await this.prisma.order.update({
-            where: { id: order.id },
-            data: { status: 'PROCESSING' },
-          });
-          needsReload = true;
-        } else if (
-          order.createdAt < fifteenMinsAgo ||
-          (paymentInfo &&
-            (paymentInfo.status === 'CANCELLED' ||
-              paymentInfo.status === 'EXPIRED'))
-        ) {
-          // Cập nhật trạng thái thành EXPIRED và hoàn stock thay vì xóa đơn hàng
-          await this.prisma.$transaction(async (tx) => {
-            await tx.order.update({
-              where: { id: order.id },
-              data: { status: 'EXPIRED' },
-            });
-            for (const item of order.items) {
-              if (item.variantId) {
-                await tx.productVariant.update({
-                  where: { id: item.variantId },
-                  data: {
-                    stock: {
-                      increment: item.quantity,
-                    },
-                  },
-                });
-                await this.syncProductStockTx(tx, item.productId);
-              } else {
-                await tx.product.update({
-                  where: { id: item.productId },
-                  data: {
-                    stock: {
-                      increment: item.quantity,
-                    },
-                  },
-                });
-              }
-            }
-          });
-          needsReload = true;
-        }
-      }
-
-      if (needsReload) {
-        const reloadedOrders = await this.prisma.order.findMany({
-          where: { userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            items: {
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    imageUrl: true,
-                  },
-                },
-                variant: {
-                  select: {
-                    id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-        return reloadedOrders.filter(
-          (o) => !(o.status === 'PENDING' && o.paymentMethod === 'QR'),
-        );
-      }
-    }
-
-    return orders.filter(
-      (o) => !(o.status === 'PENDING' && o.paymentMethod === 'QR'),
-    );
+    return orders;
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -654,6 +565,11 @@ export class UsersService {
     }
 
     const payosItems: { name: string; quantity: number; price: number }[] = [];
+    const paymentMethod = dto.paymentMethod === 'QR' ? 'QR' : 'COD';
+    const orderCode =
+      paymentMethod === 'QR'
+        ? await this.paymentService.generateOrderCode()
+        : null;
 
     const order = await this.prisma.$transaction(async (tx) => {
       // 1. Check stock for each item and decrement
@@ -744,21 +660,6 @@ export class UsersService {
         });
       }
 
-      // 3. Generate random unique order code (9 digits) if QR payment method is used
-      let orderCode: number | null = null;
-      if (dto.paymentMethod === 'QR') {
-        let codeExists = true;
-        while (codeExists) {
-          orderCode = Math.floor(100000000 + Math.random() * 900000000);
-          const existingOrder = await tx.order.findUnique({
-            where: { orderCode },
-          });
-          if (!existingOrder) {
-            codeExists = false;
-          }
-        }
-      }
-
       // 4. Validate and apply Voucher
       let discountAmount = 0;
       let appliedVoucherCode: string | null = null;
@@ -834,8 +735,14 @@ export class UsersService {
           districtId: dto.districtId,
           wardCode: dto.wardCode,
           status: 'PENDING',
-          paymentMethod: dto.paymentMethod || 'COD',
-          orderCode,
+          payment: {
+            create: {
+              sourceType: 'STORE_ORDER',
+              method: paymentMethod,
+              amount: Math.max(0, dto.totalAmount - discountAmount),
+              orderCode,
+            },
+          },
           items: {
             create: dto.items.map((item) => ({
               productId: item.productId,
@@ -846,6 +753,7 @@ export class UsersService {
           },
         },
         include: {
+          payment: true,
           items: {
             include: {
               product: {
@@ -868,21 +776,14 @@ export class UsersService {
     });
 
     // 5. Integrate PayOS if QR selected
-    if (dto.paymentMethod === 'QR' && order.orderCode) {
+    if (paymentMethod === 'QR' && order.payment) {
       try {
-        const paymentLink = await this.paymentService.createPaymentLink({
-          orderCode: order.orderCode,
-          amount: Math.round(order.totalAmount),
-          description: `PM${order.orderCode}`,
+        const paymentLink = await this.paymentService.createQrLink({
+          paymentId: order.payment.id,
+          descriptionPrefix: 'PM',
           returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders?status=success`,
           cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel&orderId=${order.id}`,
           items: payosItems,
-        });
-
-        // Save checkout url
-        await this.prisma.order.update({
-          where: { id: order.id },
-          data: { paymentUrl: paymentLink.checkoutUrl },
         });
 
         const qrImageUrl = `https://img.vietqr.io/image/${paymentLink.bin}-${paymentLink.accountNumber}-compact2.png?amount=${paymentLink.amount}&addInfo=${encodeURIComponent(paymentLink.description)}&accountName=${encodeURIComponent(paymentLink.accountName)}`;
@@ -911,6 +812,7 @@ export class UsersService {
           where: { id: order.id },
           data: { status: 'PAYMENT_ERROR' },
           include: {
+            payment: true,
             items: {
               include: {
                 product: {
@@ -939,7 +841,7 @@ export class UsersService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id: orderId, userId },
-        include: { items: true },
+        include: { items: true, payment: true },
       });
       if (!order) {
         throw new NotFoundException('Không tìm thấy đơn hàng.');
@@ -975,6 +877,13 @@ export class UsersService {
       }
 
       // Đơn hàng QR hay COD đều chuyển sang CANCELLED thay vì delete
+      if (order.payment) {
+        await tx.payment.update({
+          where: { id: order.payment.id },
+          data: { status: 'CANCELLED' },
+        });
+      }
+
       return tx.order.update({
         where: { id: orderId },
         data: { status: 'CANCELLED' },
@@ -1067,15 +976,22 @@ export class UsersService {
       Number(order.totalAmount) - oldShippingFee + newShippingFee,
     );
 
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        shippingAddress: data.shippingAddress,
-        districtId: data.districtId ? Number(data.districtId) : order.districtId,
-        wardCode: data.wardCode ? String(data.wardCode) : order.wardCode,
-        shippingFee: newShippingFee,
-        totalAmount: newTotalAmount,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { orderId, status: { not: 'PAID' } },
+        data: { amount: newTotalAmount },
+      });
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          shippingAddress: data.shippingAddress,
+          districtId: data.districtId ? Number(data.districtId) : order.districtId,
+          wardCode: data.wardCode ? String(data.wardCode) : order.wardCode,
+          shippingFee: newShippingFee,
+          totalAmount: newTotalAmount,
+        },
+        include: { payment: true },
+      });
     });
   }
 
@@ -1083,6 +999,7 @@ export class UsersService {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
       include: {
+        payment: true,
         items: {
           include: {
             product: true,
@@ -1106,31 +1023,13 @@ export class UsersService {
       );
     }
 
-    if (order.paymentMethod !== 'QR') {
+    if (order.payment?.method !== 'QR') {
       throw new BadRequestException(
         'Phương thức thanh toán của đơn hàng không phải là chuyển khoản QR.',
       );
     }
 
     // Sinh orderCode mới để tránh bị trùng lặp trên PayOS nếu orderCode cũ bị lỗi hoặc hết hạn
-    let orderCode = order.orderCode;
-    if (
-      !orderCode ||
-      order.status === 'EXPIRED' ||
-      order.status === 'PAYMENT_ERROR'
-    ) {
-      let codeExists = true;
-      while (codeExists) {
-        orderCode = Math.floor(100000000 + Math.random() * 900000000);
-        const existingOrder = await this.prisma.order.findUnique({
-          where: { orderCode },
-        });
-        if (!existingOrder) {
-          codeExists = false;
-        }
-      }
-    }
-
     const payosItems = order.items.map((item) => {
       const itemName = item.variant
         ? `${item.product.name} (${item.variant.name})`
@@ -1143,23 +1042,24 @@ export class UsersService {
     });
 
     try {
-      const paymentLink = await this.paymentService.createPaymentLink({
-        orderCode: orderCode!,
-        amount: Math.round(order.totalAmount),
-        description: `PM${orderCode}`,
+      const paymentLink = await this.paymentService.createQrLink({
+        paymentId: order.payment.id,
+        descriptionPrefix: 'PM',
         returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders?status=success`,
         cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout?status=cancel&orderId=${order.id}`,
         items: payosItems,
+        forceNewCode:
+          order.payment.status === 'EXPIRED' ||
+          order.payment.status === 'PAYMENT_ERROR',
       });
 
       const updatedOrder = await this.prisma.order.update({
         where: { id: order.id },
         data: {
-          paymentUrl: paymentLink.checkoutUrl,
-          orderCode,
           status: 'PENDING',
         },
         include: {
+          payment: true,
           items: {
             include: {
               product: {
@@ -1220,13 +1120,14 @@ export class UsersService {
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
+      include: { payment: true },
     });
 
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
 
-    if (order.status !== 'PROCESSING') {
+    if (order.payment?.status !== 'PAID') {
       throw new BadRequestException(
         'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đã thanh toán thành công (đang xử lý).',
       );

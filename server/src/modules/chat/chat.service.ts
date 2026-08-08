@@ -90,6 +90,7 @@ export class ChatService {
               const userOrders = await this.prisma.order.findMany({
                 where: { userId },
                 include: {
+                  payment: { select: { orderCode: true } },
                   items: {
                     include: {
                       product: { select: { name: true } },
@@ -110,7 +111,7 @@ export class ChatService {
                         (item) => `${item.product.name} (SL: ${item.quantity})`,
                       )
                       .join(', ');
-                    return `- Mã Đơn: ${o.orderCode || o.id} - Trạng thái: ${o.status} - Tổng tiền: ${o.totalAmount.toLocaleString('vi-VN')} VNĐ - Sản phẩm: [${itemsStr}] - Ngày đặt: ${dateStr}`;
+                    return `- Mã Đơn: ${o.payment?.orderCode || o.id} - Trạng thái: ${o.status} - Tổng tiền: ${o.totalAmount.toLocaleString('vi-VN')} VNĐ - Sản phẩm: [${itemsStr}] - Ngày đặt: ${dateStr}`;
                   })
                   .join('\n');
               }

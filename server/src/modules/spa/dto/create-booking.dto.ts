@@ -7,7 +7,7 @@ import {
   IsNumber,
   IsEnum,
 } from 'class-validator';
-import { Species } from '@prisma/client';
+import { PaymentMethod, Species } from '@prisma/client';
 
 export class CreateBookingDto {
   @IsOptional()
@@ -121,4 +121,21 @@ export class CreateSpaFeedbackDto {
   @IsOptional()
   @IsString()
   comment?: string;
+}
+
+export class CompleteSpaPaymentDto {
+  @IsEnum(PaymentMethod)
+  method: PaymentMethod;
+
+  @IsNotEmpty()
+  @IsString()
+  petConditionAfter: string;
+
+  @IsOptional()
+  @IsString()
+  photoAfter?: string;
+
+  @IsOptional()
+  @IsString()
+  issueReported?: string;
 }
