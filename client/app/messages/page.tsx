@@ -71,6 +71,33 @@ type MatchingRequest = {
   };
 };
 
+type ReportTargetType = 'USER' | 'PET';
+type ReportReason =
+  | 'INAPPROPRIATE_MESSAGE'
+  | 'HARASSMENT'
+  | 'FAKE_INFORMATION'
+  | 'PET_SAFETY'
+  | 'NO_SHOW'
+  | 'OTHER';
+
+const reportReasons: Record<
+  ReportTargetType,
+  Array<{ value: ReportReason; label: string }>
+> = {
+  USER: [
+    { value: 'INAPPROPRIATE_MESSAGE', label: 'Tin nhắn không phù hợp' },
+    { value: 'HARASSMENT', label: 'Quấy rối' },
+    { value: 'FAKE_INFORMATION', label: 'Thông tin giả' },
+    { value: 'NO_SHOW', label: 'Không đến gặp' },
+    { value: 'OTHER', label: 'Lý do khác' },
+  ],
+  PET: [
+    { value: 'FAKE_INFORMATION', label: 'Thông tin thú cưng không đúng' },
+    { value: 'PET_SAFETY', label: 'Vấn đề an toàn hoặc sức khỏe' },
+    { value: 'OTHER', label: 'Lý do khác' },
+  ],
+};
+
 type Match = {
   id: string;
   status: 'ACTIVE' | 'MET' | 'COMPLETED' | 'CANCELLED';
@@ -82,7 +109,7 @@ type Match = {
   completedAt?: string | null;
   endedAt?: string | null;
   endReason?: string | null;
-  reportedByMe: boolean;
+  reportedTargetTypes?: ReportTargetType[];
   blockedByMe: boolean;
   createdAt: string;
   pet1: {
@@ -174,7 +201,8 @@ export default function MessagesPage() {
   const [pregnancyNote, setPregnancyNote] = useState('');
   const [expectedDueDate, setExpectedDueDate] = useState('');
   const [endReason, setEndReason] = useState('');
-  const [reportReason, setReportReason] = useState('INAPPROPRIATE_MESSAGE');
+  const [reportTargetType, setReportTargetType] = useState<ReportTargetType>('USER');
+  const [reportReason, setReportReason] = useState<ReportReason>('INAPPROPRIATE_MESSAGE');
   const [reportDetail, setReportDetail] = useState('');
 
   const loadData = () => {
@@ -461,13 +489,30 @@ export default function MessagesPage() {
     setMatchAction('REPORT');
     try {
       await api.post(`/matching/matches/${selectedMatch.id}/report`, {
+        targetType: reportTargetType,
         reason: reportReason,
         detail: reportDetail.trim() || undefined,
       });
       setMatches((current) => current.map((match) => (
-        match.id === selectedMatch.id ? { ...match, reportedByMe: true } : match
+        match.id === selectedMatch.id
+          ? {
+              ...match,
+              reportedTargetTypes: Array.from(new Set([
+                ...(match.reportedTargetTypes ?? []),
+                reportTargetType,
+              ])),
+            }
+          : match
       )));
-      setSelectedMatch((current) => current ? { ...current, reportedByMe: true } : current);
+      setSelectedMatch((current) => current
+        ? {
+            ...current,
+            reportedTargetTypes: Array.from(new Set([
+              ...(current.reportedTargetTypes ?? []),
+              reportTargetType,
+            ])),
+          }
+        : current);
       setReportDialogOpen(false);
       setReportDetail('');
       toast.success('Báo cáo đã được gửi tới quản trị viên.');
@@ -476,6 +521,17 @@ export default function MessagesPage() {
     } finally {
       setMatchAction(null);
     }
+  };
+
+  const openReportDialog = () => {
+    if (!selectedMatch) return;
+    const reportedTargets = selectedMatch.reportedTargetTypes ?? [];
+    const targetType: ReportTargetType = reportedTargets.includes('USER')
+      ? 'PET'
+      : 'USER';
+    setReportTargetType(targetType);
+    setReportReason(reportReasons[targetType][0].value);
+    setReportDialogOpen(true);
   };
 
   const handleBlockUser = async () => {
@@ -516,6 +572,9 @@ export default function MessagesPage() {
   }, [selectedMatch, chatMessages]);
 
   const currentUserOwnsPet1 = selectedMatch?.pet1.owner.id === currentUserId;
+  const otherPet = selectedMatch
+    ? (currentUserOwnsPet1 ? selectedMatch.pet2 : selectedMatch.pet1)
+    : null;
   const myMeetingConfirmedAt = selectedMatch
     ? (currentUserOwnsPet1
       ? selectedMatch.pet1MeetingConfirmedAt
@@ -755,11 +814,13 @@ export default function MessagesPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            disabled={selectedMatch.reportedByMe}
-                            onSelect={() => setReportDialogOpen(true)}
+                            disabled={(selectedMatch.reportedTargetTypes?.length ?? 0) === 2}
+                            onSelect={openReportDialog}
                           >
                             <Flag />
-                            {selectedMatch.reportedByMe ? 'Đã báo cáo' : 'Báo cáo người dùng'}
+                            {(selectedMatch.reportedTargetTypes?.length ?? 0) === 2
+                              ? 'Đã gửi đủ báo cáo'
+                              : 'Báo cáo'}
                           </DropdownMenuItem>
                           {selectedMatch.blockedByMe ? (
                             <DropdownMenuItem onSelect={handleUnblockUser} disabled={matchAction === 'UNBLOCK'}>
@@ -1142,26 +1203,43 @@ export default function MessagesPage() {
       <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Báo cáo người dùng</DialogTitle>
+            <DialogTitle>Gửi báo cáo</DialogTitle>
             <DialogDescription>
-              Báo cáo và lịch sử chat của match sẽ được gửi tới quản trị viên để xem xét.
+              Chọn người dùng hoặc thú cưng cần báo cáo. Lịch sử chat của match sẽ được gửi tới quản trị viên để xem xét.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="matching-report-target" className="text-xs font-bold">Đối tượng báo cáo</label>
+              <select
+                id="matching-report-target"
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={reportTargetType}
+                onChange={(event) => {
+                  const targetType = event.target.value as ReportTargetType;
+                  setReportTargetType(targetType);
+                  setReportReason(reportReasons[targetType][0].value);
+                }}
+              >
+                <option value="USER" disabled={selectedMatch?.reportedTargetTypes?.includes('USER')}>
+                  Người dùng: {otherPet?.owner.name ?? '-'}
+                </option>
+                <option value="PET" disabled={selectedMatch?.reportedTargetTypes?.includes('PET')}>
+                  Thú cưng: {otherPet?.name ?? '-'}
+                </option>
+              </select>
+            </div>
             <div className="space-y-2">
               <label htmlFor="matching-report-reason" className="text-xs font-bold">Lý do</label>
               <select
                 id="matching-report-reason"
                 className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                 value={reportReason}
-                onChange={(event) => setReportReason(event.target.value)}
+                onChange={(event) => setReportReason(event.target.value as ReportReason)}
               >
-                <option value="INAPPROPRIATE_MESSAGE">Tin nhắn không phù hợp</option>
-                <option value="HARASSMENT">Quấy rối</option>
-                <option value="FAKE_INFORMATION">Thông tin giả</option>
-                <option value="PET_SAFETY">An toàn thú cưng</option>
-                <option value="NO_SHOW">Không đến gặp</option>
-                <option value="OTHER">Lý do khác</option>
+                {reportReasons[reportTargetType].map((reason) => (
+                  <option key={reason.value} value={reason.value}>{reason.label}</option>
+                ))}
               </select>
             </div>
             <div className="space-y-2">

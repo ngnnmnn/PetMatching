@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -272,6 +273,7 @@ describe('MatchingService moderation', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({
           id: 'report-1',
+          targetType: 'USER',
           reason: 'HARASSMENT',
           detail: 'detail',
           createdAt: new Date(),
@@ -296,6 +298,7 @@ describe('MatchingService moderation', () => {
 
   it('reports the other participant and creates an audit log', async () => {
     await service.reportMatch(userId, matchId, {
+      targetType: 'USER',
       reason: 'HARASSMENT',
       detail: ' detail ',
     });
@@ -306,6 +309,7 @@ describe('MatchingService moderation', () => {
         userId,
         reportedUserId: otherUserId,
         petId: 'pet-2',
+        targetType: 'USER',
         detail: 'detail',
       }),
     }));
@@ -314,11 +318,57 @@ describe('MatchingService moderation', () => {
     }));
   });
 
+  it('reports the other pet separately from its owner', async () => {
+    await service.reportMatch(userId, matchId, {
+      targetType: 'PET',
+      reason: 'PET_SAFETY',
+    });
+
+    expect(tx.petReport.findUnique).toHaveBeenCalledWith({
+      where: {
+        matchId_userId_targetType: {
+          matchId,
+          userId,
+          targetType: 'PET',
+        },
+      },
+      select: { id: true },
+    });
+    expect(tx.petReport.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        reportedUserId: otherUserId,
+        petId: 'pet-2',
+        targetType: 'PET',
+      }),
+    }));
+    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({
+          targetType: 'PET',
+          reportedPetId: 'pet-2',
+        }),
+      }),
+    }));
+  });
+
+  it('rejects a report reason that does not match the selected target', async () => {
+    await expect(
+      service.reportMatch(userId, matchId, {
+        targetType: 'PET',
+        reason: 'HARASSMENT',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('does not create the same report twice for one match', async () => {
     tx.petReport.findUnique.mockResolvedValue({ id: 'report-1' });
 
     await expect(
-      service.reportMatch(userId, matchId, { reason: 'HARASSMENT' }),
+      service.reportMatch(userId, matchId, {
+        targetType: 'USER',
+        reason: 'HARASSMENT',
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.petReport.create).not.toHaveBeenCalled();
     expect(tx.auditLog.create).not.toHaveBeenCalled();
@@ -326,7 +376,10 @@ describe('MatchingService moderation', () => {
 
   it('does not allow a non-participant to report a match', async () => {
     await expect(
-      service.reportMatch('other-user', matchId, { reason: 'HARASSMENT' }),
+      service.reportMatch('other-user', matchId, {
+        targetType: 'USER',
+        reason: 'HARASSMENT',
+      }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(tx.petReport.create).not.toHaveBeenCalled();
     expect(tx.auditLog.create).not.toHaveBeenCalled();
