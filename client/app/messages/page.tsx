@@ -11,12 +11,16 @@ import {
   Inbox,
   MessageCircle,
   MessageSquare,
+  MoreHorizontal,
   Paperclip,
   PawPrint,
   Send,
   ShieldCheck,
   Sparkles,
   User,
+  UserCheck,
+  UserX,
+  Flag,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -35,6 +39,12 @@ import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -72,6 +82,8 @@ type Match = {
   completedAt?: string | null;
   endedAt?: string | null;
   endReason?: string | null;
+  reportedByMe: boolean;
+  blockedByMe: boolean;
   createdAt: string;
   pet1: {
     id: string;
@@ -156,10 +168,14 @@ export default function MessagesPage() {
   const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
   const [pregnancyDialogOpen, setPregnancyDialogOpen] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
-  const [matchAction, setMatchAction] = useState<'MEETING' | 'PREGNANCY' | 'END' | null>(null);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [matchAction, setMatchAction] = useState<'MEETING' | 'PREGNANCY' | 'END' | 'REPORT' | 'BLOCK' | 'UNBLOCK' | null>(null);
   const [pregnancyNote, setPregnancyNote] = useState('');
   const [expectedDueDate, setExpectedDueDate] = useState('');
   const [endReason, setEndReason] = useState('');
+  const [reportReason, setReportReason] = useState('INAPPROPRIATE_MESSAGE');
+  const [reportDetail, setReportDetail] = useState('');
 
   const loadData = () => {
     setLoading(true);
@@ -440,6 +456,60 @@ export default function MessagesPage() {
     }
   };
 
+  const handleReportMatch = async () => {
+    if (!selectedMatch || matchAction) return;
+    setMatchAction('REPORT');
+    try {
+      await api.post(`/matching/matches/${selectedMatch.id}/report`, {
+        reason: reportReason,
+        detail: reportDetail.trim() || undefined,
+      });
+      setMatches((current) => current.map((match) => (
+        match.id === selectedMatch.id ? { ...match, reportedByMe: true } : match
+      )));
+      setSelectedMatch((current) => current ? { ...current, reportedByMe: true } : current);
+      setReportDialogOpen(false);
+      setReportDetail('');
+      toast.success('Báo cáo đã được gửi tới quản trị viên.');
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Không thể gửi báo cáo.'));
+    } finally {
+      setMatchAction(null);
+    }
+  };
+
+  const handleBlockUser = async () => {
+    if (!selectedMatch || matchAction) return;
+    setMatchAction('BLOCK');
+    try {
+      await api.post(`/matching/matches/${selectedMatch.id}/block`);
+      setBlockDialogOpen(false);
+      toast.success('Đã chặn người dùng. Các tương tác ghép đôi đã được đóng.');
+      loadData();
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Không thể chặn người dùng.'));
+    } finally {
+      setMatchAction(null);
+    }
+  };
+
+  const handleUnblockUser = async () => {
+    if (!selectedMatch || matchAction) return;
+    const otherUserId = selectedMatch.pet1.owner.id === currentUserId
+      ? selectedMatch.pet2.owner.id
+      : selectedMatch.pet1.owner.id;
+    setMatchAction('UNBLOCK');
+    try {
+      await api.delete(`/matching/blocks/${otherUserId}`);
+      toast.success('Đã bỏ chặn người dùng. Match cũ vẫn ở chế độ chỉ đọc.');
+      loadData();
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Không thể bỏ chặn người dùng.'));
+    } finally {
+      setMatchAction(null);
+    }
+  };
+
   const currentMatchMessages = useMemo(() => {
     if (!selectedMatch) return [];
     return chatMessages[selectedMatch.id] || [];
@@ -677,6 +747,31 @@ export default function MessagesPage() {
                           Kết thúc
                         </Button>
                       )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="outline" size="icon" className="size-8 rounded-xl" aria-label="Tùy chọn an toàn">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            disabled={selectedMatch.reportedByMe}
+                            onSelect={() => setReportDialogOpen(true)}
+                          >
+                            <Flag />
+                            {selectedMatch.reportedByMe ? 'Đã báo cáo' : 'Báo cáo người dùng'}
+                          </DropdownMenuItem>
+                          {selectedMatch.blockedByMe ? (
+                            <DropdownMenuItem onSelect={handleUnblockUser} disabled={matchAction === 'UNBLOCK'}>
+                              <UserCheck /> Bỏ chặn người dùng
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem variant="destructive" onSelect={() => setBlockDialogOpen(true)}>
+                              <UserX /> Chặn người dùng
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
 
@@ -727,7 +822,9 @@ export default function MessagesPage() {
 
                   {selectedMatch.status === 'CANCELLED' && (
                     <div className="shrink-0 border-b bg-muted px-4 py-3 text-xs font-semibold text-muted-foreground">
-                      Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.
+                      {selectedMatch.blockedByMe
+                        ? 'Bạn đã chặn người dùng này. Phòng chat hiện ở chế độ chỉ đọc.'
+                        : 'Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.'}
                       {selectedMatch.endReason && <span className="ml-1">Lý do: {selectedMatch.endReason}</span>}
                     </div>
                   )}
@@ -1041,6 +1138,61 @@ export default function MessagesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Báo cáo người dùng</DialogTitle>
+            <DialogDescription>
+              Báo cáo và lịch sử chat của match sẽ được gửi tới quản trị viên để xem xét.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="matching-report-reason" className="text-xs font-bold">Lý do</label>
+              <select
+                id="matching-report-reason"
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value)}
+              >
+                <option value="INAPPROPRIATE_MESSAGE">Tin nhắn không phù hợp</option>
+                <option value="HARASSMENT">Quấy rối</option>
+                <option value="FAKE_INFORMATION">Thông tin giả</option>
+                <option value="PET_SAFETY">An toàn thú cưng</option>
+                <option value="NO_SHOW">Không đến gặp</option>
+                <option value="OTHER">Lý do khác</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="matching-report-detail" className="text-xs font-bold">Chi tiết (không bắt buộc)</label>
+              <Textarea
+                id="matching-report-detail"
+                maxLength={1000}
+                value={reportDetail}
+                onChange={(event) => setReportDetail(event.target.value)}
+                placeholder="Mô tả vấn đề để quản trị viên dễ kiểm tra..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReportDialogOpen(false)} disabled={matchAction === 'REPORT'}>Hủy</Button>
+            <Button type="button" variant="destructive" onClick={handleReportMatch} disabled={matchAction === 'REPORT'}>
+              {matchAction === 'REPORT' ? 'Đang gửi...' : 'Gửi báo cáo'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={blockDialogOpen}
+        onCancel={() => setBlockDialogOpen(false)}
+        onConfirm={handleBlockUser}
+        title="Chặn người dùng"
+        description="Các yêu cầu ghép đôi đang chờ và match giữa hai bạn sẽ bị đóng. Lịch sử chat vẫn được giữ ở chế độ chỉ đọc."
+        confirmText="Chặn"
+        loading={matchAction === 'BLOCK'}
+      />
 
       <ImageLightbox
         imageUrl={viewingImageUrl}

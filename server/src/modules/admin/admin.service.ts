@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AccountStatus,
   ApprovalStatus,
@@ -656,15 +661,95 @@ export class AdminService {
   getMatchingReports() {
     return this.prisma.petReport.findMany({
       orderBy: { createdAt: 'desc' },
+      include: {
+        reporter: { select: { id: true, name: true, email: true } },
+        reportedUser: { select: { id: true, name: true, email: true } },
+        resolver: { select: { id: true, name: true } },
+        pet: { select: { id: true, name: true, avatarUrl: true } },
+        match: {
+          select: {
+            id: true,
+            status: true,
+            pet1: { select: { id: true, name: true } },
+            pet2: { select: { id: true, name: true } },
+          },
+        },
+      },
     });
   }
 
-  async resolveMatchingReport(actor: AdminActor, reportId: string) {
-    const report = await this.prisma.petReport.update({
+  async getMatchingReport(reportId: string) {
+    const report = await this.prisma.petReport.findUnique({
       where: { id: reportId },
-      data: { isResolved: true },
+      include: {
+        reporter: { select: { id: true, name: true, email: true } },
+        reportedUser: { select: { id: true, name: true, email: true } },
+        resolver: { select: { id: true, name: true } },
+        pet: { select: { id: true, name: true, avatarUrl: true } },
+        match: {
+          include: {
+            pet1: {
+              select: {
+                id: true,
+                name: true,
+                owner: { select: { id: true, name: true } },
+              },
+            },
+            pet2: {
+              select: {
+                id: true,
+                name: true,
+                owner: { select: { id: true, name: true } },
+              },
+            },
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 100,
+              include: {
+                sender: { select: { id: true, name: true, avatarUrl: true } },
+              },
+            },
+          },
+        },
+      },
     });
-    await this.audit(actor.id, 'ADMIN_RESOLVE_MATCHING_REPORT', 'PetReport', reportId);
+    if (!report) throw new NotFoundException('Matching report not found.');
+
+    if (report.match) {
+      report.match.messages.reverse();
+    }
+    return report;
+  }
+
+  async resolveMatchingReport(actor: AdminActor, reportId: string) {
+    const report = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "pet_reports" WHERE "id" = ${reportId} FOR UPDATE`,
+      );
+      const current = await tx.petReport.findUnique({ where: { id: reportId } });
+      if (!current) throw new NotFoundException('Matching report not found.');
+      if (current.isResolved) {
+        throw new ConflictException('Matching report is already resolved.');
+      }
+
+      const updated = await tx.petReport.update({
+        where: { id: reportId },
+        data: {
+          isResolved: true,
+          resolvedAt: new Date(),
+          resolvedById: actor.id,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_RESOLVE_MATCHING_REPORT',
+          targetType: 'PetReport',
+          targetId: reportId,
+        },
+      });
+      return updated;
+    });
     return report;
   }
 

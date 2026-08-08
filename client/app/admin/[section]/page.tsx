@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AccountStatus,
   AdminRole,
@@ -43,6 +44,7 @@ const complaintTargetOptions = [
   ['ORDER', 'Đơn hàng'],
   ['PRODUCT', 'Sản phẩm'],
   ['PET', 'Thú cưng'],
+  ['USER', 'Người dùng'],
 ] as const;
 const complaintStatusOptions = [
   ['ALL', 'Tất cả trạng thái'],
@@ -236,6 +238,8 @@ export default function AdminSectionPage() {
   const [complaintStatus, setComplaintStatus] = useState('ALL');
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] = useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] = useState<PetModerationFlow | null>(null);
+  const [matchingReportDetail, setMatchingReportDetail] = useState<Row | null>(null);
+  const [matchingReportLoading, setMatchingReportLoading] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -333,6 +337,20 @@ export default function AdminSectionPage() {
     runAction(row, () => adminApi.updateUserRole(row.id, nextRole), 'Đã cập nhật vai trò.');
   };
 
+  const inspectMatchingReport = async (row: Row) => {
+    setMatchingReportLoading(true);
+    try {
+      const response = await adminApi.matchingReport(row.id);
+      setMatchingReportDetail(response.data);
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      toast.error(message ?? 'Không thể tải chi tiết báo cáo.');
+    } finally {
+      setMatchingReportLoading(false);
+    }
+  };
+
   return (
     <div className="grid gap-6">
       <section className="relative overflow-hidden rounded-2xl border border-[#CFE3E0] bg-white shadow-sm">
@@ -424,6 +442,7 @@ export default function AdminSectionPage() {
                             onAction={(action, success) => runAction(row, action, success)}
                             onRoleChange={(nextRole) => handleRoleChange(row, nextRole)}
                             onPetModeration={(mode) => setPetModerationFlow({ mode, pet: row })}
+                            onInspectMatchingReport={() => inspectMatchingReport(row)}
                           />
                         </td>
                       )}
@@ -465,7 +484,73 @@ export default function AdminSectionPage() {
           }}
         />
       )}
+
+      <MatchingReportDialog
+        report={matchingReportDetail}
+        open={Boolean(matchingReportDetail)}
+        onOpenChange={(open) => !open && setMatchingReportDetail(null)}
+      />
+      {matchingReportLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+          <Loader2 className="size-8 animate-spin text-white" />
+        </div>
+      )}
     </div>
+  );
+}
+
+function MatchingReportDialog({
+  report,
+  open,
+  onOpenChange,
+}: {
+  report: Row | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const messages = report?.match?.messages ?? [];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Kiểm tra báo cáo ghép đôi</DialogTitle>
+          <DialogDescription>
+            Xem thông tin báo cáo và tối đa 100 tin nhắn gần nhất trong match.
+          </DialogDescription>
+        </DialogHeader>
+        {report && (
+          <div className="grid min-h-0 gap-4 overflow-y-auto pr-1">
+            <div className="grid gap-3 rounded-xl border bg-[#F8FAFC] p-4 text-sm sm:grid-cols-2">
+              <p><span className="font-black">Người báo cáo:</span> {report.reporter?.name ?? report.userId}</p>
+              <p><span className="font-black">Người bị báo cáo:</span> {report.reportedUser?.name ?? '-'}</p>
+              <p><span className="font-black">Thú cưng:</span> {report.pet?.name ?? report.petId}</p>
+              <p><span className="font-black">Lý do:</span> {formatMatchingReportReason(report.reason)}</p>
+              <p className="sm:col-span-2"><span className="font-black">Chi tiết:</span> {report.detail || 'Không có'}</p>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-black text-[#172033]">Lịch sử trò chuyện</h3>
+              <div className="grid max-h-[430px] gap-3 overflow-y-auto rounded-xl border p-3">
+                {messages.map((message: Row) => (
+                  <div key={message.id} className="rounded-lg bg-[#F8FAFC] p-3 text-sm">
+                    <div className="flex justify-between gap-3 text-xs text-[#64748B]">
+                      <span className="font-black text-[#334155]">{message.sender?.name ?? message.senderId}</span>
+                      <span>{new Date(message.createdAt).toLocaleString('vi-VN')}</span>
+                    </div>
+                    {message.content && <p className="mt-2 whitespace-pre-wrap break-words">{message.content}</p>}
+                    {message.imageUrl && (
+                      <a href={message.imageUrl} target="_blank" rel="noreferrer" className="mt-2 block">
+                        <img src={message.imageUrl} alt="Ảnh trong báo cáo" className="max-h-64 rounded-lg border object-contain" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+                {!messages.length && <p className="py-8 text-center text-sm text-[#64748B]">Match không có tin nhắn.</p>}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1292,6 +1377,7 @@ function ActionGroup({
   onAction,
   onRoleChange,
   onPetModeration,
+  onInspectMatchingReport,
 }: {
   section: string;
   row: Row;
@@ -1299,6 +1385,7 @@ function ActionGroup({
   onAction: (action: () => Promise<unknown>, success: string) => void;
   onRoleChange: (role: AdminRole) => void;
   onPetModeration: (mode: 'HIDE' | 'RESTORE') => void;
+  onInspectMatchingReport?: () => void;
 }) {
   if (busy) {
     return <Loader2 className="ml-auto size-5 animate-spin text-[#0F766E]" />;
@@ -1367,14 +1454,18 @@ function ActionGroup({
     );
   }
 
-  if (section === 'reports' && row.status === 'PENDING') {
-    if (row.reportSource === 'MATCHING') {
-      return (
-        <div className="flex justify-end">
+  if (section === 'reports' && row.reportSource === 'MATCHING') {
+    return (
+      <div className="flex justify-end gap-2">
+        <IconButton label="Kiểm tra" icon={Eye} onClick={() => onInspectMatchingReport?.()} />
+        {row.status === 'PENDING' && (
           <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveMatchingReport(row.id), 'Đã xử lý báo cáo ghép đôi.')} />
-        </div>
-      );
-    }
+        )}
+      </div>
+    );
+  }
+
+  if (section === 'reports' && row.status === 'PENDING') {
 
     return (
       <div className="flex justify-end gap-2">
@@ -1468,8 +1559,8 @@ function complaintColumns() {
   return [
     { key: 'title', label: 'Tiêu đề' },
     { key: 'type', label: 'Nhóm', render: (row: Row) => formatComplaintType(row.type) },
-    { key: 'targetType', label: 'Đối tượng', render: (row: Row) => formatComplaintTarget(row.targetType) },
-    { key: 'reporterId', label: 'Người báo cáo' },
+    { key: 'targetType', label: 'Đối tượng', render: (row: Row) => row.reportSource === 'MATCHING' ? row.targetId : formatComplaintTarget(row.targetType) },
+    { key: 'reporterId', label: 'Người báo cáo', render: (row: Row) => row.reporter?.name ?? row.reporterId },
     { key: 'detail', label: 'Chi tiết' },
     { key: 'status', label: 'Trạng thái' },
     { key: 'actionTaken', label: 'Hành động', render: (row: Row) => row.actionTaken ? formatStatus(row.actionTaken) : '-' },
@@ -1490,10 +1581,10 @@ async function loadAllReports(): Promise<{ data: Row[] }> {
       reportSource: 'MATCHING',
       type: 'MATCHING',
       status: report.isResolved ? 'RESOLVED' : 'PENDING',
-      title: report.reason,
+      title: formatMatchingReportReason(report.reason),
       reporterId: report.userId,
-      targetType: 'PET',
-      targetId: report.petId,
+      targetType: 'USER',
+      targetId: report.reportedUser?.name ?? report.reportedUserId ?? report.pet?.name ?? report.petId,
       actionTaken: report.isResolved ? 'RESOLVE' : null,
     }))
     : [];
@@ -1555,8 +1646,21 @@ function formatComplaintTarget(target?: string) {
     ORDER: 'Đơn hàng',
     PRODUCT: 'Sản phẩm',
     PET: 'Thú cưng',
+    USER: 'Người dùng',
   };
   return target ? labels[target] ?? target : '-';
+}
+
+function formatMatchingReportReason(reason?: string) {
+  const labels: Record<string, string> = {
+    INAPPROPRIATE_MESSAGE: 'Tin nhắn không phù hợp',
+    HARASSMENT: 'Quấy rối',
+    FAKE_INFORMATION: 'Thông tin giả',
+    PET_SAFETY: 'An toàn thú cưng',
+    NO_SHOW: 'Không đến gặp',
+    OTHER: 'Lý do khác',
+  };
+  return reason ? labels[reason] ?? reason : '-';
 }
 
 function renderAdminCell(column: { key: string; render?: (row: Row) => ReactNode }, row: Row) {

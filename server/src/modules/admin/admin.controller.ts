@@ -151,6 +151,11 @@ export class AdminController {
     return this.adminService.getMatchingReports();
   }
 
+  @Get('matching-reports/:id')
+  getMatchingReport(@Param('id') id: string) {
+    return this.adminService.getMatchingReport(id);
+  }
+
   @Get('breed-rules')
   getBreedRules(
     @Query('species') species?: Species,

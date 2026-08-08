@@ -49,6 +49,11 @@ model User {
   managedStores        Store[]              @relation("StoreManager")
   wishlistItems        WishlistItem[]
   passwordResetTokens  PasswordResetToken[]
+  matchingReportsCreated  PetReport[]          @relation("MatchingReportReporter")
+  matchingReportsReceived PetReport[]          @relation("MatchingReportSubject")
+  matchingReportsResolved PetReport[]          @relation("MatchingReportResolver")
+  matchingBlocksCreated   UserBlock[]          @relation("UserBlockBlocker")
+  matchingBlocksReceived  UserBlock[]          @relation("UserBlockBlocked")
 
   @@map("users")
 }
@@ -150,6 +155,7 @@ model Pet {
   documents                PetDocument[]
   owner                    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   spaBookings              SpaBooking[]
+  reports                  PetReport[]
 
   @@index([species, gender, status, isAvailableForMatching])
   @@index([ownerId])
@@ -219,6 +225,7 @@ model Match {
   pet1                    Pet         @relation("MatchPet1", fields: [pet1Id], references: [id])
   pet2                    Pet         @relation("MatchPet2", fields: [pet2Id], references: [id])
   messages                Message[]
+  reports                 PetReport[]
 
   @@unique([pet1Id, pet2Id])
   @@index([pet1Id, status])
@@ -297,15 +304,40 @@ model PetDocument {
 }
 
 model PetReport {
-  id         String   @id @default(cuid())
-  petId      String
-  userId     String
-  reason     String
-  detail     String?
-  isResolved Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  id             String    @id @default(cuid())
+  petId          String
+  userId         String
+  matchId        String?
+  reportedUserId String?
+  reason         String
+  detail         String?
+  isResolved     Boolean   @default(false)
+  resolvedAt     DateTime?
+  resolvedById   String?
+  createdAt      DateTime  @default(now())
+  pet            Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+  reporter       User      @relation("MatchingReportReporter", fields: [userId], references: [id], onDelete: Cascade)
+  reportedUser   User?     @relation("MatchingReportSubject", fields: [reportedUserId], references: [id], onDelete: SetNull)
+  resolver       User?     @relation("MatchingReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  match          Match?    @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
+  @@unique([matchId, userId])
+  @@index([reportedUserId, isResolved])
+  @@index([isResolved, createdAt])
   @@map("pet_reports")
+}
+
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   User     @relation("UserBlockBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("UserBlockBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("user_blocks")
 }
 
 model Store {

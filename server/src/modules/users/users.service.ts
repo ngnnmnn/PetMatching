@@ -247,7 +247,6 @@ export class UsersService {
         orders: {
           orderBy: { createdAt: 'desc' },
           include: {
-            payment: true,
             items: {
               include: {
                 product: {
