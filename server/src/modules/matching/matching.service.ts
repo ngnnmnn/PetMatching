@@ -25,6 +25,7 @@ import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
 import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
+import { ReportMatchDto } from './dto/report-match.dto';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -113,6 +114,7 @@ export class MatchingService {
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
+    const blockedUserIds = await this.getBlockedUserIds(userId);
 
     // --- Hard constraint: kiểm tra chu kỳ phối giống của female pet ---
     const cycleCheck = this.checkBreedingCycle(femalePet);
@@ -133,7 +135,7 @@ export class MatchingService {
       gender: Gender.MALE,
       status: PetStatus.ACTIVE,
       isAvailableForMatching: true,
-      ownerId: { not: userId },
+      ownerId: { notIn: [userId, ...blockedUserIds] },
       // Hard constraint: chỉ lấy pet đủ tuổi
       birthday: { lte: minAgeDate },
     };
@@ -276,14 +278,17 @@ export class MatchingService {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
     const malePet = await this.getMaleCandidate(dto.malePetId);
     this.ensureDifferentOwners(femalePet, malePet);
-
-    const request = await this.prisma.matchingRequest.create({
-      data: {
-        requesterId: userId,
-        femalePetId: femalePet.id,
-        malePetId: malePet.id,
-        status: MatchingRequestStatus.PASSED,
-      },
+    const request = await this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(tx, userId, malePet.ownerId);
+      await this.ensureNoUserBlock(tx, userId, malePet.ownerId);
+      return tx.matchingRequest.create({
+        data: {
+          requesterId: userId,
+          femalePetId: femalePet.id,
+          malePetId: malePet.id,
+          status: MatchingRequestStatus.PASSED,
+        },
+      });
     });
 
     return { success: true, request };
@@ -306,49 +311,57 @@ export class MatchingService {
       );
     }
 
-    const existingPending = await this.prisma.matchingRequest.findFirst({
-      where: {
-        femalePetId: femalePet.id,
-        malePetId: malePet.id,
-        status: MatchingRequestStatus.PENDING,
-      },
-    });
+    const request = await this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(tx, userId, malePet.ownerId);
+      await this.ensureNoUserBlock(tx, userId, malePet.ownerId);
+      const existingPending = await tx.matchingRequest.findFirst({
+        where: {
+          femalePetId: femalePet.id,
+          malePetId: malePet.id,
+          status: MatchingRequestStatus.PENDING,
+        },
+        select: { id: true },
+      });
+      if (existingPending) {
+        throw new ConflictException(
+          'A pending request already exists for this pair.',
+        );
+      }
 
-    if (existingPending) {
-      throw new ConflictException(
-        'A pending request already exists for this pair.',
-      );
-    }
-
-    const request = await this.prisma.matchingRequest.create({
-      data: {
-        requesterId: userId,
-        femalePetId: femalePet.id,
-        malePetId: malePet.id,
-        note: dto.note,
-        status: MatchingRequestStatus.PENDING,
-      },
-      include: this.requestInclude(),
+      return tx.matchingRequest.create({
+        data: {
+          requesterId: userId,
+          femalePetId: femalePet.id,
+          malePetId: malePet.id,
+          note: dto.note,
+          status: MatchingRequestStatus.PENDING,
+        },
+        include: this.requestInclude(),
+      });
     });
 
     return { success: true, request };
   }
 
-  getIncomingRequests(userId: string) {
+  async getIncomingRequests(userId: string) {
+    const blockedUserIds = await this.getBlockedUserIds(userId);
     return this.prisma.matchingRequest.findMany({
       where: {
         status: MatchingRequestStatus.PENDING,
         malePet: { ownerId: userId },
+        femalePet: { ownerId: { notIn: blockedUserIds } },
       },
       include: this.requestInclude(),
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  getOutgoingRequests(userId: string) {
+  async getOutgoingRequests(userId: string) {
+    const blockedUserIds = await this.getBlockedUserIds(userId);
     return this.prisma.matchingRequest.findMany({
       where: {
         requesterId: userId,
+        malePet: { ownerId: { notIn: blockedUserIds } },
         status: {
           not: MatchingRequestStatus.PASSED,
         },
@@ -371,6 +384,26 @@ export class MatchingService {
     );
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(
+        tx,
+        request.femalePet.ownerId,
+        request.malePet.ownerId,
+      );
+      await this.ensureNoUserBlock(
+        tx,
+        request.femalePet.ownerId,
+        request.malePet.ownerId,
+      );
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "matching_requests" WHERE "id" = ${requestId} FOR UPDATE`,
+      );
+      const currentRequest = await tx.matchingRequest.findUnique({
+        where: { id: requestId },
+        select: { status: true },
+      });
+      if (currentRequest?.status !== MatchingRequestStatus.PENDING) {
+        throw new BadRequestException('Only pending requests can be updated.');
+      }
       const updatedRequest = await tx.matchingRequest.update({
         where: { id: requestId },
         data: {
@@ -414,22 +447,46 @@ export class MatchingService {
   }
 
   async rejectRequest(userId: string, requestId: string) {
-    await this.getPendingOwnedIncomingRequest(userId, requestId);
-
-    const request = await this.prisma.matchingRequest.update({
-      where: { id: requestId },
-      data: {
-        status: MatchingRequestStatus.REJECTED,
-        respondedAt: new Date(),
-      },
-      include: this.requestInclude(),
+    const pendingRequest = await this.getPendingOwnedIncomingRequest(
+      userId,
+      requestId,
+    );
+    const request = await this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(
+        tx,
+        pendingRequest.femalePet.ownerId,
+        pendingRequest.malePet.ownerId,
+      );
+      await this.ensureNoUserBlock(
+        tx,
+        pendingRequest.femalePet.ownerId,
+        pendingRequest.malePet.ownerId,
+      );
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "matching_requests" WHERE "id" = ${requestId} FOR UPDATE`,
+      );
+      const currentRequest = await tx.matchingRequest.findUnique({
+        where: { id: requestId },
+        select: { status: true },
+      });
+      if (currentRequest?.status !== MatchingRequestStatus.PENDING) {
+        throw new BadRequestException('Only pending requests can be updated.');
+      }
+      return tx.matchingRequest.update({
+        where: { id: requestId },
+        data: {
+          status: MatchingRequestStatus.REJECTED,
+          respondedAt: new Date(),
+        },
+        include: this.requestInclude(),
+      });
     });
 
     return { success: true, request };
   }
 
-  getMatches(userId: string) {
-    return this.prisma.match.findMany({
+  async getMatches(userId: string) {
+    const matches = await this.prisma.match.findMany({
       where: {
         OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
       },
@@ -454,9 +511,200 @@ export class MatchingService {
             messages: { where: { senderId: { not: userId }, isRead: false } },
           },
         },
+        reports: {
+          where: { userId },
+          select: { id: true },
+          take: 1,
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
+
+    const blocks = await this.prisma.userBlock.findMany({
+      where: { blockerId: userId },
+      select: { blockedId: true },
+    });
+
+    return matches.map(({ reports, ...match }) => {
+      const otherUserId =
+        match.pet1.ownerId === userId
+          ? match.pet2.ownerId
+          : match.pet1.ownerId;
+      return {
+        ...match,
+        reportedByMe: reports.length > 0,
+        blockedByMe: blocks.some(
+          (block) => block.blockedId === otherUserId,
+        ),
+      };
+    });
+  }
+
+  async reportMatch(userId: string, matchId: string, dto: ReportMatchDto) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const match = await this.getLockedMatch(tx, matchId);
+        const participant = this.getParticipantContext(match, userId);
+        const detail = dto.detail?.trim() || null;
+
+        const existingReport = await tx.petReport.findUnique({
+          where: { matchId_userId: { matchId, userId } },
+          select: { id: true },
+        });
+        if (existingReport) {
+          throw new ConflictException('Bạn đã báo cáo người dùng này trong match này.');
+        }
+
+        const report = await tx.petReport.create({
+          data: {
+            matchId,
+            userId,
+            reportedUserId: participant.otherOwner.id,
+            petId:
+              participant.side === 'pet1' ? match.pet2Id : match.pet1Id,
+            reason: dto.reason,
+            detail,
+          },
+          select: { id: true, reason: true, detail: true, createdAt: true },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorId: userId,
+            action: 'USER_CREATE_MATCHING_REPORT',
+            targetType: 'PetReport',
+            targetId: report.id,
+            metadata: { matchId, reportedUserId: participant.otherOwner.id },
+          },
+        });
+
+        return { success: true, report };
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Bạn đã báo cáo người dùng này trong match này.');
+      }
+      throw error;
+    }
+  }
+
+  async blockMatchUser(userId: string, matchId: string) {
+    const sourceMatch = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: matchParticipantInclude,
+    });
+    if (!sourceMatch) throw new NotFoundException('Không tìm thấy match.');
+    const sourceParticipant = this.getParticipantContext(sourceMatch, userId);
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(tx, userId, sourceParticipant.otherOwner.id);
+      const match = await this.getLockedMatch(tx, matchId);
+      const participant = this.getParticipantContext(match, userId);
+      const blockedUserId = participant.otherOwner.id;
+      const inserted = await tx.userBlock.createMany({
+        data: [{ blockerId: userId, blockedId: blockedUserId }],
+        skipDuplicates: true,
+      });
+
+      if (inserted.count === 0) {
+        return { success: true, blockedUserId, alreadyBlocked: true };
+      }
+
+      const now = new Date();
+      const ownerPairs = [
+        {
+          femalePet: { ownerId: userId },
+          malePet: { ownerId: blockedUserId },
+        },
+        {
+          femalePet: { ownerId: blockedUserId },
+          malePet: { ownerId: userId },
+        },
+      ];
+      const requestResult = await tx.matchingRequest.updateMany({
+        where: {
+          status: MatchingRequestStatus.PENDING,
+          OR: ownerPairs,
+        },
+        data: { status: MatchingRequestStatus.CANCELLED, respondedAt: now },
+      });
+      const matchResult = await tx.match.updateMany({
+        where: {
+          status: { not: MatchStatus.CANCELLED },
+          OR: [
+            {
+              pet1: { ownerId: userId },
+              pet2: { ownerId: blockedUserId },
+            },
+            {
+              pet1: { ownerId: blockedUserId },
+              pet2: { ownerId: userId },
+            },
+          ],
+        },
+        data: {
+          status: MatchStatus.CANCELLED,
+          endedAt: now,
+          endedById: userId,
+          endReason: 'USER_BLOCKED',
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'USER_BLOCK',
+          targetType: 'User',
+          targetId: blockedUserId,
+          metadata: {
+            sourceMatchId: matchId,
+            cancelledRequests: requestResult.count,
+            cancelledMatches: matchResult.count,
+          },
+        },
+      });
+
+      return { success: true, blockedUserId, alreadyBlocked: false };
+    });
+  }
+
+  getBlockedUsers(userId: string) {
+    return this.prisma.userBlock.findMany({
+      where: { blockerId: userId },
+      select: {
+        createdAt: true,
+        blocked: {
+          select: { id: true, name: true, avatarUrl: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async unblockUser(userId: string, blockedUserId: string) {
+    if (userId === blockedUserId) {
+      throw new BadRequestException('Bạn không thể bỏ chặn chính mình.');
+    }
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(tx, userId, blockedUserId);
+      const deleted = await tx.userBlock.deleteMany({
+        where: { blockerId: userId, blockedId: blockedUserId },
+      });
+      if (deleted.count > 0) {
+        await tx.auditLog.create({
+          data: {
+            actorId: userId,
+            action: 'USER_UNBLOCK',
+            targetType: 'User',
+            targetId: blockedUserId,
+          },
+        });
+      }
+      return deleted.count;
+    });
+
+    return { success: true, blockedUserId, wasBlocked: result > 0 };
   }
 
   async confirmMeeting(userId: string, matchId: string) {
@@ -696,9 +944,20 @@ export class MatchingService {
       throw new BadRequestException('Message content cannot be empty.');
     }
 
+    const activeMatch = await this.getOwnedActiveMatch(userId, matchId);
     return this.prisma.$transaction(async (tx) => {
+      await this.lockUserPair(
+        tx,
+        activeMatch.pet1.ownerId,
+        activeMatch.pet2.ownerId,
+      );
       const match = await this.getLockedMatch(tx, matchId);
       this.ensureMatchAllowsChat(match, userId);
+      await this.ensureNoUserBlock(
+        tx,
+        match.pet1.ownerId,
+        match.pet2.ownerId,
+      );
 
       const message = await tx.message.create({
         data: { matchId, senderId: userId, content: normalizedContent },
@@ -720,7 +979,7 @@ export class MatchingService {
     file: { buffer: Buffer; mimetype: string },
     content?: string,
   ) {
-    await this.getOwnedActiveMatch(userId, matchId);
+    const activeMatch = await this.getOwnedActiveMatch(userId, matchId);
     const uploaded = await this.cloudinary.uploadBuffer(
       file.buffer,
       `petmatching/users/${userId}/chat/${matchId}`,
@@ -733,8 +992,18 @@ export class MatchingService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.lockUserPair(
+          tx,
+          activeMatch.pet1.ownerId,
+          activeMatch.pet2.ownerId,
+        );
         const match = await this.getLockedMatch(tx, matchId);
         this.ensureMatchAllowsChat(match, userId);
+        await this.ensureNoUserBlock(
+          tx,
+          match.pet1.ownerId,
+          match.pet2.ownerId,
+        );
 
         const message = await tx.message.create({
           data: {
@@ -766,13 +1035,22 @@ export class MatchingService {
         status: { in: CHAT_ENABLED_MATCH_STATUSES },
         OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
       },
-      select: { id: true },
+      select: {
+        id: true,
+        pet1: { select: { ownerId: true } },
+        pet2: { select: { ownerId: true } },
+      },
     });
     if (!match) {
       throw new NotFoundException(
         'Không tìm thấy match đang cho phép trò chuyện.',
       );
     }
+    await this.ensureNoUserBlock(
+      this.prisma,
+      match.pet1.ownerId,
+      match.pet2.ownerId,
+    );
     return match;
   }
 
@@ -803,6 +1081,48 @@ export class MatchingService {
       throw new NotFoundException('Không tìm thấy match.');
     }
     return match;
+  }
+
+  private async lockUserPair(
+    tx: Prisma.TransactionClient,
+    firstUserId: string,
+    secondUserId: string,
+  ) {
+    const pairKey = [firstUserId, secondUserId].sort().join(':');
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${pairKey}, 0))`,
+    );
+  }
+
+  private async getBlockedUserIds(userId: string) {
+    const blocks = await this.prisma.userBlock.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    return blocks.map((block) =>
+      block.blockerId === userId ? block.blockedId : block.blockerId,
+    );
+  }
+
+  private async ensureNoUserBlock(
+    client: PrismaService | Prisma.TransactionClient,
+    firstUserId: string,
+    secondUserId: string,
+  ) {
+    const block = await client.userBlock.findFirst({
+      where: {
+        OR: [
+          { blockerId: firstUserId, blockedId: secondUserId },
+          { blockerId: secondUserId, blockedId: firstUserId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block) {
+      throw new ForbiddenException(
+        'Không thể tương tác vì một trong hai người dùng đã chặn người kia.',
+      );
+    }
   }
 
   private getParticipantContext(match: MatchWithParticipants, userId: string) {

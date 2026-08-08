@@ -1,4 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { MatchStatus } from '@prisma/client';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { MailService } from '../../common/mail/mail.service';
@@ -7,6 +11,7 @@ import { MatchingService } from './matching.service';
 
 type TransactionMock = {
   $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
   match: {
     findUnique: jest.Mock;
     update: jest.Mock;
@@ -14,6 +19,7 @@ type TransactionMock = {
   message: {
     create: jest.Mock;
   };
+  userBlock: { findFirst: jest.Mock };
 };
 
 describe('MatchingService chat', () => {
@@ -26,6 +32,7 @@ describe('MatchingService chat', () => {
     $transaction: jest.Mock;
     match: { findFirst: jest.Mock };
     message: { updateMany: jest.Mock };
+    userBlock: { findFirst: jest.Mock };
   };
   let cloudinary: {
     uploadBuffer: jest.Mock;
@@ -55,6 +62,7 @@ describe('MatchingService chat', () => {
   beforeEach(() => {
     transaction = {
       $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       match: {
         findUnique: jest.fn().mockResolvedValue(createMatch()),
         update: jest.fn().mockResolvedValue({ id: matchId }),
@@ -68,6 +76,7 @@ describe('MatchingService chat', () => {
           }),
         ),
       },
+      userBlock: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     prisma = {
       $transaction: jest
@@ -75,8 +84,15 @@ describe('MatchingService chat', () => {
         .mockImplementation((callback: (tx: TransactionMock) => unknown) =>
           Promise.resolve(callback(transaction)),
         ),
-      match: { findFirst: jest.fn().mockResolvedValue({ id: matchId }) },
+      match: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: matchId,
+          pet1: { ownerId: userId },
+          pet2: { ownerId: 'user-2' },
+        }),
+      },
       message: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      userBlock: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     cloudinary = {
       uploadBuffer: jest.fn().mockResolvedValue({ url: imageUrl }),
@@ -92,6 +108,7 @@ describe('MatchingService chat', () => {
   it('locks the match before saving a text message', async () => {
     await service.sendMessage(userId, matchId, '  hello  ');
 
+    expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
     expect(transaction.$queryRaw).toHaveBeenCalledTimes(1);
     expect(transaction.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -121,6 +138,15 @@ describe('MatchingService chat', () => {
     expect(transaction.message.create).not.toHaveBeenCalled();
   });
 
+  it('does not save a message when either user has blocked the other', async () => {
+    transaction.userBlock.findFirst.mockResolvedValue({ id: 'block-1' });
+
+    await expect(service.sendMessage(userId, matchId, 'hello')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(transaction.message.create).not.toHaveBeenCalled();
+  });
+
   it('saves a Cloudinary URL after locking an active match', async () => {
     await service.sendImageMessage(userId, matchId, {
       buffer: Buffer.from('image'),
@@ -128,6 +154,7 @@ describe('MatchingService chat', () => {
     });
 
     expect(prisma.match.findFirst).toHaveBeenCalledTimes(1);
+    expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
     expect(transaction.$queryRaw).toHaveBeenCalledTimes(1);
     expect(transaction.message.create).toHaveBeenCalledWith({
       data: {
@@ -200,5 +227,161 @@ describe('MatchingService chat', () => {
       service.getMessages('other-user', matchId),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.message.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchingService moderation', () => {
+  const userId = 'user-1';
+  const otherUserId = 'user-2';
+  const matchId = 'match-1';
+  let tx: any;
+  let prisma: any;
+  let service: MatchingService;
+
+  beforeEach(() => {
+    const match = {
+      id: matchId,
+      pet1Id: 'pet-1',
+      pet2Id: 'pet-2',
+      status: MatchStatus.ACTIVE,
+      pet1MeetingConfirmedAt: null,
+      pet2MeetingConfirmedAt: null,
+      firstMeetingConfirmerId: null,
+      pet1: {
+        id: 'pet-1',
+        ownerId: userId,
+        owner: { id: userId, name: 'User 1', email: 'user1@example.com' },
+      },
+      pet2: {
+        id: 'pet-2',
+        ownerId: otherUserId,
+        owner: { id: otherUserId, name: 'User 2', email: 'user2@example.com' },
+      },
+    };
+    tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      match: {
+        findUnique: jest.fn().mockResolvedValue(match),
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+      matchingRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      petReport: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: 'report-1',
+          reason: 'HARASSMENT',
+          detail: 'detail',
+          createdAt: new Date(),
+        }),
+      },
+      userBlock: {
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    };
+    prisma = {
+      $transaction: jest.fn().mockImplementation((callback: (client: any) => unknown) => callback(tx)),
+      match: { findUnique: jest.fn().mockResolvedValue(match) },
+    };
+    service = new MatchingService(
+      prisma as PrismaService,
+      {} as CloudinaryService,
+      {} as MailService,
+    );
+  });
+
+  it('reports the other participant and creates an audit log', async () => {
+    await service.reportMatch(userId, matchId, {
+      reason: 'HARASSMENT',
+      detail: ' detail ',
+    });
+
+    expect(tx.petReport.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        matchId,
+        userId,
+        reportedUserId: otherUserId,
+        petId: 'pet-2',
+        detail: 'detail',
+      }),
+    }));
+    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'USER_CREATE_MATCHING_REPORT' }),
+    }));
+  });
+
+  it('does not create the same report twice for one match', async () => {
+    tx.petReport.findUnique.mockResolvedValue({ id: 'report-1' });
+
+    await expect(
+      service.reportMatch(userId, matchId, { reason: 'HARASSMENT' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.petReport.create).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('does not allow a non-participant to report a match', async () => {
+    await expect(
+      service.reportMatch('other-user', matchId, { reason: 'HARASSMENT' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.petReport.create).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('blocks idempotently and closes pending matching interactions once', async () => {
+    const result = await service.blockMatchUser(userId, matchId);
+
+    expect(result).toEqual({ success: true, blockedUserId: otherUserId, alreadyBlocked: false });
+    expect(tx.matchingRequest.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.match.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
+
+    tx.userBlock.createMany.mockResolvedValue({ count: 0 });
+    tx.matchingRequest.updateMany.mockClear();
+    tx.match.updateMany.mockClear();
+    tx.auditLog.create.mockClear();
+    const repeated = await service.blockMatchUser(userId, matchId);
+
+    expect(repeated.alreadyBlocked).toBe(true);
+    expect(tx.matchingRequest.updateMany).not.toHaveBeenCalled();
+    expect(tx.match.updateMany).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('does not allow a non-participant to block from a match', async () => {
+    await expect(
+      service.blockMatchUser('other-user', matchId),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.userBlock.createMany).not.toHaveBeenCalled();
+  });
+
+  it('only removes a block created by the current user', async () => {
+    await service.unblockUser(userId, otherUserId);
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.userBlock.deleteMany).toHaveBeenCalledWith({
+      where: { blockerId: userId, blockedId: otherUserId },
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'USER_UNBLOCK' }),
+    }));
+  });
+
+  it('handles repeated unblock requests without duplicate audit logs', async () => {
+    tx.userBlock.deleteMany.mockResolvedValue({ count: 0 });
+
+    const result = await service.unblockUser(userId, otherUserId);
+
+    expect(result).toEqual({
+      success: true,
+      blockedUserId: otherUserId,
+      wasBlocked: false,
+    });
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
   });
 });

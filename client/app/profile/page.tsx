@@ -67,6 +67,11 @@ type WardOption = {
   name: string;
 };
 
+type MatchingBlock = {
+  createdAt: string;
+  blocked: { id: string; name: string; avatarUrl?: string | null };
+};
+
 const emptyAddress: AddressDraft = {
   receiverName: '',
   receiverPhone: '',
@@ -118,6 +123,8 @@ export default function ProfilePage() {
   const [selectedDistrictCode, setSelectedDistrictCode] = useState('');
   const [selectedWardCode, setSelectedWardCode] = useState('');
   const [addressOptionsLoading, setAddressOptionsLoading] = useState(false);
+  const [matchingBlocks, setMatchingBlocks] = useState<MatchingBlock[]>([]);
+  const [unblockingUserId, setUnblockingUserId] = useState<string | null>(null);
   const [passwords, setPasswords] = useState({
     currentPassword: '',
     newPassword: '',
@@ -149,8 +156,8 @@ export default function ProfilePage() {
 
     usersApi
       .getProfile()
-      .then((response) => {
-        const data = response.data;
+      .then((profileResponse) => {
+        const data = profileResponse.data;
         setProfile(data);
         setName(data.name);
         setPhone(data.phone ?? '');
@@ -158,6 +165,11 @@ export default function ProfilePage() {
       })
       .catch(() => toast.error('Không thể tải hồ sơ.'))
       .finally(() => setLoading(false));
+
+    usersApi
+      .getMatchingBlocks()
+      .then((response) => setMatchingBlocks(response.data))
+      .catch(() => toast.error('Không thể tải danh sách người dùng đã chặn.'));
   }, [router]);
 
   useEffect(() => {
@@ -203,6 +215,20 @@ export default function ProfilePage() {
     setProfile(response.data);
     syncUserStorage(response.data);
     return response.data;
+  };
+
+  const handleUnblockMatchingUser = async (userId: string) => {
+    if (unblockingUserId) return;
+    setUnblockingUserId(userId);
+    try {
+      await usersApi.unblockMatchingUser(userId);
+      setMatchingBlocks((current) => current.filter((item) => item.blocked.id !== userId));
+      toast.success('Đã bỏ chặn người dùng.');
+    } catch {
+      toast.error('Không thể bỏ chặn người dùng.');
+    } finally {
+      setUnblockingUserId(null);
+    }
   };
 
   const loadDistricts = async (provinceCode: string, districtNameToSelect?: string, wardNameToSelect?: string) => {
@@ -670,6 +696,59 @@ export default function ProfilePage() {
                   ))}
                   {!profile.addresses.length && (
                     <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">Chưa có địa chỉ giao hàng.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="profile-card">
+                <SectionHeader
+                  icon={ShieldAlert}
+                  title="Người dùng đã chặn"
+                  description="Bỏ chặn chỉ cho phép tương tác mới; các match cũ vẫn giữ trạng thái đã kết thúc."
+                  compact
+                />
+                <div className="mt-5 grid gap-3">
+                  {matchingBlocks.map((item) => (
+                    <div key={item.blocked.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-color)] p-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <img
+                          src={item.blocked.avatarUrl || '/placeholder.svg'}
+                          alt={item.blocked.name}
+                          className="size-10 rounded-full border object-cover"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold">{item.blocked.name}</p>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            Đã chặn ngày {new Date(item.createdAt).toLocaleDateString('vi-VN')}
+                          </p>
+                        </div>
+                      </div>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button type="button" className="profile-secondary-button" disabled={unblockingUserId === item.blocked.id}>
+                            {unblockingUserId === item.blocked.id ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+                            Bỏ chặn
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Bỏ chặn {item.blocked.name}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Hai bạn có thể xuất hiện lại trong các tương tác ghép đôi mới. Match cũ sẽ không tự mở lại.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Hủy</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleUnblockMatchingUser(item.blocked.id)}>Bỏ chặn</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  ))}
+                  {matchingBlocks.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">
+                      Bạn chưa chặn người dùng nào.
+                    </div>
                   )}
                 </div>
               </section>

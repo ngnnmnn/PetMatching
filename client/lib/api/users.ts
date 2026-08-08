@@ -12,6 +12,11 @@ export const usersApi = {
   changePassword: (data: ChangePasswordData) =>
     api.post('/users/change-password', data),
   getAddresses: () => api.get<Address[]>('/users/addresses'),
+  getMatchingBlocks: () => api.get<Array<{
+    createdAt: string;
+    blocked: { id: string; name: string; avatarUrl?: string | null };
+  }>>('/matching/blocks'),
+  unblockMatchingUser: (userId: string) => api.delete(`/matching/blocks/${userId}`),
   createAddress: (
     data: Omit<Address, 'id' | 'userId' | 'createdAt' | 'updatedAt'>,
   ) =>

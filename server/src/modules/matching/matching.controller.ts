@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -20,6 +21,7 @@ import { ConfirmPregnancyDto } from './dto/confirm-pregnancy.dto';
 import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
+import { ReportMatchDto } from './dto/report-match.dto';
 import { SendMatchMessageDto } from './dto/send-match-message.dto';
 import { MatchingService } from './matching.service';
 
@@ -72,6 +74,36 @@ export class MatchingController {
   @Get('matches')
   getMatches(@Req() request: AuthenticatedRequest) {
     return this.matchingService.getMatches(request.user.id);
+  }
+
+  @Post('matches/:id/report')
+  reportMatch(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReportMatchDto,
+  ) {
+    return this.matchingService.reportMatch(request.user.id, id, dto);
+  }
+
+  @Post('matches/:id/block')
+  blockMatchUser(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.matchingService.blockMatchUser(request.user.id, id);
+  }
+
+  @Get('blocks')
+  getBlockedUsers(@Req() request: AuthenticatedRequest) {
+    return this.matchingService.getBlockedUsers(request.user.id);
+  }
+
+  @Delete('blocks/:userId')
+  unblockUser(
+    @Req() request: AuthenticatedRequest,
+    @Param('userId') userId: string,
+  ) {
+    return this.matchingService.unblockUser(request.user.id, userId);
   }
 
   @Post('matches/:id/confirm-meeting')

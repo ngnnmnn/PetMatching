@@ -99,6 +99,7 @@ export const adminApi = {
   reviewPetVerification: (id: string, status: DocumentStatus, reviewNote?: string) =>
     api.patch(`/admin/pet-verifications/${id}/review`, { status, reviewNote }),
   matchingReports: () => api.get('/admin/matching-reports'),
+  matchingReport: (id: string) => api.get(`/admin/matching-reports/${id}`),
   resolveMatchingReport: (id: string) => api.patch(`/admin/matching-reports/${id}/resolve`),
   breedRules: (params?: { species?: Species; active?: string; search?: string }) =>
     api.get<BreedRule[]>('/admin/breed-rules', { params }),
