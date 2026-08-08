@@ -131,8 +131,6 @@ model Pet {
   breedingFee              Float?
   /// Số con chia sẻ - chỉ có khi breedingOption = SHARE_LITTER
   shareLitterCount         Int?
-  /// Ngày phối giống gần nhất - dùng để tính chu kỳ
-  lastBreedingAt           DateTime?
   /// Tổng số lần phối giống thành công
   totalBreedings           Int               @default(0)
   location                 String
@@ -210,13 +208,6 @@ model Match {
   /// Lý do match (JSON): ["same_breed", "both_pedigree", "breed_compatible", "near_location"]
   matchReasons            Json?
   status                  MatchStatus @default(ACTIVE)
-  pet1MeetingConfirmedAt  DateTime?
-  pet2MeetingConfirmedAt  DateTime?
-  firstMeetingConfirmerId String?
-  /// Ghi chú kết quả sau khi phối giống xong (COMPLETED)
-  breedingNote            String?
-  expectedDueDate         DateTime?
-  completedAt             DateTime?
   endedAt                 DateTime?
   endedById               String?
   endReason               String?
@@ -744,7 +735,6 @@ enum Gender {
 
 enum PetStatus {
   ACTIVE
-  BREAKDOWN
   HIDDEN
   INACTIVE
 }
@@ -771,12 +761,9 @@ enum LikeStatus {
 
 /// Trạng thái của một Match:
 /// ACTIVE    - Đang hoạt động, hai bên có thể chat
-/// COMPLETED - Đã phối giống thành công
 /// CANCELLED - Một trong hai huỷ
 enum MatchStatus {
   ACTIVE
-  MET
-  COMPLETED
   CANCELLED
 }
 

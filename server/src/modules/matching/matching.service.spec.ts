@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { MatchStatus } from '@prisma/client';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
-import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MatchingService } from './matching.service';
 
@@ -102,7 +101,6 @@ describe('MatchingService chat', () => {
     service = new MatchingService(
       prisma as unknown as PrismaService,
       cloudinary as unknown as CloudinaryService,
-      {} as MailService,
     );
   });
 
@@ -245,9 +243,6 @@ describe('MatchingService moderation', () => {
       pet1Id: 'pet-1',
       pet2Id: 'pet-2',
       status: MatchStatus.ACTIVE,
-      pet1MeetingConfirmedAt: null,
-      pet2MeetingConfirmedAt: null,
-      firstMeetingConfirmerId: null,
       pet1: {
         id: 'pet-1',
         ownerId: userId,
@@ -292,7 +287,6 @@ describe('MatchingService moderation', () => {
     service = new MatchingService(
       prisma as PrismaService,
       {} as CloudinaryService,
-      {} as MailService,
     );
   });
 

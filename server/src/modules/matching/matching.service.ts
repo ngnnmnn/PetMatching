@@ -3,7 +3,6 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -19,8 +18,6 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
-import { MailService } from '../../common/mail/mail.service';
-import { ConfirmPregnancyDto } from './dto/confirm-pregnancy.dto';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
 import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
@@ -61,11 +58,6 @@ const matchParticipantInclude = Prisma.validator<Prisma.MatchInclude>()({
 const matchActionSelect = Prisma.validator<Prisma.MatchSelect>()({
   id: true,
   status: true,
-  pet1MeetingConfirmedAt: true,
-  pet2MeetingConfirmedAt: true,
-  breedingNote: true,
-  expectedDueDate: true,
-  completedAt: true,
   endedAt: true,
   endReason: true,
 });
@@ -77,14 +69,7 @@ type MatchWithParticipants = Prisma.MatchGetPayload<{
 // Tuổi tối thiểu cho phối giống (tháng)
 const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
 
-// Chu kỳ nghỉ phối giống (tháng)
-const BREEDING_COOLDOWN_MONTHS = { DOG: 6, CAT: 3 } as const;
-
-const CHAT_ENABLED_MATCH_STATUSES: MatchStatus[] = [
-  MatchStatus.ACTIVE,
-  MatchStatus.MET,
-  MatchStatus.COMPLETED,
-];
+const CHAT_ENABLED_MATCH_STATUSES: MatchStatus[] = [MatchStatus.ACTIVE];
 
 function calculateHaversineDistance(
   lat1: number,
@@ -107,26 +92,14 @@ function calculateHaversineDistance(
 
 @Injectable()
 export class MatchingService {
-  private readonly logger = new Logger(MatchingService.name);
-
   constructor(
     private prisma: PrismaService,
     private readonly cloudinary: CloudinaryService,
-    private readonly mailService: MailService,
   ) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
     const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
     const blockedUserIds = await this.getBlockedUserIds(userId);
-
-    // --- Hard constraint: kiểm tra chu kỳ phối giống của female pet ---
-    const cycleCheck = this.checkBreedingCycle(femalePet);
-    if (!cycleCheck.canBreed) {
-      throw new BadRequestException(
-        `Bé ${femalePet.name} đang trong thời gian nghỉ phối giống. ` +
-          `Có thể phối lại từ ${cycleCheck.nextAvailable?.toLocaleDateString('vi-VN')}.`,
-      );
-    }
 
     // --- Hard constraint: tuổi tối thiểu cho query ---
     const minAgeDate = new Date();
@@ -306,14 +279,6 @@ export class MatchingService {
     this.assertMinimumAge(femalePet);
     this.assertMinimumAge(malePet);
 
-    // --- Hard constraint: kiểm tra chu kỳ ---
-    const femaleCycle = this.checkBreedingCycle(femalePet);
-    if (!femaleCycle.canBreed) {
-      throw new BadRequestException(
-        `Bé ${femalePet.name} đang trong thời gian nghỉ phối giống.`,
-      );
-    }
-
     const request = await this.prisma.$transaction(async (tx) => {
       await this.lockUserPair(tx, userId, malePet.ownerId);
       await this.ensureNoUserBlock(tx, userId, malePet.ownerId);
@@ -420,12 +385,6 @@ export class MatchingService {
         where: { pet1Id_pet2Id: { pet1Id, pet2Id } },
         update: {
           status: MatchStatus.ACTIVE,
-          pet1MeetingConfirmedAt: null,
-          pet2MeetingConfirmedAt: null,
-          firstMeetingConfirmerId: null,
-          breedingNote: null,
-          expectedDueDate: null,
-          completedAt: null,
           endedAt: null,
           endedById: null,
           endReason: null,
@@ -739,162 +698,6 @@ export class MatchingService {
     return { success: true, blockedUserId, wasBlocked: result > 0 };
   }
 
-  async confirmMeeting(userId: string, matchId: string) {
-    const result = await this.prisma.$transaction(async (tx) => {
-      const match = await this.getLockedMatch(tx, matchId);
-      const participant = this.getParticipantContext(match, userId);
-
-      if (participant.ownMeetingConfirmedAt) {
-        throw new ConflictException('Bạn đã xác nhận gặp mặt trước đó.');
-      }
-      if (match.status === MatchStatus.CANCELLED) {
-        throw new BadRequestException('Match đã kết thúc.');
-      }
-      if (match.status !== MatchStatus.ACTIVE) {
-        throw new BadRequestException(
-          'Chỉ match đang hoạt động mới có thể xác nhận gặp mặt.',
-        );
-      }
-
-      const confirmedAt = new Date();
-      const isCompleted = Boolean(participant.otherMeetingConfirmedAt);
-      const confirmationData =
-        participant.side === 'pet1'
-          ? { pet1MeetingConfirmedAt: confirmedAt }
-          : { pet2MeetingConfirmedAt: confirmedAt };
-      const updatedMatch = await tx.match.update({
-        where: { id: matchId },
-        data: {
-          ...confirmationData,
-          status: isCompleted ? MatchStatus.MET : MatchStatus.ACTIVE,
-          firstMeetingConfirmerId: isCompleted
-            ? (match.firstMeetingConfirmerId ?? participant.otherOwner.id)
-            : userId,
-        },
-        select: matchActionSelect,
-      });
-
-      if (participant.ownPet.gender === Gender.MALE) {
-        await tx.pet.update({
-          where: { id: participant.ownPet.id },
-          data: {
-            status: PetStatus.BREAKDOWN,
-            isAvailableForMatching: false,
-            lastBreedingAt: confirmedAt,
-          },
-        });
-      }
-
-      await tx.auditLog.create({
-        data: {
-          actorId: userId,
-          action: 'MATCH_CONFIRM_MEETING',
-          targetType: 'Match',
-          targetId: matchId,
-          metadata: {
-            side: participant.side,
-            result: isCompleted ? MatchStatus.MET : 'WAITING_FOR_OTHER_OWNER',
-            petStatus:
-              participant.ownPet.gender === Gender.MALE
-                ? PetStatus.BREAKDOWN
-                : participant.ownPet.status,
-          },
-        },
-      });
-
-      return {
-        match: updatedMatch,
-        email: {
-          completed: isCompleted,
-          email: participant.otherOwner.email,
-          recipientName: participant.otherOwner.name,
-          confirmerName: participant.ownOwner.name,
-          pet1Name: match.pet1.name,
-          pet2Name: match.pet2.name,
-        },
-      };
-    });
-
-    try {
-      if (result.email.completed) {
-        await this.mailService.sendMeetingCompletedEmail(result.email);
-      } else {
-        await this.mailService.sendMeetingConfirmationRequestedEmail(
-          result.email,
-        );
-      }
-    } catch (error) {
-      this.logger.error(
-        'Không thể gửi email xác nhận gặp mặt sau khi đã lưu kết quả.',
-        error instanceof Error ? error.stack : undefined,
-      );
-    }
-
-    return result.match;
-  }
-
-  async confirmPregnancy(
-    userId: string,
-    matchId: string,
-    dto: ConfirmPregnancyDto,
-  ) {
-    const expectedDueDate = dto.expectedDueDate
-      ? new Date(dto.expectedDueDate)
-      : null;
-    const note = dto.note?.trim() || null;
-
-    return this.prisma.$transaction(async (tx) => {
-      const match = await this.getLockedMatch(tx, matchId);
-      const participant = this.getParticipantContext(match, userId);
-
-      if (match.status === MatchStatus.CANCELLED) {
-        throw new BadRequestException('Match đã kết thúc.');
-      }
-      if (match.status === MatchStatus.COMPLETED) {
-        throw new ConflictException(
-          'Kết quả mang thai đã được xác nhận trước đó.',
-        );
-      }
-      if (match.status !== MatchStatus.MET) {
-        throw new BadRequestException(
-          'Hai bên cần hoàn tất xác nhận gặp mặt trước.',
-        );
-      }
-      if (participant.ownPet.gender !== Gender.FEMALE) {
-        throw new ForbiddenException(
-          'Chỉ chủ của thú cưng cái mới có thể xác nhận mang thai.',
-        );
-      }
-
-      const completedAt = new Date();
-      const updatedMatch = await tx.match.update({
-        where: { id: matchId },
-        data: {
-          status: MatchStatus.COMPLETED,
-          breedingNote: note,
-          expectedDueDate,
-          completedAt,
-        },
-        select: matchActionSelect,
-      });
-      await tx.pet.update({
-        where: { id: participant.ownPet.id },
-        data: { lastBreedingAt: completedAt },
-      });
-      await tx.auditLog.create({
-        data: {
-          actorId: userId,
-          action: 'MATCH_CONFIRM_PREGNANCY',
-          targetType: 'Match',
-          targetId: matchId,
-          metadata: { expectedDueDate: expectedDueDate?.toISOString() ?? null },
-        },
-      });
-
-      return updatedMatch;
-    });
-  }
-
   async endMatch(userId: string, matchId: string, dto: EndMatchDto) {
     const reason = dto.reason?.trim() || null;
 
@@ -1176,12 +979,6 @@ export class MatchingService {
       ownPet: isPet1 ? match.pet1 : match.pet2,
       ownOwner: isPet1 ? match.pet1.owner : match.pet2.owner,
       otherOwner: isPet1 ? match.pet2.owner : match.pet1.owner,
-      ownMeetingConfirmedAt: isPet1
-        ? match.pet1MeetingConfirmedAt
-        : match.pet2MeetingConfirmedAt,
-      otherMeetingConfirmedAt: isPet1
-        ? match.pet2MeetingConfirmedAt
-        : match.pet1MeetingConfirmedAt,
     };
   }
 
@@ -1243,30 +1040,6 @@ export class MatchingService {
           `${pet.species === 'DOG' ? 'Chó' : 'Mèo'} cần ít nhất ${minAge} tháng tuổi để phối giống.`,
       );
     }
-  }
-
-  /**
-   * Kiểm tra chu kỳ phối giống.
-   * Chó cái: nghỉ 6 tháng sau mỗi lần phối.
-   * Mèo cái: nghỉ 3 tháng sau mỗi lần phối.
-   */
-  private checkBreedingCycle(pet: Pet): {
-    canBreed: boolean;
-    nextAvailable?: Date;
-  } {
-    if (!pet.lastBreedingAt) {
-      return { canBreed: true };
-    }
-
-    const cooldownMonths = BREEDING_COOLDOWN_MONTHS[pet.species];
-    const nextAvailable = new Date(pet.lastBreedingAt);
-    nextAvailable.setMonth(nextAvailable.getMonth() + cooldownMonths);
-
-    if (new Date() < nextAvailable) {
-      return { canBreed: false, nextAvailable };
-    }
-
-    return { canBreed: true };
   }
 
   private getAgeInMonths(birthday: Date): number {

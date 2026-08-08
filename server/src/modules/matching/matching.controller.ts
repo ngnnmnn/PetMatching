@@ -17,7 +17,6 @@ import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
-import { ConfirmPregnancyDto } from './dto/confirm-pregnancy.dto';
 import { EndMatchDto } from './dto/end-match.dto';
 import { GetCandidatesDto } from './dto/get-candidates.dto';
 import { PassPetDto } from './dto/pass-pet.dto';
@@ -104,23 +103,6 @@ export class MatchingController {
     @Param('userId') userId: string,
   ) {
     return this.matchingService.unblockUser(request.user.id, userId);
-  }
-
-  @Post('matches/:id/confirm-meeting')
-  confirmMeeting(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
-    return this.matchingService.confirmMeeting(request.user.id, id);
-  }
-
-  @Post('matches/:id/confirm-pregnancy')
-  confirmPregnancy(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: ConfirmPregnancyDto,
-  ) {
-    return this.matchingService.confirmPregnancy(request.user.id, id, dto);
   }
 
   @Post('matches/:id/end')
