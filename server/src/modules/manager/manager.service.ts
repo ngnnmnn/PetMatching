@@ -421,6 +421,17 @@ export class ManagerService {
     return { url: result.url };
   }
 
+  async uploadRefundProof(file: Express.Multer.File): Promise<{ url: string }> {
+    if (!file) {
+      throw new BadRequestException('Không có file ảnh nào được gửi lên.');
+    }
+    const result = await this.cloudinaryService.uploadBuffer(
+      file.buffer,
+      'petmatching/refund_proofs',
+    );
+    return { url: result.url };
+  }
+
   async updateOrderStatus(
     id: string,
     status: string,
@@ -797,7 +808,7 @@ export class ManagerService {
     });
   }
 
-  async approveRefund(orderId: string) {
+  async approveRefund(orderId: string, refundProofUrl?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true, payment: true },
@@ -840,13 +851,18 @@ export class ManagerService {
           });
         }
 
+        const updateData: any = {
+          status: 'CANCELLED',
+          refundStatus: 'REFUNDED',
+          refundedAt: new Date(),
+        };
+
+        if (refundProofUrl !== undefined) {
+          updateData.refundProofUrl = refundProofUrl;
+        }
         return tx.order.update({
           where: { id: orderId },
-          data: {
-            status: 'CANCELLED',
-            refundStatus: 'REFUNDED',
-            refundedAt: new Date(),
-          },
+          data: updateData,
         });
       });
     } catch (error) {
@@ -876,6 +892,23 @@ export class ManagerService {
       where: { id: orderId },
       data: {
         refundStatus: 'FAILED',
+      },
+    });
+  }
+
+  async updateRefundProof(orderId: string, refundProofUrl: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        refundProofUrl: refundProofUrl || null,
       },
     });
   }

@@ -124,6 +124,17 @@ export class ManagerController {
     return this.managerService.uploadDeliveryProof(file);
   }
 
+  @Post('orders/upload-refund-proof')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    }),
+  )
+  uploadRefundProof(@UploadedFile() file: Express.Multer.File) {
+    return this.managerService.uploadRefundProof(file);
+  }
+
   @Patch('orders/:id/status')
   updateOrderStatus(
     @Param('id') id: string,
@@ -178,13 +189,24 @@ export class ManagerController {
   }
 
   @Post('orders/:id/approve-refund')
-  approveRefund(@Param('id') id: string) {
-    return this.managerService.approveRefund(id);
+  approveRefund(
+    @Param('id') id: string,
+    @Body() dto?: { refundProofUrl?: string },
+  ) {
+    return this.managerService.approveRefund(id, dto?.refundProofUrl);
   }
 
   @Post('orders/:id/reject-refund')
   rejectRefund(@Param('id') id: string) {
     return this.managerService.rejectRefund(id);
+  }
+
+  @Patch('orders/:id/refund-proof')
+  updateRefundProof(
+    @Param('id') id: string,
+    @Body() dto: { refundProofUrl: string },
+  ) {
+    return this.managerService.updateRefundProof(id, dto.refundProofUrl);
   }
 
   @Get('products/:productId/variants')

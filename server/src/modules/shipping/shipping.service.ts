@@ -119,9 +119,10 @@ export class ShippingService {
       return data.data
         .filter(
           (item: any) =>
-            item.Status === 1 &&
-            (!item.Config?.To?.LockType ||
-              item.Config.To.LockType === 'unlocked'),
+            Number(item.Status) === 1 &&
+            (item.Config?.To?.LockType !== 1 &&
+              item.Config?.To?.LockType !== '1' &&
+              item.Config?.To?.LockType !== 'locked'),
         )
         .map((item: any) => ({
           wardCode: item.WardCode,

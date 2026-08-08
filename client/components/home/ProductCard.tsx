@@ -60,15 +60,7 @@ export default function ProductCard({
 }) {
   const router = useRouter();
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseEnter = () => {
-    setIsHovered(true);
-  };
-
-  const handleMouseLeave = () => {
-    setIsHovered(false);
-  };
+  const [isEyeHovered, setIsEyeHovered] = useState(false);
 
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
@@ -126,7 +118,7 @@ export default function ProductCard({
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
   const productImage = selectedVariant?.imageUrl || product.imageUrl || '/placeholder.svg';
   const currentStock = selectedVariant !== null ? selectedVariant.stock : product.stock;
-  const productDetailUrl = `/home/product/${product.id}${selectedVariant ? `?variantId=${selectedVariant.id}` : ''}`;
+  const productDetailUrl = `/product/${product.id}${selectedVariant ? `?variantId=${selectedVariant.id}` : ''}`;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -156,8 +148,6 @@ export default function ProductCard({
 
   return (
     <article
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       className="group relative rounded-2xl border border-[var(--border-color)] bg-white shadow-[0_8px_24px_rgba(26,26,26,0.04)] transition hover:-translate-y-1 hover:border-[#DED8D0] hover:shadow-[0_18px_40px_rgba(26,26,26,0.10)] flex flex-col h-full justify-between z-10 hover:z-50"
     >
       <div>
@@ -175,16 +165,27 @@ export default function ProductCard({
             <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/28 to-transparent opacity-0 transition group-hover:opacity-100" />
           </Link>
           
-          {/* Stock status or discount badge */}
+          {/* Stock status, Best Seller badge, or discount badge */}
           {(product.stock === 0 || currentStock === 0) ? (
             <span className="absolute left-2.5 top-2.5 rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10 animate-fadeIn">
               Hết hàng
+            </span>
+          ) : (product.soldCount && product.soldCount >= 5) ? (
+            <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-red-500 px-2.5 py-1 text-[10px] font-black text-white shadow-md z-10">
+              🔥 Bán chạy
             </span>
           ) : discount ? (
             <span className="absolute left-2.5 top-2.5 rounded-lg bg-[var(--primary-color)] px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10">
               -{discount}%
             </span>
           ) : null}
+
+          {/* Low Stock Badge */}
+          {currentStock !== undefined && currentStock > 0 && currentStock <= 5 && (
+            <span className="absolute top-2.5 right-11 rounded-lg bg-amber-600 px-2 py-0.5 text-[9px] font-black text-white shadow-xs z-10 animate-pulse">
+              ⚡ Chỉ còn {currentStock}
+            </span>
+          )}
 
           {/* Recommend badge */}
           {isMatchedByPetWeight && (
@@ -194,11 +195,39 @@ export default function ProductCard({
             </span>
           )}
 
-          {featured && (
+          {featured && !(product.soldCount && product.soldCount >= 5) && (
             <span className="absolute right-2.5 top-2.5 rounded-lg bg-[#F59E0B] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
               Hot
             </span>
           )}
+
+          {/* Quick View Eye Icon Button */}
+          <div
+            className="absolute bottom-2.5 right-13 z-20"
+            onMouseEnter={() => setIsEyeHovered(true)}
+            onMouseLeave={() => setIsEyeHovered(false)}
+          >
+            <button
+              type="button"
+              aria-label="Xem nhanh thông tin sản phẩm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                router.push(productDetailUrl);
+              }}
+              className={cn(
+                "inline-flex size-9 items-center justify-center rounded-full bg-white/95 shadow-sm transition cursor-pointer border border-gray-100",
+                isEyeHovered
+                  ? "bg-orange-500 text-white border-orange-500 shadow-md scale-105"
+                  : "text-[var(--text-main)] hover:text-[var(--primary-color)] hover:bg-orange-50"
+              )}
+              title="Xem nhanh thông tin sản phẩm"
+            >
+              <Eye className="size-4" />
+            </button>
+          </div>
+
+          {/* Wishlist Button */}
 
           <button
             type="button"
@@ -273,18 +302,25 @@ export default function ProductCard({
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)] pt-1">
-            {product.reviewCount > 0 ? (
-              <span className="inline-flex items-center gap-1">
-                <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
-                <span className="font-semibold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
-                <span>({product.reviewCount})</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-gray-400">
-                <Star className="size-3.5 text-gray-300 fill-gray-100" />
-                <span className="font-medium text-[11px]">Chưa có đánh giá</span>
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {product.reviewCount > 0 ? (
+                <span className="inline-flex items-center gap-1">
+                  <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
+                  <span className="font-semibold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
+                  <span>({product.reviewCount})</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-gray-400">
+                  <Star className="size-3.5 text-gray-300 fill-gray-100" />
+                  <span className="font-medium text-[11px]">Mới</span>
+                </span>
+              )}
+              {typeof product.soldCount === 'number' && product.soldCount > 0 && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Đã bán {product.soldCount >= 1000 ? `${(product.soldCount / 1000).toFixed(1)}k` : product.soldCount}
+                </span>
+              )}
+            </div>
             <span className="inline-flex items-center gap-1 rounded-md bg-[#EEF8F5] px-2 py-1 font-semibold text-[#0F766E]">
               <PackageCheck className="size-3.5" />
               {speciesLabel}
@@ -330,12 +366,14 @@ export default function ProductCard({
 
       {/* Super Rich & Large Hover Quick Info Popover Card (2x-3x Large Floating Popover) */}
       <AnimatePresence>
-        {isHovered && (
+        {isEyeHovered && (
           <motion.div
             initial={{ opacity: 0, y: 12, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
+            onMouseEnter={() => setIsEyeHovered(true)}
+            onMouseLeave={() => setIsEyeHovered(false)}
             className="hidden lg:block absolute -top-4 left-1/2 -translate-x-1/2 w-[480px] sm:w-[560px] md:w-[600px] z-50 rounded-3xl border-2 border-orange-400 bg-white p-6 shadow-[0_25px_70px_rgba(0,0,0,0.25)] backdrop-blur-2xl cursor-pointer max-h-[80vh] overflow-y-auto scrollbar-thin"
             onClick={(e) => {
               e.stopPropagation();

@@ -482,6 +482,7 @@ export default function ProfilePage() {
       await usersApi.deleteAccount();
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
+      localStorage.removeItem('petmatch_shop_selected_pet');
       window.dispatchEvent(new Event('auth-change'));
       toast.success('Tài khoản đã được xóa.');
       router.push('/login');

@@ -24,10 +24,10 @@ export const productsApi = {
 
   canReview: (productId: string) => api.get<boolean>(`/products/${productId}/can-review`),
 
-  submitReview: (productId: string, data: { rating: number; comment?: string }) =>
+  submitReview: (productId: string, data: { rating: number; comment?: string; images?: string[] }) =>
     api.post<ProductReview>(`/products/${productId}/reviews`, data),
 
-  updateReview: (reviewId: string, data: { rating: number; comment?: string }) =>
+  updateReview: (reviewId: string, data: { rating: number; comment?: string; images?: string[] }) =>
     api.put<ProductReview>(`/products/reviews/${reviewId}`, data),
 
   deleteReview: (reviewId: string) =>
