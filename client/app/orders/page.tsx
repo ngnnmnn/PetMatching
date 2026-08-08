@@ -45,13 +45,16 @@ interface OrderItem {
 
 interface Order {
   id: string;
-  orderCode?: number | null;
   status: 'PENDING' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
   shippingFee?: number;
   shippingAddress: string;
-  paymentMethod?: string;
-  paymentUrl?: string | null;
+  payment?: {
+    method: 'COD' | 'QR';
+    status: 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR' | 'REFUNDED';
+    orderCode?: number | null;
+    paymentUrl?: string | null;
+  } | null;
   ghnOrderCode?: string | null;
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
@@ -389,7 +392,7 @@ export default function OrdersPage() {
 
     try {
       const targetOrder = orders.find((o) => o.id === cancelOrderId);
-      if (targetOrder && targetOrder.paymentMethod === 'QR' && targetOrder.status === 'PENDING') {
+      if (targetOrder?.payment?.method === 'QR' && targetOrder.payment.status === 'PENDING') {
         await usersApi.deleteOrder(cancelOrderId);
         toast.success('Đơn hàng QR chưa hoàn tất đã được xóa khỏi hệ thống.');
       } else {
@@ -562,26 +565,26 @@ export default function OrdersPage() {
       }
     }
 
-    if (order.paymentMethod === 'QR') {
-      if (order.status === 'PENDING') {
+    if (order.payment?.method === 'QR') {
+      if (order.payment.status === 'PENDING') {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700 border border-amber-200">
             Chờ thanh toán QR
           </span>
         );
-      } else if (order.status === 'CANCELLED') {
+      } else if (order.payment.status === 'CANCELLED') {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-700 border border-red-200">
             Đã hủy
           </span>
         );
-      } else if (order.status === 'EXPIRED') {
+      } else if (order.payment.status === 'EXPIRED') {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2.5 py-1 text-xs font-extrabold text-gray-500 border border-gray-200">
             Hết hạn QR
           </span>
         );
-      } else if (order.status === 'PAYMENT_ERROR') {
+      } else if (order.payment.status === 'PAYMENT_ERROR') {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-600 border border-red-200">
             Lỗi thanh toán QR
@@ -596,7 +599,7 @@ export default function OrdersPage() {
       }
     } else {
       // COD method
-      if (order.status === 'DELIVERED') {
+      if (order.payment?.status === 'PAID') {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-extrabold text-emerald-700 border border-emerald-200">
             Đã thanh toán (COD)
@@ -739,7 +742,7 @@ export default function OrdersPage() {
                     {/* Action buttons for PENDING / PAYMENT_ERROR / EXPIRED orders */}
                     {(order.status === 'PENDING' || order.status === 'PAYMENT_ERROR' || order.status === 'EXPIRED') && (
                       <div className="flex flex-wrap items-center gap-2">
-                        {order.paymentMethod === 'QR' && (
+                        {order.payment?.method === 'QR' && (
                           <>
                             {(order.status === 'PAYMENT_ERROR' || order.status === 'EXPIRED') ? (
                               <button
@@ -757,20 +760,20 @@ export default function OrdersPage() {
                               </button>
                             ) : (
                               // PENDING state
-                              order.paymentUrl ? (
+                              order.payment.paymentUrl ? (
                                 <button
                                   type="button"
                                   onClick={() => {
                                     // Mở lại modal QR bằng data order đã lưu
                                     setPayOSQRData({
                                       orderId: order.id,
-                                      orderCode: order.orderCode || 0,
+                                      orderCode: order.payment?.orderCode || 0,
                                       accountNumber: '970422',
                                       accountName: 'PETMATCHING',
                                       bin: '970422',
                                       amount: Number(order.totalAmount),
-                                      description: `PM${order.orderCode || ''}`,
-                                      checkoutUrl: order.paymentUrl || undefined,
+                                      description: `PM${order.payment?.orderCode || ''}`,
+                                      checkoutUrl: order.payment?.paymentUrl || undefined,
                                     });
                                     setIsQRModalOpen(true);
                                   }}

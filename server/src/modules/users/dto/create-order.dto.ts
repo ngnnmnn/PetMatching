@@ -4,8 +4,10 @@ import {
   IsString,
   ValidateNested,
   IsOptional,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaymentMethod } from '@prisma/client';
 
 class CreateOrderItemDto {
   @IsString()
@@ -41,9 +43,9 @@ export class CreateOrderDto {
   @IsOptional()
   wardCode?: string;
 
-  @IsString()
+  @IsEnum(PaymentMethod)
   @IsOptional()
-  paymentMethod?: string;
+  paymentMethod?: PaymentMethod;
 
   @IsString()
   @IsOptional()

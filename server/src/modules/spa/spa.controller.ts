@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -109,6 +109,16 @@ export class SpaController {
     },
   ) {
     return this.spaService.updateStaffBooking(req.user.id, bookingId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('staff/bookings/:id/complete-payment')
+  completeStaffBooking(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: CompleteSpaPaymentDto,
+  ) {
+    return this.spaService.completeStaffBooking(req.user.id, bookingId, dto);
   }
 
   // =============================================================

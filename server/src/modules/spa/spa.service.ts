@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
-import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species } from '@prisma/client';
+import { CompleteSpaPaymentDto, CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
+import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { PaymentService } from '../payment/payment.service';
 
 @Injectable()
 export class SpaService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paymentService: PaymentService,
+  ) { }
 
   async getBranches() {
     return this.prisma.spaCategory.findMany({
@@ -207,8 +211,17 @@ export class SpaService {
         timeStartExpected,
         timeEndExpected,
         note: dto.note,
+        payment: {
+          create: {
+            sourceType: 'SPA_BOOKING',
+            method: PaymentMethod.COD,
+            status: PaymentStatus.PENDING,
+            amount: totalPrice,
+          },
+        },
       },
       include: {
+        payment: true,
         category: {
           select: { name: true },
         },
@@ -229,6 +242,7 @@ export class SpaService {
         userId,
       },
       include: {
+        payment: true,
         category: {
           select: {
             name: true,
@@ -301,6 +315,7 @@ export class SpaService {
   async cancelBooking(userId: string, bookingId: string) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
+      include: { payment: true },
     });
 
     if (!booking) {
@@ -326,11 +341,19 @@ export class SpaService {
       throw new BadRequestException('Bạn chỉ có thể hủy lịch đặt Spa trước thời gian hẹn tối thiểu 2 tiếng.');
     }
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        status: SpaBookingStatus.CANCELLED,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      if (booking.payment && booking.payment.status !== PaymentStatus.PAID) {
+        await tx.payment.update({
+          where: { id: booking.payment.id },
+          data: { status: PaymentStatus.CANCELLED },
+        });
+      }
+
+      return tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { status: SpaBookingStatus.CANCELLED },
+        include: { payment: true },
+      });
     });
   }
 
@@ -342,6 +365,7 @@ export class SpaService {
         staffId: staffId,
       },
       include: {
+        payment: true,
         category: {
           select: {
             name: true,
@@ -484,17 +508,20 @@ export class SpaService {
     const subPriceTotal = subServices.reduce((sum, s) => sum + s.price, 0);
     const totalPrice = Math.max(0, mainPrice + subPriceTotal - (booking.discountAmount || 0));
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        subServiceIds: newSubIds,
-        totalPrice,
-      },
-      include: {
-        service: true,
-        user: true,
-        pet: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: {
+          spaBookingId: bookingId,
+          status: { not: PaymentStatus.PAID },
+        },
+        data: { amount: totalPrice },
+      });
+
+      return tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { subServiceIds: newSubIds, totalPrice },
+        include: { service: true, user: true, pet: true, payment: true },
+      });
     });
   }
 
@@ -518,25 +545,15 @@ export class SpaService {
 
     const updatedData: any = {};
     if (dto.status !== undefined) {
+      if (dto.status === SpaBookingStatus.COMPLETED) {
+        throw new BadRequestException(
+          'Vui lòng hoàn tất thanh toán trước khi hoàn thành dịch vụ.',
+        );
+      }
       updatedData.status = dto.status;
       if (dto.status === SpaBookingStatus.IN_PROGRESS && !booking.timeStartReal) {
         updatedData.timeStartReal = new Date();
       }
-      if (dto.status === SpaBookingStatus.COMPLETED) {
-        const timeEndReal = new Date();
-        updatedData.timeEndReal = timeEndReal;
-
-        const timeEndExpected = booking.timeEndExpected || new Date(booking.scheduledAt.getTime() + 45 * 60 * 1000);
-        const completionDiffMinutes = Math.round((timeEndReal.getTime() - timeEndExpected.getTime()) / 60000);
-        updatedData.completionDiffMinutes = completionDiffMinutes;
-        updatedData.isPaid = true;
-      }
-    }
-    if ((dto as any).isPaid !== undefined) {
-      updatedData.isPaid = (dto as any).isPaid;
-    }
-    if ((dto as any).paymentMethod !== undefined) {
-      updatedData.paymentMethod = (dto as any).paymentMethod;
     }
     if (dto.petConditionAfter !== undefined) {
       updatedData.petConditionAfter = dto.petConditionAfter;
@@ -552,6 +569,7 @@ export class SpaService {
       where: { id: bookingId },
       data: updatedData,
       include: {
+        payment: true,
         category: {
           select: {
             name: true,
@@ -573,6 +591,128 @@ export class SpaService {
         },
       },
     });
+  }
+
+  async completeStaffBooking(
+    staffId: string,
+    bookingId: string,
+    dto: CompleteSpaPaymentDto,
+  ) {
+    const booking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+      include: { payment: true, service: true },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+    if (booking.staffId !== staffId) {
+      throw new ForbiddenException('Bạn không được phép hoàn tất lịch hẹn này.');
+    }
+    if (booking.payment?.status === PaymentStatus.PAID) {
+      throw new BadRequestException('Lịch hẹn này đã được thanh toán.');
+    }
+
+    const timeEndReal = new Date();
+    const expectedEnd =
+      booking.timeEndExpected ||
+      new Date(booking.scheduledAt.getTime() + 45 * 60 * 1000);
+    const completionDiffMinutes = Math.round(
+      (timeEndReal.getTime() - expectedEnd.getTime()) / 60000,
+    );
+    const amount = booking.totalPrice || booking.priceSnapshot || 0;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.upsert({
+        where: { spaBookingId: bookingId },
+        create: {
+          sourceType: 'SPA_BOOKING',
+          method: dto.method,
+          status:
+            dto.method === PaymentMethod.COD
+              ? PaymentStatus.PAID
+              : PaymentStatus.PENDING,
+          amount,
+          paidAt: dto.method === PaymentMethod.COD ? timeEndReal : null,
+          spaBookingId: bookingId,
+        },
+        update: {
+          method: dto.method,
+          status:
+            dto.method === PaymentMethod.COD
+              ? PaymentStatus.PAID
+              : PaymentStatus.PENDING,
+          amount,
+          paidAt: dto.method === PaymentMethod.COD ? timeEndReal : null,
+          ...(dto.method === PaymentMethod.COD
+            ? { orderCode: null, paymentUrl: null }
+            : {}),
+        },
+      });
+
+      const completedBooking = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: {
+          petConditionAfter: dto.petConditionAfter,
+          photoAfter: dto.photoAfter || null,
+          issueReported: dto.issueReported || null,
+          ...(dto.method === PaymentMethod.COD
+            ? {
+                status: SpaBookingStatus.COMPLETED,
+                timeEndReal,
+                completionDiffMinutes,
+              }
+            : {}),
+        },
+        include: {
+          payment: true,
+          service: true,
+          user: true,
+          pet: true,
+        },
+      });
+
+      return { payment, booking: completedBooking };
+    });
+
+    if (dto.method === PaymentMethod.COD) {
+      return result.booking;
+    }
+
+    const paymentLink = await this.paymentService.createQrLink({
+      paymentId: result.payment.id,
+      descriptionPrefix: 'SPA',
+      returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/spa/staff?payment=success`,
+      cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/spa/staff?payment=cancel`,
+      forceNewCode:
+        booking.payment?.status === PaymentStatus.CANCELLED ||
+        booking.payment?.status === PaymentStatus.EXPIRED ||
+        booking.payment?.status === PaymentStatus.PAYMENT_ERROR,
+      items: [
+        {
+          name: (booking.service?.name || 'Dich vu Spa').slice(0, 25),
+          quantity: 1,
+          price: Math.round(amount),
+        },
+      ],
+    });
+    const qrImageUrl = `https://img.vietqr.io/image/${paymentLink.bin}-${paymentLink.accountNumber}-compact2.png?amount=${paymentLink.amount}&addInfo=${encodeURIComponent(paymentLink.description)}&accountName=${encodeURIComponent(paymentLink.accountName)}`;
+
+    return {
+      ...result.booking,
+      checkoutUrl: paymentLink.checkoutUrl,
+      qrData: {
+        orderId: bookingId,
+        orderCode: paymentLink.orderCode,
+        accountNumber: paymentLink.accountNumber,
+        accountName: paymentLink.accountName,
+        bin: paymentLink.bin,
+        amount: paymentLink.amount,
+        description: paymentLink.description,
+        qrCode: paymentLink.qrCode,
+        qrImageUrl,
+      },
+    };
   }
 
   async getStaffList() {
@@ -710,6 +850,7 @@ export class SpaService {
     const bookings = await this.prisma.spaBooking.findMany({
       where: targetBranch ? { addressSpaId: targetBranch } : {},
       include: {
+        payment: true,
         service: {
           include: { category: true },
         },
@@ -750,9 +891,13 @@ export class SpaService {
       return isToday || isPendingOrConfirmed;
     });
 
-    const paidBookings = bookings.filter((b) => b.isPaid || b.status === SpaBookingStatus.COMPLETED);
-    // totalRevenue calculated based on paid bookings in DB
-    const totalRevenue = paidBookings.reduce((sum, b) => sum + (b.totalPrice ?? b.priceSnapshot ?? 0), 0);
+    const paidBookings = bookings.filter(
+      (b) => b.payment?.status === PaymentStatus.PAID,
+    );
+    const totalRevenue = paidBookings.reduce(
+      (sum, b) => sum + (b.payment?.amount || 0),
+      0,
+    );
 
     const categoriesList = await this.prisma.spaCategory.findMany({
       orderBy: { createdAt: 'asc' },
@@ -1175,6 +1320,7 @@ export class SpaService {
     const bookings = await this.prisma.spaBooking.findMany({
       where: targetBranch ? { addressSpaId: targetBranch } : {},
       include: {
+        payment: true,
         service: {
           select: { id: true, name: true, price: true, durationMin: true, description: true },
         },
@@ -1342,12 +1488,16 @@ export class SpaService {
     const discountAmount = Math.round((booking.totalPrice || booking.priceSnapshot || 0) * 0.1);
     const newTotalPrice = Math.max(0, (booking.totalPrice || booking.priceSnapshot || 0) - discountAmount);
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        discountAmount,
-        totalPrice: newTotalPrice,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { spaBookingId: bookingId, status: { not: PaymentStatus.PAID } },
+        data: { amount: newTotalPrice },
+      });
+      return tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { discountAmount, totalPrice: newTotalPrice },
+        include: { payment: true },
+      });
     });
   }
 
@@ -1410,15 +1560,22 @@ export class SpaService {
     const start = booking.timeStartExpected || booking.scheduledAt;
     const newEnd = new Date(start.getTime() + totalDurationMinutes * 60 * 1000);
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        serviceId: mainServiceId,
-        mainServiceId: mainServiceId,
-        subServiceIds: subServiceIds,
-        totalPrice,
-        timeEndExpected: newEnd,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { spaBookingId: bookingId, status: { not: PaymentStatus.PAID } },
+        data: { amount: totalPrice },
+      });
+      return tx.spaBooking.update({
+        where: { id: bookingId },
+        data: {
+          serviceId: mainServiceId,
+          mainServiceId,
+          subServiceIds,
+          totalPrice,
+          timeEndExpected: newEnd,
+        },
+        include: { payment: true },
+      });
     });
   }
 
@@ -1715,6 +1872,7 @@ export class SpaService {
         ...(targetBranch ? { addressSpaId: targetBranch } : {}),
       },
       include: {
+        payment: true,
         service: {
           select: { price: true },
         },
@@ -1746,8 +1904,13 @@ export class SpaService {
       const onTimeBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) <= 0);
       const lateBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) > 0);
       const onTimeRate = completed.length > 0 ? Math.round((onTimeBookings.length / completed.length) * 100) : 100;
-      const paidBookings = staffBookings.filter((b) => b.isPaid || b.status === SpaBookingStatus.COMPLETED);
-      const revenue = paidBookings.reduce((sum, b) => sum + (b.totalPrice || b.priceSnapshot || b.service?.price || 0), 0);
+      const paidBookings = staffBookings.filter(
+        (b) => b.payment?.status === PaymentStatus.PAID,
+      );
+      const revenue = paidBookings.reduce(
+        (sum, b) => sum + (b.payment?.amount || 0),
+        0,
+      );
 
       return {
         id: staff.id,

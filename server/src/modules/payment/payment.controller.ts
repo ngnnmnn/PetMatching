@@ -26,34 +26,29 @@ export class PaymentController {
       throw new BadRequestException('Mã đơn hàng không hợp lệ.');
     }
 
-    const order = await this.prisma.order.findUnique({
+    const payment = await this.prisma.payment.findUnique({
       where: { orderCode },
+      include: { order: true, spaBooking: true },
     });
 
-    if (!order) {
-      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    if (!payment) {
+      throw new NotFoundException('Không tìm thấy giao dịch.');
     }
 
-    if (
-      order.status === 'PROCESSING' ||
-      order.status === 'SHIPPED' ||
-      order.status === 'DELIVERED'
-    ) {
-      return { isPaid: true, status: order.status, orderId: order.id };
+    const referenceId = payment.orderId || payment.spaBookingId;
+    if (payment.status === 'PAID') {
+      return { isPaid: true, status: payment.status, orderId: referenceId };
     }
 
     // Double check with PayOS API
     const paymentInfo =
       await this.paymentService.getPaymentLinkInformation(orderCode);
     if (paymentInfo && paymentInfo.status === 'PAID') {
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status: 'PROCESSING' },
-      });
-      return { isPaid: true, status: 'PROCESSING', orderId: order.id };
+      await this.paymentService.markPaidByOrderCode(orderCode);
+      return { isPaid: true, status: 'PAID', orderId: referenceId };
     }
 
-    return { isPaid: false, status: order.status, orderId: order.id };
+    return { isPaid: false, status: payment.status, orderId: referenceId };
   }
 
   @Post('payos-webhook')
@@ -65,36 +60,32 @@ export class PaymentController {
     }
 
     const orderCode = verifiedData.orderCode;
-    const order = await this.prisma.order.findUnique({
+    const payment = await this.prisma.payment.findUnique({
       where: { orderCode },
     });
 
-    if (!order) {
+    if (!payment) {
       console.warn(
-        `PayOS webhook received for unknown orderCode: ${orderCode}`,
+        `PayOS webhook received for unknown payment code: ${orderCode}`,
       );
-      return { success: false, message: 'Không tìm thấy đơn hàng tương ứng.' };
+      return { success: false, message: 'Không tìm thấy giao dịch tương ứng.' };
     }
 
-    // Idempotent check: Only update status if the order is currently PENDING or PAYMENT_ERROR
-    if (order.status !== 'PENDING' && order.status !== 'PAYMENT_ERROR') {
+    if (payment.status === 'PAID') {
       console.log(
-        `Order ${order.id} is already in status ${order.status}. Ignoring webhook to prevent status regression.`,
+        `Payment ${payment.id} is already paid. Ignoring duplicate webhook.`,
       );
       return {
         success: true,
-        message: `Đơn hàng đã được xử lý (trạng thái: ${order.status}).`,
+        message: 'Giao dịch đã được xử lý.',
       };
     }
 
     // PayOS success code is "00"
     if (body.data?.code === '00') {
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status: 'PROCESSING' },
-      });
+      await this.paymentService.markPaidByOrderCode(orderCode);
       console.log(
-        `Order ${order.id} (code: ${orderCode}) successfully marked as PAID/PROCESSING via webhook.`,
+        `Payment ${payment.id} (code: ${orderCode}) marked as PAID via webhook.`,
       );
     }
 

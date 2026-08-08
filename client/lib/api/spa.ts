@@ -43,12 +43,19 @@ export const spaApi = {
     api.post<SpaBookingType>(`/spa/staff/bookings/${id}/sub-services`, { subServiceIds }),
   updateStaffBooking: (id: string, data: {
     status?: string;
-    isPaid?: boolean;
-    paymentMethod?: string;
     petConditionAfter?: string;
     photoAfter?: string | null;
     issueReported?: string | null;
   }) => api.patch<SpaBookingType>(`/spa/staff/bookings/${id}`, data),
+  completeStaffBooking: (id: string, data: {
+    method: 'COD' | 'QR';
+    petConditionAfter: string;
+    photoAfter?: string | null;
+    issueReported?: string | null;
+  }) => api.post<SpaBookingType & { qrData?: any; checkoutUrl?: string }>(
+    `/spa/staff/bookings/${id}/complete-payment`,
+    data,
+  ),
 
   // Spa Manager API Methods
   getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),

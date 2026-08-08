@@ -26,14 +26,13 @@ export class PaymentSyncService implements OnApplicationBootstrap {
   }
 
   /**
-   * Syncs status of all PENDING or PAYMENT_ERROR QR orders with PayOS API.
+   * Syncs every pending Store/Spa QR payment with PayOS.
    */
   async syncPendingOrders() {
     try {
-      // Find orders that are PENDING or PAYMENT_ERROR with QR payment method
-      const pendingOrders = await this.prisma.order.findMany({
+      const pendingPayments = await this.prisma.payment.findMany({
         where: {
-          paymentMethod: 'QR',
+          method: 'QR',
           status: {
             in: ['PENDING', 'PAYMENT_ERROR'],
           },
@@ -42,38 +41,36 @@ export class PaymentSyncService implements OnApplicationBootstrap {
           },
         },
         include: {
-          items: true,
+          order: { include: { items: true } },
+          spaBooking: true,
         },
       });
 
-      if (pendingOrders.length === 0) {
+      if (pendingPayments.length === 0) {
         return;
       }
 
       console.log(
-        `Found ${pendingOrders.length} pending QR orders to sync status.`,
+        `Found ${pendingPayments.length} pending QR payments to sync.`,
       );
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
 
-      for (const order of pendingOrders) {
-        if (!order.orderCode) continue;
+      for (const payment of pendingPayments) {
+        if (!payment.orderCode) continue;
 
         try {
           const paymentInfo =
             await this.paymentService.getPaymentLinkInformation(
-              order.orderCode,
+              payment.orderCode,
             );
 
           if (paymentInfo && paymentInfo.status === 'PAID') {
-            await this.prisma.order.update({
-              where: { id: order.id },
-              data: { status: 'PROCESSING' },
-            });
+            await this.paymentService.markPaidByOrderCode(payment.orderCode);
             console.log(
-              `Order ${order.id} automatically synced to PROCESSING (PAID).`,
+              `Payment ${payment.id} automatically synced to PAID.`,
             );
           } else if (
-            order.createdAt < fifteenMinsAgo ||
+            payment.createdAt < fifteenMinsAgo ||
             (paymentInfo &&
               (paymentInfo.status === 'CANCELLED' ||
                 paymentInfo.status === 'EXPIRED'))
@@ -83,31 +80,41 @@ export class PaymentSyncService implements OnApplicationBootstrap {
                 ? 'CANCELLED'
                 : 'EXPIRED';
 
-            // Update status and restore stock
+            // Store orders restore stock; Spa bookings remain valid and can be paid again.
             await this.prisma.$transaction(async (tx) => {
-              await tx.order.update({
-                where: { id: order.id },
+              await tx.payment.update({
+                where: { id: payment.id },
                 data: { status: targetStatus },
               });
 
-              for (const item of order.items) {
-                await tx.product.update({
-                  where: { id: item.productId },
-                  data: {
-                    stock: {
-                      increment: item.quantity,
-                    },
-                  },
+              if (payment.order) {
+                await tx.order.update({
+                  where: { id: payment.order.id },
+                  data: { status: targetStatus },
                 });
+
+                for (const item of payment.order.items) {
+                  if (item.variantId) {
+                    await tx.productVariant.update({
+                      where: { id: item.variantId },
+                      data: { stock: { increment: item.quantity } },
+                    });
+                  } else {
+                    await tx.product.update({
+                      where: { id: item.productId },
+                      data: { stock: { increment: item.quantity } },
+                    });
+                  }
+                }
               }
             });
             console.log(
-              `Order ${order.id} automatically marked as ${targetStatus} (Expired/Cancelled) and stock restored.`,
+              `Payment ${payment.id} automatically marked as ${targetStatus}.`,
             );
           }
         } catch (err) {
           console.error(
-            `Error syncing status for order ${order.id} via PayOS:`,
+            `Error syncing payment ${payment.id} via PayOS:`,
             err.message,
           );
         }

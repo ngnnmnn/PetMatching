@@ -284,7 +284,7 @@ export default function SpaHistory() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     {getStatusBadge(booking.status)}
-                    {(booking.isPaid || booking.status === 'COMPLETED') && (
+                    {booking.payment?.status === 'PAID' && (
                       <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[11px] font-black text-emerald-800 flex items-center gap-1">
                         ✓ Đã thanh toán
                       </span>
