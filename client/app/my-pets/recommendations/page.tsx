@@ -57,7 +57,7 @@ interface Pet {
   breedingFee?: number | null;
   shareLitterCount?: number | null;
   personality?: string | null;
-  status: 'ACTIVE' | 'BREAKDOWN' | 'HIDDEN' | 'INACTIVE';
+  status: 'ACTIVE' | 'HIDDEN' | 'INACTIVE';
   birthday?: string;
 }
 

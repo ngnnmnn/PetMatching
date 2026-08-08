@@ -42,13 +42,6 @@ async function main() {
     return d;
   };
 
-  // Helper để tính ngày phối gần nhất dựa trên số tháng trước
-  const getLastBreeding = (monthsAgo) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - monthsAgo);
-    return d;
-  };
-
   // =========================================================
   // 2. Tạo các bé cái cho Demo User
   // =========================================================
@@ -77,30 +70,6 @@ async function main() {
       location: 'TP. Ho Chi Minh',
       status: PetStatus.ACTIVE,
       isAvailableForMatching: false, // Cái không cần available
-    }
-  });
-
-  // 2.2 Bé Corgi cái đang trong chu kỳ nghỉ (18 tháng tuổi, phối cách đây 2 tháng)
-  await prisma.pet.upsert({
-    where: { slug: 'demo-female-corgi-cooldown' },
-    update: { lastBreedingAt: getLastBreeding(2) },
-    create: {
-      ownerId: demoUser.id,
-      slug: 'demo-female-corgi-cooldown',
-      name: 'Corgi Nghỉ Sinh',
-      species: Species.DOG,
-      breed: 'Corgi',
-      gender: Gender.FEMALE,
-      birthday: getBirthday(18),
-      weight: 12,
-      lastBreedingAt: getLastBreeding(2), // Mới 2 tháng trước (chó cần nghỉ 6 tháng)
-      isVaccinated: true,
-      hasPedigree: false,
-      avatarUrl: 'https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=500&h=500&fit=crop',
-      gallery: [],
-      location: 'TP. Ho Chi Minh',
-      status: PetStatus.ACTIVE,
-      isAvailableForMatching: false,
     }
   });
 

@@ -100,13 +100,8 @@ const reportReasons: Record<
 
 type Match = {
   id: string;
-  status: 'ACTIVE' | 'MET' | 'COMPLETED' | 'CANCELLED';
+  status: 'ACTIVE' | 'CANCELLED';
   compatibilityScore: number;
-  pet1MeetingConfirmedAt?: string | null;
-  pet2MeetingConfirmedAt?: string | null;
-  breedingNote?: string | null;
-  expectedDueDate?: string | null;
-  completedAt?: string | null;
   endedAt?: string | null;
   endReason?: string | null;
   reportedTargetTypes?: ReportTargetType[];
@@ -157,11 +152,6 @@ type MatchActionResult = Pick<
   Match,
   | 'id'
   | 'status'
-  | 'pet1MeetingConfirmedAt'
-  | 'pet2MeetingConfirmedAt'
-  | 'breedingNote'
-  | 'expectedDueDate'
-  | 'completedAt'
   | 'endedAt'
   | 'endReason'
 >;
@@ -192,14 +182,10 @@ export default function MessagesPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
-  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
-  const [pregnancyDialogOpen, setPregnancyDialogOpen] = useState(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
-  const [matchAction, setMatchAction] = useState<'MEETING' | 'PREGNANCY' | 'END' | 'REPORT' | 'BLOCK' | 'UNBLOCK' | null>(null);
-  const [pregnancyNote, setPregnancyNote] = useState('');
-  const [expectedDueDate, setExpectedDueDate] = useState('');
+  const [matchAction, setMatchAction] = useState<'END' | 'REPORT' | 'BLOCK' | 'UNBLOCK' | null>(null);
   const [endReason, setEndReason] = useState('');
   const [reportTargetType, setReportTargetType] = useState<ReportTargetType>('USER');
   const [reportReason, setReportReason] = useState<ReportReason>('INAPPROPRIATE_MESSAGE');
@@ -421,50 +407,6 @@ export default function MessagesPage() {
     ));
   };
 
-  const handleConfirmMeeting = async () => {
-    if (!selectedMatch || matchAction) return;
-    setMatchAction('MEETING');
-    try {
-      const response = await api.post<MatchActionResult>(
-        `/matching/matches/${selectedMatch.id}/confirm-meeting`,
-      );
-      applyMatchUpdate(response.data);
-      setMeetingDialogOpen(false);
-      toast.success(
-        response.data.status === 'MET'
-          ? 'Hai bên đã hoàn tất xác nhận gặp mặt.'
-          : 'Đã xác nhận. Đang chờ phía còn lại.',
-      );
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, 'Không thể xác nhận gặp mặt.'));
-    } finally {
-      setMatchAction(null);
-    }
-  };
-
-  const handleConfirmPregnancy = async () => {
-    if (!selectedMatch || matchAction) return;
-    setMatchAction('PREGNANCY');
-    try {
-      const response = await api.post<MatchActionResult>(
-        `/matching/matches/${selectedMatch.id}/confirm-pregnancy`,
-        {
-          note: pregnancyNote.trim() || undefined,
-          expectedDueDate: expectedDueDate || undefined,
-        },
-      );
-      applyMatchUpdate(response.data);
-      setPregnancyDialogOpen(false);
-      setPregnancyNote('');
-      setExpectedDueDate('');
-      toast.success('Đã ghi nhận kết quả mang thai. Phòng chat vẫn tiếp tục hoạt động.');
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, 'Không thể xác nhận mang thai.'));
-    } finally {
-      setMatchAction(null);
-    }
-  };
-
   const handleEndMatch = async () => {
     if (!selectedMatch || matchAction) return;
     setMatchAction('END');
@@ -575,20 +517,6 @@ export default function MessagesPage() {
   const otherPet = selectedMatch
     ? (currentUserOwnsPet1 ? selectedMatch.pet2 : selectedMatch.pet1)
     : null;
-  const myMeetingConfirmedAt = selectedMatch
-    ? (currentUserOwnsPet1
-      ? selectedMatch.pet1MeetingConfirmedAt
-      : selectedMatch.pet2MeetingConfirmedAt)
-    : null;
-  const otherMeetingConfirmedAt = selectedMatch
-    ? (currentUserOwnsPet1
-      ? selectedMatch.pet2MeetingConfirmedAt
-      : selectedMatch.pet1MeetingConfirmedAt)
-    : null;
-  const currentUserOwnsFemalePet = selectedMatch
-    ? (currentUserOwnsPet1 ? selectedMatch.pet1.gender : selectedMatch.pet2.gender) === 'FEMALE'
-    : false;
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [selectedMatch?.id, currentMatchMessages.length]);
@@ -741,8 +669,6 @@ export default function MessagesPage() {
                             m.status === 'CANCELLED' ? 'text-muted-foreground' : 'text-emerald-600',
                           )}>
                             {m.status === 'ACTIVE' && 'Đang hoạt động'}
-                            {m.status === 'MET' && 'Đã gặp'}
-                            {m.status === 'COMPLETED' && 'Mang thai / Thành công'}
                             {m.status === 'CANCELLED' && 'Đã kết thúc'}
                           </p>
                           {lastMessage && (
@@ -785,8 +711,6 @@ export default function MessagesPage() {
                             selectedMatch.status === 'CANCELLED' ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
                           )} />
                           {selectedMatch.status === 'ACTIVE' && 'Ghép đôi thành công · Phối giống Active'}
-                          {selectedMatch.status === 'MET' && 'Hai bên đã xác nhận gặp mặt'}
-                          {selectedMatch.status === 'COMPLETED' && 'Mang thai / Phối giống thành công'}
                           {selectedMatch.status === 'CANCELLED' && 'Match đã kết thúc · Chỉ đọc'}
                         </span>
                       </div>
@@ -835,51 +759,6 @@ export default function MessagesPage() {
                       </DropdownMenu>
                     </div>
                   </div>
-
-                  {selectedMatch.status === 'ACTIVE' && (
-                    <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b bg-primary/5 px-4 py-3">
-                      <p className="text-xs font-semibold text-muted-foreground">
-                        {!myMeetingConfirmedAt && !otherMeetingConfirmedAt && 'Hai bên chưa xác nhận gặp mặt.'}
-                        {myMeetingConfirmedAt && !otherMeetingConfirmedAt && 'Bạn đã xác nhận, đang chờ phía còn lại.'}
-                        {!myMeetingConfirmedAt && otherMeetingConfirmedAt && 'Đối phương đã xác nhận, đang chờ bạn.'}
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="rounded-xl text-xs font-bold"
-                        disabled={Boolean(myMeetingConfirmedAt)}
-                        onClick={() => setMeetingDialogOpen(true)}
-                      >
-                        <Check className="mr-1 size-4" />
-                        {myMeetingConfirmedAt ? 'Đã xác nhận' : 'Xác nhận đã gặp mặt'}
-                      </Button>
-                    </div>
-                  )}
-
-                  {selectedMatch.status === 'MET' && (
-                    <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3">
-                      <p className="text-xs font-bold text-emerald-800">Hai bên đã xác nhận gặp mặt thành công.</p>
-                      {currentUserOwnsFemalePet && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="rounded-xl text-xs font-bold"
-                          onClick={() => setPregnancyDialogOpen(true)}
-                        >
-                          Xác nhận mang thai
-                        </Button>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedMatch.status === 'COMPLETED' && (
-                    <div className="shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
-                      Đã ghi nhận mang thai / phối giống thành công. Phòng chat vẫn đang hoạt động.
-                      {selectedMatch.expectedDueDate && (
-                        <span className="ml-1">Ngày dự sinh: {new Date(selectedMatch.expectedDueDate).toLocaleDateString('vi-VN')}.</span>
-                      )}
-                    </div>
-                  )}
 
                   {selectedMatch.status === 'CANCELLED' && (
                     <div className="shrink-0 border-b bg-muted px-4 py-3 text-xs font-semibold text-muted-foreground">
@@ -1120,56 +999,6 @@ export default function MessagesPage() {
           )
         )}
       </section>
-
-      <ConfirmDialog
-        open={meetingDialogOpen}
-        onCancel={() => setMeetingDialogOpen(false)}
-        onConfirm={handleConfirmMeeting}
-        title="Xác nhận đã gặp mặt"
-        description="Bạn xác nhận hai thú cưng đã gặp nhau? Hành động này không thể hoàn tác."
-        confirmText="Xác nhận"
-        loading={matchAction === 'MEETING'}
-      />
-
-      <Dialog open={pregnancyDialogOpen} onOpenChange={setPregnancyDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Xác nhận mang thai</DialogTitle>
-            <DialogDescription>
-              Ghi nhận kết quả phối giống. Phòng chat sẽ tiếp tục hoạt động sau khi xác nhận.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label htmlFor="messages-expected-due-date" className="text-xs font-bold">Ngày dự sinh (không bắt buộc)</label>
-              <Input
-                id="messages-expected-due-date"
-                type="date"
-                value={expectedDueDate}
-                onChange={(event) => setExpectedDueDate(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="messages-pregnancy-note" className="text-xs font-bold">Ghi chú (không bắt buộc)</label>
-              <Textarea
-                id="messages-pregnancy-note"
-                maxLength={2000}
-                value={pregnancyNote}
-                onChange={(event) => setPregnancyNote(event.target.value)}
-                placeholder="Thông tin bổ sung về kết quả..."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setPregnancyDialogOpen(false)} disabled={matchAction === 'PREGNANCY'}>
-              Hủy
-            </Button>
-            <Button type="button" onClick={handleConfirmPregnancy} disabled={matchAction === 'PREGNANCY'}>
-              {matchAction === 'PREGNANCY' ? 'Đang lưu...' : 'Xác nhận mang thai'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={endDialogOpen} onOpenChange={setEndDialogOpen}>
         <DialogContent className="sm:max-w-md">

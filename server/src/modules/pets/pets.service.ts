@@ -4,8 +4,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 
-const MALE_BREAKDOWN_DAYS = 14;
-
 @Injectable()
 export class PetsService {
   constructor(private prisma: PrismaService) {}
@@ -22,12 +20,6 @@ export class PetsService {
     if (Number.isNaN(birthday.getTime())) {
       throw new BadRequestException('Birthday is invalid.');
     }
-    if (dto.status === PetStatus.BREAKDOWN) {
-      throw new BadRequestException(
-        'Trạng thái nghỉ sau phối giống chỉ được hệ thống cập nhật.',
-      );
-    }
-
     const documents = [];
     if (dto.isVaccinated) {
       documents.push({
@@ -90,16 +82,7 @@ export class PetsService {
         throw new ForbiddenException('You do not own this pet.');
       }
 
-      if (
-        pet.status !== PetStatus.BREAKDOWN &&
-        dto.status === PetStatus.BREAKDOWN
-      ) {
-        throw new BadRequestException(
-          'Trạng thái nghỉ sau phối giống chỉ được hệ thống cập nhật.',
-        );
-      }
-
-      let nextStatus = dto.status ?? pet.status;
+      const nextStatus = dto.status ?? pet.status;
       const isMatchingAvailable =
         nextStatus === PetStatus.HIDDEN
           ? false
@@ -109,39 +92,6 @@ export class PetsService {
         throw new BadRequestException(
           'Only male pets can be available for matching.',
         );
-      }
-
-      let isEarlyOverride = false;
-      if (pet.status === PetStatus.BREAKDOWN) {
-        if (!isMatchingAvailable) {
-          if (dto.status && dto.status !== PetStatus.BREAKDOWN) {
-            throw new BadRequestException(
-              'Thú cưng đang trong thời gian nghỉ sau phối giống.',
-            );
-          }
-        } else {
-          if (!pet.lastBreedingAt) {
-            throw new BadRequestException(
-              'Không xác định được thời gian kết thúc nghỉ phối giống.',
-            );
-          }
-
-          const breakdownUntil = new Date(pet.lastBreedingAt);
-          breakdownUntil.setDate(
-            breakdownUntil.getDate() + MALE_BREAKDOWN_DAYS,
-          );
-          isEarlyOverride = new Date() < breakdownUntil;
-
-          if (isEarlyOverride && !dto.confirmBreakdownOverride) {
-            throw new BadRequestException({
-              code: 'PET_BREAKDOWN_CONFIRMATION_REQUIRED',
-              message: `${pet.name} đang trong thời gian nghỉ sau phối giống đến ${breakdownUntil.toLocaleDateString('vi-VN')}. Bạn có chắc muốn bật ghép đôi sớm không?`,
-              breakdownUntil: breakdownUntil.toISOString(),
-            });
-          }
-
-          nextStatus = PetStatus.ACTIVE;
-        }
       }
 
       const updatedPet = await tx.pet.update({
@@ -155,20 +105,6 @@ export class PetsService {
           ...(dto.personality !== undefined ? { personality: dto.personality } : {}),
         },
       });
-
-      if (isEarlyOverride && dto.confirmBreakdownOverride) {
-        await tx.auditLog.create({
-          data: {
-            actorId: userId,
-            action: 'PET_BREAKDOWN_OVERRIDE',
-            targetType: 'Pet',
-            targetId: petId,
-            metadata: {
-              lastBreedingAt: pet.lastBreedingAt?.toISOString() ?? null,
-            },
-          },
-        });
-      }
 
       return updatedPet;
     });

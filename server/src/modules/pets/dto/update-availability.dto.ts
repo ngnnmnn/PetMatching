@@ -34,7 +34,4 @@ export class UpdateAvailabilityDto {
   @IsString()
   personality?: string;
 
-  @IsOptional()
-  @IsBoolean()
-  confirmBreakdownOverride?: boolean;
 }

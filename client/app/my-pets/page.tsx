@@ -31,7 +31,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 type Pet = {
   id: string;
@@ -53,12 +52,7 @@ type Pet = {
   breedingFee?: number | null;
   shareLitterCount?: number | null;
   personality?: string | null;
-  lastBreedingAt?: string | null;
-  status: 'ACTIVE' | 'BREAKDOWN' | 'HIDDEN' | 'INACTIVE';
-};
-
-type BreakdownWarning = {
-  message: string;
+  status: 'ACTIVE' | 'HIDDEN' | 'INACTIVE';
 };
 
 export default function MyPetsPage() {
@@ -79,7 +73,6 @@ export default function MyPetsPage() {
   const [shareLitterCount, setShareLitterCount] = useState<string>('1');
   const [personalityNote, setPersonalityNote] = useState<string>('');
   const [savingSetup, setSavingSetup] = useState(false);
-  const [breakdownWarning, setBreakdownWarning] = useState<BreakdownWarning | null>(null);
 
   const loadPets = () => {
     setLoading(true);
@@ -101,7 +94,7 @@ export default function MyPetsPage() {
     setPersonalityNote(pet.personality || '');
   };
 
-  const handleSaveSetup = async (confirmBreakdownOverride = false) => {
+  const handleSaveSetup = async () => {
     if (!selectedSetupPet) return;
     setSavingSetup(true);
 
@@ -112,20 +105,14 @@ export default function MyPetsPage() {
         breedingFee: breedingOption === 'CASH' ? Number(breedingFee) || 0 : undefined,
         shareLitterCount: breedingOption === 'SHARE_LITTER' ? Number(shareLitterCount) || 1 : undefined,
         personality: personalityNote.trim() || undefined,
-        confirmBreakdownOverride,
       });
 
       toast.success(`Đã cập nhật cấu hình ghép đôi cho ${selectedSetupPet.name}!`);
-      setBreakdownWarning(null);
       setSelectedSetupPet(null);
       loadPets();
     } catch (err: any) {
       const response = err.response?.data;
-      if (response?.code === 'PET_BREAKDOWN_CONFIRMATION_REQUIRED') {
-        setBreakdownWarning({ message: response.message });
-      } else {
-        toast.error(response?.message || 'Không thể lưu thiết lập.');
-      }
+      toast.error(response?.message || 'Không thể lưu thiết lập.');
     } finally {
       setSavingSetup(false);
     }
@@ -304,10 +291,6 @@ export default function MyPetsPage() {
                     <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
                       🔴 Đã tạm ẩn
                     </span>
-                  ) : pet.status === 'BREAKDOWN' ? (
-                    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-bold text-white shadow-md">
-                      Nghỉ sau phối giống
-                    </span>
                   ) : pet.gender === 'MALE' ? (
                     <span
                       className={cn(
@@ -395,13 +378,10 @@ export default function MyPetsPage() {
                             : 'border-slate-200 text-slate-600 hover:bg-slate-100',
                         )}
                         onClick={() => handleTogglePetStatus(pet)}
-                        disabled={pet.status === 'BREAKDOWN'}
                       >
                         {pet.status === 'HIDDEN'
                           ? '👁️ Hiện hồ sơ'
-                          : pet.status === 'BREAKDOWN'
-                            ? 'Đang nghỉ'
-                            : '🙈 Ẩn hồ sơ'}
+                          : '🙈 Ẩn hồ sơ'}
                       </Button>
                     </div>
 
@@ -444,18 +424,6 @@ export default function MyPetsPage() {
               </div>
 
               {/* Main Toggle Hero Card */}
-              {selectedSetupPet.status === 'BREAKDOWN' && selectedSetupPet.lastBreedingAt && (
-                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-                  <p className="font-black">Đang nghỉ sau phối giống</p>
-                  <p className="mt-1 text-xs leading-relaxed">
-                    Thời gian nghỉ khuyến nghị đến{' '}
-                    {new Date(
-                      new Date(selectedSetupPet.lastBreedingAt).getTime() + 14 * 24 * 60 * 60 * 1000,
-                    ).toLocaleDateString('vi-VN')}. Nếu bật sớm, hệ thống sẽ yêu cầu bạn xác nhận lại.
-                  </p>
-                </div>
-              )}
-
               <div className={cn(
                 'rounded-2xl border-2 p-4 transition-all',
                 isAvailable ? 'border-emerald-500 bg-emerald-50/50' : 'border-border bg-muted/30'
@@ -729,16 +697,6 @@ export default function MyPetsPage() {
         )}
       </AnimatePresence>
 
-      <ConfirmDialog
-        open={Boolean(breakdownWarning)}
-        onCancel={() => setBreakdownWarning(null)}
-        onConfirm={() => handleSaveSetup(true)}
-        title="Bật ghép đôi trước thời hạn?"
-        description={breakdownWarning?.message}
-        confirmText="Vẫn bật ghép đôi"
-        cancelText="Tiếp tục nghỉ"
-        loading={savingSetup}
-      />
     </main>
   );
 }
