@@ -175,7 +175,7 @@ export default function CartPage() {
                         </div>
 
                         {/* Product Image */}
-                        <Link href={`/home/product/${item.productId}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)]">
+                        <Link href={`/product/${item.productId}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)]">
                           <img
                             src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
@@ -186,7 +186,7 @@ export default function CartPage() {
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</p>
-                          <Link href={`/home/product/${item.productId}`} className="block text-sm font-black text-[var(--text-main)] hover:text-primary transition line-clamp-1 mt-0.5">
+                          <Link href={`/product/${item.productId}`} className="block text-sm font-black text-[var(--text-main)] hover:text-primary transition line-clamp-1 mt-0.5">
                             {item.product.name}
                           </Link>
                           {item.variant && (

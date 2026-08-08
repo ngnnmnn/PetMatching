@@ -70,6 +70,7 @@ export interface ManagerOrder {
   refundAccountName?: string | null;
   refundReason?: string | null;
   refundedAt?: string | null;
+  refundProofUrl?: string | null;
 }
 
 export interface ManagerCustomer {
@@ -130,8 +131,17 @@ export const managerApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
-  approveRefund: (id: string) => api.post<any>(`/manager/orders/${id}/approve-refund`),
+  uploadRefundProof: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<{ url: string }>('/manager/orders/upload-refund-proof', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  approveRefund: (id: string, refundProofUrl?: string) => api.post<any>(`/manager/orders/${id}/approve-refund`, { refundProofUrl }),
   rejectRefund: (id: string) => api.post<any>(`/manager/orders/${id}/reject-refund`),
+  updateRefundProof: (id: string, refundProofUrl: string) =>
+    api.patch<ManagerOrder>(`/manager/orders/${id}/refund-proof`, { refundProofUrl }),
   exportOrders: (params: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean; onlyRefunded?: boolean }) =>
     api.get<Blob>('/manager/orders/export', {
       params,

@@ -70,6 +70,16 @@ export interface Order {
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
+  paymentMethod?: string;
+  orderCode?: number | null;
+  paymentUrl?: string | null;
+  refundStatus?: string | null;
+  refundBankCode?: string | null;
+  refundAccountNumber?: string | null;
+  refundAccountName?: string | null;
+  refundReason?: string | null;
+  refundedAt?: string | null;
+  refundProofUrl?: string | null;
   payment?: Payment | null;
   items: OrderItem[];
   createdAt: string;
@@ -137,6 +147,7 @@ export interface ProductReview {
   id: string;
   rating: number;
   comment?: string | null;
+  images?: string[];
   userId: string;
   productId: string;
   createdAt: string;
@@ -179,6 +190,7 @@ export interface Product {
   unit?: string;
   rating: number;
   reviewCount: number;
+  soldCount?: number;
   stock?: number | null;
   isActive: boolean;
   isFeatured: boolean;

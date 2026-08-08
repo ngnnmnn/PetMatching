@@ -66,8 +66,8 @@ const CATEGORY_MAP: Record<string, string> = {
 
 const ORDER_STATUS_MAP: Record<string, string> = {
   PENDING: 'Chờ xác nhận',
+  PROCESSING: 'Đã thanh toán (Chờ gói)',
   PACKED: 'Đã gói hàng',
-  PROCESSING: 'Đã gói hàng',
   SHIPPED: 'Đã gửi bên vận chuyển',
   DELIVERED: 'Đã nhận hàng',
   CANCELLED: 'Đã hủy',
@@ -143,6 +143,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const showBatchCheckboxes = filterStatus !== 'ALL' && filterStatus !== 'DELIVERED';
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [sortBy, setSortBy] = useState('DEFAULT');
   const [productsPage, setProductsPage] = useState<number>(1);
@@ -411,7 +413,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   // Page resetting on filter changes
   useEffect(() => {
     setOrdersPage(1);
+    setSelectedOrderIds([]);
   }, [searchQuery, filterStatus]);
+
+  useEffect(() => {
+    setSelectedOrderIds([]);
+  }, [ordersPage]);
 
   useEffect(() => {
     setCustomersPage(1);
@@ -528,6 +535,46 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
+  const [submittingBatch, setSubmittingBatch] = useState<boolean>(false);
+
+  const handleBatchStatusChange = async (targetStatus: string, actionLabel: string) => {
+    if (selectedOrderIds.length === 0) return;
+    setSubmittingBatch(true);
+    try {
+      await Promise.all(
+        selectedOrderIds.map((id) => managerApi.updateOrderStatus(id, targetStatus))
+      );
+      toast.success(`Đã chuyển trạng thái "${actionLabel}" cho ${selectedOrderIds.length} đơn hàng!`);
+      setSelectedOrderIds([]);
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+    } catch (err: any) {
+      console.error('Failed batch status update', err);
+      toast.error('Có lỗi xảy ra khi chuyển trạng thái hàng loạt.');
+    } finally {
+      setSubmittingBatch(false);
+    }
+  };
+
+  const handleBatchApproveRefund = async () => {
+    if (selectedOrderIds.length === 0) return;
+    setSubmittingBatch(true);
+    try {
+      await Promise.all(
+        selectedOrderIds.map((id) => managerApi.approveRefund(id))
+      );
+      toast.success(`Đã duyệt hoàn tiền thành công cho ${selectedOrderIds.length} đơn hàng!`);
+      setSelectedOrderIds([]);
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+    } catch (err: any) {
+      console.error('Failed batch refund approval', err);
+      toast.error('Có lỗi xảy ra khi duyệt hoàn tiền hàng loạt.');
+    } finally {
+      setSubmittingBatch(false);
+    }
+  };
+
   const handleConfirmShip = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!shipModalOrder) return;
@@ -576,13 +623,111 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
-  const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [uploadingDetailProof, setUploadingDetailProof] = useState<boolean>(false);
 
-  const handleApproveRefund = async (orderId: string) => {
+  const handleDetailProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedOrderDetails) return;
+    setUploadingDetailProof(true);
+    try {
+      const uploadRes = await managerApi.uploadDeliveryProof(file);
+      const newProofUrl = uploadRes.data.url;
+      await managerApi.updateOrderStatus(
+        selectedOrderDetails.id,
+        selectedOrderDetails.status,
+        newProofUrl,
+        selectedOrderDetails.shippingNote || undefined,
+      );
+      toast.success('Đã cập nhật ảnh bằng chứng giao hàng thành công!');
+      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, deliveryProofUrl: newProofUrl } : null));
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+    } catch (err: any) {
+      console.error('Failed to upload delivery proof', err);
+      toast.error(err.response?.data?.message || 'Lỗi khi tải ảnh bằng chứng giao hàng.');
+    } finally {
+      setUploadingDetailProof(false);
+    }
+  };
+
+  const handleRemoveDetailProof = async () => {
+    if (!selectedOrderDetails) return;
+    setUploadingDetailProof(true);
+    try {
+      await managerApi.updateOrderStatus(
+        selectedOrderDetails.id,
+        selectedOrderDetails.status,
+        '',
+        selectedOrderDetails.shippingNote || undefined,
+      );
+      toast.success('Đã gỡ bỏ ảnh bằng chứng giao hàng!');
+      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, deliveryProofUrl: null } : null));
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+    } catch (err: any) {
+      console.error('Failed to remove delivery proof', err);
+      toast.error('Lỗi khi gỡ ảnh bằng chứng giao hàng.');
+    } finally {
+      setUploadingDetailProof(false);
+    }
+  };
+
+  const [uploadingRefundProof, setUploadingRefundProof] = useState<boolean>(false);
+  const [pendingRefundProofUrl, setPendingRefundProofUrl] = useState<string>('');
+
+  const handleRefundProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedOrderDetails) return;
+    setUploadingRefundProof(true);
+    try {
+      const uploadRes = await managerApi.uploadRefundProof(file);
+      const url = uploadRes.data.url;
+      setPendingRefundProofUrl(url);
+
+      // Save to database immediately so it is persisted
+      await managerApi.updateRefundProof(selectedOrderDetails.id, url);
+
+      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, refundProofUrl: url } : null));
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+      toast.success('Đã tải và lưu ảnh chuyển khoản hoàn tiền thành công!');
+    } catch (err: any) {
+      console.error('Failed to upload refund proof', err);
+      toast.error(err.response?.data?.message || 'Lỗi khi tải ảnh chuyển khoản hoàn tiền.');
+    } finally {
+      setUploadingRefundProof(false);
+    }
+  };
+
+  const handleRemoveRefundProof = async () => {
+    if (!selectedOrderDetails) return;
+    setUploadingRefundProof(true);
+    try {
+      await managerApi.updateRefundProof(selectedOrderDetails.id, '');
+      setPendingRefundProofUrl('');
+      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, refundProofUrl: null } : null));
+      const res = await managerApi.getOrders();
+      setOrders(res.data);
+      toast.success('Đã gỡ bỏ ảnh chuyển khoản hoàn tiền!');
+    } catch (err: any) {
+      console.error('Failed to remove refund proof', err);
+      toast.error('Lỗi khi gỡ ảnh chuyển khoản hoàn tiền.');
+    } finally {
+      setUploadingRefundProof(false);
+    }
+  };
+
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [confirmApproveRefundOrder, setConfirmApproveRefundOrder] = useState<ManagerOrder | null>(null);
+  const [confirmRejectRefundOrder, setConfirmRejectRefundOrder] = useState<ManagerOrder | null>(null);
+
+  const handleApproveRefund = async (orderId: string, proofUrl?: string) => {
     setRefundingId(orderId);
     try {
-      await managerApi.approveRefund(orderId);
-      toast.success('Đã duyệt yêu cầu hoàn tiền thành công! Tiền đã được chuyển khoản qua PayOS.');
+      const finalProofUrl = proofUrl || pendingRefundProofUrl || undefined;
+      await managerApi.approveRefund(orderId, finalProofUrl);
+      toast.success('Đã duyệt yêu cầu hoàn tiền thành công!');
+      setPendingRefundProofUrl('');
       const res = await managerApi.getOrders();
       setOrders(res.data);
       if (selectedOrderDetails?.id === orderId) {
@@ -590,7 +735,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       }
     } catch (error: any) {
       console.error('Failed to approve refund', error);
-      toast.error(error.response?.data?.message || 'Lỗi khi phê duyệt hoàn tiền qua PayOS.');
+      toast.error(error.response?.data?.message || 'Lỗi khi phê duyệt hoàn tiền.');
     } finally {
       setRefundingId(null);
     }
@@ -3019,6 +3164,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       );
 
     case 'orders':
+      const showBatchCheckboxes = filterStatus !== 'ALL' && filterStatus !== 'DELIVERED';
       return (
         <div className="space-y-6 animate-fadeIn">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -3058,6 +3204,67 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {showBatchCheckboxes && selectedOrderIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 bg-teal-50 border border-teal-200 text-teal-900 px-3 py-1.5 rounded-xl text-xs font-bold animate-fadeIn">
+                  <span>Đã chọn {selectedOrderIds.length} đơn</span>
+
+                  {(filterStatus === 'PENDING' || filterStatus === 'PROCESSING') && (
+                    <button
+                      type="button"
+                      disabled={submittingBatch}
+                      onClick={() => handleBatchStatusChange('PACKED', 'Đã gói hàng')}
+                      className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {submittingBatch ? <Loader2 className="size-3 animate-spin text-white" /> : '📦'}
+                      Đánh dấu Đã gói hàng ({selectedOrderIds.length})
+                    </button>
+                  )}
+
+                  {filterStatus === 'PACKED' && (
+                    <button
+                      type="button"
+                      disabled={submittingBatch}
+                      onClick={() => handleBatchStatusChange('SHIPPED', 'Đã gửi vận chuyển')}
+                      className="inline-flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {submittingBatch ? <Loader2 className="size-3 animate-spin text-white" /> : '🚚'}
+                      Gửi vận chuyển tất cả ({selectedOrderIds.length})
+                    </button>
+                  )}
+
+                  {filterStatus === 'SHIPPED' && (
+                    <button
+                      type="button"
+                      disabled={submittingBatch}
+                      onClick={() => handleBatchStatusChange('DELIVERED', 'Đã nhận hàng')}
+                      className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {submittingBatch ? <Loader2 className="size-3 animate-spin text-white" /> : '✅'}
+                      Đánh dấu Đã nhận hàng ({selectedOrderIds.length})
+                    </button>
+                  )}
+
+                  {filterStatus === 'REFUND_PENDING' && (
+                    <button
+                      type="button"
+                      disabled={submittingBatch}
+                      onClick={handleBatchApproveRefund}
+                      className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {submittingBatch ? <Loader2 className="size-3 animate-spin text-white" /> : '✅'}
+                      Duyệt hoàn tiền tất cả ({selectedOrderIds.length})
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderIds([])}
+                    className="text-teal-700 hover:text-teal-950 font-extrabold underline text-[11px] cursor-pointer ml-1"
+                  >
+                    Bỏ chọn
+                  </button>
+                </div>
+              )}
               <Filter className="size-4 text-[#B0B0B0]" />
               <select
                 value={filterStatus}
@@ -3080,6 +3287,28 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#EFEAE2] bg-[#F9F8F6] text-xs font-black uppercase text-[#8A8980]">
+                    {showBatchCheckboxes && (
+                      <th className="px-4 py-4 text-center w-12">
+                        <input
+                          type="checkbox"
+                          checked={
+                            paginatedOrders.length > 0 &&
+                            paginatedOrders.every((o) => selectedOrderIds.includes(o.id))
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const pageIds = paginatedOrders.map((o) => o.id);
+                              setSelectedOrderIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+                            } else {
+                              const pageIds = new Set(paginatedOrders.map((o) => o.id));
+                              setSelectedOrderIds((prev) => prev.filter((id) => !pageIds.has(id)));
+                            }
+                          }}
+                          title="Chọn tất cả đơn hàng trên trang này"
+                          className="size-4 rounded border-gray-300 text-[#0F766E] focus:ring-[#0F766E] cursor-pointer"
+                        />
+                      </th>
+                    )}
                     <th className="px-6 py-4">Mã đơn</th>
                     <th className="px-6 py-4">Khách hàng</th>
                     <th className="px-6 py-4">SĐT</th>
@@ -3094,12 +3323,32 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   {paginatedOrders.length > 0 ? (
                     paginatedOrders.map((o) => {
                       const shippingInfo = parseShippingAddress(o.shippingAddress);
+                      const isSelected = selectedOrderIds.includes(o.id);
                       return (
                         <tr
                           key={o.id}
                           onClick={() => setSelectedOrderDetails(o)}
-                          className="transition hover:bg-gray-50 cursor-pointer"
+                          className={cn(
+                            "transition hover:bg-gray-50 cursor-pointer",
+                            isSelected && "bg-teal-50/50 hover:bg-teal-50/70"
+                          )}
                         >
+                          {showBatchCheckboxes && (
+                            <td className="px-4 py-4 text-center w-12" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedOrderIds((prev) => [...prev, o.id]);
+                                  } else {
+                                    setSelectedOrderIds((prev) => prev.filter((id) => id !== o.id));
+                                  }
+                                }}
+                                className="size-4 rounded border-gray-300 text-[#0F766E] focus:ring-[#0F766E] cursor-pointer"
+                              />
+                            </td>
+                          )}
                           <td className="px-6 py-4 font-mono font-black text-xs text-[#5C5B52]" title={o.id}>
                             <div className="flex flex-col gap-1">
                               <span>{o.id.length > 15 ? o.id.slice(0, 12) + '...' : o.id}</span>
@@ -3150,7 +3399,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-red-50 border border-red-200 text-red-700 shadow-sm">
                                 ❌ Đã hủy
                               </span>
-                            ) : o.status === 'PENDING' ? (
+                            ) : o.status === 'PENDING' || o.status === 'PROCESSING' ? (
                               <button
                                 type="button"
                                 onClick={() => handleOrderStatusChange(o.id, 'PACKED')}
@@ -3158,7 +3407,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               >
                                 📦 Đã gói hàng
                               </button>
-                            ) : o.status === 'PACKED' || o.status === 'PROCESSING' ? (
+                            ) : o.status === 'PACKED' ? (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -3191,7 +3440,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-gray-400">Không tìm thấy đơn hàng nào.</td>
+                      <td colSpan={showBatchCheckboxes ? 9 : 8} className="px-6 py-12 text-center text-gray-400">Không tìm thấy đơn hàng nào.</td>
                     </tr>
                   )}
                 </tbody>
@@ -3360,7 +3609,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           selectedOrderDetails.refundStatus === 'REFUNDED' && 'bg-green-100 text-green-800',
                           selectedOrderDetails.refundStatus === 'FAILED' && 'bg-red-100 text-red-800'
                         )}>
-                          {selectedOrderDetails.refundStatus === 'PENDING' ? 'Chờ duyệt' : selectedOrderDetails.refundStatus === 'REFUNDED' ? 'Đã duyệt hoàn tiền' : 'Thất bại'}
+                          {selectedOrderDetails.refundStatus === 'PENDING' ? 'Chờ duyệt' : selectedOrderDetails.refundStatus === 'REFUNDED' ? 'Đã duyệt hoàn tiền' : 'Đã từ chối'}
                         </span>
                       </div>
                     </div>
@@ -3370,6 +3619,58 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         <span className="italic">"{selectedOrderDetails.refundReason}"</span>
                       </div>
                     )}
+
+                    {/* Refund Proof Image Upload & Display - Chỉ hiển thị khi đã duyệt hoàn tiền */}
+                    {selectedOrderDetails.refundStatus === 'REFUNDED' && (
+                      <div className="pt-2 border-t border-amber-200/80 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="font-black text-amber-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                            <CheckCircle2 className="size-3.5 text-amber-700" />
+                            Ảnh chuyển khoản hoàn tiền
+                          </p>
+                          <label className="text-[10px] font-bold text-amber-900 hover:text-amber-950 bg-amber-200/80 hover:bg-amber-300 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1">
+                            {uploadingRefundProof ? (
+                              <Loader2 className="size-3 animate-spin text-amber-900" />
+                            ) : (
+                              <Upload className="size-3 text-amber-900" />
+                            )}
+                            {selectedOrderDetails.refundProofUrl || pendingRefundProofUrl ? 'Cập nhật / Thay ảnh' : 'Tải ảnh chuyển khoản'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={uploadingRefundProof}
+                              onChange={handleRefundProofUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+
+                        {(selectedOrderDetails.refundProofUrl || pendingRefundProofUrl) ? (
+                          <div className="relative mt-1 group">
+                            <a href={selectedOrderDetails.refundProofUrl || pendingRefundProofUrl || '#'} target="_blank" rel="noreferrer" className="block">
+                              <img
+                                src={selectedOrderDetails.refundProofUrl || pendingRefundProofUrl || ''}
+                                alt="Ảnh chuyển khoản hoàn tiền"
+                                className="w-full max-h-52 object-cover rounded-lg border border-amber-300 hover:opacity-95 transition cursor-pointer shadow-xs"
+                              />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={handleRemoveRefundProof}
+                              disabled={uploadingRefundProof}
+                              className="absolute top-2 right-2 size-7 rounded-full bg-red-600/90 text-white flex items-center justify-center hover:bg-red-700 shadow-md transition cursor-pointer"
+                              title="Xóa ảnh chuyển khoản hoàn tiền"
+                            >
+                              <X className="size-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-amber-700/80 italic font-normal">
+                            Chưa có ảnh chuyển khoản hoàn tiền được lưu. Vui lòng chọn tải ảnh bill chuyển khoản để lưu làm bằng chứng cho khách hàng.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3377,17 +3678,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 {selectedOrderDetails.status !== 'CANCELLED' && (
                   <div className="bg-[#F9F8F6] p-3.5 rounded-xl border border-[#EFEAE2] space-y-2">
                     <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Tiến trình đơn hàng</p>
-                    <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-extrabold">
+                    <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-extrabold">
                       {(() => {
-                        const statusOrder = ['PENDING', 'PACKED', 'SHIPPED', 'DELIVERED'];
+                        const statusOrder = ['PENDING', 'PROCESSING', 'PACKED', 'SHIPPED', 'DELIVERED'];
                         let currentIdx = statusOrder.indexOf(selectedOrderDetails.status);
-                        if (selectedOrderDetails.status === 'PROCESSING') currentIdx = 1;
 
                         const steps = [
                           { label: 'Chờ xác nhận', icon: '1' },
-                          { label: 'Đã gói hàng', icon: '2' },
-                          { label: 'Đã gửi vận chuyển', icon: '3' },
-                          { label: 'Đã nhận hàng', icon: '4' },
+                          { label: 'Đang xử lý', icon: '2' },
+                          { label: 'Đã gói hàng', icon: '3' },
+                          { label: 'Đã gửi VC', icon: '4' },
+                          { label: 'Đã nhận hàng', icon: '5' },
                         ];
 
                         return steps.map((step, idx) => {
@@ -3397,7 +3698,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             <div
                               key={idx}
                               className={cn(
-                                'flex flex-col items-center gap-1 p-1.5 rounded-lg border transition',
+                                'flex flex-col items-center gap-1 p-1 rounded-lg border transition',
                                 isDone ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 'bg-white border-gray-200 text-gray-400',
                                 isCurrent && 'ring-2 ring-[#0F766E] shadow-sm',
                               )}
@@ -3414,20 +3715,55 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </div>
                 )}
 
-                {/* Delivery Proof Image Section */}
-                {selectedOrderDetails.deliveryProofUrl && (
-                  <div className="space-y-1.5 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 text-xs">
-                    <p className="font-black text-emerald-800 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                      <CheckCircle2 className="size-3.5 text-emerald-600" />
-                      Ảnh xác nhận giao hàng (Delivery Proof)
-                    </p>
-                    <a href={selectedOrderDetails.deliveryProofUrl} target="_blank" rel="noreferrer" className="block mt-1">
-                      <img
-                        src={selectedOrderDetails.deliveryProofUrl}
-                        alt="Bằng chứng giao hàng"
-                        className="w-full max-h-48 object-cover rounded-lg border border-emerald-300 hover:opacity-90 transition cursor-pointer"
-                      />
-                    </a>
+                {/* Delivery Proof Image Section - Only for DELIVERED status */}
+                {selectedOrderDetails.status === 'DELIVERED' && (
+                  <div className="space-y-2 bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200 text-xs shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <p className="font-black text-emerald-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                        <CheckCircle2 className="size-3.5 text-emerald-600" />
+                        Ảnh bằng chứng giao hàng (Shipper chụp)
+                      </p>
+                      <label className="text-[10px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-200/80 hover:bg-emerald-300 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1">
+                        {uploadingDetailProof ? (
+                          <Loader2 className="size-3 animate-spin text-emerald-800" />
+                        ) : (
+                          <Upload className="size-3 text-emerald-800" />
+                        )}
+                        {selectedOrderDetails.deliveryProofUrl ? 'Cập nhật / Thay ảnh' : 'Tải ảnh lên'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingDetailProof}
+                          onChange={handleDetailProofUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {selectedOrderDetails.deliveryProofUrl ? (
+                      <div className="relative mt-1 group">
+                        <a href={selectedOrderDetails.deliveryProofUrl} target="_blank" rel="noreferrer" className="block">
+                          <img
+                            src={selectedOrderDetails.deliveryProofUrl}
+                            alt="Bằng chứng giao hàng"
+                            className="w-full max-h-52 object-cover rounded-lg border border-emerald-300 hover:opacity-95 transition cursor-pointer shadow-xs"
+                          />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleRemoveDetailProof}
+                          disabled={uploadingDetailProof}
+                          className="absolute top-2 right-2 size-7 rounded-full bg-red-600/90 text-white flex items-center justify-center hover:bg-red-700 shadow-md transition cursor-pointer"
+                          title="Bỏ / Xóa ảnh bằng chứng giao hàng"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 border border-dashed border-emerald-300/80 bg-white/60 rounded-lg text-emerald-700 font-medium text-xs">
+                        Chưa có ảnh bằng chứng giao hàng. Bấm "Tải ảnh lên" ở trên để lưu ảnh do Shipper chụp.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3446,7 +3782,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       'inline-flex rounded-full px-2.5 py-0.5 text-xs font-black uppercase mt-1.5',
                       selectedOrderDetails.status === 'DELIVERED' && 'bg-green-50 text-green-700',
                       selectedOrderDetails.status === 'PENDING' && 'bg-yellow-50 text-yellow-700',
-                      (selectedOrderDetails.status === 'PACKED' || selectedOrderDetails.status === 'PROCESSING') && 'bg-amber-50 text-amber-700',
+                      selectedOrderDetails.status === 'PROCESSING' && 'bg-teal-50 text-teal-700 border border-teal-200',
+                      selectedOrderDetails.status === 'PACKED' && 'bg-amber-50 text-amber-700',
                       selectedOrderDetails.status === 'SHIPPED' && 'bg-purple-50 text-purple-700',
                       selectedOrderDetails.status === 'CANCELLED' && 'bg-red-50 text-red-700',
                     )}>
@@ -3467,7 +3804,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <button
                         type="button"
                         disabled={refundingId === selectedOrderDetails.id}
-                        onClick={() => handleRejectRefund(selectedOrderDetails.id)}
+                        onClick={() => setConfirmRejectRefundOrder(selectedOrderDetails)}
                         className="rounded-xl border border-red-200 bg-red-50 text-red-600 px-4 py-2 font-bold hover:bg-red-100 transition text-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         Từ chối
@@ -3475,7 +3812,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <button
                         type="button"
                         disabled={refundingId === selectedOrderDetails.id}
-                        onClick={() => handleApproveRefund(selectedOrderDetails.id)}
+                        onClick={() => setConfirmApproveRefundOrder(selectedOrderDetails)}
                         className="rounded-xl bg-emerald-600 text-white px-4 py-2 font-bold hover:bg-emerald-700 transition text-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {refundingId === selectedOrderDetails.id && <Loader2 className="size-3 animate-spin text-white" />}
@@ -3496,6 +3833,38 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </div>
             </div>
           )}
+
+          {/* Confirmation Modals for Refund Approval / Rejection */}
+          <ConfirmDialog
+            isOpen={!!confirmApproveRefundOrder}
+            onClose={() => setConfirmApproveRefundOrder(null)}
+            onConfirm={async () => {
+              if (confirmApproveRefundOrder) {
+                await handleApproveRefund(confirmApproveRefundOrder.id);
+                setConfirmApproveRefundOrder(null);
+              }
+            }}
+            title="Xác nhận duyệt hoàn tiền"
+            message={`Bạn có chắc chắn muốn DUYỆT hoàn tiền cho đơn hàng #${confirmApproveRefundOrder?.id}? Đơn hàng sẽ được cập nhật trạng thái đã hoàn tiền và mở phần tải ảnh bill chuyển khoản.`}
+            confirmText="Xác nhận duyệt"
+            loading={refundingId === confirmApproveRefundOrder?.id}
+          />
+
+          <ConfirmDialog
+            isOpen={!!confirmRejectRefundOrder}
+            onClose={() => setConfirmRejectRefundOrder(null)}
+            onConfirm={async () => {
+              if (confirmRejectRefundOrder) {
+                await handleRejectRefund(confirmRejectRefundOrder.id);
+                setConfirmRejectRefundOrder(null);
+              }
+            }}
+            title="Xác nhận từ chối hoàn tiền"
+            message={`Bạn có chắc chắn muốn TỪ CHỐI yêu cầu hoàn tiền cho đơn hàng #${confirmRejectRefundOrder?.id}?`}
+            confirmText="Xác nhận từ chối"
+            isDanger={true}
+            loading={refundingId === confirmRejectRefundOrder?.id}
+          />
 
           {/* Modal Gửi bên vận chuyển */}
           {shipModalOrder && (

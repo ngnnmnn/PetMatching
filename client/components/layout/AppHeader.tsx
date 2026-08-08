@@ -129,7 +129,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
 
   const isHome = pathname === '/home';
   const isShop = pathname === '/shop';
-  const isProduct = pathname.startsWith('/home/product/');
+  const isProduct = pathname.startsWith('/product/');
   const isCart = pathname === '/cart';
   const isCheckout = pathname === '/checkout';
   const isOrders = pathname.startsWith('/orders');
@@ -162,7 +162,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
         const selectedProduct = suggestions[activeIndex];
         setShowSuggestions(false);
         setSearchVal('');
-        router.push(`/home/product/${selectedProduct.id}`);
+        router.push(`/product/${selectedProduct.id}`);
       }
     } else if (e.key === 'Escape') {
       setShowSuggestions(false);
@@ -277,7 +277,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
                       onClick={() => {
                         setShowSuggestions(false);
                         setSearchVal('');
-                        router.push(`/home/product/${product.id}`);
+                        router.push(`/product/${product.id}`);
                       }}
                       className={cn(
                         "flex items-center gap-3 p-2.5 hover:bg-[#FAF9F6] transition cursor-pointer text-left border-b border-[#EFEAE2]/60 last:border-b-0 first:rounded-t-lg last:rounded-b-lg",

@@ -545,11 +545,14 @@ export class UsersService {
               'Phường/Xã không tồn tại trên hệ thống giao nhận của GHN.',
             );
           }
-          // Kiểm tra trạng thái hoạt động (Status === 1) và quyền giao nhận (Config.To.LockType === 'unlocked')
-          const isLocked =
-            ward.Status !== 1 ||
-            (ward.Config?.To?.LockType &&
-              ward.Config.To.LockType !== 'unlocked');
+          // Kiểm tra trạng thái hoạt động (Status === 1) và quyền giao nhận (Config.To.LockType)
+          const isStatusInactive = Number(ward.Status) !== 1;
+          const isLockTypeActive =
+            ward.Config?.To?.LockType === 1 ||
+            ward.Config?.To?.LockType === '1' ||
+            ward.Config?.To?.LockType === 'locked';
+          const isLocked = isStatusInactive || isLockTypeActive;
+
           if (isLocked) {
             throw new BadRequestException(
               `GHN tạm ngưng hỗ trợ giao hàng ở phường/xã này: ${ward.WardName} - Dự kiến mở lại ngày Chưa xác định.`,
@@ -1127,9 +1130,9 @@ export class UsersService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
 
-    if (order.payment?.status !== 'PAID') {
+    if (order.status !== 'PROCESSING' && order.status !== 'CANCELLED') {
       throw new BadRequestException(
-        'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đã thanh toán thành công (đang xử lý).',
+        'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đang xử lý hoặc đã hủy.',
       );
     }
 

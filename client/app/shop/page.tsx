@@ -39,27 +39,14 @@ const ITEMS_PER_PAGE = 12; // 3 rows, 4 products per row
 // Filter out test/system products (e.g. vouchers, shipping fees, debug products, gibberish keyboard mashes)
 const isTestOrSystemProduct = (product: any) => {
   const nameLower = product.name.toLowerCase();
-  const brandLower = (product.brand || '').toLowerCase();
-  const descLower = (product.description || '').toLowerCase();
 
   const hasKeyword = (
-    nameLower.includes('test') ||
+    nameLower.includes('test demo') ||
     nameLower.includes('freeship') ||
-    nameLower.includes('voucher') ||
-    nameLower.includes('coupon') ||
+    nameLower.includes('voucher test') ||
     nameLower.includes('phí ship') ||
     nameLower.includes('phí vận chuyển') ||
-    nameLower.includes('thử nghiệm') ||
-    nameLower.includes('thu nghiem') ||
-    nameLower.includes('nháp') ||
-    nameLower.includes('nhap') ||
-    nameLower.includes('demo') ||
-    nameLower.includes('excel') ||
-    brandLower.includes('test') ||
-    brandLower.includes('demo') ||
-    descLower.includes('test') ||
-    descLower.includes('thử nghiệm') ||
-    descLower.includes('demo')
+    nameLower.includes('sản phẩm thử nghiệm')
   );
 
   if (hasKeyword) return true;
@@ -67,27 +54,15 @@ const isTestOrSystemProduct = (product: any) => {
   const isGibberish = (str: string): boolean => {
     const s = str.toLowerCase();
     const mashes = [
-      'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl', 'jklm',
-      'ádf', 'sdf', 'dfg', 'fgh', 'ghj', 'hjk', 'jkl',
-      'qwer', 'wert', 'erty', 'rtyu', 'tyui', 'yuio', 'uiop',
-      'zxcv', 'xcvb', 'cvbn', 'vbnm',
-      'abcde', 'bcdef', 'cdefg', 'defgh', 'efghi', 'fghij',
-      'xyz', 'qwe', 'asd', 'zxc', 'abc', '123', '456', '789'
+      'asdfgh', 'sdfghj', 'dfghjk', 'fghjkl',
+      'qwerty', 'wertyu', 'ertyui', 'rtyuio',
+      'zxcvbn'
     ];
     if (mashes.some(m => s.includes(m))) return true;
-    const clean = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (mashes.some(m => clean.includes(m))) return true;
-    if (/[bcdfghjklmnpqrstvwxz]{4,}/.test(clean)) return true;
-    const words = clean.split(/[^a-z0-9]+/);
-    for (const w of words) {
-      if (w.length > 2 && !/[aeiouy0-9]/.test(w)) {
-        return true;
-      }
-    }
     return false;
   };
 
-  return isGibberish(product.name) || (product.brand && isGibberish(product.brand));
+  return isGibberish(product.name);
 };
 
 // Standard sizing weight range mappings (S, M, L, XL, XXL, XXXL) for pet accessories/clothes
@@ -193,7 +168,7 @@ function ShopPageContent() {
   const initialCategory = searchParams.get('category');
 
   const { products, loading, error, filters, setFilters } = useProducts({ 
-    limit: 100,
+    limit: 48,
     category: undefined 
   });
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -227,9 +202,29 @@ function ShopPageContent() {
     loadUserPets();
   }, [loadUserPets]);
 
-  // Restore selected pet filter on mount (persists across product details navigation)
+  // Listen to auth changes (e.g. logout) to clear pet filter immediately
+  useEffect(() => {
+    const handleAuthChange = () => {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        setSelectedPet(null);
+        localStorage.removeItem('petmatch_shop_selected_pet');
+        setPets([]);
+      }
+    };
+    window.addEventListener('auth-change', handleAuthChange);
+    return () => window.removeEventListener('auth-change', handleAuthChange);
+  }, []);
+
+  // Restore selected pet filter on mount (only if user is logged in)
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        localStorage.removeItem('petmatch_shop_selected_pet');
+        setSelectedPet(null);
+        return;
+      }
       const storedPet = localStorage.getItem('petmatch_shop_selected_pet');
       if (storedPet) {
         try {
@@ -244,10 +239,30 @@ function ShopPageContent() {
     }
   }, [setFilters]);
 
+  // Validate selectedPet against user's current pets or login state
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        if (selectedPet) {
+          setSelectedPet(null);
+          localStorage.removeItem('petmatch_shop_selected_pet');
+        }
+      } else if (pets.length > 0 && selectedPet) {
+        const belongsToUser = pets.some((p) => p.id === selectedPet.id);
+        if (!belongsToUser) {
+          setSelectedPet(null);
+          localStorage.removeItem('petmatch_shop_selected_pet');
+        }
+      }
+    }
+  }, [pets, selectedPet]);
+
   // Save/remove selected pet filter in localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (selectedPet) {
+      const token = localStorage.getItem('accessToken');
+      if (selectedPet && token) {
         localStorage.setItem('petmatch_shop_selected_pet', JSON.stringify(selectedPet));
       } else {
         localStorage.removeItem('petmatch_shop_selected_pet');

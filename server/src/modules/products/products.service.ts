@@ -12,6 +12,33 @@ import { GetProductsDto } from './dto/get-products.dto';
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
+  private async attachSoldCount<T extends { id: string }>(products: T[]) {
+    if (!products.length) return [];
+    const productIds = products.map((p) => p.id);
+    const sales = await this.prisma.orderItem.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { in: productIds },
+        order: {
+          status: { in: ['DELIVERED', 'SHIPPED', 'PROCESSING', 'PACKED'] },
+        },
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
+    const salesMap = new Map<string, number>();
+    sales.forEach((s) => {
+      salesMap.set(s.productId, s._sum.quantity || 0);
+    });
+
+    return products.map((p) => ({
+      ...p,
+      soldCount: salesMap.get(p.id) || 0,
+    }));
+  }
+
   async getProducts(dto: GetProductsDto) {
     const {
       category,
@@ -54,7 +81,7 @@ export class ProductsService {
         this.prisma.product.count({ where }),
       ]);
 
-      const data = allProducts
+      const sorted = allProducts
         .sort((a, b) => {
           const priceA = a.salePrice ?? (a.sellingPrice || 0);
           const priceB = b.salePrice ?? (b.sellingPrice || 0);
@@ -64,6 +91,8 @@ export class ProductsService {
           return priceCompare || b.reviewCount - a.reviewCount;
         })
         .slice(skip, skip + limit);
+
+      const data = await this.attachSoldCount(sorted);
 
       return {
         data,
@@ -76,7 +105,7 @@ export class ProductsService {
         ? [{ createdAt: 'desc' }, { id: 'desc' }]
         : [{ reviewCount: 'desc' }, { rating: 'desc' }];
 
-    const [data, total] = await this.prisma.$transaction([
+    const [rawProducts, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
         where,
         orderBy,
@@ -86,6 +115,8 @@ export class ProductsService {
       }),
       this.prisma.product.count({ where }),
     ]);
+
+    const data = await this.attachSoldCount(rawProducts);
 
     return {
       data,
@@ -101,29 +132,16 @@ export class ProductsService {
         stock: { gt: 0 },
       },
       include: {
-        orderItems: {
-          select: {
-            quantity: true,
-          },
-        },
+        variants: true,
       },
     });
 
-    const sorted = products
-      .map((p) => {
-        const sales = p.orderItems.reduce(
-          (sum, item) => sum + item.quantity,
-          0,
-        );
-        return { ...p, sales };
-      })
-      .sort((a, b) => b.sales - a.sales);
-
-    return sorted.slice(0, 4).map(({ orderItems, sales, ...p }) => p);
+    const productsWithSales = await this.attachSoldCount(products);
+    return productsWithSales.sort((a, b) => b.soldCount - a.soldCount).slice(0, 8);
   }
 
   async getProductById(id: string) {
-    return this.prisma.product.findUnique({
+    const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
         variants: {
@@ -132,6 +150,10 @@ export class ProductsService {
         },
       },
     });
+
+    if (!product) return null;
+    const [withSales] = await this.attachSoldCount([product]);
+    return withSales;
   }
 
   async getCategories() {
@@ -186,9 +208,9 @@ export class ProductsService {
   async createReview(
     userId: string,
     productId: string,
-    dto: { rating: number; comment?: string },
+    dto: { rating: number; comment?: string; images?: string[] },
   ) {
-    const { rating, comment } = dto;
+    const { rating, comment, images = [] } = dto;
     if (rating < 1 || rating > 5) {
       throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5.');
     }
@@ -206,6 +228,7 @@ export class ProductsService {
         data: {
           rating,
           comment,
+          images: Array.isArray(images) ? images : [],
           userId,
           productId,
         },
@@ -237,9 +260,9 @@ export class ProductsService {
   async updateReview(
     userId: string,
     reviewId: string,
-    dto: { rating: number; comment?: string },
+    dto: { rating: number; comment?: string; images?: string[] },
   ) {
-    const { rating, comment } = dto;
+    const { rating, comment, images } = dto;
     if (rating < 1 || rating > 5) {
       throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5.');
     }
@@ -259,7 +282,11 @@ export class ProductsService {
     return this.prisma.$transaction(async (tx) => {
       const updatedReview = await tx.productReview.update({
         where: { id: reviewId },
-        data: { rating, comment },
+        data: {
+          rating,
+          comment,
+          ...(images !== undefined && { images: Array.isArray(images) ? images : [] }),
+        },
       });
 
       const aggregate = await tx.productReview.aggregate({

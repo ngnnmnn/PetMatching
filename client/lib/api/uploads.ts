@@ -6,7 +6,8 @@ export type UploadPurpose =
   | 'vaccine-document'
   | 'pedigree-document'
   | 'product'
-  | 'spa-result';
+  | 'spa-result'
+  | 'review';
 
 export type UploadedImage = {
   url: string;

@@ -36,6 +36,7 @@ api.interceptors.response.use(
       const errorCode = error.response?.data?.code;
       localStorage.removeItem("accessToken");
       localStorage.removeItem("user");
+      localStorage.removeItem("petmatch_shop_selected_pet");
       if (typeof window !== "undefined" && !isRedirectingToLogin) {
         isRedirectingToLogin = true;
         if (errorCode === "ACCOUNT_SUSPENDED") {

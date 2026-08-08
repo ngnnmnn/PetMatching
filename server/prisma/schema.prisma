@@ -408,6 +408,7 @@ model Order {
   refundAccountName   String?
   refundReason        String?
   refundedAt          DateTime?
+  refundProofUrl      String?
   deliveryProofUrl    String?
   shippingNote        String?
   createdAt           DateTime    @default(now())
@@ -684,6 +685,7 @@ model ProductReview {
   id        String   @id @default(cuid())
   rating    Int
   comment   String?
+  images    String[] @default([])
   userId    String
   productId String
   createdAt DateTime @default(now())
