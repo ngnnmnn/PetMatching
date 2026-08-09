@@ -117,9 +117,32 @@ export class UsersService {
       this.findByEmail(email),
       this.findByUsername(username),
     ]);
+
     if (existingUser) {
-      throw new ConflictException('Email đã được đăng ký!');
+      if (existingUser.isVerified) {
+        throw new ConflictException('Email đã được đăng ký!');
+      }
+
+      if (existingUsername && existingUsername.id !== existingUser.id) {
+        throw new ConflictException('Tên đăng nhập đã được sử dụng!');
+      }
+
+      const hashedPassword = await bcrypt.hash(data.password, 10);
+      const updatedUser = await this.prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          username,
+          passwordHash: hashedPassword,
+          name: data.name,
+          phone: data.phone,
+          avatarUrl: data.avatarUrl,
+          role: data.role ?? UserRole.USER,
+        },
+      });
+      const { passwordHash, ...result } = updatedUser;
+      return result;
     }
+
     if (existingUsername) {
       throw new ConflictException('Tên đăng nhập đã được sử dụng!');
     }
