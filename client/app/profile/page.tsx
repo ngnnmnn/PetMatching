@@ -383,9 +383,11 @@ export default function ProfilePage() {
     return null;
   }
 
+  const roleLabel = profile.role === 'USER' ? 'Người dùng' : profile.role;
+
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)]">
-      <AppHeader sectionLabel="Profile" />
+      <AppHeader sectionLabel="Hồ sơ" />
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
@@ -417,19 +419,19 @@ export default function ProfilePage() {
 
                   <h1 className="mt-4 text-xl font-extrabold">{profile.name}</h1>
                   <p className="mt-1 text-sm text-[var(--text-muted)]">{profile.email}</p>
-                  <span className="mt-3 rounded-full bg-[var(--bg-demo-box)] px-3 py-1 text-xs font-bold uppercase text-[var(--primary-color)]">{profile.role}</span>
+                  <span className="mt-3 rounded-full bg-[var(--bg-demo-box)] px-3 py-1 text-xs font-bold uppercase text-[var(--primary-color)]">{roleLabel}</span>
                 </div>
 
                 <div className="px-5 pb-5">
                   <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-                    <Stat label="Pets" value={profile.stats.pets} />
-                    <Stat label="Orders" value={profile.stats.orders} />
-                    <Stat label="Spent" value={currency.format(profile.stats.totalSpent)} />
+                    <Stat label="Thú cưng" value={profile.stats.pets} />
+                    <Stat label="Đơn hàng" value={profile.stats.orders} />
+                    <Stat label="Đã chi tiêu" value={currency.format(profile.stats.totalSpent)} />
                   </div>
                   <div className="mt-5 grid gap-2 rounded-lg bg-[#FBFAF7] p-3 text-sm">
-                    <InfoLine icon={Mail} label="Email" value={profile.email} />
-                    <InfoLine icon={Phone} label="Phone" value={profile.phone || 'Chưa cập nhật'} />
-                    <InfoLine icon={ShieldCheck} label="Status" value={profile.isVerified ? 'Đã xác thực' : 'Chưa xác thực'} />
+                    <InfoLine icon={Mail} value={profile.email} />
+                    <InfoLine icon={Phone} value={profile.phone || 'Chưa cập nhật'} />
+                    <InfoLine icon={ShieldCheck} value={profile.isVerified ? 'Đã xác thực' : 'Chưa xác thực'} />
                   </div>
                 </div>
               </section>
@@ -504,7 +506,7 @@ export default function ProfilePage() {
                     <input className="profile-input text-[var(--text-muted)]" value={profile.email} readOnly />
                   </Field>
                   <Field label="Vai trò">
-                    <input className="profile-input text-[var(--text-muted)]" value={profile.role} readOnly />
+                    <input className="profile-input text-[var(--text-muted)]" value={roleLabel} readOnly />
                   </Field>
                   <div className="md:col-span-2">
                     <button type="submit" disabled={saving} className="profile-primary-button">
@@ -790,11 +792,10 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function InfoLine({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+function InfoLine({ icon: Icon, value }: { icon: LucideIcon; value: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <Icon className="size-4 shrink-0 text-[var(--primary-color)]" />
-      <span className="shrink-0 text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">{label}</span>
       <span className="min-w-0 truncate text-sm font-semibold">{value}</span>
     </div>
   );

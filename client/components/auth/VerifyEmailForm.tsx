@@ -14,7 +14,11 @@ export default function VerifyEmailForm() {
   const email = searchParams.get('email') || '';
   const [otp, setOtp] = useState('');
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(
+    searchParams.get('otpSent') === 'false'
+      ? 'Tài khoản đã được tạo nhưng chưa thể gửi OTP. Vui lòng thử gửi lại mã.'
+      : '',
+  );
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(30);
@@ -104,7 +108,9 @@ export default function VerifyEmailForm() {
           Xác thực email
         </h1>
         <p className="mb-8 text-center text-sm font-medium leading-6 text-[var(--text-muted)]">
-          Chúng tôi đã gửi mã 6 số đến:{' '}
+          {searchParams.get('otpSent') === 'false'
+            ? 'Email cần xác thực: '
+            : 'Chúng tôi đã gửi mã 6 số đến: '}
           <span className="font-extrabold text-[var(--text-main)]">{email || 'email của bạn'}</span>
         </p>
 

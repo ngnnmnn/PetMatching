@@ -206,12 +206,24 @@ export class AuthService {
       avatarUrl: registerDto.avatarUrl,
     });
 
-    await this.createAndSendOtp(email);
+    let otpSent = true;
+    try {
+      await this.createAndSendOtp(email);
+    } catch (error) {
+      otpSent = false;
+      this.logger.error(
+        `Tài khoản ${email} đã được tạo nhưng không thể gửi OTP.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
 
     return {
       success: true,
-      message: 'Đăng ký thành công. Vui lòng kiểm tra email để lấy mã OTP.',
+      message: otpSent
+        ? 'Đăng ký thành công. Vui lòng kiểm tra email để lấy mã OTP.'
+        : 'Tài khoản đã được tạo nhưng chưa thể gửi OTP. Vui lòng thử gửi lại mã.',
       requiresVerification: true,
+      otpSent,
       email,
     };
   }
