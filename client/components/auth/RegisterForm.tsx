@@ -71,8 +71,9 @@ export default function RegisterForm() {
       const response = await api.post("/auth/register", registerData);
 
       if (response.data.success) {
+        const otpSent = response.data.otpSent !== false;
         router.push(
-          `/verify-email?email=${encodeURIComponent(response.data.email || registerData.email)}`,
+          `/verify-email?email=${encodeURIComponent(response.data.email || registerData.email)}${otpSent ? "" : "&otpSent=false"}`,
         );
         return;
       }
