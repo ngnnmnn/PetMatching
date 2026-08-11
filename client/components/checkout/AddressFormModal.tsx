@@ -198,6 +198,7 @@ interface AddressFormModalProps {
     wardCode?: string;
   };
   title?: string;
+  submitButtonText?: string;
   showSaveOptions?: boolean;
   showShippingFee?: boolean;
   itemsSubtotal?: number;
@@ -211,12 +212,17 @@ export default function AddressFormModal({
   savedAddresses,
   initialData,
   title = 'Nhập địa chỉ giao hàng',
+  submitButtonText,
   showSaveOptions = false,
   showShippingFee = false,
   itemsSubtotal,
   currentShippingFee,
 }: AddressFormModalProps) {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+  const actionButtonText =
+    submitButtonText ||
+    (initialData?.receiverName || initialData?.detail ? 'Cập nhật địa chỉ' : 'Thêm địa chỉ mới');
 
   const [addressTab, setAddressTab] = useState<'saved' | 'new'>(
     savedAddresses && savedAddresses.length > 0 ? 'saved' : 'new',
@@ -783,7 +789,7 @@ export default function AddressFormModal({
               type="submit"
               className="rounded-xl bg-[#0F766E] px-5 py-2.5 text-sm font-extrabold text-white hover:bg-[#115E59] transition"
             >
-              Xác nhận đổi địa chỉ
+              {actionButtonText}
             </button>
           </div>
         </form>

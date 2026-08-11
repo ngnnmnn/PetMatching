@@ -1029,6 +1029,7 @@ export default function OrdersPage() {
           onSubmit={handleAddressFormSubmit}
           showSaveOptions={false}
           showShippingFee={true}
+          submitButtonText="Xác nhận đổi địa chỉ"
           title={`Sửa địa chỉ giao hàng - Đơn hàng #${editOrder.id}`}
           initialData={parseAddressString(editOrder.shippingAddress)}
         />
