@@ -199,6 +199,7 @@ interface AddressFormModalProps {
   };
   title?: string;
   showSaveOptions?: boolean;
+  showShippingFee?: boolean;
   itemsSubtotal?: number;
   currentShippingFee?: number;
 }
@@ -211,6 +212,7 @@ export default function AddressFormModal({
   initialData,
   title = 'Nhập địa chỉ giao hàng',
   showSaveOptions = false,
+  showShippingFee = false,
   itemsSubtotal,
   currentShippingFee,
 }: AddressFormModalProps) {
@@ -276,7 +278,7 @@ export default function AddressFormModal({
 
   // Live Shipping Fee Calculation
   useEffect(() => {
-    if (!districtId || !wardCode) {
+    if (!showShippingFee || !districtId || !wardCode) {
       setCalculatedShippingFee(null);
       return;
     }
@@ -307,7 +309,7 @@ export default function AddressFormModal({
     };
 
     fetchFee();
-  }, [districtId, wardCode, apiBaseUrl]);
+  }, [showShippingFee, districtId, wardCode, apiBaseUrl]);
 
   // Fetch GHN Provinces
   useEffect(() => {
@@ -743,7 +745,7 @@ export default function AddressFormModal({
           )}
 
           {/* Live Recalculated Shipping Fee & Total Order Preview Box */}
-          {((districtId && wardCode) || calculatedShippingFee !== null) && (
+          {showShippingFee && ((districtId && wardCode) || calculatedShippingFee !== null) && (
             <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
               <div className="flex justify-between items-center font-extrabold text-emerald-900">
                 <span>Phí vận chuyển mới (tính tự động từ GHN):</span>

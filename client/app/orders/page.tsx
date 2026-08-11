@@ -1028,6 +1028,7 @@ export default function OrdersPage() {
           currentShippingFee={editOrder.shippingFee || 0}
           onSubmit={handleAddressFormSubmit}
           showSaveOptions={false}
+          showShippingFee={true}
           title={`Sửa địa chỉ giao hàng - Đơn hàng #${editOrder.id}`}
           initialData={parseAddressString(editOrder.shippingAddress)}
         />

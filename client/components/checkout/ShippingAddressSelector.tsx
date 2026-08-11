@@ -328,6 +328,7 @@ export default function ShippingAddressSelector({
         onClose={handleModalClose}
         onSubmit={handleModalSubmit}
         showSaveOptions={editingAddress ? false : true}
+        showShippingFee={true}
         title={editingAddress ? 'Sửa thông tin địa chỉ giao hàng' : 'Nhập thông tin giao hàng mới'}
         initialData={
           editingAddress
