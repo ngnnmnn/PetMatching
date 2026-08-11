@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 
 import AppHeader from '@/components/layout/AppHeader';
 import PasswordStrengthMeter from '@/components/auth/PasswordStrengthMeter';
+import { ShippingAddressSelector } from '@/components/checkout';
 import { usersApi } from '@/lib/api/users';
 import { getPasswordPolicyError, getPasswordStrength, PASSWORD_MIN_LENGTH } from '@/lib/password-policy';
 import { Address, ProfileResponse } from '@/types';
@@ -50,39 +51,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-type AddressDraft = Omit<Address, 'id' | 'userId' | 'createdAt' | 'updatedAt'>;
-
-type ProvinceOption = {
-  code: number;
-  name: string;
-};
-
-type DistrictOption = {
-  code: number;
-  name: string;
-};
-
-type WardOption = {
-  code: number;
-  name: string;
-};
-
 type MatchingBlock = {
   createdAt: string;
   blocked: { id: string; name: string; avatarUrl?: string | null };
 };
-
-const emptyAddress: AddressDraft = {
-  receiverName: '',
-  receiverPhone: '',
-  province: '',
-  district: '',
-  ward: '',
-  detail: '',
-  isDefault: false,
-};
-
-const VIETNAM_ADMIN_API = 'https://provinces.open-api.vn/api';
 
 const shortcuts = [
   { href: '/my-pets', label: 'Thú cưng của tôi', icon: PawPrint },
@@ -113,16 +85,7 @@ export default function ProfilePage() {
     next: false,
     confirm: false,
   });
-  const [addressOpen, setAddressOpen] = useState(false);
-  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
-  const [addressDraft, setAddressDraft] = useState<AddressDraft>(emptyAddress);
-  const [provinceOptions, setProvinceOptions] = useState<ProvinceOption[]>([]);
-  const [districtOptions, setDistrictOptions] = useState<DistrictOption[]>([]);
-  const [wardOptions, setWardOptions] = useState<WardOption[]>([]);
-  const [selectedProvinceCode, setSelectedProvinceCode] = useState('');
-  const [selectedDistrictCode, setSelectedDistrictCode] = useState('');
-  const [selectedWardCode, setSelectedWardCode] = useState('');
-  const [addressOptionsLoading, setAddressOptionsLoading] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('');
   const [matchingBlocks, setMatchingBlocks] = useState<MatchingBlock[]>([]);
   const [unblockingUserId, setUnblockingUserId] = useState<string | null>(null);
   const [passwords, setPasswords] = useState({
@@ -130,6 +93,15 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: '',
   });
+
+  const refreshProfile = async () => {
+    try {
+      const response = await usersApi.getProfile();
+      setProfile(response.data);
+    } catch (e) {
+      console.error('Failed to refresh profile', e);
+    }
+  };
 
   const defaultAddress = useMemo(() => profile?.addresses.find((address) => address.isDefault), [profile?.addresses]);
 
@@ -172,25 +144,19 @@ export default function ProfilePage() {
       .catch(() => toast.error('Không thể tải danh sách người dùng đã chặn.'));
   }, [router]);
 
-  useEffect(() => {
-    fetch(`${VIETNAM_ADMIN_API}/p/`)
-      .then((response) => response.json())
-      .then((data: ProvinceOption[]) => setProvinceOptions(data))
-      .catch(() => toast.error('Không thể tải danh sách tỉnh/thành.'));
-  }, []);
-
-  useEffect(() => {
-    if (!addressOpen || !addressDraft.province || selectedProvinceCode || provinceOptions.length === 0) {
-      return;
+  const handleUnblockMatchingUser = async (userId: string) => {
+    if (unblockingUserId) return;
+    setUnblockingUserId(userId);
+    try {
+      await usersApi.unblockMatchingUser(userId);
+      setMatchingBlocks((current) => current.filter((item) => item.blocked.id !== userId));
+      toast.success('Đã bỏ chặn người dùng.');
+    } catch {
+      toast.error('Không thể bỏ chặn người dùng.');
+    } finally {
+      setUnblockingUserId(null);
     }
-
-    const province = provinceOptions.find((item) => item.name === addressDraft.province);
-    if (!province) {
-      return;
-    }
-
-    void loadDistricts(String(province.code), addressDraft.district, addressDraft.ward);
-  }, [addressOpen, addressDraft.province, addressDraft.district, addressDraft.ward, provinceOptions, selectedProvinceCode]);
+  };
 
   const syncUserStorage = (nextUser: ProfileResponse) => {
     const stored = localStorage.getItem('user');
@@ -208,120 +174,6 @@ export default function ProfilePage() {
         isVerified: nextUser.isVerified,
       }),
     );
-  };
-
-  const refreshProfile = async () => {
-    const response = await usersApi.getProfile();
-    setProfile(response.data);
-    syncUserStorage(response.data);
-    return response.data;
-  };
-
-  const handleUnblockMatchingUser = async (userId: string) => {
-    if (unblockingUserId) return;
-    setUnblockingUserId(userId);
-    try {
-      await usersApi.unblockMatchingUser(userId);
-      setMatchingBlocks((current) => current.filter((item) => item.blocked.id !== userId));
-      toast.success('Đã bỏ chặn người dùng.');
-    } catch {
-      toast.error('Không thể bỏ chặn người dùng.');
-    } finally {
-      setUnblockingUserId(null);
-    }
-  };
-
-  const loadDistricts = async (provinceCode: string, districtNameToSelect?: string, wardNameToSelect?: string) => {
-    setAddressOptionsLoading(true);
-    try {
-      const response = await fetch(`${VIETNAM_ADMIN_API}/p/${provinceCode}?depth=2`);
-      const data = (await response.json()) as ProvinceOption & {
-        districts: DistrictOption[];
-      };
-      setSelectedProvinceCode(provinceCode);
-      setDistrictOptions(data.districts ?? []);
-
-      if (districtNameToSelect) {
-        const district = data.districts?.find((item) => item.name === districtNameToSelect);
-        if (district) {
-          await loadWards(String(district.code), wardNameToSelect);
-        }
-      }
-    } catch {
-      toast.error('Không thể tải danh sách quận/huyện.');
-    } finally {
-      setAddressOptionsLoading(false);
-    }
-  };
-
-  const loadWards = async (districtCode: string, wardNameToSelect?: string) => {
-    setAddressOptionsLoading(true);
-    try {
-      const response = await fetch(`${VIETNAM_ADMIN_API}/d/${districtCode}?depth=2`);
-      const data = (await response.json()) as DistrictOption & {
-        wards: WardOption[];
-      };
-      setSelectedDistrictCode(districtCode);
-      setWardOptions(data.wards ?? []);
-
-      if (wardNameToSelect) {
-        const ward = data.wards?.find((item) => item.name === wardNameToSelect);
-        if (ward) {
-          setSelectedWardCode(String(ward.code));
-        }
-      }
-    } catch {
-      toast.error('Không thể tải danh sách phường/xã.');
-    } finally {
-      setAddressOptionsLoading(false);
-    }
-  };
-
-  const handleProvinceChange = (provinceCode: string) => {
-    const province = provinceOptions.find((item) => String(item.code) === provinceCode);
-
-    setSelectedProvinceCode(provinceCode);
-    setSelectedDistrictCode('');
-    setSelectedWardCode('');
-    setDistrictOptions([]);
-    setWardOptions([]);
-    setAddressDraft((value) => ({
-      ...value,
-      province: province?.name ?? '',
-      district: '',
-      ward: '',
-    }));
-
-    if (provinceCode) {
-      void loadDistricts(provinceCode);
-    }
-  };
-
-  const handleDistrictChange = (districtCode: string) => {
-    const district = districtOptions.find((item) => String(item.code) === districtCode);
-
-    setSelectedDistrictCode(districtCode);
-    setSelectedWardCode('');
-    setWardOptions([]);
-    setAddressDraft((value) => ({
-      ...value,
-      district: district?.name ?? '',
-      ward: '',
-    }));
-
-    if (districtCode) {
-      void loadWards(districtCode);
-    }
-  };
-
-  const handleWardChange = (wardCode: string) => {
-    const ward = wardOptions.find((item) => String(item.code) === wardCode);
-
-    setSelectedWardCode(wardCode);
-    setAddressDraft((value) => ({
-      ...value,
-      ward: ward?.name ?? '',
-    }));
   };
 
   const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -364,70 +216,7 @@ export default function ProfilePage() {
     }
   };
 
-  const openAddressDialog = (address?: Address) => {
-    setEditingAddress(address ?? null);
-    setSelectedProvinceCode('');
-    setSelectedDistrictCode('');
-    setSelectedWardCode('');
-    setDistrictOptions([]);
-    setWardOptions([]);
-    setAddressDraft(
-      address
-        ? {
-            receiverName: address.receiverName,
-            receiverPhone: address.receiverPhone,
-            province: address.province,
-            district: address.district,
-            ward: address.ward,
-            detail: address.detail,
-            isDefault: address.isDefault,
-          }
-        : emptyAddress,
-    );
-    setAddressOpen(true);
-  };
 
-  const handleSaveAddress = async () => {
-    if (!addressDraft.province || !addressDraft.district || !addressDraft.ward) {
-      toast.error('Vui lòng chọn đầy đủ tỉnh/thành, quận/huyện và phường/xã.');
-      return;
-    }
-
-    try {
-      if (editingAddress) {
-        await usersApi.updateAddress(editingAddress.id, addressDraft);
-        toast.success('Đã cập nhật địa chỉ.');
-      } else {
-        await usersApi.createAddress(addressDraft);
-        toast.success('Đã thêm địa chỉ mới.');
-      }
-
-      await refreshProfile();
-      setAddressOpen(false);
-    } catch {
-      toast.error('Không thể lưu địa chỉ.');
-    }
-  };
-
-  const handleSetDefaultAddress = async (id: string) => {
-    try {
-      await usersApi.setDefaultAddress(id);
-      await refreshProfile();
-      toast.success('Đã đặt địa chỉ chính.');
-    } catch {
-      toast.error('Không thể đặt địa chỉ chính.');
-    }
-  };
-
-  const handleDeleteAddress = async (id: string) => {
-    try {
-      await usersApi.deleteAddress(id);
-      await refreshProfile();
-      toast.success('Đã xóa địa chỉ.');
-    } catch {
-      toast.error('Không thể xóa địa chỉ.');
-    }
-  };
 
   const submitPasswordChange = async () => {
     setPasswordSaving(true);
@@ -681,23 +470,13 @@ export default function ProfilePage() {
               </section>
 
               <section className="profile-card">
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <SectionHeader icon={MapPin} title="Địa chỉ giao hàng" description="Địa chỉ chính sẽ được ưu tiên khi tạo đơn hàng." compact />
-                  <button type="button" className="profile-secondary-button" onClick={() => openAddressDialog()}>
-                    <Plus className="size-4" />
-                    Thêm địa chỉ
-                  </button>
-                </div>
-
-                <div className="grid gap-3">
-                  {defaultAddress && <AddressRow address={defaultAddress} onEdit={openAddressDialog} onDelete={handleDeleteAddress} onSetDefault={handleSetDefaultAddress} />}
-                  {secondaryAddresses.map((address) => (
-                    <AddressRow key={address.id} address={address} onEdit={openAddressDialog} onDelete={handleDeleteAddress} onSetDefault={handleSetDefaultAddress} />
-                  ))}
-                  {!profile.addresses.length && (
-                    <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">Chưa có địa chỉ giao hàng.</div>
-                  )}
-                </div>
+                <ShippingAddressSelector
+                  savedAddresses={profile?.addresses || []}
+                  selectedAddressId={selectedAddressId || (profile?.addresses?.find((a) => a.isDefault)?.id || profile?.addresses?.[0]?.id || '')}
+                  onSelectAddressId={(id) => setSelectedAddressId(id)}
+                  onAddressesUpdated={refreshProfile}
+                  title="Địa chỉ giao hàng"
+                />
               </section>
 
               <section className="profile-card">
@@ -789,121 +568,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        <Dialog open={addressOpen} onOpenChange={setAddressOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingAddress ? 'Sửa địa chỉ' : 'Thêm địa chỉ'}</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-3">
-              <Field label="Người nhận">
-                <input
-                  className="profile-input"
-                  value={addressDraft.receiverName}
-                  onChange={(event) =>
-                    setAddressDraft((value) => ({
-                      ...value,
-                      receiverName: event.target.value,
-                    }))
-                  }
-                />
-              </Field>
-              <Field label="Số điện thoại">
-                <input
-                  className="profile-input"
-                  value={addressDraft.receiverPhone}
-                  onChange={(event) =>
-                    setAddressDraft((value) => ({
-                      ...value,
-                      receiverPhone: event.target.value,
-                    }))
-                  }
-                />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="Tỉnh/Thành">
-                  <select className="profile-input" value={selectedProvinceCode} onChange={(event) => handleProvinceChange(event.target.value)}>
-                    <option value="">Chọn tỉnh/thành</option>
-                    {provinceOptions.map((province) => (
-                      <option key={province.code} value={province.code}>
-                        {province.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Quận/Huyện">
-                  <select
-                    className="profile-input disabled:cursor-not-allowed disabled:bg-[#F1F1F1] disabled:text-[var(--text-muted)]"
-                    value={selectedDistrictCode}
-                    onChange={(event) => handleDistrictChange(event.target.value)}
-                    disabled={!selectedProvinceCode || addressOptionsLoading}
-                  >
-                    <option value="">{selectedProvinceCode ? 'Chọn quận/huyện' : 'Chọn tỉnh trước'}</option>
-                    {districtOptions.map((district) => (
-                      <option key={district.code} value={district.code}>
-                        {district.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Phường/Xã">
-                  <select
-                    className="profile-input disabled:cursor-not-allowed disabled:bg-[#F1F1F1] disabled:text-[var(--text-muted)]"
-                    value={selectedWardCode}
-                    onChange={(event) => handleWardChange(event.target.value)}
-                    disabled={!selectedDistrictCode || addressOptionsLoading}
-                  >
-                    <option value="">{selectedDistrictCode ? 'Chọn phường/xã' : 'Chọn quận trước'}</option>
-                    {wardOptions.map((ward) => (
-                      <option key={ward.code} value={ward.code}>
-                        {ward.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-              {addressOptionsLoading && (
-                <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
-                  <Loader2 className="size-3.5 animate-spin text-[var(--primary-color)]" />
-                  Đang tải dữ liệu hành chính...
-                </div>
-              )}
-              <Field label="Địa chỉ chi tiết">
-                <input
-                  className="profile-input"
-                  value={addressDraft.detail}
-                  onChange={(event) =>
-                    setAddressDraft((value) => ({
-                      ...value,
-                      detail: event.target.value,
-                    }))
-                  }
-                />
-              </Field>
-              <label className="flex items-center gap-2 text-sm font-semibold">
-                <input
-                  type="checkbox"
-                  checked={addressDraft.isDefault}
-                  onChange={(event) =>
-                    setAddressDraft((value) => ({
-                      ...value,
-                      isDefault: event.target.checked,
-                    }))
-                  }
-                />
-                Đặt làm địa chỉ chính
-              </label>
-            </div>
-            <DialogFooter>
-              <button type="button" className="profile-secondary-button" onClick={() => setAddressOpen(false)}>
-                Hủy
-              </button>
-              <button type="button" className="profile-primary-button" onClick={handleSaveAddress}>
-                <Save className="size-4" />
-                Lưu địa chỉ
-              </button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+
       </main>
     </div>
   );
