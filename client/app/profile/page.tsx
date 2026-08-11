@@ -34,7 +34,8 @@ import { toast } from 'sonner';
 
 import AppHeader from '@/components/layout/AppHeader';
 import PasswordStrengthMeter from '@/components/auth/PasswordStrengthMeter';
-import { ShippingAddressSelector } from '@/components/checkout';
+import { AddressFormModal } from '@/components/checkout';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { usersApi } from '@/lib/api/users';
 import { getPasswordPolicyError, getPasswordStrength, PASSWORD_MIN_LENGTH } from '@/lib/password-policy';
 import { Address, ProfileResponse } from '@/types';
@@ -94,12 +95,101 @@ export default function ProfilePage() {
     confirmPassword: '',
   });
 
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [addressToDeleteId, setAddressToDeleteId] = useState<string | null>(null);
+  const [deletingAddressLoading, setDeletingAddressLoading] = useState(false);
+
   const refreshProfile = async () => {
     try {
       const response = await usersApi.getProfile();
       setProfile(response.data);
     } catch (e) {
       console.error('Failed to refresh profile', e);
+    }
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingAddress(null);
+    setIsAddressModalOpen(true);
+  };
+
+  const handleOpenEditModal = (addr: Address) => {
+    setEditingAddress(addr);
+    setIsAddressModalOpen(true);
+  };
+
+  const handleAddressFormSubmit = async (data: any) => {
+    setIsAddressModalOpen(false);
+    if (editingAddress) {
+      try {
+        await usersApi.updateAddress(editingAddress.id, {
+          receiverName: data.receiverName,
+          receiverPhone: data.receiverPhone,
+          province: data.provinceName,
+          district: data.districtName,
+          ward: data.wardName,
+          detail: data.detail,
+          provinceId: data.provinceId,
+          districtId: data.districtId,
+          wardCode: data.wardCode,
+          isDefault: data.setAsDefault,
+        });
+        toast.success('Đã cập nhật thông tin địa chỉ thành công.');
+        await refreshProfile();
+      } catch (err) {
+        console.error('Failed to update address', err);
+        toast.error('Lỗi khi cập nhật địa chỉ.');
+      } finally {
+        setEditingAddress(null);
+      }
+    } else {
+      try {
+        await usersApi.createAddress({
+          receiverName: data.receiverName,
+          receiverPhone: data.receiverPhone,
+          province: data.provinceName,
+          district: data.districtName,
+          ward: data.wardName,
+          detail: data.detail,
+          provinceId: data.provinceId,
+          districtId: data.districtId,
+          wardCode: data.wardCode,
+          isDefault: data.setAsDefault,
+        });
+        toast.success('Đã thêm địa chỉ mới thành công.');
+        await refreshProfile();
+      } catch (err) {
+        console.error('Failed to create address', err);
+        toast.error('Lỗi khi lưu địa chỉ mới.');
+      }
+    }
+  };
+
+  const handleSetDefaultAddress = async (id: string) => {
+    try {
+      await usersApi.setDefaultAddress(id);
+      toast.success('Đã đặt làm địa chỉ mặc định.');
+      await refreshProfile();
+    } catch (err) {
+      console.error('Failed to set default address', err);
+      toast.error('Không thể đặt địa chỉ mặc định.');
+    }
+  };
+
+  const handleDeleteAddressConfirm = async () => {
+    if (!addressToDeleteId) return;
+    setDeletingAddressLoading(true);
+    try {
+      await usersApi.deleteAddress(addressToDeleteId);
+      toast.success('Đã xóa địa chỉ thành công.');
+      await refreshProfile();
+    } catch (err) {
+      console.error('Failed to delete address', err);
+      toast.error('Lỗi khi xóa địa chỉ.');
+    } finally {
+      setDeletingAddressLoading(false);
+      setAddressToDeleteId(null);
     }
   };
 
@@ -470,13 +560,80 @@ export default function ProfilePage() {
               </section>
 
               <section className="profile-card">
-                <ShippingAddressSelector
-                  savedAddresses={profile?.addresses || []}
-                  selectedAddressId={selectedAddressId || (profile?.addresses?.find((a) => a.isDefault)?.id || profile?.addresses?.[0]?.id || '')}
-                  onSelectAddressId={(id) => setSelectedAddressId(id)}
-                  onAddressesUpdated={refreshProfile}
-                  title="Địa chỉ giao hàng"
-                />
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <SectionHeader icon={MapPin} title="Địa chỉ giao hàng" description="Địa chỉ chính sẽ được ưu tiên khi tạo đơn hàng." compact />
+                  <button type="button" className="profile-secondary-button" onClick={handleOpenAddModal}>
+                    <Plus className="size-4" />
+                    Thêm địa chỉ
+                  </button>
+                </div>
+
+                <div className="grid gap-3">
+                  {profile?.addresses?.map((address) => (
+                    <div
+                      key={address.id}
+                      className="rounded-lg border border-[var(--border-color)] bg-[#FFFEFC] p-4 transition hover:border-[rgba(228,93,28,0.22)] hover:shadow-[0_14px_34px_rgba(26,26,26,0.05)]"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-extrabold">{address.receiverName}</p>
+                            <span className="text-sm text-[var(--text-muted)]">{address.receiverPhone}</span>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-extrabold ${
+                                address.isDefault ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {address.isDefault ? 'Địa chỉ chính' : 'Địa chỉ phụ'}
+                            </span>
+                            {(!address.districtId || !address.wardCode) && (
+                              <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-[10px] font-bold border border-amber-200">
+                                Cần cập nhật vùng GHN
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-2 flex min-w-0 items-start gap-2 text-sm text-[var(--text-muted)]">
+                            <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--primary-color)]" />
+                            <p>
+                              {address.detail}, {address.ward}, {address.district}, {address.province}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!address.isDefault && (
+                            <button
+                              type="button"
+                              className="profile-secondary-button"
+                              onClick={() => handleSetDefaultAddress(address.id)}
+                            >
+                              <Check className="size-4" />
+                              Đặt chính
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="profile-secondary-button"
+                            onClick={() => handleOpenEditModal(address)}
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50"
+                            onClick={() => setAddressToDeleteId(address.id)}
+                          >
+                            Xóa
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!profile?.addresses || profile.addresses.length === 0) && (
+                    <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">
+                      Chưa có địa chỉ giao hàng.
+                    </div>
+                  )}
+                </div>
               </section>
 
               <section className="profile-card">
@@ -568,6 +725,41 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {/* Reusable Address Form Modal (GHN integrated) */}
+        <AddressFormModal
+          isOpen={isAddressModalOpen}
+          onClose={() => {
+            setIsAddressModalOpen(false);
+            setEditingAddress(null);
+          }}
+          onSubmit={handleAddressFormSubmit}
+          showSaveOptions={false}
+          title={editingAddress ? 'Sửa địa chỉ giao hàng' : 'Thêm địa chỉ giao hàng mới'}
+          initialData={
+            editingAddress
+              ? {
+                  receiverName: editingAddress.receiverName,
+                  receiverPhone: editingAddress.receiverPhone,
+                  province: editingAddress.province,
+                  district: editingAddress.district,
+                  ward: editingAddress.ward,
+                  detail: editingAddress.detail,
+                }
+              : undefined
+          }
+        />
+
+        {/* Confirm Delete Address Dialog */}
+        <ConfirmDialog
+          isOpen={!!addressToDeleteId}
+          onClose={() => setAddressToDeleteId(null)}
+          onConfirm={handleDeleteAddressConfirm}
+          title="Xóa địa chỉ"
+          message="Bạn có chắc chắn muốn xóa địa chỉ này khỏi tài khoản không? Hành động này không thể hoàn tác."
+          confirmText="Xóa địa chỉ"
+          isDanger={true}
+          loading={deletingAddressLoading}
+        />
 
       </main>
     </div>
