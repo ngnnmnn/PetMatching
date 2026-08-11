@@ -439,6 +439,7 @@ model Order {
   updatedAt           DateTime    @updatedAt
   items               OrderItem[]
   payment             Payment?
+  reviews             ProductReview[]
   store               Store?      @relation(fields: [storeId], references: [id])
   user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -712,14 +713,17 @@ model ProductReview {
   images    String[] @default([])
   userId    String
   productId String
+  orderId   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, productId])
+  @@unique([userId, productId, orderId])
   @@index([userId])
   @@index([productId])
+  @@index([orderId])
   @@map("product_reviews")
 }
 

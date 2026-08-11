@@ -23,8 +23,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import { useCart } from '@/context/CartContext';
 import { usersApi } from '@/lib/api/users';
 import { Address } from '@/types';
-import AddressFormModal from '@/components/checkout/AddressFormModal';
-import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
+import { PayOSQRModal, PayOSQRData, ShippingAddressSelector } from '@/components/checkout';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 function formatCurrency(value: number) {
@@ -63,6 +62,7 @@ function CheckoutPageContent() {
   // Addresses from DB
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>(''); // empty means "new address"
+  const [previousAddressId, setPreviousAddressId] = useState<string>('');
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
 
@@ -368,15 +368,18 @@ function CheckoutPageContent() {
       if (data.length > 0) {
         // Keep current selection if valid, otherwise default or first one
         if (!selectedAddressId || selectedAddressId === 'new') {
-          const defaultAddr = data.find((a) => a.isDefault);
-          setSelectedAddressId(defaultAddr ? defaultAddr.id : data[0].id);
+          const defaultAddr = data.find((a) => a.isDefault) || data[0];
+          setSelectedAddressId(defaultAddr.id);
+          setPreviousAddressId(defaultAddr.id);
         }
       } else {
         setSelectedAddressId('new');
+        setPreviousAddressId('new');
       }
     } catch (err) {
       console.error('Failed to load saved addresses', err);
       setSelectedAddressId('new');
+      setPreviousAddressId('new');
     } finally {
       setLoading(false);
     }
@@ -489,20 +492,25 @@ function CheckoutPageContent() {
         );
         if (newAddr) {
           setSelectedAddressId(newAddr.id);
+          setPreviousAddressId(newAddr.id);
         } else {
-          setSelectedAddressId(updatedList[0]?.id || 'new');
+          const fallbackId = updatedList[0]?.id || 'new';
+          setSelectedAddressId(fallbackId);
+          setPreviousAddressId(fallbackId);
         }
         toast.success('Đã thêm và lưu địa chỉ mới thành công.');
       } catch (err) {
         console.error('Failed to save address to DB', err);
         toast.error('Lỗi khi lưu địa chỉ mới vào cơ sở dữ liệu.');
         setSelectedAddressId('new');
+        setPreviousAddressId('new');
       } finally {
         setLoading(false);
       }
     } else {
       // Just use it as temporary state
       setSelectedAddressId('new');
+      setPreviousAddressId('new');
       toast.success('Đã áp dụng địa chỉ giao hàng mới.');
     }
   };
@@ -732,150 +740,36 @@ function CheckoutPageContent() {
 
               {/* Shipping Address Box */}
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-sm space-y-4">
-                <h3 className="text-lg font-black text-[var(--text-main)] border-b border-[var(--border-color)] pb-2 flex items-center gap-2">
-                  <MapPin className="size-5 text-[#0F766E]" />
-                  Địa chỉ giao hàng
-                </h3>
-
-                {/* Saved Addresses List */}
-                {savedAddresses.length > 0 && (
-                  <div className="space-y-3">
-                    {(isAddressesExpanded
-                      ? savedAddresses
-                      : savedAddresses.filter((addr, index) => index < 2 || addr.id === selectedAddressId)
-                    ).map((addr) => (
-                      <label
-                        key={addr.id}
-                        className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${selectedAddressId === addr.id
-                            ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-[var(--border-color)] bg-[#FCFCFA] hover:border-gray-300'
-                          }`}
-                      >
-                        <input
-                          type="radio"
-                          name="saved_address"
-                          checked={selectedAddressId === addr.id}
-                          onChange={() => setSelectedAddressId(addr.id)}
-                          className="mt-1 accent-[var(--primary-color)]"
-                        />
-                        <div className="flex-1 text-xs font-semibold">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-[var(--text-main)] text-sm">{addr.receiverName}</span>
-                              <span className="text-[var(--text-muted)]">•</span>
-                              <span className="text-[var(--text-muted)]">{addr.receiverPhone}</span>
-                              {addr.isDefault && (
-                                <span className="rounded bg-[#EEF8F5] text-[#0F766E] px-1.5 py-0.5 text-[9px] font-extrabold uppercase">Mặc định</span>
-                              )}
-                              {(!addr.districtId || !addr.wardCode) && (
-                                <span className="rounded bg-amber-50 text-amber-700 px-1.5 py-0.5 text-[9px] font-bold border border-amber-200">Cần cập nhật vùng nhận</span>
-                              )}
-                            </div>
-
-                            {/* Action Buttons to Edit or Delete Address */}
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleEditAddressClick(addr);
-                                }}
-                                className="text-xs text-[#0F766E] hover:underline font-bold transition hover:opacity-80"
-                              >
-                                Sửa
-                              </button>
-                              <span className="text-gray-300">|</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setAddressToDeleteId(addr.id);
-                                }}
-                                className="text-xs text-red-500 hover:underline font-bold transition hover:opacity-80"
-                              >
-                                Xóa
-                              </button>
-                            </div>
-                          </div>
-                          <p className="text-[var(--text-muted)] mt-1.5 leading-relaxed">
-                            {addr.detail}, {addr.ward}, {addr.district}, {addr.province}
-                          </p>
-                          {selectedAddressId === addr.id && (!addr.districtId || !addr.wardCode) && (
-                            <p className="text-[10px] text-amber-600 font-bold mt-1.5 flex items-center gap-1">
-                              ⚠️ Địa chỉ cũ/thiếu mã vùng GHN (Phí ship mặc định 30,000₫). Vui lòng bấm "Sửa" để chọn quận/huyện, phường/xã.
-                            </p>
-                          )}
-                        </div>
-                      </label>
-                    ))}
-
-                    {savedAddresses.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => setIsAddressesExpanded(!isAddressesExpanded)}
-                        className="text-xs font-bold text-[#0F766E] hover:underline flex items-center gap-1 mt-2 transition cursor-pointer"
-                      >
-                        {isAddressesExpanded ? 'Thu gọn' : 'Xem thêm địa chỉ khác'}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Option to use a new address */}
-                <div
-                  onClick={() => {
-                    setSelectedAddressId('new');
-                    setEditingAddress(null); // Clear editing state for create
-                    setIsAddressModalOpen(true);
+                <ShippingAddressSelector
+                  savedAddresses={savedAddresses}
+                  selectedAddressId={selectedAddressId}
+                  onSelectAddressId={(id) => setSelectedAddressId(id)}
+                  onAddressesUpdated={loadAddresses}
+                  tempAddress={{
+                    receiverName,
+                    receiverPhone,
+                    detail,
+                    province: selectedProvinceName,
+                    district: selectedDistrictName,
+                    ward: selectedWardName,
+                    provinceId: selectedProvinceId,
+                    districtId: selectedDistrictId,
+                    wardCode: selectedWardCode,
                   }}
-                  className={`flex items-center justify-between gap-3 rounded-xl border p-4 cursor-pointer transition ${selectedAddressId === 'new' || selectedAddressId === ''
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-[var(--border-color)] bg-[#FCFCFA] hover:border-gray-300'
-                    }`}
-                >
-                  <div className="flex items-center gap-2 text-xs font-extrabold text-[var(--text-main)]">
-                    <input
-                      type="radio"
-                      name="saved_address"
-                      checked={selectedAddressId === 'new' || selectedAddressId === ''}
-                      readOnly
-                      className="accent-[var(--primary-color)]"
-                    />
-                    <Plus className="size-4 text-primary" />
-                    Sử dụng địa chỉ mới
-                  </div>
-                  {(selectedAddressId === 'new' || selectedAddressId === '') && receiverName && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setEditingAddress(null); // Create mode
-                        setIsAddressModalOpen(true);
-                      }}
-                      className="text-xs font-bold text-primary hover:underline"
-                    >
-                      Sửa
-                    </button>
-                  )}
-                </div>
-
-                {/* Temporary Address Summary */}
-                {(selectedAddressId === 'new' || selectedAddressId === '') && receiverName && (
-                  <div className="rounded-xl border border-dashed border-primary bg-primary/5 p-4 text-xs font-semibold animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[var(--text-main)] text-sm">{receiverName}</span>
-                      <span className="text-[var(--text-muted)]">•</span>
-                      <span className="text-[var(--text-muted)]">{receiverPhone}</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5 text-[9px] font-extrabold uppercase">Tạm thời</span>
-                    </div>
-                    <p className="text-[var(--text-muted)] mt-1.5 leading-relaxed">
-                      {detail}, {selectedWardName}, {selectedDistrictName}, {selectedProvinceName}
-                    </p>
-                  </div>
-                )}
+                  onApplyTempAddress={(data) => {
+                    setReceiverName(data.receiverName);
+                    setReceiverPhone(data.receiverPhone);
+                    setDetail(data.detail);
+                    setSelectedProvinceName(data.provinceName);
+                    setSelectedDistrictName(data.districtName);
+                    setSelectedWardName(data.wardName);
+                    setSelectedProvinceId(data.provinceId);
+                    setSelectedDistrictId(data.districtId);
+                    setSelectedWardCode(data.wardCode);
+                    setSaveAddressToDb(data.saveAddressToDb);
+                    setSetAsDefault(data.setAsDefault);
+                  }}
+                />
 
                 {shippingFeeWarning && (
                   <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mt-3 flex items-start gap-2 text-amber-800 text-xs font-bold animate-in fade-in duration-200">
@@ -1178,45 +1072,7 @@ function CheckoutPageContent() {
         )}
       </div>
 
-      {/* Reusable Address Input / Edit Popup */}
-      <AddressFormModal
-        isOpen={isAddressModalOpen}
-        onClose={() => {
-          setIsAddressModalOpen(false);
-          setEditingAddress(null);
-          // Reset selection if user closed modal during initial "+ Sử dụng địa chỉ mới" selection
-          if (!receiverName && selectedAddressId === 'new' && savedAddresses.length > 0) {
-            setSelectedAddressId(savedAddresses.find((a) => a.isDefault)?.id || savedAddresses[0].id);
-          }
-        }}
-        onSubmit={handleAddressSubmit}
-        showSaveOptions={editingAddress ? false : true}
-        title={editingAddress ? 'Sửa thông tin địa chỉ giao hàng' : 'Nhập thông tin giao hàng mới'}
-        initialData={
-          editingAddress
-            ? {
-              receiverName: editingAddress.receiverName,
-              receiverPhone: editingAddress.receiverPhone,
-              province: editingAddress.province,
-              district: editingAddress.district,
-              ward: editingAddress.ward,
-              detail: editingAddress.detail,
-            }
-            : undefined
-        }
-      />
 
-      {/* Shared Delete Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={!!addressToDeleteId}
-        onClose={() => setAddressToDeleteId(null)}
-        onConfirm={handleDeleteAddressConfirm}
-        title="Xóa địa chỉ"
-        message="Bạn có chắc chắn muốn xóa địa chỉ này khỏi tài khoản không? Hành động này không thể hoàn tác."
-        confirmText="Xóa địa chỉ"
-        isDanger={true}
-        loading={deletingAddressLoading}
-      />
 
       {/* Checkout Success Modal */}
       {showSuccessModal && (

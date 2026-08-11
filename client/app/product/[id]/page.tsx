@@ -400,10 +400,14 @@ export default function ProductDetailPage() {
         ? 'Cho mèo'
         : 'Mọi thú cưng';
 
-  // Gather all images (main imageUrl + list of images)
-  const allImages = Array.from(new Set([product.imageUrl, ...(product.images || [])])).filter(
-    (img): img is string => !!img
-  );
+  // Gather all images (main imageUrl + product images + variant images)
+  const variantImages = (product.variants || [])
+    .map((v) => v.imageUrl)
+    .filter((img): img is string => !!img);
+
+  const allImages = Array.from(
+    new Set([product.imageUrl, ...(product.images || []), ...variantImages])
+  ).filter((img): img is string => !!img);
 
   return (
     <div
@@ -470,7 +474,13 @@ export default function ProductDetailPage() {
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => setActiveImage(img)}
+                    onClick={() => {
+                      setActiveImage(img);
+                      const matchedVariant = product.variants?.find((v) => v.imageUrl === img);
+                      if (matchedVariant) {
+                        setSelectedVariant(matchedVariant);
+                      }
+                    }}
                     className={`relative size-20 overflow-hidden rounded-xl border-2 bg-white transition-all duration-200 hover:scale-105 hover:shadow-md ${activeImage === img
                       ? 'border-[var(--primary-color)] ring-2 ring-[var(--primary-color)]/20'
                       : 'border-[var(--border-color)] hover:border-gray-300'

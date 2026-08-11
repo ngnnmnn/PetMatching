@@ -178,52 +178,70 @@ export class ProductsService {
     });
   }
 
-  async canReview(userId: string, productId: string) {
-    // 1. Check if user already reviewed this product
-    const existingReview = await this.prisma.productReview.findUnique({
-      where: {
-        userId_productId: { userId, productId },
-      },
-    });
-    if (existingReview) {
-      return false;
-    }
-
-    // 2. Check if user has an order containing this product that is DELIVERED
-    const deliveredOrder = await this.prisma.order.findFirst({
+  async getUnreviewedOrder(userId: string, productId: string) {
+    // Find all DELIVERED orders for this user containing this product
+    const deliveredOrders = await this.prisma.order.findMany({
       where: {
         userId,
         status: 'DELIVERED',
         items: {
-          some: {
-            productId,
-          },
+          some: { productId },
         },
       },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
     });
 
-    return !!deliveredOrder;
+    if (deliveredOrders.length === 0) {
+      return null;
+    }
+
+    // Find reviews user has written for this product
+    const existingReviews = await this.prisma.productReview.findMany({
+      where: {
+        userId,
+        productId,
+      },
+      select: { orderId: true },
+    });
+
+    const reviewedOrderIds = new Set(
+      existingReviews.map((r) => r.orderId).filter(Boolean),
+    );
+
+    // Return the first delivered order that hasn't been reviewed yet
+    const unreviewed = deliveredOrders.find((o) => !reviewedOrderIds.has(o.id));
+    return unreviewed || null;
+  }
+
+  async canReview(userId: string, productId: string) {
+    const order = await this.getUnreviewedOrder(userId, productId);
+    return !!order;
   }
 
   async createReview(
     userId: string,
     productId: string,
-    dto: { rating: number; comment?: string; images?: string[] },
+    dto: { rating: number; comment?: string; images?: string[]; orderId?: string },
   ) {
     const { rating, comment, images = [] } = dto;
     if (rating < 1 || rating > 5) {
       throw new BadRequestException('Số sao đánh giá phải từ 1 đến 5.');
     }
 
-    const eligible = await this.canReview(userId, productId);
-    if (!eligible) {
-      throw new BadRequestException(
-        'Bạn chỉ có thể đánh giá sản phẩm sau khi đã nhận được hàng và chưa đánh giá sản phẩm này.',
-      );
+    let targetOrderId = dto.orderId;
+    if (!targetOrderId) {
+      const unreviewedOrder = await this.getUnreviewedOrder(userId, productId);
+      if (!unreviewedOrder) {
+        throw new BadRequestException(
+          'Bạn chỉ có thể đánh giá sản phẩm sau khi đã nhận được hàng và mỗi đơn hàng thành công chỉ được đánh giá 1 lần.',
+        );
+      }
+      targetOrderId = unreviewedOrder.id;
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Create the review
+      // 1. Create the review with orderId
       const review = await tx.productReview.create({
         data: {
           rating,
@@ -231,6 +249,7 @@ export class ProductsService {
           images: Array.isArray(images) ? images : [],
           userId,
           productId,
+          orderId: targetOrderId,
         },
       });
 

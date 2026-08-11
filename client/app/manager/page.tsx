@@ -319,7 +319,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         (product.brand && product.brand.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesStatus =
         filterStatus === 'ALL' ||
-        (filterStatus === 'IN_STOCK' && (product.stock ?? 0) > 0) ||
+        (filterStatus === 'IN_STOCK' && (product.stock ?? 0) > 10) ||
+        (filterStatus === 'LOW_STOCK' && (product.stock ?? 0) > 0 && (product.stock ?? 0) <= 10) ||
         (filterStatus === 'OUT_OF_STOCK' && (product.stock ?? 0) === 0);
       const matchesCategory =
         filterCategory === 'ALL' ||
@@ -1414,8 +1415,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   className="bg-transparent focus:outline-none cursor-pointer"
                 >
                   <option value="ALL">Tất cả</option>
-                  <option value="IN_STOCK">Còn hàng</option>
-                  <option value="OUT_OF_STOCK">Hết hàng</option>
+                  <option value="IN_STOCK">Còn hàng (&gt;10)</option>
+                  <option value="LOW_STOCK">Sắp hết hàng (&le;10)</option>
+                  <option value="OUT_OF_STOCK">Hết hàng (0)</option>
                 </select>
               </div>
             </div>
