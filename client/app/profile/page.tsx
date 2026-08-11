@@ -96,6 +96,7 @@ export default function ProfilePage() {
   });
 
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [isAddressesExpanded, setIsAddressesExpanded] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [addressToDeleteId, setAddressToDeleteId] = useState<string | null>(null);
   const [deletingAddressLoading, setDeletingAddressLoading] = useState(false);
@@ -569,7 +570,10 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="grid gap-3">
-                  {profile?.addresses?.map((address) => (
+                  {(isAddressesExpanded
+                    ? profile?.addresses
+                    : profile?.addresses?.filter((_, index) => index < 2)
+                  )?.map((address) => (
                     <div
                       key={address.id}
                       className="rounded-lg border border-[var(--border-color)] bg-[#FFFEFC] p-4 transition hover:border-[rgba(228,93,28,0.22)] hover:shadow-[0_14px_34px_rgba(26,26,26,0.05)]"
@@ -628,6 +632,17 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   ))}
+
+                  {profile?.addresses && profile.addresses.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsAddressesExpanded(!isAddressesExpanded)}
+                      className="text-xs font-bold text-[#0F766E] hover:underline flex items-center gap-1 mt-1 transition cursor-pointer self-start"
+                    >
+                      {isAddressesExpanded ? 'Thu gọn' : `Xem thêm (${profile.addresses.length - 2} địa chỉ khác)`}
+                    </button>
+                  )}
+
                   {(!profile?.addresses || profile.addresses.length === 0) && (
                     <div className="rounded-lg border border-dashed border-[var(--border-color)] p-6 text-center text-sm text-[var(--text-muted)]">
                       Chưa có địa chỉ giao hàng.
