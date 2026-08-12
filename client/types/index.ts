@@ -248,8 +248,6 @@ export interface SpaBranchType {
   description: string | null;
   status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
   managerId: string | null;
-  approvedAt: string | null;
-  suspendedAt: string | null;
   createdAt: string;
   updatedAt: string;
   services?: SpaServiceType[];

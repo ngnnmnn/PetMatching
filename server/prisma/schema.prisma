@@ -34,7 +34,6 @@ model User {
   addresses            Address[]
   auditLogs            AuditLog[]           @relation("AuditActor")
   cartItems            CartItem[]
-  sentLikes            Like[]               @relation("LikeSender")
   matchingRequests     MatchingRequest[]    @relation("MatchingRequester")
   messages             Message[]
   orders               Order[]
@@ -100,14 +99,12 @@ model EmailOtp {
 model Pet {
   id                       String            @id @default(cuid())
   name                     String
-  slug                     String?           @unique
   species                  Species
   breed                    String
   gender                   Gender
   /// Ngày sinh - dùng để tính tuổi và kiểm tra điều kiện phối giống
   birthday                 DateTime
   weight                   Float
-  colorDesc                String?
   /// Chủ tự khai báo đã tiêm vaccine (chưa có bằng chứng)
   isVaccinated             Boolean           @default(false)
   /// Chủ tự khai báo có giấy phả hệ (chưa có bằng chứng)
@@ -144,8 +141,6 @@ model Pet {
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
   ownerId                  String
-  sentLikes                Like[]            @relation("LikeFromPet")
-  receivedLikes            Like[]            @relation("LikeToPet")
   matchesAsPet1            Match[]           @relation("MatchPet1")
   matchesAsPet2            Match[]           @relation("MatchPet2")
   sentMatchingRequests     MatchingRequest[] @relation("FemalePetRequests")
@@ -160,23 +155,6 @@ model Pet {
   @@index([breed])
   @@index([location])
   @@map("pets")
-}
-
-model Like {
-  id         String     @id @default(cuid())
-  fromUserId String
-  fromPetId  String
-  toPetId    String
-  status     LikeStatus @default(PENDING)
-  createdAt  DateTime   @default(now())
-  fromPet    Pet        @relation("LikeFromPet", fields: [fromPetId], references: [id])
-  fromUser   User       @relation("LikeSender", fields: [fromUserId], references: [id])
-  toPet      Pet        @relation("LikeToPet", fields: [toPetId], references: [id])
-
-  @@unique([fromPetId, toPetId])
-  @@index([fromUserId])
-  @@index([toPetId, status])
-  @@map("likes")
 }
 
 model MatchingRequest {
@@ -340,8 +318,6 @@ model Store {
   phone       String?
   status      ApprovalStatus @default(PENDING)
   managerId   String?
-  approvedAt  DateTime?
-  suspendedAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   orders      Order[]
@@ -471,8 +447,6 @@ model SpaCategory {
   isMain      Boolean        @default(true)
   status      ApprovalStatus @default(PENDING)
   managerId   String?
-  approvedAt  DateTime?
-  suspendedAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   bookings    SpaBooking[]
@@ -608,16 +582,6 @@ model Complaint {
   @@map("complaints")
 }
 
-model SystemSetting {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("system_settings")
-}
-
 model AuditLog {
   id         String   @id @default(cuid())
   actorId    String?
@@ -751,16 +715,6 @@ enum BreedingOption {
   CASH
   SHARE_LITTER
   NEGOTIATE
-}
-
-/// Trạng thái của một Like (swipe):
-/// PENDING  - Đã like, chờ đối phương like lại
-/// MATCHED  - Hai bên đã like nhau → tạo Match
-/// REJECTED - Đã bỏ qua (swipe trái)
-enum LikeStatus {
-  PENDING
-  MATCHED
-  REJECTED
 }
 
 /// Trạng thái của một Match:
