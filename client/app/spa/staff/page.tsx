@@ -23,6 +23,9 @@ import {
   Search,
   Banknote,
   QrCode,
+  ImageIcon,
+  Upload,
+  Trash2,
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -30,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { spaApi } from '@/lib/api/spa';
+import { uploadImages } from '@/lib/api/uploads';
 import { SpaBookingType, SpaServiceType } from '@/types';
 import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 
@@ -262,6 +266,37 @@ export default function SpaStaff() {
     setPaymentMethodStep('METHOD_SELECT');
   };
 
+  const [selectedFiles, setSelectedFiles] = useState<Record<string, File | null>>({});
+  const [selectedPreviews, setSelectedPreviews] = useState<Record<string, string | null>>({});
+
+  const handleStaffFileChange = (bookingId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Chỉ được chọn tệp hình ảnh.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh không được vượt quá 5 MB.');
+      return;
+    }
+    if (selectedPreviews[bookingId]) {
+      URL.revokeObjectURL(selectedPreviews[bookingId]!);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setSelectedFiles((prev) => ({ ...prev, [bookingId]: file }));
+    setSelectedPreviews((prev) => ({ ...prev, [bookingId]: previewUrl }));
+  };
+
+  const handleStaffClearImage = (bookingId: string) => {
+    if (selectedPreviews[bookingId]) {
+      URL.revokeObjectURL(selectedPreviews[bookingId]!);
+    }
+    setSelectedFiles((prev) => ({ ...prev, [bookingId]: null }));
+    setSelectedPreviews((prev) => ({ ...prev, [bookingId]: null }));
+    handleFieldChange(bookingId, 'photoAfter', '');
+  };
+
   const handleFinalizeComplete = async (bookingId: string, method: 'COD' | 'QR') => {
     const state = editStates[bookingId];
     if (!state || !state.petConditionAfter?.trim()) {
@@ -271,10 +306,18 @@ export default function SpaStaff() {
 
     setActionLoading(bookingId);
     try {
+      let photoAfterUrl = state.photoAfter || null;
+      if (selectedFiles[bookingId]) {
+        const uploaded = await uploadImages([selectedFiles[bookingId]!], 'spa-result');
+        if (uploaded && uploaded[0]?.url) {
+          photoAfterUrl = uploaded[0].url;
+        }
+      }
+
       const res = await spaApi.completeStaffBooking(bookingId, {
         method,
         petConditionAfter: state.petConditionAfter,
-        photoAfter: state.photoAfter || null,
+        photoAfter: photoAfterUrl,
         issueReported: state.issueReported || null
       });
 
@@ -890,21 +933,54 @@ export default function SpaStaff() {
 
                             <div className="space-y-1.5">
                               <label className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
-                                <Camera className="size-3" /> Ảnh sau dịch vụ (URL hoặc chọn mẫu)
+                                <Camera className="size-3" /> Ảnh sau dịch vụ (Tải ảnh từ máy - Không bắt buộc)
                               </label>
-                              <Input
-                                placeholder="https://example.com/pet.png"
-                                value={currentEditState.photoAfter}
-                                onChange={(e) => handleFieldChange(booking.id, 'photoAfter', e.target.value)}
-                                className="text-xs h-9 bg-white"
-                              />
+
+                              {/* Image Preview or Upload Button */}
+                              {selectedPreviews[booking.id] || currentEditState.photoAfter ? (
+                                <div className="relative inline-block group rounded-xl overflow-hidden border border-gray-200 shadow-xs max-w-[200px] bg-white">
+                                  <img
+                                    src={selectedPreviews[booking.id] || currentEditState.photoAfter}
+                                    alt="Ảnh hoàn thành"
+                                    className="w-full h-32 object-cover rounded-xl"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStaffClearImage(booking.id)}
+                                    className="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full shadow-md hover:bg-red-700 transition"
+                                    title="Xóa ảnh"
+                                  >
+                                    <X className="size-3.5" />
+                                  </button>
+                                  <div className="p-1.5 bg-gray-900/70 text-[9px] text-white font-semibold text-center backdrop-blur-xs truncate">
+                                    {selectedFiles[booking.id]?.name || 'Ảnh đã chọn'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <label className="flex items-center justify-center gap-2 w-full p-3 border-2 border-dashed border-purple-200 hover:border-purple-400 rounded-xl bg-purple-50/40 hover:bg-purple-50 cursor-pointer transition text-xs text-purple-700 font-bold">
+                                    <Upload className="size-4 text-purple-600" />
+                                    <span>Tải ảnh từ thiết bị (Tối đa 1 ảnh, max 5MB)</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleStaffFileChange(booking.id, e)}
+                                    />
+                                  </label>
+                                </div>
+                              )}
 
                               <div className="flex flex-wrap items-center gap-1 pt-1">
+                                <span className="text-[9px] text-gray-400 font-semibold mr-1">Hoặc chọn mẫu nhanh:</span>
                                 {PRESET_PHOTOS.map((p) => (
                                   <button
                                     key={p.label}
                                     type="button"
-                                    onClick={() => handleFieldChange(booking.id, 'photoAfter', p.url)}
+                                    onClick={() => {
+                                      handleStaffClearImage(booking.id);
+                                      handleFieldChange(booking.id, 'photoAfter', p.url);
+                                    }}
                                     className={`px-2 py-0.5 text-[9px] rounded border font-bold hover:bg-gray-50 transition ${currentEditState.photoAfter === p.url
                                       ? 'border-purple-650 bg-purple-50 text-purple-750 font-black'
                                       : 'border-gray-200 text-gray-500'

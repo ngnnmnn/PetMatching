@@ -35,9 +35,13 @@ import {
   MapPin,
   ShieldCheck,
   Star,
+  Camera,
+  Upload,
+  ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { spaApi } from '@/lib/api/spa';
+import { uploadImages } from '@/lib/api/uploads';
 
 function SpaManagerConsoleContent() {
   const searchParams = useSearchParams();
@@ -123,6 +127,7 @@ function SpaManagerConsoleContent() {
     brandId: '',
     name: '',
     description: '',
+    imageUrl: '',
     price: '',
     durationMin: '60',
     durationMax: '',
@@ -132,7 +137,37 @@ function SpaManagerConsoleContent() {
     petWeightMax: '',
     isActive: true
   });
+  const [serviceImageFile, setServiceImageFile] = useState<File | null>(null);
+  const [serviceImagePreview, setServiceImagePreview] = useState<string | null>(null);
   const [submittingService, setSubmittingService] = useState<boolean>(false);
+
+  const handleServiceImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Chỉ được chọn tệp hình ảnh. Không được tải tệp định dạng khác.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh không được vượt quá 5 MB.');
+      return;
+    }
+    if (serviceImagePreview) {
+      URL.revokeObjectURL(serviceImagePreview);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setServiceImageFile(file);
+    setServiceImagePreview(previewUrl);
+  };
+
+  const handleClearServiceImage = () => {
+    if (serviceImagePreview) {
+      URL.revokeObjectURL(serviceImagePreview);
+    }
+    setServiceImageFile(null);
+    setServiceImagePreview(null);
+    setServiceForm((prev) => ({ ...prev, imageUrl: '' }));
+  };
 
   // Booking search and filters
   const [bookingSearch, setBookingSearch] = useState<string>('');
@@ -525,12 +560,27 @@ function SpaManagerConsoleContent() {
       return;
     }
 
+    // 6. Validate Image Upload for New Service (Mandatory)
+    if (!editingService && !serviceImageFile && !serviceForm.imageUrl) {
+      toast.error('Vui lòng chọn và tải 1 ảnh dịch vụ lên! (Bắt buộc khi thêm mới dịch vụ)');
+      return;
+    }
+
     setSubmittingService(true);
     try {
+      let finalImageUrl: string | undefined = serviceForm.imageUrl || undefined;
+      if (serviceImageFile) {
+        const uploaded = await uploadImages([serviceImageFile], 'spa-result');
+        if (uploaded && uploaded[0]?.url) {
+          finalImageUrl = uploaded[0].url;
+        }
+      }
+
       const data = {
         brandId: serviceForm.brandId,
         name: serviceForm.name.trim(),
         description: serviceForm.description ? serviceForm.description.trim() : undefined,
+        imageUrl: finalImageUrl,
         price: priceNum,
         durationMin: durationNum,
         durationMax: durationNum,
@@ -543,13 +593,15 @@ function SpaManagerConsoleContent() {
 
       if (editingService) {
         await spaApi.updateManagerService(editingService.id, data);
-        toast.success('Cập nhật dịch vụ thành công!');
+        toast.success('Cập nhật dịch vụ và ảnh thành công!');
       } else {
         await spaApi.createManagerService(data);
         toast.success('Thêm dịch vụ mới thành công!');
       }
       setServiceModalOpen(false);
       setEditingService(null);
+      setServiceImageFile(null);
+      setServiceImagePreview(null);
       refreshData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Lỗi khi lưu dịch vụ.');
@@ -565,6 +617,7 @@ function SpaManagerConsoleContent() {
       brandId: service.brandId || (managerBrands[0]?.id || ''),
       name: service.name,
       description: service.description || '',
+      imageUrl: service.imageUrl || '',
       price: String(service.price),
       durationMin: String(service.durationMin || 60),
       durationMax: service.durationMax ? String(service.durationMax) : '',
@@ -574,6 +627,8 @@ function SpaManagerConsoleContent() {
       petWeightMax: service.petWeightMax !== null && service.petWeightMax !== undefined ? String(service.petWeightMax) : '',
       isActive: service.isActive ?? true
     });
+    setServiceImageFile(null);
+    setServiceImagePreview(service.imageUrl || null);
     setServiceModalOpen(true);
   };
 
@@ -586,6 +641,7 @@ function SpaManagerConsoleContent() {
       brandId,
       name: '',
       description: '',
+      imageUrl: '',
       price: '',
       durationMin: '60',
       durationMax: '60',
@@ -595,6 +651,8 @@ function SpaManagerConsoleContent() {
       petWeightMax: '',
       isActive: true
     });
+    setServiceImageFile(null);
+    setServiceImagePreview(null);
     setServiceModalOpen(true);
   };
 
@@ -2087,6 +2145,46 @@ function SpaManagerConsoleContent() {
                   className="w-full min-h-[60px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
                   placeholder="Mô tả công việc và ưu đãi dịch vụ..."
                 />
+              </div>
+
+              {/* Service Image Upload (Only 1 image, non-image files blocked) */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase flex items-center gap-1">
+                  <Camera className="size-3.5 text-primary" /> Ảnh dịch vụ (Hiển thị trang chủ {!editingService ? '* Bắt buộc' : ''})
+                </label>
+                {serviceImagePreview ? (
+                  <div className="relative inline-block group rounded-xl overflow-hidden border border-gray-200 shadow-xs max-w-[220px] bg-white">
+                    <img
+                      src={serviceImagePreview}
+                      alt="Ảnh dịch vụ"
+                      className="w-full h-32 object-cover rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleClearServiceImage}
+                      className="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full shadow-md hover:bg-red-700 transition cursor-pointer"
+                      title="Xóa ảnh dịch vụ"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                    <div className="p-1.5 bg-gray-900/70 text-[9px] text-white font-semibold text-center backdrop-blur-xs truncate">
+                      {serviceImageFile?.name || 'Ảnh dịch vụ đã chọn'}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="flex items-center justify-center gap-2 w-full p-3.5 border-2 border-dashed border-purple-200 hover:border-purple-400 rounded-xl bg-purple-50/40 hover:bg-purple-50 cursor-pointer transition text-xs text-purple-700 font-bold">
+                      <Upload className="size-4 text-purple-600" />
+                      <span>Tải 1 ảnh dịch vụ từ thiết bị (Chỉ chọn tệp ảnh)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleServiceImageChange}
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* Price & Duration */}

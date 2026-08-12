@@ -245,8 +245,8 @@ export default function SpaHome() {
               key={cat.value}
               onClick={() => setSelectedCategory(cat.value)}
               className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${selectedCategory === cat.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
                 }`}
             >
               {cat.label}
@@ -268,6 +268,7 @@ export default function SpaHome() {
               brandId?: string;
               title: string;
               description: string;
+              imageUrl?: string | null;
               minPrice: number;
               maxPrice: number;
               categoryLabel: string;
@@ -286,12 +287,16 @@ export default function SpaHome() {
                   brandId: service.brandId,
                   title: cleanTitle,
                   description: service.description || 'Dịch vụ chăm sóc chuyên sâu dành cho thú cưng theo mốc cân nặng.',
+                  imageUrl: service.imageUrl,
                   minPrice: service.price,
                   maxPrice: service.price,
                   categoryLabel,
                 });
               } else {
                 const existing = brandMap.get(cleanTitle)!;
+                if (!existing.imageUrl && service.imageUrl) {
+                  existing.imageUrl = service.imageUrl;
+                }
                 existing.minPrice = Math.min(existing.minPrice, service.price);
                 existing.maxPrice = Math.max(existing.maxPrice, service.price);
               }
@@ -310,7 +315,7 @@ export default function SpaHome() {
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {uniqueCards.map((card) => {
-                  const img = SERVICE_IMAGES[card.title] || DEFAULT_IMAGE;
+                  const img = card.imageUrl || SERVICE_IMAGES[card.title] || DEFAULT_IMAGE;
                   const ratingInfo = RATING_MOCK[card.title] || { rating: 4.8, reviews: 120 };
 
                   const priceRangeStr = card.minPrice === card.maxPrice
@@ -480,10 +485,10 @@ export default function SpaHome() {
                             <td className="py-3 px-4 font-bold text-gray-900">{row.serviceLabel}</td>
                             <td className="py-3 px-3 text-center">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-bold text-[10px] ${row.speciesLabel.includes('Mèo')
-                                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                  : row.speciesLabel.includes('Chó')
-                                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                                    : 'bg-purple-50 text-purple-800 border border-purple-200'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : row.speciesLabel.includes('Chó')
+                                  ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                  : 'bg-purple-50 text-purple-800 border border-purple-200'
                                 }`}>
                                 {row.speciesLabel}
                               </span>

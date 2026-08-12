@@ -216,6 +216,7 @@ export interface SpaServiceType {
   branchId?: string;
   name: string;
   description: string | null;
+  imageUrl?: string | null;
   species?: "DOG" | "CAT" | null;
   petWeightMin?: number | null;
   petWeightMax?: number | null;

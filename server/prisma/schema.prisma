@@ -489,6 +489,7 @@ model SpaService {
   categoryId   String       @map("category_id")
   name         String
   description  String?
+  imageUrl     String?
   species      Species?
   petWeightMin Float?
   petWeightMax Float?

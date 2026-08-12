@@ -1221,6 +1221,7 @@ export class SpaService {
       categoryId?: string;
       name: string;
       description?: string;
+      imageUrl?: string;
       price: number;
       durationMin: number;
       durationMax?: number;
@@ -1244,11 +1245,26 @@ export class SpaService {
       throw new ForbiddenException('Danh mục Spa không tồn tại hoặc bạn không có quyền.');
     }
 
-    return this.prisma.spaService.create({
+    let targetImageUrl: string | null = dto.imageUrl || null;
+    const serviceName = dto.name.trim();
+
+    // If imageUrl is not provided, look for an existing image from services with the same name
+    if (!targetImageUrl) {
+      const existingSameName = await this.prisma.spaService.findFirst({
+        where: { name: { equals: serviceName, mode: 'insensitive' }, imageUrl: { not: null } },
+        select: { imageUrl: true },
+      });
+      if (existingSameName?.imageUrl) {
+        targetImageUrl = existingSameName.imageUrl;
+      }
+    }
+
+    const createdService = await this.prisma.spaService.create({
       data: {
         categoryId: catId!,
-        name: dto.name,
+        name: serviceName,
         description: dto.description || null,
+        imageUrl: targetImageUrl,
         price: Number(dto.price),
         durationMin: Number(dto.durationMin),
         durationMax: dto.durationMax ? Number(dto.durationMax) : null,
@@ -1259,6 +1275,16 @@ export class SpaService {
         isActive: true,
       },
     });
+
+    // If targetImageUrl is set, propagate to all services with the same name
+    if (targetImageUrl) {
+      await this.prisma.spaService.updateMany({
+        where: { name: { equals: serviceName, mode: 'insensitive' } },
+        data: { imageUrl: targetImageUrl },
+      });
+    }
+
+    return createdService;
   }
 
   async updateManagerService(
@@ -1269,6 +1295,7 @@ export class SpaService {
       categoryId?: string;
       name?: string;
       description?: string;
+      imageUrl?: string;
       price?: number;
       durationMin?: number;
       durationMax?: number;
@@ -1295,8 +1322,9 @@ export class SpaService {
     const data: any = {};
     const catId = dto.categoryId || dto.brandId;
     if (catId !== undefined) data.categoryId = catId;
-    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.name !== undefined) data.name = dto.name.trim();
     if (dto.description !== undefined) data.description = dto.description;
+    if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl || null;
     if (dto.price !== undefined) data.price = Number(dto.price);
     if (dto.durationMin !== undefined) data.durationMin = Number(dto.durationMin);
     if (dto.durationMax !== undefined) data.durationMax = dto.durationMax ? Number(dto.durationMax) : null;
@@ -1306,10 +1334,22 @@ export class SpaService {
     if (dto.isMain !== undefined) data.isMain = dto.isMain;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
 
-    return this.prisma.spaService.update({
+    const updated = await this.prisma.spaService.update({
       where: { id: serviceId },
       data,
     });
+
+    // If imageUrl or name was updated, synchronize image to all services sharing the same name
+    const finalName = data.name || service.name;
+    const finalImageUrl = dto.imageUrl !== undefined ? (dto.imageUrl || null) : service.imageUrl;
+    if (finalImageUrl !== undefined) {
+      await this.prisma.spaService.updateMany({
+        where: { name: { equals: finalName, mode: 'insensitive' } },
+        data: { imageUrl: finalImageUrl },
+      });
+    }
+
+    return updated;
   }
 
   async getManagerBookings(managerId: string, branchId: string) {

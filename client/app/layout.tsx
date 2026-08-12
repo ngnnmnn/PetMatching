@@ -51,7 +51,7 @@ export default function RootLayout({
         </WishlistProvider>
         <Chatbot />
         <Toaster richColors position="bottom-center" closeButton />
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === 'true' && <Analytics />}
       </body>
     </html>
   )
