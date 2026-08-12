@@ -1388,7 +1388,6 @@ export class ManagerService {
   async exportOrdersToExcel(filters: {
     startDate?: string;
     endDate?: string;
-    onlyPendingGhn?: boolean;
     onlyRefunded?: boolean;
   }) {
     const where: any = {};
@@ -1403,11 +1402,6 @@ export class ManagerService {
         end.setHours(23, 59, 59, 999);
         where.createdAt.lte = end;
       }
-    }
-
-    if (filters.onlyPendingGhn) {
-      where.ghnOrderCode = null;
-      where.status = { notIn: ['CANCELLED', 'SHIPPED', 'DELIVERED'] };
     }
 
     if (filters.onlyRefunded) {

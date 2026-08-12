@@ -397,7 +397,6 @@ model Order {
   shippingAddress     String
   districtId          Int?
   wardCode            String?
-  ghnOrderCode        String?
   shippingStatus      String?
   storeId             String?
   refundStatus        String?

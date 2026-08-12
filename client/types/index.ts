@@ -66,7 +66,6 @@ export interface Order {
   shippingAddress: string;
   districtId?: number | null;
   wardCode?: string | null;
-  ghnOrderCode?: string | null;
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
