@@ -858,16 +858,20 @@ enum VerificationBadge {
 }
 
 model Voucher {
-  id        String    @id @default(cuid())
-  code      String    @unique
-  type      String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
-  value     Float     @default(0) // Số tiền hoặc % giảm (100 đối với 100% ship)
-  maxUsage  Int? // Số lần sử dụng tối đa
-  usedCount Int       @default(0)
-  isActive  Boolean   @default(true)
-  expiredAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  code              String    @unique
+  type              String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
+  value             Float     @default(0) // Số tiền hoặc % giảm (100 đối với 100% ship)
+  minOrderAmount    Float?    @default(0)
+  maxDiscountAmount Float?
+  description       String?
+  maxUsage          Int? // Số lần sử dụng tối đa
+  usedCount         Int       @default(0)
+  isActive          Boolean   @default(true)
+  startDate         DateTime? @default(now())
+  expiredAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@map("vouchers")
 }

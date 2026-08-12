@@ -1,13 +1,19 @@
 import {
   Controller,
+  Get,
   Post,
+  Put,
+  Patch,
+  Delete,
   Body,
+  Param,
   HttpCode,
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
 import { VouchersService } from './vouchers.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { CreateVoucherDto, UpdateVoucherDto } from './dto/voucher.dto';
 
 @Controller('api/vouchers')
 @UseGuards(JwtAuthGuard)
@@ -18,5 +24,38 @@ export class VouchersController {
   @HttpCode(HttpStatus.OK)
   async applyVoucher(@Body() body: { code: string; totalAmount: number }) {
     return this.vouchersService.applyVoucher(body.code, body.totalAmount);
+  }
+
+  @Get()
+  async getAllVouchers() {
+    return this.vouchersService.getAllVouchers();
+  }
+
+  @Get(':id')
+  async getVoucherById(@Param('id') id: string) {
+    return this.vouchersService.getVoucherById(id);
+  }
+
+  @Post()
+  async createVoucher(@Body() dto: CreateVoucherDto) {
+    return this.vouchersService.createVoucher(dto);
+  }
+
+  @Put(':id')
+  async updateVoucher(
+    @Param('id') id: string,
+    @Body() dto: UpdateVoucherDto,
+  ) {
+    return this.vouchersService.updateVoucher(id, dto);
+  }
+
+  @Patch(':id/toggle')
+  async toggleVoucherStatus(@Param('id') id: string) {
+    return this.vouchersService.toggleVoucherStatus(id);
+  }
+
+  @Delete(':id')
+  async deleteVoucher(@Param('id') id: string) {
+    return this.vouchersService.deleteVoucher(id);
   }
 }
