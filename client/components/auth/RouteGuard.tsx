@@ -10,7 +10,6 @@ const PRIVATE_ROUTES = [
   '/my-pets',
   '/cart',
   '/checkout',
-  '/favorites',
   '/orders',
   '/profile',
   '/spa/book',

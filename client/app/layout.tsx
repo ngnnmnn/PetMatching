@@ -4,7 +4,6 @@ import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
 import { CartProvider } from '@/context/CartContext'
-import { WishlistProvider } from '@/context/WishlistContext'
 import Chatbot from '@/components/Chatbot'
 import RouteGuard from '@/components/auth/RouteGuard'
 
@@ -42,13 +41,11 @@ export default function RootLayout({
   return (
     <html lang="vi" className="bg-background" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <WishlistProvider>
-          <CartProvider>
-            <RouteGuard>
-              {children}
-            </RouteGuard>
-          </CartProvider>
-        </WishlistProvider>
+        <CartProvider>
+          <RouteGuard>
+            {children}
+          </RouteGuard>
+        </CartProvider>
         <Chatbot />
         <Toaster richColors position="bottom-center" closeButton />
         {process.env.NODE_ENV === 'production' && <Analytics />}
