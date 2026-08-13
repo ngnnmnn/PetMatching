@@ -15,7 +15,6 @@ import {
   Paperclip,
   PawPrint,
   Send,
-  ShieldCheck,
   Sparkles,
   User,
   UserCheck,
@@ -58,7 +57,6 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
-    verificationBadge?: string;
     owner: { name: string };
   };
   malePet: {
@@ -66,7 +64,6 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
-    verificationBadge?: string;
     owner?: { name: string };
   };
 };
@@ -900,11 +897,6 @@ export default function MessagesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-extrabold text-lg truncate">{req.femalePet.name}</h3>
-                          {req.femalePet.verificationBadge === 'VERIFIED' && (
-                            <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                              <ShieldCheck className="size-3" /> VERIFIED
-                            </span>
-                          )}
                         </div>
                         <p className="text-xs text-muted-foreground font-semibold">
                           Giống: {req.femalePet.breed} · Chủ sở hữu: <span className="text-foreground">{req.femalePet.owner.name}</span>
