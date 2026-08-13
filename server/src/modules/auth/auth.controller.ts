@@ -7,9 +7,11 @@ import {
   HttpStatus,
   Post,
   Query,
+  Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -18,6 +20,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('api/auth')
 export class AuthController {
@@ -27,6 +30,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('refresh')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  refresh(@Req() request: Request & { user: { id: string } }) {
+    return this.authService.refreshAccessToken(request.user.id);
   }
 
   @Post('register')

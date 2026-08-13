@@ -15,7 +15,9 @@ import { MailModule } from '../../common/mail/mail.module';
     JwtModule.registerAsync({
       useFactory: () => ({
         secret: process.env.JWT_SECRET || 'your_secret_key_here',
-        signOptions: { expiresIn: '30m' },
+        // One-minute buffer lets the client renew a session once per minute;
+        // the browser still logs out at exactly 30 minutes of inactivity.
+        signOptions: { expiresIn: '31m' },
       }),
     }),
   ],

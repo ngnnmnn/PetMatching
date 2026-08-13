@@ -85,19 +85,12 @@ export class AuthService {
   ) {}
 
   private buildAuthResponse(user: AuthUser, message: string) {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      accountStatus: user.accountStatus,
-      name: user.name,
-    };
+    const accessToken = this.signAccessToken(user);
 
     return {
       success: true,
       message,
-      accessToken: this.jwtService.sign(payload),
+      accessToken,
       user: {
         id: user.id,
         email: user.email,
@@ -109,6 +102,29 @@ export class AuthService {
         phone: user.phone,
         isVerified: user.isVerified,
       },
+    };
+  }
+
+  private signAccessToken(user: AuthUser) {
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      accountStatus: user.accountStatus,
+      name: user.name,
+    };
+
+    return this.jwtService.sign(payload);
+  }
+
+  async refreshAccessToken(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new UnauthorizedException('User not found');
+    this.ensureAccountActive(user.accountStatus);
+
+    return {
+      accessToken: this.signAccessToken(user),
     };
   }
 
