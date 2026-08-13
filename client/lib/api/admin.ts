@@ -123,7 +123,6 @@ export const adminApi = {
   spas: () => api.get('/admin/spas'),
   spaDashboard: () => api.get('/admin/spa-dashboard'),
   spaServices: () => api.get('/admin/spa-services'),
-  spaStaffSchedule: () => api.get('/admin/spa-staff-schedule'),
   spaBookings: () => api.get('/admin/spa-bookings'),
   complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),
   resolveComplaint: (id: string, action: ComplaintAction, adminNote?: string) =>

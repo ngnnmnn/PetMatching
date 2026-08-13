@@ -1,4 +1,5 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminService } from './admin.service';
 
@@ -65,5 +66,70 @@ describe('AdminService matching reports', () => {
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.petReport.update).not.toHaveBeenCalled();
     expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminService pet document review', () => {
+  let prisma: any;
+  let service: AdminService;
+
+  beforeEach(() => {
+    prisma = {
+      petDocument: {
+        update: jest.fn().mockResolvedValue({ id: 'document-1', petId: 'pet-1' }),
+        count: jest.fn().mockResolvedValue(0),
+        findUnique: jest.fn().mockResolvedValue({ id: 'document-1' }),
+      },
+      pet: { update: jest.fn().mockResolvedValue({ id: 'pet-1' }) },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    };
+    service = new AdminService(prisma as PrismaService);
+  });
+
+  it.each([DocumentStatus.REJECTED, DocumentStatus.NEED_MORE_INFO])(
+    'requires a meaningful review note for %s',
+    async (status) => {
+      await expect(
+        service.reviewPetDocument(
+          { id: 'admin-1', name: 'Admin' },
+          'document-1',
+          { status, reviewNote: '   ' },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.petDocument.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('trims and persists the rejection reason', async () => {
+    await service.reviewPetDocument(
+      { id: 'admin-1', name: 'Admin' },
+      'document-1',
+      { status: DocumentStatus.REJECTED, reviewNote: '  Ảnh giấy tờ bị mờ.  ' },
+    );
+
+    expect(prisma.petDocument.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'document-1' },
+      data: expect.objectContaining({
+        status: DocumentStatus.REJECTED,
+        reviewNote: 'Ảnh giấy tờ bị mờ.',
+        reviewerId: 'admin-1',
+      }),
+    }));
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'ADMIN_REVIEW_PET_DOCUMENT',
+        metadata: expect.objectContaining({ reviewNote: 'Ảnh giấy tờ bị mờ.' }),
+      }),
+    }));
+  });
+
+  it('allows approval without a review note', async () => {
+    await expect(
+      service.reviewPetDocument(
+        { id: 'admin-1', name: 'Admin' },
+        'document-1',
+        { status: DocumentStatus.APPROVED },
+      ),
+    ).resolves.toEqual({ id: 'document-1' });
   });
 });

@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import {
   Activity,
-  CalendarDays,
   ClipboardCheck,
   FileWarning,
   LayoutDashboard,
@@ -52,7 +51,6 @@ const navGroups = [
     items: [
       { label: 'Tổng quan Spa', href: '/admin/spa-overview', icon: LayoutDashboard },
       { label: 'Dịch vụ Spa', href: '/admin/spa-services', icon: Scissors },
-      { label: 'Lịch nhân viên', href: '/admin/spa-staff-schedule', icon: CalendarDays },
       { label: 'Lịch đặt Spa', href: '/admin/spa-bookings', icon: Activity },
     ],
   },
@@ -93,7 +91,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-[#F4F7FA] text-[#172033]">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[292px] border-r border-[#D8E0EA] bg-[#FFFFFF] lg:flex lg:flex-col">
         <div className="flex h-[76px] items-center gap-3 border-b border-[#E5EAF0] px-5">
-          <span className="flex size-11 items-center justify-center rounded-lg bg-[#0F766E] text-white shadow-sm">
+          <span className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
             <ShieldCheck className="size-5" />
           </span>
           <div className="min-w-0">
@@ -119,7 +117,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                         className={cn(
                           'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-bold transition',
                           active
-                            ? 'bg-[#E7F3F1] text-[#0F766E] shadow-[inset_3px_0_0_#0F766E]'
+                            ? 'bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--primary)]'
                             : 'text-[#475569] hover:bg-[#F2F5F8] hover:text-[#172033]',
                         )}
                       >
@@ -150,7 +148,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 border-b border-[#D8E0EA] bg-white/95 backdrop-blur">
           <div className="flex min-h-[76px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">Bảng quản trị</p>
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Bảng quản trị</p>
               <h1 className="mt-1 truncate text-xl font-black tracking-normal text-[#172033]">
                 Điều hành hệ thống
               </h1>

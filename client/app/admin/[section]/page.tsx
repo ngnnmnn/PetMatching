@@ -3,10 +3,20 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PauseCircle, PlayCircle, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import {
   AccountStatus,
   AdminRole,
@@ -27,6 +37,13 @@ type PetModerationFlow = {
   mode: 'HIDE' | 'RESTORE';
   pet: Row;
 };
+
+type PetDocumentReviewFlow = {
+  status: 'REJECTED' | 'NEED_MORE_INFO';
+  document: Row;
+};
+
+const ADMIN_PAGE_SIZE = 10;
 
 const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER', 'SPA_STAFF'];
 const accountStatusOptions: AccountStatus[] = ['ACTIVE', 'SUSPENDED'];
@@ -53,7 +70,7 @@ const complaintStatusOptions = [
   ['ESCALATED', 'Đã chuyển cấp'],
   ['DISMISSED', 'Đã bỏ qua'],
 ] as const;
-const readOnlySections = new Set(['stores', 'system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-staff-schedule', 'spa-bookings']);
+const readOnlySections = new Set(['stores', 'system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-bookings']);
 
 const sectionConfig: Record<string, {
   title: string;
@@ -97,6 +114,7 @@ const sectionConfig: Record<string, {
       { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
       { key: 'imageUrls', label: 'Tài liệu', render: (row) => renderDocumentLinks(row.imageUrls) },
       { key: 'userNote', label: 'Ghi chú người dùng', render: (row) => row.userNote ?? '-' },
+      { key: 'reviewNote', label: 'Phản hồi Admin', render: (row) => row.reviewNote ?? '-' },
       { key: 'createdAt', label: 'Ngày gửi', render: dateCell },
     ],
   },
@@ -178,26 +196,7 @@ const sectionConfig: Record<string, {
     title: 'Dịch vụ Spa',
     description: 'Theo dõi danh mục, giá, thời lượng và trạng thái dịch vụ.',
     loader: adminApi.spaServices,
-    columns: [
-      { key: 'name', label: 'Dịch vụ' },
-      { key: 'description', label: 'Mô tả' },
-      { key: 'price', label: 'Giá', render: moneyCell },
-      { key: 'durationMin', label: 'Thời lượng', render: (row) => `${row.durationMin} phút` },
-      { key: 'isActive', label: 'Trạng thái', render: (row) => row.isActive ? 'Đang hoạt động' : 'Tạm ngừng' },
-      { key: '_count', label: 'Lượt đặt', render: (row) => row._count?.bookings ?? 0 },
-    ],
-  },
-  'spa-staff-schedule': {
-    title: 'Lịch nhân viên',
-    description: 'Theo dõi lịch Spa đã phân công cho từng nhân viên.',
-    loader: adminApi.spaStaffSchedule,
-    columns: [
-      { key: 'staff', label: 'Nhân viên', render: (row) => row.staff?.name ?? '-' },
-      { key: 'service', label: 'Dịch vụ', render: (row) => row.service?.name ?? '-' },
-      { key: 'pet', label: 'Thú cưng', render: (row) => row.pet?.name ?? row.petName ?? '-' },
-      { key: 'scheduledAt', label: 'Thời gian', render: dateCell },
-      { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
-    ],
+    columns: [],
   },
   'spa-bookings': {
     title: 'Lịch đặt spa',
@@ -236,12 +235,15 @@ export default function AdminSectionPage() {
   const [complaintType, setComplaintType] = useState('ALL');
   const [complaintTarget, setComplaintTarget] = useState('ALL');
   const [complaintStatus, setComplaintStatus] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] = useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] = useState<PetModerationFlow | null>(null);
+  const [petDocumentReviewFlow, setPetDocumentReviewFlow] = useState<PetDocumentReviewFlow | null>(null);
   const [matchingReportDetail, setMatchingReportDetail] = useState<Row | null>(null);
   const [matchingReportLoading, setMatchingReportLoading] = useState(false);
 
   const load = useCallback(() => {
+    setCurrentPage(1);
     setLoading(true);
     setError('');
     config.loader()
@@ -275,6 +277,13 @@ export default function AdminSectionPage() {
     );
   }, [complaintStatus, complaintTarget, complaintType, rows, section]);
 
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / ADMIN_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedRows = visibleRows.slice(
+    (activePage - 1) * ADMIN_PAGE_SIZE,
+    activePage * ADMIN_PAGE_SIZE,
+  );
+
   const titleStats = useMemo(() => {
     if (section === 'system-profile') {
       const profile = rows[0];
@@ -292,10 +301,16 @@ export default function AdminSectionPage() {
       const stats = rows[0]?.stats ?? {};
       return { total: stats.todayBookings ?? 0, active: stats.completedBookings ?? 0, pending: stats.pendingBookings ?? 0 };
     }
+    if (section === 'spa-services') {
+      const groups = groupSpaServiceVariants(rows);
+      return {
+        total: groups.length,
+        active: groups.filter((group) => group.variants.some((service) => service.isActive)).length,
+        pending: groups.filter((group) => group.variants.every((service) => !service.isActive)).length,
+      };
+    }
     const pending = rows.filter((row) => row.status === 'PENDING').length;
-    const active = section === 'spa-services'
-      ? rows.filter((row) => row.isActive).length
-      : section === 'reports'
+    const active = section === 'reports'
         ? rows.filter((row) => row.status === 'RESOLVED').length
         : rows.filter((row) => row.status === 'ACTIVE' || row.accountStatus === 'ACTIVE').length;
     if (section === 'store-products') {
@@ -353,24 +368,24 @@ export default function AdminSectionPage() {
 
   return (
     <div className="grid gap-6">
-      <section className="relative overflow-hidden rounded-2xl border border-[#CFE3E0] bg-white shadow-sm">
-        <div className="absolute inset-y-0 left-0 w-1.5 bg-[#0F766E]" />
-        <div className="absolute -right-16 -top-20 size-52 rounded-full bg-[#E7F3F1]" />
+      <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-sm">
+        <div className="absolute inset-y-0 left-0 w-1.5 bg-primary" />
+        <div className="absolute -right-16 -top-20 size-52 rounded-full bg-primary/10" />
         <div className="relative grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex min-w-0 items-start gap-4">
-            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#0F766E] text-white shadow-sm">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               {section === 'users' ? <UsersRound className="size-5" /> : section === 'store-products' ? <PackageOpen className="size-5" /> : <ShieldAlert className="size-5" />}
             </span>
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">Trung tâm quản trị</p>
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Trung tâm quản trị</p>
               <h2 className="mt-1.5 text-3xl font-black tracking-normal text-[#172033]">{config.title}</h2>
               <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#64748B]">{config.description}</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 self-center">
-            <MiniStat label={section === 'system-profile' ? 'Cơ sở' : section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : 'Tổng'} value={titleStats.total} />
+            <MiniStat label={section === 'system-profile' ? 'Cơ sở' : section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : section === 'spa-services' ? 'Dịch vụ' : 'Tổng'} value={titleStats.total} />
             <MiniStat label={section === 'system-profile' ? 'Đang hoạt động' : ['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : 'Hoạt động'} value={titleStats.active} />
-            <MiniStat label={section === 'system-profile' ? 'Tạm ngừng' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
+            <MiniStat label={section === 'system-profile' || section === 'spa-services' ? 'Tạm ngừng' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
           </div>
         </div>
       </section>
@@ -378,7 +393,7 @@ export default function AdminSectionPage() {
       <section className="overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white shadow-sm">
         {loading ? (
           <div className="flex min-h-[360px] items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-[#0F766E]" />
+            <Loader2 className="size-8 animate-spin text-primary" />
           </div>
         ) : error ? (
           <div className="p-6">
@@ -397,6 +412,8 @@ export default function AdminSectionPage() {
           <StoreOverviewPanel data={rows[0]} />
         ) : section === 'spa-overview' ? (
           <SpaOverviewPanel data={rows[0]} />
+        ) : section === 'spa-services' ? (
+          <SpaServicesPanel services={rows} />
         ) : section === 'store-products' ? (
           <ProductCatalogPanel products={rows} />
         ) : (
@@ -406,9 +423,18 @@ export default function AdminSectionPage() {
                 type={complaintType}
                 target={complaintTarget}
                 status={complaintStatus}
-                onTypeChange={setComplaintType}
-                onTargetChange={setComplaintTarget}
-                onStatusChange={setComplaintStatus}
+                onTypeChange={(value) => {
+                  setComplaintType(value);
+                  setCurrentPage(1);
+                }}
+                onTargetChange={(value) => {
+                  setComplaintTarget(value);
+                  setCurrentPage(1);
+                }}
+                onStatusChange={(value) => {
+                  setComplaintStatus(value);
+                  setCurrentPage(1);
+                }}
               />
             )}
             <div className="overflow-x-auto">
@@ -426,7 +452,7 @@ export default function AdminSectionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E5EAF0]">
-                  {visibleRows.map((row, index) => (
+                  {paginatedRows.map((row, index) => (
                     <tr key={row.id ?? `${section}-${index}`} className="transition hover:bg-[#FAFBFC]">
                       {config.columns.map((column) => (
                         <td key={column.key} className="max-w-[280px] truncate px-5 py-4 text-sm font-semibold text-[#334155]">
@@ -442,6 +468,7 @@ export default function AdminSectionPage() {
                             onAction={(action, success) => runAction(row, action, success)}
                             onRoleChange={(nextRole) => handleRoleChange(row, nextRole)}
                             onPetModeration={(mode) => setPetModerationFlow({ mode, pet: row })}
+                            onPetDocumentReview={(status) => setPetDocumentReviewFlow({ status, document: row })}
                             onInspectMatchingReport={() => inspectMatchingReport(row)}
                           />
                         </td>
@@ -458,6 +485,12 @@ export default function AdminSectionPage() {
                 </tbody>
               </table>
             </div>
+            <AdminPagination
+              currentPage={activePage}
+              totalItems={visibleRows.length}
+              onPageChange={setCurrentPage}
+              itemLabel="mục"
+            />
           </div>
         )}
       </section>
@@ -480,6 +513,17 @@ export default function AdminSectionPage() {
           onClose={() => setPetModerationFlow(null)}
           onSuccess={() => {
             setPetModerationFlow(null);
+            load();
+          }}
+        />
+      )}
+
+      {petDocumentReviewFlow && (
+        <PetDocumentReviewDialog
+          flow={petDocumentReviewFlow}
+          onClose={() => setPetDocumentReviewFlow(null)}
+          onSuccess={() => {
+            setPetDocumentReviewFlow(null);
             load();
           }}
         />
@@ -576,6 +620,7 @@ function UserManagementPanel({
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -590,6 +635,13 @@ function UserManagementPanel({
     });
   }, [users, query, roleFilter, statusFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ADMIN_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedUsers = filtered.slice(
+    (activePage - 1) * ADMIN_PAGE_SIZE,
+    activePage * ADMIN_PAGE_SIZE,
+  );
+
   const verifiedCount = users.filter((user) => user.isVerified).length;
   const managerCount = users.filter((user) => ['STORE_MANAGER', 'SPA_MANAGER'].includes(user.role)).length;
   const suspendedCount = users.filter((user) => user.accountStatus === 'SUSPENDED').length;
@@ -598,72 +650,102 @@ function UserManagementPanel({
     <div>
       <div className="grid gap-3 border-b border-[#E5EAF0] bg-[#FBFCFD] p-4 md:grid-cols-3">
         <UserQuickStat icon={UserCheck} label="Đã xác thực" value={verifiedCount} tone="emerald" />
-        <UserQuickStat icon={ShieldAlert} label="Tài khoản quản lý" value={managerCount} tone="teal" />
+        <UserQuickStat icon={ShieldAlert} label="Tài khoản quản lý" value={managerCount} tone="primary" />
         <UserQuickStat icon={UserX} label="Đang bị khóa" value={suspendedCount} tone="red" />
       </div>
 
-      <div className="grid gap-3 border-b border-[#E5EAF0] p-4 lg:grid-cols-[minmax(300px,1fr)_220px_220px]">
+      <div className="grid gap-3 border-b bg-card p-4 xl:grid-cols-[minmax(260px,1fr)_minmax(440px,1.35fr)_minmax(280px,0.85fr)] xl:items-center">
         <label className="relative block">
-          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-          <input
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Tìm theo tên, email hoặc mã người dùng..."
-            className="h-11 w-full rounded-lg border border-[#D8E0EA] bg-white pl-10 pr-10 text-sm font-semibold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+            className="h-10 rounded-xl pl-9 pr-10 font-semibold"
           />
           {query && (
             <button
               type="button"
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
+              onClick={() => {
+                setQuery('');
+                setCurrentPage(1);
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition hover:text-foreground"
             >
               <X className="size-4" />
             </button>
           )}
         </label>
-        <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
-          <option value="ALL">Tất cả vai trò</option>
-          {roleOptions.map((role) => <option key={role} value={role}>{formatRole(role)}</option>)}
-        </select>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
-          <option value="ALL">Tất cả trạng thái</option>
-          {accountStatusOptions.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}
-        </select>
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo vai trò"
+          value={roleFilter}
+          onChange={(value) => {
+            setRoleFilter(value);
+            setCurrentPage(1);
+          }}
+          options={[
+            { value: 'ALL', label: 'Tất cả vai trò' },
+            ...roleOptions.map((role) => ({ value: role, label: formatRole(role) })),
+          ]}
+        />
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo trạng thái tài khoản"
+          value={statusFilter}
+          onChange={(value) => {
+            setStatusFilter(value);
+            setCurrentPage(1);
+          }}
+          options={[
+            { value: 'ALL', label: 'Tất cả trạng thái' },
+            ...accountStatusOptions.map((status) => ({ value: status, label: formatStatus(status) })),
+          ]}
+        />
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1050px] border-collapse text-left">
+        <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
+          <colgroup>
+            <col className="w-[24%]" />
+            <col className="w-[13%]" />
+            <col className="w-[12%]" />
+            <col className="w-[13%]" />
+            <col className="w-[12%]" />
+            <col className="w-[26%]" />
+          </colgroup>
           <thead className="bg-[#F7F9FB]">
             <tr>
               {['Người dùng', 'Vai trò hiện tại', 'Xác thực', 'Trạng thái', 'Ngày tham gia', 'Quản lý quyền'].map((label) => (
-                <th key={label} className={`px-5 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B] ${label === 'Quản lý quyền' ? 'text-right' : ''}`}>{label}</th>
+                <th key={label} className="px-4 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]">{label}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E5EAF0]">
-            {filtered.map((user) => (
+            {paginatedUsers.map((user) => (
               <tr key={user.id} className="transition hover:bg-[#F8FBFA]">
-                <td className="px-5 py-4">
-                  <div className="flex min-w-[260px] items-center gap-3">
-                    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#0F766E] to-[#164E63] text-sm font-black text-white shadow-sm">
+                <td className="px-4 py-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-black text-primary-foreground shadow-sm">
                       {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="size-full object-cover" /> : getInitials(user.name)}
                     </span>
                     <div className="min-w-0">
-                      <p className="max-w-[260px] truncate text-sm font-black text-[#172033]">{user.name || 'Chưa cập nhật tên'}</p>
-                      <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-[#64748B]"><Mail className="size-3.5" />{user.email}</p>
+                      <p className="truncate text-sm font-black text-[#172033]">{user.name || 'Chưa cập nhật tên'}</p>
+                      <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-[#64748B]"><Mail className="size-3.5 shrink-0" />{user.email}</p>
                     </div>
                   </div>
                 </td>
-                <td className="px-5 py-4"><RoleBadge role={user.role} /></td>
-                <td className="px-5 py-4">
+                <td className="px-4 py-4"><RoleBadge role={user.role} /></td>
+                <td className="px-4 py-4">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black ${user.isVerified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
                     {user.isVerified ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
                     {user.isVerified ? 'Đã xác thực' : 'Chưa xác thực'}
                   </span>
                 </td>
-                <td className="px-5 py-4"><AccountStatusBadge status={user.accountStatus} /></td>
-                <td className="px-5 py-4 text-sm font-semibold text-[#64748B]">{dateCell(user)}</td>
-                <td className="px-5 py-4">
+                <td className="px-4 py-4"><AccountStatusBadge status={user.accountStatus} /></td>
+                <td className="px-4 py-4 text-sm font-semibold text-[#64748B]">{dateCell(user)}</td>
+                <td className="px-4 py-4">
                   <ActionGroup
                     section="users"
                     row={user}
@@ -681,15 +763,20 @@ function UserManagementPanel({
           </tbody>
         </table>
       </div>
-      <div className="border-t border-[#E5EAF0] bg-[#FBFCFD] px-5 py-3 text-xs font-bold text-[#64748B]">Hiển thị {filtered.length} / {users.length} tài khoản</div>
+      <AdminPagination
+        currentPage={activePage}
+        totalItems={filtered.length}
+        onPageChange={setCurrentPage}
+        itemLabel="tài khoản"
+      />
     </div>
   );
 }
 
-function UserQuickStat({ icon: Icon, label, value, tone }: { icon: typeof UserCheck; label: string; value: number; tone: 'emerald' | 'teal' | 'red' }) {
+function UserQuickStat({ icon: Icon, label, value, tone }: { icon: typeof UserCheck; label: string; value: number; tone: 'emerald' | 'primary' | 'red' }) {
   const tones = {
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    teal: 'bg-[#E7F3F1] text-[#0F766E] border-[#CFE3E0]',
+    primary: 'border-primary/20 bg-primary/10 text-primary',
     red: 'bg-red-50 text-red-700 border-red-100',
   };
   return (
@@ -721,10 +808,247 @@ function getInitials(name?: string) {
   return name.trim().split(/\s+/).slice(-2).map((part) => part[0]).join('').toUpperCase();
 }
 
+
+type SpaServiceVariantGroup = {
+  key: string;
+  name: string;
+  species?: string | null;
+  variants: Row[];
+};
+
+function getSpaServiceBaseName(service: Row) {
+  const name = String(service.name ?? 'Dịch vụ Spa').trim();
+  if (service.petWeightMin == null && service.petWeightMax == null) return name;
+
+  return name
+    .replace(/\s*\([^)]*kg[^)]*\)\s*$/iu, '')
+    .replace(/\s+[<>]?\s*\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?\s*kg\s*$/iu, '')
+    .trim();
+}
+
+function groupSpaServiceVariants(services: Row[]): SpaServiceVariantGroup[] {
+  const groups = new Map<string, SpaServiceVariantGroup>();
+
+  services.forEach((service) => {
+    const name = getSpaServiceBaseName(service);
+    const key = [
+      service.categoryId ?? service.category?.name ?? '',
+      service.isMain === false ? 'SUB' : 'MAIN',
+      service.species ?? 'ALL',
+      name.toLocaleLowerCase('vi'),
+    ].join('::');
+    const existing = groups.get(key);
+
+    if (existing) existing.variants.push(service);
+    else groups.set(key, { key, name, species: service.species, variants: [service] });
+  });
+
+  return Array.from(groups.values()).sort((left, right) =>
+    left.name.localeCompare(right.name, 'vi') || String(left.species).localeCompare(String(right.species)),
+  );
+}
+
+function formatSpaSpeciesLabel(species?: string | null) {
+  if (species === 'DOG') return 'Chó';
+  if (species === 'CAT') return 'Mèo';
+  return 'Dùng chung';
+}
+
+function getSpaWeightRepresentative(rangeKey: string) {
+  const [rawMin, rawMax] = rangeKey.split(':');
+  const min = rawMin === '' ? 0 : Number(rawMin);
+  const max = rawMax === '' ? null : Number(rawMax);
+
+  if (max == null || max === 100) return min + 0.5;
+  return (min + max) / 2;
+}
+
+function matchesSpaServiceWeight(service: Row, weight: number) {
+  if (service.petWeightMin == null && service.petWeightMax == null) return true;
+  const min = service.petWeightMin == null ? 0 : Number(service.petWeightMin);
+  const max = service.petWeightMax == null ? null : Number(service.petWeightMax);
+
+  if (weight < min) return false;
+  if (max == null || max === 100) return true;
+  return service.isMain === false ? weight <= max : weight < max;
+}
+
+function getSpaWeightDistance(service: Row, weight: number) {
+  if (service.petWeightMin == null && service.petWeightMax == null) return 0;
+  const min = service.petWeightMin == null ? 0 : Number(service.petWeightMin);
+  const max = service.petWeightMax == null || Number(service.petWeightMax) === 100
+    ? Number.POSITIVE_INFINITY
+    : Number(service.petWeightMax);
+
+  if (weight < min) return min - weight;
+  if (weight > max) return weight - max;
+  return 0;
+}
+
+function SpaServicesPanel({ services }: { services: Row[] }) {
+  const [weightRange, setWeightRange] = useState('LOWEST');
+  const [currentPage, setCurrentPage] = useState(1);
+  const groups = useMemo(() => groupSpaServiceVariants(services), [services]);
+
+  const weightOptions = useMemo(() => {
+    const ranges = new Map<string, { min: number | null; max: number | null }>();
+    services.forEach((service) => {
+      if (service.petWeightMin == null && service.petWeightMax == null) return;
+      const key = getSpaWeightKey(service);
+      if (!ranges.has(key)) {
+        ranges.set(key, {
+          min: service.petWeightMin == null ? null : Number(service.petWeightMin),
+          max: service.petWeightMax == null ? null : Number(service.petWeightMax),
+        });
+      }
+    });
+
+    return Array.from(ranges.entries())
+      .sort(([, left], [, right]) =>
+        (left.min ?? 0) - (right.min ?? 0) ||
+        (left.max ?? Number.POSITIVE_INFINITY) - (right.max ?? Number.POSITIVE_INFINITY),
+      )
+      .map(([value, range]) => ({ value, label: formatSpaWeightOption(range.min, range.max) }));
+  }, [services]);
+
+  const displayedGroups = useMemo(() => groups.map((group) => {
+    const activeVariants = group.variants.filter((service) => service.isActive);
+    const selectableVariants = activeVariants.length ? activeVariants : group.variants;
+    let selectableCandidates = selectableVariants;
+
+    if (weightRange !== 'LOWEST') {
+      const representativeWeight = getSpaWeightRepresentative(weightRange);
+      const matchingVariants = selectableVariants.filter((service) =>
+        matchesSpaServiceWeight(service, representativeWeight),
+      );
+
+      if (matchingVariants.length) {
+        selectableCandidates = matchingVariants;
+      } else {
+        const nearestDistance = Math.min(
+          ...selectableVariants.map((service) => getSpaWeightDistance(service, representativeWeight)),
+        );
+        selectableCandidates = selectableVariants.filter((service) =>
+          getSpaWeightDistance(service, representativeWeight) === nearestDistance,
+        );
+      }
+    }
+
+    const selected = selectableCandidates.reduce((lowest, service) =>
+      Number(service.price) < Number(lowest.price) ? service : lowest,
+    );
+    return { ...group, selected };
+  }), [groups, weightRange]);
+
+  const totalPages = Math.max(1, Math.ceil(displayedGroups.length / ADMIN_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedGroups = displayedGroups.slice(
+    (activePage - 1) * ADMIN_PAGE_SIZE,
+    activePage * ADMIN_PAGE_SIZE,
+  );
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
+          <colgroup>
+            <col className="w-[16%]" />
+            <col className="w-[24%]" />
+            <col className="w-[18%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[13%]" />
+            <col className="w-[7%]" />
+          </colgroup>
+          <thead className="bg-[#F7F9FB]">
+            <tr className="h-[68px]">
+              {['Dịch vụ', 'Mô tả'].map((label) => (
+                <th key={label} className="align-middle px-4 py-3 text-[11px] font-black uppercase tracking-wider text-[#64748B]">{label}</th>
+              ))}
+              <th className="align-middle px-4 py-3 text-[11px] font-black uppercase tracking-wider text-[#64748B]">
+                <label className="flex items-center gap-2">
+                  <span className="shrink-0">Cân nặng</span>
+                  <select
+                    value={weightRange}
+                    onChange={(event) => {
+                      setWeightRange(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    aria-label="Chọn khoảng cân để xem giá dịch vụ Spa"
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-black normal-case text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  >
+                    <option value="LOWEST">Mặc định</option>
+                    {weightOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </th>
+              {['Giá', 'Thời lượng', 'Trạng thái', 'Lượt đặt'].map((label) => (
+                <th key={label} className="align-middle px-4 py-3 text-[11px] font-black uppercase tracking-wider text-[#64748B]">{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#E5EAF0]">
+            {paginatedGroups.map((group) => {
+              const service = group.selected;
+              const duration = service.durationMax && service.durationMax !== service.durationMin
+                ? `${service.durationMin}–${service.durationMax} phút`
+                : `${service.durationMin} phút`;
+
+              return (
+                <tr key={group.key} className="transition hover:bg-[#FAFBFC]">
+                  <td className="px-4 py-4">
+                    <p className="text-sm font-black text-[#172033]">{group.name}</p>
+                    <span className="mt-1 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-black text-muted-foreground">
+                      {formatSpaSpeciesLabel(group.species)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-sm font-semibold text-[#475569]">
+                    <p className="line-clamp-2">{service.description || '-'}</p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-black text-primary">
+                      {service.petWeightMin == null && service.petWeightMax == null
+                        ? 'Mọi cân nặng'
+                        : formatSpaWeightOption(
+                          service.petWeightMin == null ? null : Number(service.petWeightMin),
+                          service.petWeightMax == null ? null : Number(service.petWeightMax),
+                        )}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="text-base font-black text-primary">{moneyCell(service)}</p>
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-[#475569]">{duration}</td>
+                  <td className="px-4 py-4">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black ${service.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                      <span className="size-2 rounded-full bg-current opacity-70" />
+                      {service.isActive ? 'Đang hoạt động' : 'Tạm ngừng'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-sm font-black text-[#172033]">{service._count?.bookings ?? 0}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <AdminPagination
+        currentPage={activePage}
+        totalItems={displayedGroups.length}
+        onPageChange={setCurrentPage}
+        itemLabel="dịch vụ"
+      />
+    </div>
+  );
+}
+
 function ProductCatalogPanel({ products }: { products: Row[] }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('ALL');
   const [availability, setAvailability] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const categories = useMemo(
     () => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort(),
@@ -748,29 +1072,55 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
     });
   }, [products, query, category, availability]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ADMIN_PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedProducts = filtered.slice(
+    (activePage - 1) * ADMIN_PAGE_SIZE,
+    activePage * ADMIN_PAGE_SIZE,
+  );
+
   return (
     <div>
-      <div className="grid gap-3 border-b border-[#E5EAF0] bg-[#FBFCFD] p-4 lg:grid-cols-[minmax(280px,1fr)_220px_220px]">
+      <div className="grid gap-3 border-b bg-card p-4 xl:grid-cols-[minmax(280px,1fr)_auto_auto] xl:items-center">
         <label className="relative">
-          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-          <input
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Tìm theo mã, tên hoặc thương hiệu..."
-            className="h-11 w-full rounded-lg border border-[#D8E0EA] bg-white pl-10 pr-3 text-sm font-semibold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+            className="h-10 rounded-xl pl-9 font-semibold"
           />
         </label>
-        <select value={category} onChange={(event) => setCategory(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
-          <option value="ALL">Tất cả danh mục</option>
-          {categories.map((item) => <option key={item} value={item}>{formatCategory(item)}</option>)}
-        </select>
-        <select value={availability} onChange={(event) => setAvailability(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]">
-          <option value="ALL">Tất cả trạng thái</option>
-          <option value="ACTIVE">Đang bán</option>
-          <option value="LOW">Sắp hết hàng</option>
-          <option value="OUT">Hết hàng</option>
-          <option value="INACTIVE">Ngừng bán</option>
-        </select>
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo danh mục sản phẩm"
+          value={category}
+          onChange={(value) => {
+            setCategory(value);
+            setCurrentPage(1);
+          }}
+          options={[
+            { value: 'ALL', label: 'Tất cả danh mục' },
+            ...categories.map((item) => ({ value: item, label: formatCategory(item) })),
+          ]}
+        />
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo trạng thái sản phẩm"
+          value={availability}
+          onChange={(value) => {
+            setAvailability(value);
+            setCurrentPage(1);
+          }}
+          options={[
+            { value: 'ALL', label: 'Tất cả trạng thái' },
+            { value: 'ACTIVE', label: 'Đang bán' },
+            { value: 'LOW', label: 'Sắp hết hàng' },
+            { value: 'OUT', label: 'Hết hàng' },
+            { value: 'INACTIVE', label: 'Ngừng bán' },
+          ]}
+        />
       </div>
 
       <div className="overflow-x-auto">
@@ -783,7 +1133,7 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E5EAF0]">
-            {filtered.map((product) => {
+            {paginatedProducts.map((product) => {
               const stock = product.stock ?? 0;
               const stockTone = stock === 0 ? 'text-red-700 bg-red-50 border-red-200' : stock <= 5 ? 'text-amber-800 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
               return (
@@ -799,7 +1149,7 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-4"><span className="inline-flex rounded-lg bg-[#E7F3F1] px-3 py-1.5 font-mono text-sm font-black tracking-wider text-[#0F766E]">#{product.id}</span></td>
+                  <td className="px-5 py-4"><span className="inline-flex rounded-lg bg-primary/10 px-3 py-1.5 font-mono text-sm font-black tracking-wider text-primary">#{product.id}</span></td>
                   <td className="px-5 py-4 text-sm font-bold text-[#475569]">{formatCategory(product.category)}</td>
                   <td className="px-5 py-4">
                     <p className="text-sm font-black text-[#172033]">{moneyCell({ price: product.salePrice ?? product.sellingPrice })}</p>
@@ -818,12 +1168,17 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
               );
             })}
             {!filtered.length && (
-              <tr><td colSpan={7} className="px-5 py-16 text-center"><AlertTriangle className="mx-auto size-7 text-[#94A3B8]" /><p className="mt-3 text-sm font-bold text-[#64748B]">Không tìm thấy sản phẩm phù hợp.</p></td></tr>
+              <tr><td colSpan={8} className="px-5 py-16 text-center"><AlertTriangle className="mx-auto size-7 text-[#94A3B8]" /><p className="mt-3 text-sm font-bold text-[#64748B]">Không tìm thấy sản phẩm phù hợp.</p></td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <div className="border-t border-[#E5EAF0] bg-[#FBFCFD] px-5 py-3 text-xs font-bold text-[#64748B]">Hiển thị {filtered.length} / {products.length} sản phẩm</div>
+      <AdminPagination
+        currentPage={activePage}
+        totalItems={filtered.length}
+        onPageChange={setCurrentPage}
+        itemLabel="sản phẩm"
+      />
     </div>
   );
 }
@@ -868,7 +1223,7 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
   return (
     <form onSubmit={submit} className="grid gap-6 p-6">
       <div className="rounded-xl border border-[#BFE1DC] bg-[#EFFAF8] p-4">
-        <p className="text-sm font-black text-[#0F766E]">Một cơ sở PetMatching duy nhất</p>
+        <p className="text-sm font-black text-primary">Một cơ sở PetMatching duy nhất</p>
         <p className="mt-1 text-sm font-semibold leading-6 text-[#476861]">
           Thông tin bên dưới được dùng thống nhất cho Store và Spa, trong khi trạng thái vận hành được điều khiển độc lập.
         </p>
@@ -880,7 +1235,7 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
       <StoreField label="Địa chỉ" required value={form.address} onChange={(value) => update('address', value)} />
       <label className="grid gap-2 text-sm font-black text-[#172033]">
         Mô tả chung
-        <textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows={4} className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10" />
+        <textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows={4} className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" />
       </label>
       <div className="grid gap-5 md:grid-cols-2">
         <StatusField label="Trạng thái Store" value={form.storeStatus} onChange={(value) => update('storeStatus', value)} />
@@ -888,7 +1243,7 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
       </div>
       <div className="flex items-center justify-between gap-4 border-t border-[#E5EAF0] pt-5">
         <p className="text-xs font-semibold text-[#64748B]">Mọi thay đổi được áp dụng đồng thời cho Store và Spa.</p>
-        <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0F766E] px-5 text-sm font-black text-white transition hover:bg-[#0B5F59] disabled:opacity-50">
+        <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-black text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">
           {saving && <Loader2 className="size-4 animate-spin" />}
           Lưu thông tin
         </button>
@@ -910,10 +1265,10 @@ function StoreOverviewPanel({ data }: { data?: Row }) {
     <div className="grid gap-6 p-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {shortcuts.map((item) => (
-          <Link key={`${item.href}-${item.label}`} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[#0F766E] hover:shadow-md">
+          <Link key={`${item.href}-${item.label}`} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md">
             <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{item.label}</p>
             <p className="mt-2 text-2xl font-black text-[#172033]">{item.value}</p>
-            <p className="mt-3 text-xs font-black text-[#0F766E]">Xem chi tiết →</p>
+            <p className="mt-3 text-xs font-black text-primary">Xem chi tiết →</p>
           </Link>
         ))}
       </div>
@@ -930,7 +1285,7 @@ function StoreOverviewPanel({ data }: { data?: Row }) {
             <h3 className="font-black text-[#172033]">Đơn hàng gần đây</h3>
             <p className="mt-1 text-xs font-semibold text-[#64748B]">Năm đơn hàng mới nhất của cửa hàng.</p>
           </div>
-          <Link href="/admin/store-orders" className="text-sm font-black text-[#0F766E]">Xem tất cả</Link>
+          <Link href="/admin/store-orders" className="text-sm font-black text-primary">Xem tất cả</Link>
         </div>
         <div className="divide-y divide-[#E5EAF0]">
           {(data?.recentOrders ?? []).map((order: Row) => (
@@ -941,7 +1296,7 @@ function StoreOverviewPanel({ data }: { data?: Row }) {
               </div>
               <p className="text-sm font-semibold text-[#475569]">{order.items?.reduce((sum: number, item: Row) => sum + (item.quantity ?? 0), 0) ?? 0} sản phẩm</p>
               <p className="text-sm font-black text-[#172033]">{moneyCell(order)}</p>
-              <span className="text-sm font-bold text-[#0F766E]">{formatStatus(order.status)}</span>
+              <span className="text-sm font-bold text-primary">{formatStatus(order.status)}</span>
             </div>
           ))}
           {!data?.recentOrders?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có đơn hàng.</p>}
@@ -955,19 +1310,18 @@ function SpaOverviewPanel({ data }: { data?: Row }) {
   const stats = data?.stats ?? {};
   const shortcuts = [
     { label: 'Dịch vụ Spa', value: stats.services ?? 0, href: '/admin/spa-services' },
-    { label: 'Lịch nhân viên', value: stats.staffs ?? 0, href: '/admin/spa-staff-schedule' },
     { label: 'Lịch đặt hôm nay', value: stats.todayBookings ?? 0, href: '/admin/spa-bookings' },
     { label: 'Thông tin hệ thống', value: data?.spa?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/system-profile' },
   ];
 
   return (
     <div className="grid gap-6 p-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {shortcuts.map((item) => (
-          <Link key={item.href} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[#0F766E] hover:shadow-md">
+          <Link key={item.href} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md">
             <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{item.label}</p>
             <p className="mt-2 text-2xl font-black text-[#172033]">{item.value}</p>
-            <p className="mt-3 text-xs font-black text-[#0F766E]">Xem chi tiết →</p>
+            <p className="mt-3 text-xs font-black text-primary">Xem chi tiết →</p>
           </Link>
         ))}
       </div>
@@ -984,7 +1338,7 @@ function SpaOverviewPanel({ data }: { data?: Row }) {
             <h3 className="font-black text-[#172033]">Lịch sắp tới</h3>
             <p className="mt-1 text-xs font-semibold text-[#64748B]">Năm lịch gần nhất của Spa.</p>
           </div>
-          <Link href="/admin/spa-bookings" className="text-sm font-black text-[#0F766E]">Xem tất cả</Link>
+          <Link href="/admin/spa-bookings" className="text-sm font-black text-primary">Xem tất cả</Link>
         </div>
         <div className="divide-y divide-[#E5EAF0]">
           {(data?.upcomingBookings ?? []).map((booking: Row) => (
@@ -992,7 +1346,7 @@ function SpaOverviewPanel({ data }: { data?: Row }) {
               <p className="font-black text-[#172033]">{booking.user?.name ?? 'Khách hàng'}</p>
               <p className="text-sm font-semibold text-[#475569]">{booking.service?.name ?? 'Dịch vụ Spa'}</p>
               <p className="text-sm font-semibold text-[#64748B]">{booking.staff?.name ?? 'Chưa phân công'}</p>
-              <p className="text-sm font-bold text-[#0F766E]">{dateCell(booking)}</p>
+              <p className="text-sm font-bold text-primary">{dateCell(booking)}</p>
             </div>
           ))}
           {!data?.upcomingBookings?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có lịch sắp tới.</p>}
@@ -1020,7 +1374,7 @@ function StoreField({
         value={value}
         required={required}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-semibold outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+        className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
       />
     </label>
   );
@@ -1101,7 +1455,7 @@ function SpaManagerRoleDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#172033]/55 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#D8E0EA] bg-white shadow-2xl">
         <div className="border-b border-[#E5EAF0] px-6 py-5">
-          <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">Quản lý phân quyền Spa</p>
+          <p className="text-[11px] font-black uppercase tracking-wider text-primary">Quản lý phân quyền Spa</p>
           <h3 className="mt-1 text-2xl font-black text-[#172033]">
             {flow.mode === 'GRANT' ? 'Cấp quyền quản lý Spa' : 'Thu hồi quyền quản lý Spa'}
           </h3>
@@ -1113,7 +1467,7 @@ function SpaManagerRoleDialog({
         <div className="grid gap-5 p-6">
           {loading ? (
             <div className="flex min-h-40 items-center justify-center">
-              <Loader2 className="size-7 animate-spin text-[#0F766E]" />
+              <Loader2 className="size-7 animate-spin text-primary" />
             </div>
           ) : flow.mode === 'GRANT' ? (
             <>
@@ -1159,7 +1513,7 @@ function SpaManagerRoleDialog({
                   name="revokeMode"
                   checked={revokeMode === 'UNASSIGN'}
                   onChange={() => setRevokeMode('UNASSIGN')}
-                  className="mt-1 accent-[#0F766E]"
+                  className="mt-1 accent-primary"
                 />
                 <span>
                   <span className="block font-black text-[#172033]">Bỏ phân công</span>
@@ -1174,7 +1528,7 @@ function SpaManagerRoleDialog({
                   checked={revokeMode === 'TRANSFER'}
                   onChange={() => setRevokeMode('TRANSFER')}
                   disabled={!replacementManagers.length}
-                  className="mt-1 accent-[#0F766E]"
+                  className="mt-1 accent-primary"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block font-black text-[#172033]">Chuyển giao cho Manager khác</span>
@@ -1183,7 +1537,7 @@ function SpaManagerRoleDialog({
                     <select
                       value={newManagerId}
                       onChange={(event) => setNewManagerId(event.target.value)}
-                      className="mt-3 h-10 w-full rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]"
+                      className="mt-3 h-10 w-full rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-primary"
                     >
                       <option value="">Chọn người nhận chuyển giao</option>
                       {replacementManagers.map((manager) => (
@@ -1203,7 +1557,7 @@ function SpaManagerRoleDialog({
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-[#D8E0EA] px-4 py-2 text-sm font-black text-[#475569]">
             Hủy
           </button>
-          <button type="button" onClick={submit} disabled={loading || saving} className="inline-flex items-center gap-2 rounded-lg bg-[#0F766E] px-4 py-2 text-sm font-black text-white disabled:opacity-50">
+          <button type="button" onClick={submit} disabled={loading || saving} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-50">
             {saving && <Loader2 className="size-4 animate-spin" />}
             {flow.mode === 'GRANT'
               ? isReassignment ? 'Chuyển quyền & cấp Manager' : 'Cấp quyền Spa Manager'
@@ -1289,7 +1643,7 @@ function PetModerationDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#172033]/55 p-4">
       <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[#D8E0EA] bg-white shadow-2xl">
         <div className="border-b border-[#E5EAF0] px-6 py-5">
-          <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">Kiểm duyệt hồ sơ thú cưng</p>
+          <p className="text-[11px] font-black uppercase tracking-wider text-primary">Kiểm duyệt hồ sơ thú cưng</p>
           <h3 className="mt-1 text-2xl font-black text-[#172033]">
             {isRestore ? 'Khôi phục hồ sơ' : 'Ẩn hồ sơ'} {flow.pet.name}
           </h3>
@@ -1301,7 +1655,7 @@ function PetModerationDialog({
         <div className="grid gap-5 p-6">
           {loading ? (
             <div className="flex min-h-32 items-center justify-center">
-              <Loader2 className="size-7 animate-spin text-[#0F766E]" />
+              <Loader2 className="size-7 animate-spin text-primary" />
             </div>
           ) : (
             <>
@@ -1330,7 +1684,7 @@ function PetModerationDialog({
                 <select
                   value={reason}
                   onChange={(event) => setReason(event.target.value as HidePetReason | RestorePetReason)}
-                  className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E]"
+                  className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-primary"
                 >
                   <option value="">Chọn lý do</option>
                   {reasonOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -1344,7 +1698,7 @@ function PetModerationDialog({
                   onChange={(event) => setNote(event.target.value)}
                   rows={3}
                   placeholder="Nhập thông tin kiểm duyệt bổ sung (không bắt buộc)"
-                  className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none focus:border-[#0F766E]"
+                  className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none focus:border-primary"
                 />
               </label>
 
@@ -1367,7 +1721,7 @@ function PetModerationDialog({
             type="button"
             onClick={submit}
             disabled={loading || saving || restoreBlocked}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#0F766E] px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
             {isRestore ? 'Xác nhận khôi phục' : 'Xác nhận ẩn'}
@@ -1385,6 +1739,7 @@ function ActionGroup({
   onAction,
   onRoleChange,
   onPetModeration,
+  onPetDocumentReview,
   onInspectMatchingReport,
 }: {
   section: string;
@@ -1393,10 +1748,11 @@ function ActionGroup({
   onAction: (action: () => Promise<unknown>, success: string) => void;
   onRoleChange: (role: AdminRole) => void;
   onPetModeration: (mode: 'HIDE' | 'RESTORE') => void;
+  onPetDocumentReview?: (status: 'REJECTED' | 'NEED_MORE_INFO') => void;
   onInspectMatchingReport?: () => void;
 }) {
   if (busy) {
-    return <Loader2 className="ml-auto size-5 animate-spin text-[#0F766E]" />;
+    return <Loader2 className="ml-auto size-5 animate-spin text-primary" />;
   }
 
   if (section === 'users') {
@@ -1407,19 +1763,19 @@ function ActionGroup({
         : roleOptions;
 
     return (
-      <div className="flex flex-wrap justify-end gap-2">
-        <label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="min-w-0">
           <select
-            className="h-9 rounded-lg border border-[#D8E0EA] bg-white px-2.5 text-xs font-black text-[#334155] outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+            className="h-9 w-full min-w-0 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-black text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
             value={row.role}
             onChange={(event) => onRoleChange(event.target.value as AdminRole)}
           >
             {availableRoles.map((role) => <option key={role} value={role}>{formatRole(role)}</option>)}
           </select>
         </label>
-        <label>
+        <label className="min-w-0">
           <select
-            className="h-9 rounded-lg border border-[#D8E0EA] bg-white px-2.5 text-xs font-black text-[#334155] outline-none transition focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10"
+            className="h-9 w-full min-w-0 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-black text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
             value={row.accountStatus}
             onChange={(event) => onAction(() => adminApi.updateAccountStatus(row.id, event.target.value as AccountStatus), 'Đã cập nhật trạng thái tài khoản.')}
           >
@@ -1434,8 +1790,8 @@ function ActionGroup({
     return (
       <div className="flex justify-end gap-2">
         <IconButton label="Duyệt" icon={CheckCircle2} onClick={() => onAction(() => adminApi.reviewPetVerification(row.id, 'APPROVED'), 'Đã duyệt giấy tờ thú cưng.')} />
-        <IconButton label="Yêu cầu bổ sung" icon={ShieldAlert} onClick={() => onAction(() => adminApi.reviewPetVerification(row.id, 'NEED_MORE_INFO', 'Vui lòng bổ sung thêm bằng chứng.'), 'Đã yêu cầu bổ sung thông tin.')} />
-        <IconButton label="Từ chối" icon={XCircle} onClick={() => onAction(() => adminApi.reviewPetVerification(row.id, 'REJECTED', 'Giấy tờ không hợp lệ.'), 'Đã từ chối giấy tờ thú cưng.')} />
+        <IconButton label="Yêu cầu bổ sung" icon={ShieldAlert} onClick={() => onPetDocumentReview?.('NEED_MORE_INFO')} />
+        <IconButton label="Từ chối" icon={XCircle} onClick={() => onPetDocumentReview?.('REJECTED')} />
       </div>
     );
   }
@@ -1486,21 +1842,6 @@ function ActionGroup({
   return <span className="block text-right text-xs font-black text-[#94A3B8]">Chỉ xem</span>;
 }
 
-function ApprovalButtons({
-  update,
-  onAction,
-}: {
-  update: (status: ApprovalStatus) => Promise<unknown>;
-  onAction: (action: () => Promise<unknown>, success: string) => void;
-}) {
-  return (
-    <div className="flex justify-end gap-2">
-      <IconButton label="Kích hoạt" icon={PlayCircle} onClick={() => onAction(() => update('ACTIVE'), 'Đã cập nhật trạng thái.')} />
-      <IconButton label="Tạm dừng" icon={PauseCircle} onClick={() => onAction(() => update('SUSPENDED'), 'Đã cập nhật trạng thái.')} />
-    </div>
-  );
-}
-
 function IconButton({
   label,
   icon: Icon,
@@ -1515,10 +1856,132 @@ function IconButton({
       type="button"
       title={label}
       onClick={onClick}
-      className="inline-flex size-9 items-center justify-center rounded-lg border border-[#D8E0EA] bg-white text-[#475569] shadow-sm transition hover:border-[#0F766E] hover:bg-[#E7F3F1] hover:text-[#0F766E]"
+      className="inline-flex size-9 items-center justify-center rounded-lg border border-[#D8E0EA] bg-white text-[#475569] shadow-sm transition hover:border-primary hover:bg-primary/10 hover:text-primary"
     >
       <Icon className="size-4" />
     </button>
+  );
+}
+
+function AdminPagination({
+  currentPage,
+  totalItems,
+  onPageChange,
+  itemLabel,
+}: {
+  currentPage: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+  itemLabel: string;
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / ADMIN_PAGE_SIZE));
+  const firstItem = totalItems === 0 ? 0 : (currentPage - 1) * ADMIN_PAGE_SIZE + 1;
+  const lastItem = Math.min(currentPage * ADMIN_PAGE_SIZE, totalItems);
+  const pageItems: Array<number | 'start-ellipsis' | 'end-ellipsis'> = totalPages <= 7
+    ? Array.from({ length: totalPages }, (_, index) => index + 1)
+    : currentPage <= 4
+      ? [1, 2, 3, 4, 5, 'end-ellipsis', totalPages]
+      : currentPage >= totalPages - 3
+        ? [1, 'start-ellipsis', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+        : [1, 'start-ellipsis', currentPage - 1, currentPage, currentPage + 1, 'end-ellipsis', totalPages];
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3">
+      <p className="text-xs font-bold text-muted-foreground">
+        Hiển thị {firstItem}–{lastItem} trên {totalItems} {itemLabel}
+      </p>
+      {totalPages > 1 && (
+        <Pagination className="mx-0 w-auto">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                aria-disabled={currentPage === 1}
+                tabIndex={currentPage === 1 ? -1 : 0}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (currentPage > 1) onPageChange(currentPage - 1);
+                }}
+                className={currentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
+              />
+            </PaginationItem>
+            {pageItems.map((item, index) => (
+              typeof item === 'number' ? (
+                <PaginationItem key={item}>
+                  <PaginationLink
+                    isActive={item === currentPage}
+                    aria-label={`Đến trang ${item}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onPageChange(item);
+                    }}
+                    className={item === currentPage
+                      ? 'cursor-pointer border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+                      : 'cursor-pointer'}
+                  >
+                    {item}
+                  </PaginationLink>
+                </PaginationItem>
+              ) : (
+                <PaginationItem key={`${item}-${index}`}>
+                  <PaginationEllipsis />
+                </PaginationItem>
+              )
+            ))}
+            <PaginationItem>
+              <PaginationNext
+                aria-disabled={currentPage === totalPages}
+                tabIndex={currentPage === totalPages ? -1 : 0}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (currentPage < totalPages) onPageChange(currentPage + 1);
+                }}
+                className={currentPage === totalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
+    </div>
+  );
+}
+
+function AdminSegmentedFilter({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="flex flex-wrap rounded-xl border bg-muted/20 p-1"
+    >
+      {options.map((option) => {
+        const isActive = option.value === value;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onChange(option.value)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+              isActive
+                ? 'bg-card text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1546,19 +2009,35 @@ function ComplaintFilters({
   onTargetChange: (value: string) => void;
   onStatusChange: (value: string) => void;
 }) {
-  const selectClassName = 'h-11 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#334155] outline-none transition focus:border-[#0F766E] focus:ring-2 focus:ring-[#0F766E]/10';
-
   return (
-    <div className="flex flex-wrap gap-3 border-b border-[#E5EAF0] bg-[#FAFBFC] p-4">
-      <select aria-label="Lọc theo nhóm khiếu nại" value={type} onChange={(event) => onTypeChange(event.target.value)} className={selectClassName}>
-        {complaintTypeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-      <select aria-label="Lọc theo đối tượng" value={target} onChange={(event) => onTargetChange(event.target.value)} className={selectClassName}>
-        {complaintTargetOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-      <select aria-label="Lọc theo trạng thái" value={status} onChange={(event) => onStatusChange(event.target.value)} className={selectClassName}>
-        {complaintStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
+    <div className="grid gap-3 border-b bg-card p-4 xl:grid-cols-3">
+      <div className="space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Nhóm báo cáo</p>
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo nhóm báo cáo"
+          value={type}
+          onChange={onTypeChange}
+          options={complaintTypeOptions.map(([value, label]) => ({ value, label }))}
+        />
+      </div>
+      <div className="space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Đối tượng</p>
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo đối tượng"
+          value={target}
+          onChange={onTargetChange}
+          options={complaintTargetOptions.map(([value, label]) => ({ value, label }))}
+        />
+      </div>
+      <div className="space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Trạng thái</p>
+        <AdminSegmentedFilter
+          ariaLabel="Lọc theo trạng thái"
+          value={status}
+          onChange={onStatusChange}
+          options={complaintStatusOptions.map(([value, label]) => ({ value, label }))}
+        />
+      </div>
     </div>
   );
 }
@@ -1661,6 +2140,85 @@ function formatComplaintTarget(target?: string) {
   return target ? labels[target] ?? target : '-';
 }
 
+function PetDocumentReviewDialog({
+  flow,
+  onClose,
+  onSuccess,
+}: {
+  flow: PetDocumentReviewFlow;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [reviewNote, setReviewNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const isRejected = flow.status === 'REJECTED';
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedNote = reviewNote.trim();
+    if (!normalizedNote) {
+      setError(isRejected ? 'Vui lòng nhập lý do từ chối.' : 'Vui lòng ghi rõ thông tin cần bổ sung.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      await adminApi.reviewPetVerification(flow.document.id, flow.status, normalizedNote);
+      toast.success(isRejected ? 'Đã từ chối giấy tờ thú cưng.' : 'Đã yêu cầu bổ sung thông tin.');
+      onSuccess();
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      setError(message ?? 'Không thể cập nhật kết quả xác minh.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isRejected ? 'Từ chối giấy tờ' : 'Yêu cầu bổ sung giấy tờ'}</DialogTitle>
+          <DialogDescription>
+            {flow.document.pet?.name ?? 'Thú cưng'} · {formatDocumentType(flow.document.type)}
+          </DialogDescription>
+        </DialogHeader>
+        <form className="grid gap-4" onSubmit={submit}>
+          <label className="grid gap-2 text-sm font-black text-[#172033]">
+            {isRejected ? 'Lý do từ chối' : 'Thông tin cần bổ sung'} <span className="text-red-600">*</span>
+            <textarea
+              autoFocus
+              required
+              maxLength={1000}
+              rows={5}
+              value={reviewNote}
+              onChange={(event) => setReviewNote(event.target.value)}
+              placeholder={isRejected ? 'Nêu rõ lý do giấy tờ không được chấp nhận...' : 'Nêu rõ giấy tờ hoặc thông tin người dùng cần bổ sung...'}
+              className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+            />
+          </label>
+          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-[#64748B]">
+            <span>{error && <span className="text-red-700">{error}</span>}</span>
+            <span>{reviewNote.length}/1000</span>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-[#D8E0EA] px-4 py-2 text-sm font-black text-[#475569] disabled:opacity-50">
+              Hủy
+            </button>
+            <button type="submit" disabled={saving || !reviewNote.trim()} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-black text-white disabled:opacity-50 ${isRejected ? 'bg-red-600' : 'bg-primary'}`}>
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              {isRejected ? 'Xác nhận từ chối' : 'Gửi yêu cầu bổ sung'}
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function formatMatchingReportReason(reason?: string) {
   const labels: Record<string, string> = {
     INAPPROPRIATE_MESSAGE: 'Tin nhắn không phù hợp',
@@ -1679,6 +2237,23 @@ function renderAdminCell(column: { key: string; render?: (row: Row) => ReactNode
   }
   if (column.key === 'role') return <RoleBadge role={row.role} />;
   return column.render ? column.render(row) : renderValue(row[column.key]);
+}
+
+function getSpaWeightKey(row: Row) {
+  const min = row.petWeightMin == null ? '' : Number(row.petWeightMin);
+  const max = row.petWeightMax == null ? '' : Number(row.petWeightMax);
+  return `${min}:${max}`;
+}
+
+function formatSpaWeightOption(min: number | null, max: number | null) {
+  if (min == null && max == null) return 'Mọi cân nặng';
+  const normalizedMin = min ?? 0;
+  if (max == null || max === 100) return `${formatSpaWeightNumber(normalizedMin)}kg trở lên`;
+  return `${formatSpaWeightNumber(normalizedMin)}–${formatSpaWeightNumber(max)}kg`;
+}
+
+function formatSpaWeightNumber(value: number) {
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value);
 }
 
 function formatCategory(category?: string) {
@@ -1774,7 +2349,7 @@ function StatusField({ label, value, onChange }: { label: string; value: Approva
   return (
     <label className="grid gap-2 text-sm font-black text-[#172033]">
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-[#0F766E] focus:ring-4 focus:ring-[#0F766E]/10">
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-primary focus:ring-4 focus:ring-primary/10">
         <option value="ACTIVE">Đang hoạt động</option>
         <option value="SUSPENDED">Tạm ngừng</option>
       </select>
@@ -1792,7 +2367,7 @@ function DocumentImageLinks({ imageUrls }: { imageUrls: string[] }) {
             type="button"
             key={`${url.slice(0, 24)}-${index}`}
             onClick={() => setViewingImageUrl(url)}
-            className="rounded-lg border border-[#D8E0EA] px-2.5 py-1 text-xs font-black text-[#0F766E] transition hover:border-[#0F766E] hover:bg-[#E6F5F2]"
+            className="rounded-lg border border-[#D8E0EA] px-2.5 py-1 text-xs font-black text-primary transition hover:border-primary hover:bg-primary/10"
           >
             Ảnh {index + 1}
           </button>
@@ -1800,26 +2375,6 @@ function DocumentImageLinks({ imageUrls }: { imageUrls: string[] }) {
       </div>
       <ImageLightbox imageUrl={viewingImageUrl} alt="Tài liệu xác minh thú cưng" onClose={() => setViewingImageUrl(null)} />
     </>
-  );
-}
-
-function renderDocumentLinksLegacy(imageUrls?: string[]) {
-  if (!imageUrls?.length) return '-';
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {imageUrls.map((url, index) => (
-        <a
-          key={`${url.slice(0, 24)}-${index}`}
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-lg border border-[#D8E0EA] px-2.5 py-1 text-xs font-black text-[#0F766E] transition hover:border-[#0F766E] hover:bg-[#E6F5F2]"
-        >
-          Ảnh {index + 1}
-        </a>
-      ))}
-    </div>
   );
 }
 

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import {
   AlertTriangle,
   Cat,
-  CheckCircle2,
   Dog,
   Loader2,
   Pencil,
@@ -50,7 +49,6 @@ export default function BreedRulesPage() {
   const [savingRule, setSavingRule] = useState(false);
   const [searchRule, setSearchRule] = useState('');
   const [speciesRule, setSpeciesRule] = useState<'ALL' | Species>('ALL');
-  const [statusRule, setStatusRule] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [editingRule, setEditingRule] = useState<BreedRule | null>(null);
   const [ruleFormOpen, setRuleFormOpen] = useState(false);
   const [ruleForm, setRuleForm] = useState<BreedRulePayload>(emptyRuleForm);
@@ -114,11 +112,9 @@ export default function BreedRulesPage() {
         rule.breedB.toLocaleLowerCase('vi').includes(keyword) ||
         rule.offspringName?.toLocaleLowerCase('vi').includes(keyword);
       const matchesSpecies = speciesRule === 'ALL' || rule.species === speciesRule;
-      const matchesStatus =
-        statusRule === 'ALL' || (statusRule === 'ACTIVE' ? rule.isActive : !rule.isActive);
-      return matchesSearch && matchesSpecies && matchesStatus;
+      return matchesSearch && matchesSpecies;
     });
-  }, [rules, searchRule, speciesRule, statusRule]);
+  }, [rules, searchRule, speciesRule]);
 
   // Derived Breeds Filter
   const visibleOfficialBreeds = useMemo(() => {
