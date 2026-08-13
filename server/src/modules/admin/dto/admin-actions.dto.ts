@@ -81,8 +81,14 @@ export class ReviewPetDocumentDto {
   @IsEnum(DocumentStatus)
   status!: DocumentStatus;
 
-  @IsOptional()
+  @ValidateIf((dto: ReviewPetDocumentDto) =>
+    dto.reviewNote !== undefined ||
+    dto.status === DocumentStatus.REJECTED ||
+    dto.status === DocumentStatus.NEED_MORE_INFO,
+  )
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
   reviewNote?: string;
 }
 

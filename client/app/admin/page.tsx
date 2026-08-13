@@ -76,7 +76,7 @@ export default function AdminDashboardPage() {
         value: data.stats.users.total,
         detail: 'Tài khoản đã đăng ký',
         icon: UsersRound,
-        color: 'teal',
+        color: 'primary',
       },
       {
         label: 'Thú cưng',
@@ -121,7 +121,7 @@ export default function AdminDashboardPage() {
         label: 'Đơn hàng chờ xử lý',
         value: data.stats.store.pendingOrders,
         href: '/admin/store-orders',
-        tone: 'teal',
+        tone: 'primary',
       },
       {
         label: 'Khiếu nại cửa hàng',
@@ -133,7 +133,7 @@ export default function AdminDashboardPage() {
         label: 'Spa cần kích hoạt',
         value: data.stats.spa.pendingBranches,
         href: '/admin/spas',
-        tone: 'teal',
+        tone: 'primary',
       },
       {
         label: 'Khiếu nại spa',
@@ -149,20 +149,20 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="grid gap-5 pb-8">
-      <section className="relative overflow-hidden rounded-3xl bg-[#0E3B3A] text-white shadow-[0_16px_40px_rgba(15,118,110,0.18)]">
-        <div className="absolute -right-20 -top-28 size-80 rounded-full bg-[#1D7770]/55" />
-        <div className="absolute -bottom-32 right-44 size-64 rounded-full border-[40px] border-white/5" />
+      <section className="relative overflow-hidden rounded-3xl bg-primary text-primary-foreground shadow-lg">
+        <div className="absolute -right-20 -top-28 size-80 rounded-full bg-primary-foreground/10" />
+        <div className="absolute -bottom-32 right-44 size-64 rounded-full border-[40px] border-primary-foreground/5" />
         <div className="relative grid gap-7 p-6 lg:grid-cols-[minmax(0,1fr)_500px] lg:p-8">
           <div className="flex flex-col justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[#A7F3D0]">
+                <span className="inline-flex items-center gap-2 rounded-full bg-primary-foreground/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-primary-foreground">
                   <CheckCircle2 className="size-3.5" /> Trung tâm điều hành
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#B9D8D5]"><CalendarDays className="size-3.5" />{formatLongDate(new Date())}</span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-primary-foreground/75"><CalendarDays className="size-3.5" />{formatLongDate(new Date())}</span>
               </div>
               <h2 className="mt-5 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">Tổng quan vận hành PetMatching</h2>
-              <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-[#B9D8D5]">Theo dõi người dùng, ghép đôi, cửa hàng và Spa tại một nơi duy nhất.</p>
+              <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-primary-foreground/75">Theo dõi người dùng, ghép đôi, cửa hàng và Spa tại một nơi duy nhất.</p>
             </div>
             <div className="mt-7 flex flex-wrap gap-3">
               <StatusChip label="Hệ thống" value="Đang hoạt động" />
@@ -203,7 +203,7 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">Sức khỏe hệ thống</p>
+          <p className="text-[11px] font-black uppercase tracking-wider text-primary">Sức khỏe hệ thống</p>
           <h3 className="mt-1 text-xl font-black tracking-normal">Nhịp hoạt động</h3>
           <div className="mt-4 grid gap-4">
             <PulseRow
@@ -235,7 +235,7 @@ export default function AdminDashboardPage() {
             icon={ShoppingBag}
             title="PetMatching Store"
             href="/admin/store-orders"
-            tone="teal"
+            tone="primary"
             revenue={data.stats.store.revenue}
             metrics={[
               { label: 'Đơn hàng', value: data.stats.store.totalOrders },
@@ -296,7 +296,7 @@ export default function AdminDashboardPage() {
 function LoadingState() {
   return (
     <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-[#D8E0EA] bg-white">
-      <Loader2 className="size-8 animate-spin text-[#0F766E]" />
+      <Loader2 className="size-8 animate-spin text-primary" />
     </div>
   );
 }
@@ -312,20 +312,20 @@ function StateBox({ title, description }: { title: string; description: string }
 
 function HeroStat({ icon: Icon, label, value }: { icon: typeof ShoppingBag; label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
+    <div className="rounded-2xl border border-primary-foreground/20 bg-primary-foreground/10 p-4 backdrop-blur-sm transition hover:bg-primary-foreground/15">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black uppercase tracking-wider text-[#B9D8D5]">{label}</p>
-        <Icon className="size-4 text-[#A7F3D0]" />
+        <p className="text-[10px] font-black uppercase tracking-wider text-primary-foreground/75">{label}</p>
+        <Icon className="size-4 text-primary-foreground" />
       </div>
-      <p className="mt-3 truncate text-xl font-black tracking-normal text-white sm:text-2xl">{value}</p>
+      <p className="mt-3 truncate text-xl font-black tracking-normal text-primary-foreground sm:text-2xl">{value}</p>
     </div>
   );
 }
 
 function StatusChip({ label, value, warning = false }: { label: string; value: string; warning?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${warning ? 'border-amber-300/25 bg-amber-300/10 text-amber-100' : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100'}`}>
-      <span className={`size-2 rounded-full ${warning ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${warning ? 'border-amber-200/40 bg-amber-200/15 text-amber-50' : 'border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground'}`}>
+      <span className={`size-2 rounded-full ${warning ? 'bg-amber-200' : 'bg-emerald-200'}`} />
       {label}: <strong className="font-black">{value}</strong>
     </span>
   );
@@ -345,7 +345,7 @@ function MetricCard({
   color: string;
 }) {
   const tones: Record<string, string> = {
-    teal: 'bg-[#E7F3F1] text-[#0F766E]',
+    primary: 'bg-primary/10 text-primary',
     orange: 'bg-[#FFF1E8] text-[#C2410C]',
     blue: 'bg-[#EAF1FF] text-[#1D4ED8]',
     red: 'bg-[#FFF1F0] text-[#B42318]',
@@ -381,13 +381,13 @@ function PendingLink({
   const tones: Record<string, string> = {
     amber: 'bg-[#FFFAEB] text-[#B54708] border-[#FEDF89]',
     red: 'bg-[#FFF1F0] text-[#B42318] border-[#FECDCA]',
-    teal: 'bg-[#E7F3F1] text-[#0F766E] border-[#BFE3DE]',
+    primary: 'border-primary/20 bg-primary/10 text-primary',
   };
 
   return (
     <Link
       href={href}
-      className="group grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#D8E0EA] bg-[#FAFBFC] p-4 transition hover:border-[#0F766E] hover:bg-white"
+      className="group grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#D8E0EA] bg-[#FAFBFC] p-4 transition hover:border-primary hover:bg-white"
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-black text-[#172033]">{label}</p>
@@ -397,7 +397,7 @@ function PendingLink({
         <span className={`min-w-10 rounded-lg border px-2.5 py-1.5 text-center text-sm font-black ${tones[tone]}`}>
           {value}
         </span>
-        <ArrowRight className="size-4 text-[#94A3B8] transition group-hover:translate-x-0.5 group-hover:text-[#0F766E]" />
+        <ArrowRight className="size-4 text-[#94A3B8] transition group-hover:translate-x-0.5 group-hover:text-primary" />
       </div>
     </Link>
   );
@@ -416,7 +416,7 @@ function PulseRow({
 }) {
   return (
     <div className="flex gap-3 rounded-xl bg-[#F7F9FB] p-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white text-[#0F766E] shadow-sm">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
         <Icon className="size-5" />
       </span>
       <div className="min-w-0">
@@ -431,7 +431,7 @@ function PulseRow({
 function SectionHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return (
     <div>
-      <p className="text-[11px] font-black uppercase tracking-wider text-[#0F766E]">{eyebrow}</p>
+      <p className="text-[11px] font-black uppercase tracking-wider text-primary">{eyebrow}</p>
       <h3 className="mt-1 text-xl font-black tracking-normal text-[#172033]">{title}</h3>
       <p className="mt-1 text-sm font-semibold text-[#64748B]">{description}</p>
     </div>
@@ -449,12 +449,12 @@ function OperationCard({
   icon: typeof ShoppingBag;
   title: string;
   href: string;
-  tone: 'teal' | 'violet';
+  tone: 'primary' | 'violet';
   revenue: number;
   metrics: Array<{ label: string; value: string | number }>;
 }) {
-  const styles = tone === 'teal'
-    ? { icon: 'bg-[#E7F3F1] text-[#0F766E]', line: 'bg-[#0F766E]', revenue: 'text-[#0F766E]' }
+  const styles = tone === 'primary'
+    ? { icon: 'bg-primary/10 text-primary', line: 'bg-primary', revenue: 'text-primary' }
     : { icon: 'bg-violet-50 text-violet-700', line: 'bg-violet-600', revenue: 'text-violet-700' };
 
   return (
@@ -465,7 +465,7 @@ function OperationCard({
           <span className={`flex size-11 items-center justify-center rounded-xl ${styles.icon}`}><Icon className="size-5" /></span>
           <div><h4 className="text-base font-black text-[#172033]">{title}</h4><p className="mt-0.5 text-xs font-semibold text-[#64748B]">Tổng quan hoạt động</p></div>
         </div>
-        <Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[#64748B] hover:text-[#0F766E]">Chi tiết <ArrowRight className="size-3.5" /></Link>
+        <Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[#64748B] hover:text-primary">Chi tiết <ArrowRight className="size-3.5" /></Link>
       </div>
       <div className="mt-5 rounded-xl bg-[#F7F9FB] p-4">
         <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">Tổng doanh thu</p>
@@ -497,8 +497,8 @@ function ActivityPanel({
   return (
     <div className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-lg bg-[#E7F3F1] text-[#0F766E]"><Icon className="size-4" /></span><h3 className="text-base font-black tracking-normal">{title}</h3></div>
-        <Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[#64748B] hover:text-[#0F766E]">Xem tất cả <ArrowRight className="size-3.5" /></Link>
+        <div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Icon className="size-4" /></span><h3 className="text-base font-black tracking-normal">{title}</h3></div>
+        <Link href={href} className="inline-flex items-center gap-1 text-xs font-black text-[#64748B] hover:text-primary">Xem tất cả <ArrowRight className="size-3.5" /></Link>
       </div>
       <div className="mt-4 divide-y divide-[#E5EAF0]">
         {rows.length ? rows.map((row) => (

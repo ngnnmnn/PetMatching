@@ -70,7 +70,6 @@ type Pet = {
   pedigreeNumber?: string | null;
   pedigreeVerified: boolean;
   vaccineVerified: boolean;
-  verificationBadge?: 'NONE' | 'PENDING' | 'VERIFIED';
   isAvailableForMatching: boolean;
   breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
   breedingFee?: number | null;
@@ -97,7 +96,6 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
-    verificationBadge?: string;
     owner: { name: string };
   };
   malePet: {
@@ -105,7 +103,6 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
-    verificationBadge?: string;
     breedingOption?: string;
     breedingFee?: number | null;
     owner?: { name: string };
@@ -944,11 +941,6 @@ export default function UnifiedMatchingHubPage() {
 
                 {/* Overlaid Badges */}
                 <div className="absolute left-6 top-4 flex gap-2">
-                  {selectedCandidateDetail.verificationBadge === 'VERIFIED' && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-black text-white shadow backdrop-blur-md">
-                      <ShieldCheck className="size-3.5" /> VERIFIED
-                    </span>
-                  )}
                   {selectedCandidateDetail.compatibilityScore && (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/90 px-3 py-1 text-xs font-black text-white shadow backdrop-blur-md">
                       <Sparkles className="size-3.5" /> {selectedCandidateDetail.compatibilityScore}% Phù hợp
@@ -1003,15 +995,29 @@ export default function UnifiedMatchingHubPage() {
                     <span className="text-xs text-muted-foreground font-bold uppercase">Cân nặng</span>
                     <span className="text-sm font-black">{selectedCandidateDetail.weight} kg</span>
                   </div>
-                  <div className="rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/50 p-4 flex flex-col items-center justify-center text-center space-y-1">
+                  <div className={cn(
+                    'rounded-2xl border p-4 flex flex-col items-center justify-center text-center space-y-1',
+                    selectedCandidateDetail.pedigreeVerified
+                      ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20'
+                      : 'border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-950',
+                  )}>
                     <span className="text-2xl">🧬</span>
-                    <span className="text-xs text-muted-foreground font-bold uppercase text-emerald-600 dark:text-emerald-400">Thuần chủng</span>
-                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">{selectedCandidateDetail.hasPedigree ? 'Có' : 'Không'}</span>
+                    <span className={cn('text-xs font-bold uppercase', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600 dark:text-gray-300')}>Phả hệ VKA</span>
+                    <span className={cn('text-sm font-black', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600 dark:text-gray-300')}>
+                      {selectedCandidateDetail.hasPedigree ? (selectedCandidateDetail.pedigreeVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa cung cấp'}
+                    </span>
                   </div>
-                  <div className="rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/50 p-4 flex flex-col items-center justify-center text-center space-y-1">
+                  <div className={cn(
+                    'rounded-2xl border p-4 flex flex-col items-center justify-center text-center space-y-1',
+                    selectedCandidateDetail.vaccineVerified
+                      ? 'border-blue-200 bg-blue-50/50 dark:border-blue-900/50 dark:bg-blue-950/20'
+                      : 'border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-950',
+                  )}>
                     <span className="text-2xl">💉</span>
-                    <span className="text-xs text-muted-foreground font-bold uppercase text-blue-600 dark:text-blue-400">Tiêm phòng</span>
-                    <span className="text-sm font-black text-blue-700 dark:text-blue-300">{selectedCandidateDetail.isVaccinated ? 'Đầy đủ' : 'Chưa'}</span>
+                    <span className={cn('text-xs font-bold uppercase', selectedCandidateDetail.vaccineVerified ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300')}>Đã tiêm chủng</span>
+                    <span className={cn('text-sm font-black', selectedCandidateDetail.vaccineVerified ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300')}>
+                      {selectedCandidateDetail.isVaccinated ? (selectedCandidateDetail.vaccineVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa cung cấp'}
+                    </span>
                   </div>
                 </div>
 
@@ -1143,13 +1149,7 @@ function SwipeCardContainer({
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
         {/* Top Badges */}
-        <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-          {pet.verificationBadge === 'VERIFIED' ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-black text-white shadow-md backdrop-blur-md">
-              <ShieldCheck className="size-4" /> VERIFIED
-            </span>
-          ) : <div />}
-
+        <div className="absolute top-4 left-4 right-4 flex items-center justify-end">
           <div className="flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md">
             <Sparkles className="mr-1 size-4 text-primary" />
             <span className="text-xs font-black text-primary">{pet.compatibilityScore || 95}% Phù hợp</span>

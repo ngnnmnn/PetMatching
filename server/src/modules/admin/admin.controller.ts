@@ -284,11 +284,6 @@ export class AdminController {
     return this.adminService.getSpaServices();
   }
 
-  @Get('spa-staff-schedule')
-  getSpaStaffSchedule() {
-    return this.adminService.getSpaStaffSchedule();
-  }
-
   @Get('spa-bookings')
   getSpaBookings(@Query('branchId') branchId?: string) {
     return this.adminService.getSpaBookings(branchId);

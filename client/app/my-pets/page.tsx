@@ -12,7 +12,6 @@ import {
   PawPrint,
   Plus,
   Settings2,
-  ShieldCheck,
   Sparkles,
   Syringe,
   ToggleLeft,
@@ -46,7 +45,6 @@ type Pet = {
   isVaccinated: boolean;
   pedigreeVerified: boolean;
   vaccineVerified: boolean;
-  verificationBadge?: 'NONE' | 'PENDING' | 'VERIFIED';
   isAvailableForMatching: boolean;
   breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
   breedingFee?: number | null;
@@ -314,20 +312,28 @@ export default function MyPetsPage() {
                 <div className="space-y-4 p-4">
                   {/* Badges */}
                   <div className="flex flex-wrap gap-1.5 text-xs">
-                    {pet.verificationBadge === 'VERIFIED' && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 border border-emerald-200">
-                        <ShieldCheck className="size-3.5" />
-                        Đã xác thực
-                      </span>
-                    )}
                     {pet.isVaccinated && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 font-bold text-blue-700 border border-blue-200">
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold',
+                          pet.vaccineVerified
+                            ? 'border-blue-200 bg-blue-50 text-blue-700'
+                            : 'border-gray-300 bg-white text-gray-600',
+                        )}
+                      >
                         <Syringe className="size-3.5" />
                         Đã tiêm chủng
                       </span>
                     )}
                     {pet.hasPedigree && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-bold text-amber-700 border border-amber-200">
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold',
+                          pet.pedigreeVerified
+                            ? 'border-amber-200 bg-amber-50 text-amber-700'
+                            : 'border-gray-300 bg-white text-gray-600',
+                        )}
+                      >
                         <BadgeCheck className="size-3.5" />
                         Phả hệ VKA
                       </span>

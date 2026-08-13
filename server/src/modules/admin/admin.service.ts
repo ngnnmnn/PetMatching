@@ -22,6 +22,10 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
+  recognizedSpaRevenueWhere,
+  recognizedStoreRevenueWhere,
+} from '../../common/revenue.utils';
+import {
   GrantSpaManagerDto,
   CreateBreedRuleDto,
   HidePetDto,
@@ -50,24 +54,6 @@ const ACTIONABLE_DOCUMENT_STATUSES: DocumentStatus[] = [
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
-
-  private recognizedStoreRevenueWhere(storeId?: string): Prisma.OrderWhereInput {
-    return {
-      storeId: storeId ?? '__missing__',
-      status: OrderStatus.DELIVERED,
-      OR: [
-        { refundStatus: null },
-        { refundStatus: { not: 'REFUNDED' } },
-      ],
-    };
-  }
-
-  private recognizedSpaRevenueWhere(addressSpaId?: string): Prisma.SpaBookingWhereInput {
-    return {
-      addressSpaId: addressSpaId ?? '__missing__',
-      status: SpaBookingStatus.COMPLETED,
-    };
-  }
 
   async getDashboard() {
     const [primaryStore, primarySpa] = await Promise.all([
@@ -132,15 +118,15 @@ export class AdminService {
         where: { type: ComplaintType.SPA, status: ComplaintStatus.PENDING },
       }),
       this.prisma.order.aggregate({
-        where: this.recognizedStoreRevenueWhere(primaryStore?.id),
+        where: recognizedStoreRevenueWhere(primaryStore?.id),
         _sum: { totalAmount: true },
       }),
       this.prisma.spaBooking.aggregate({
-        where: this.recognizedSpaRevenueWhere(primarySpa?.id),
+        where: recognizedSpaRevenueWhere(primarySpa?.id),
         _sum: { totalPrice: true },
       }),
       this.prisma.spaBooking.aggregate({
-        where: { ...this.recognizedSpaRevenueWhere(primarySpa?.id), totalPrice: 0 },
+        where: { ...recognizedSpaRevenueWhere(primarySpa?.id), totalPrice: 0 },
         _sum: { priceSnapshot: true },
       }),
       this.prisma.user.findMany({
@@ -624,13 +610,21 @@ export class AdminService {
       throw new BadRequestException('Only APPROVED, REJECTED, or NEED_MORE_INFO are allowed.');
     }
 
+    const reviewNote = dto.reviewNote?.trim();
+    if (
+      (dto.status === DocumentStatus.REJECTED || dto.status === DocumentStatus.NEED_MORE_INFO) &&
+      !reviewNote
+    ) {
+      throw new BadRequestException('Vui lòng nhập lý do xử lý giấy tờ.');
+    }
+
     const document = await this.prisma.petDocument.update({
       where: { id: documentId },
       data: {
         status: dto.status,
         reviewerId: actor.id,
         reviewerName: actor.name,
-        reviewNote: dto.reviewNote,
+        reviewNote,
         reviewedAt: new Date(),
       },
       include: { pet: { include: { documents: true } } },
@@ -639,6 +633,7 @@ export class AdminService {
     await this.refreshPetVerification(document.petId);
     await this.audit(actor.id, 'ADMIN_REVIEW_PET_DOCUMENT', 'PetDocument', documentId, {
       status: dto.status,
+      ...(reviewNote ? { reviewNote } : {}),
     });
 
     return this.prisma.petDocument.findUnique({
@@ -1020,7 +1015,7 @@ export class AdminService {
         this.prisma.order.count({ where: { ...storeFilter, status: OrderStatus.PENDING } }),
         this.prisma.order.count({ where: { ...storeFilter, status: OrderStatus.DELIVERED } }),
         this.prisma.order.aggregate({
-          where: this.recognizedStoreRevenueWhere(store?.id),
+          where: recognizedStoreRevenueWhere(store?.id),
           _sum: { totalAmount: true },
         }),
         this.prisma.order.findMany({
@@ -1059,19 +1054,18 @@ export class AdminService {
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     const addressFilter = spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' };
 
-    const [services, staffs, todayBookings, pendingBookings, completedBookings, revenue, legacyRevenue, upcomingBookings] =
+    const [services, todayBookings, pendingBookings, completedBookings, revenue, legacyRevenue, upcomingBookings] =
       await Promise.all([
         this.prisma.spaService.count({ where: { isActive: true } }),
-        this.prisma.spaStaff.count({ where: spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' } }),
         this.prisma.spaBooking.count({ where: { ...addressFilter, scheduledAt: { gte: startOfDay, lte: endOfDay } } }),
         this.prisma.spaBooking.count({ where: { ...addressFilter, status: SpaBookingStatus.PENDING } }),
         this.prisma.spaBooking.count({ where: { ...addressFilter, status: SpaBookingStatus.COMPLETED } }),
         this.prisma.spaBooking.aggregate({
-          where: this.recognizedSpaRevenueWhere(spa?.id),
+          where: recognizedSpaRevenueWhere(spa?.id),
           _sum: { totalPrice: true },
         }),
         this.prisma.spaBooking.aggregate({
-          where: { ...this.recognizedSpaRevenueWhere(spa?.id), totalPrice: 0 },
+          where: { ...recognizedSpaRevenueWhere(spa?.id), totalPrice: 0 },
           _sum: { priceSnapshot: true },
         }),
         this.prisma.spaBooking.findMany({
@@ -1090,7 +1084,6 @@ export class AdminService {
       spa,
       stats: {
         services,
-        staffs,
         todayBookings,
         pendingBookings,
         completedBookings,
@@ -1104,20 +1097,6 @@ export class AdminService {
     return this.prisma.spaService.findMany({
       orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
       include: { category: { select: { name: true } }, _count: { select: { bookings: true } } },
-    });
-  }
-
-  async getSpaStaffSchedule() {
-    const spa = await this.prisma.addressSpa.findFirst({ orderBy: { createdAt: 'asc' } });
-    return this.prisma.spaBooking.findMany({
-      where: { addressSpaId: spa?.id ?? '__missing__', staffId: { not: null } },
-      orderBy: { scheduledAt: 'desc' },
-      include: {
-        staff: { select: { id: true, name: true, email: true } },
-        user: { select: { id: true, name: true } },
-        pet: { select: { id: true, name: true } },
-        service: { select: { id: true, name: true, durationMin: true } },
-      },
     });
   }
 

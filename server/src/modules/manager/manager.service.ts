@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
 
 @Injectable()
 export class ManagerService {
@@ -95,12 +96,17 @@ export class ManagerService {
     return store;
   }
 
-  async getDashboardStats() {
-    const revenueSum = await this.prisma.payment.aggregate({
-      where: { sourceType: 'STORE_ORDER', status: 'PAID' },
-      _sum: { amount: true },
+  async getDashboardStats(managerId: string) {
+    const store = await this.prisma.store.findFirst({
+      where: { managerId },
+      select: { id: true },
     });
-    const totalRevenue = revenueSum._sum.amount ?? 0;
+    const revenueOrderWhere = recognizedStoreRevenueWhere(store?.id);
+    const revenueSum = await this.prisma.order.aggregate({
+      where: revenueOrderWhere,
+      _sum: { totalAmount: true },
+    });
+    const totalRevenue = revenueSum._sum.totalAmount ?? 0;
 
     // Total orders
     const totalOrders = await this.prisma.order.count();
@@ -127,7 +133,7 @@ export class ManagerService {
 
     // Calculate total profit
     const orderItems = await this.prisma.orderItem.findMany({
-      where: { order: { payment: { status: 'PAID' } } },
+      where: { order: revenueOrderWhere },
       select: {
         quantity: true,
         price: true,

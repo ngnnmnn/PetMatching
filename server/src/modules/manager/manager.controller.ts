@@ -29,8 +29,8 @@ export class ManagerController {
   constructor(private readonly managerService: ManagerService) {}
 
   @Get('dashboard-stats')
-  getDashboardStats() {
-    return this.managerService.getDashboardStats();
+  getDashboardStats(@Req() req: AuthenticatedRequest) {
+    return this.managerService.getDashboardStats(req.user.id);
   }
 
   @Get('store-settings')
