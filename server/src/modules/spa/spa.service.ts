@@ -4,6 +4,10 @@ import { CompleteSpaPaymentDto, CreateBookingDto, CreateStaffDto, CreateSpaFeedb
 import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PaymentService } from '../payment/payment.service';
+import {
+  getSpaBookingRevenue,
+  isRecognizedSpaBooking,
+} from '../../common/revenue.utils';
 
 @Injectable()
 export class SpaService {
@@ -846,14 +850,24 @@ export class SpaService {
   async getManagerDashboardStats(managerId: string, branchId: string) {
     await this.autoUpdateBookingStatuses();
 
-    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
+    const managerBranches = await this.prisma.addressSpa.findMany({
+      where: { managerId },
+      select: { id: true },
+    });
+    const managerBranchIds = managerBranches.map((branch) => branch.id);
+    const targetBranch = branchId && branchId !== 'ALL' ? branchId : undefined;
+    if (targetBranch && !managerBranchIds.includes(targetBranch)) {
+      throw new ForbiddenException('Bạn không có quyền truy cập chi nhánh này.');
+    }
+    const selectedBranchIds = targetBranch ? [targetBranch] : managerBranchIds;
+    const branchFilter = { addressSpaId: { in: selectedBranchIds } };
 
     const staffCount = await this.prisma.spaStaff.count({
-      where: targetBranch ? { addressSpaId: targetBranch } : {},
+      where: branchFilter,
     });
 
     const bookings = await this.prisma.spaBooking.findMany({
-      where: targetBranch ? { addressSpaId: targetBranch } : {},
+      where: branchFilter,
       include: {
         payment: true,
         service: {
@@ -896,11 +910,9 @@ export class SpaService {
       return isToday || isPendingOrConfirmed;
     });
 
-    const paidBookings = bookings.filter(
-      (b) => b.payment?.status === PaymentStatus.PAID,
-    );
-    const totalRevenue = paidBookings.reduce(
-      (sum, b) => sum + (b.payment?.amount || 0),
+    const recognizedBookings = bookings.filter(isRecognizedSpaBooking);
+    const totalRevenue = recognizedBookings.reduce(
+      (sum, booking) => sum + getSpaBookingRevenue(booking),
       0,
     );
 
@@ -941,7 +953,7 @@ export class SpaService {
       || categoriesList[categoriesList.length - 1]?.id
       || '';
 
-    paidBookings.forEach((b) => {
+    recognizedBookings.forEach((b) => {
       const targetId = b.serviceId || b.mainServiceId;
       const mainService = b.service || (targetId ? servicesMap.get(targetId) : null);
       const resolvedSubServices = (b.subServiceIds || []).map((id) => servicesMap.get(id)).filter(Boolean);
