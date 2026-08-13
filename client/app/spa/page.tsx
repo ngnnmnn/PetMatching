@@ -100,6 +100,9 @@ export default function SpaHome() {
     fetchData();
   }, []);
 
+  const safeServices = Array.isArray(services) ? services : [];
+  const safeBranches = Array.isArray(branches) ? branches : [];
+
   const handleOpenBooking = (service: SpaServiceType) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     const targetUrl = '/spa/book';
@@ -108,12 +111,13 @@ export default function SpaHome() {
       router.push(`/login?redirect=${encodeURIComponent(targetUrl)}`);
       return;
     }
+    const defaultBranch = safeBranches.length > 0 ? safeBranches[0] : null;
     setSelectedService({
       id: service.id,
       name: service.name,
       price: service.price,
-      branchId: service.branchId ?? service.categoryId ?? service.brandId ?? '',
-      branchName: service.branch?.name || 'Chi nhánh Spa',
+      branchId: service.branchId ?? service.categoryId ?? service.brandId ?? defaultBranch?.id ?? '',
+      branchName: service.branch?.name || defaultBranch?.name || 'Chi nhánh Spa',
     });
     setBookingDialogOpen(true);
   };
@@ -123,7 +127,8 @@ export default function SpaHome() {
     const queryParams = new URLSearchParams();
     if (serviceId) queryParams.set('serviceId', serviceId);
     if (title) queryParams.set('title', title);
-    if (brandId) queryParams.set('brandId', brandId);
+    const targetBranchId = brandId || (safeBranches.length > 0 ? safeBranches[0].id : '');
+    if (targetBranchId) queryParams.set('brandId', targetBranchId);
 
     const targetUrl = `/spa/book?${queryParams.toString()}`;
     if (!token) {
@@ -133,9 +138,6 @@ export default function SpaHome() {
     }
     router.push(targetUrl);
   };
-
-  const safeServices = Array.isArray(services) ? services : [];
-  const safeBranches = Array.isArray(branches) ? branches : [];
 
   const categoriesToDisplay = React.useMemo(() => {
     const list = [{ label: 'Tất cả', value: 'all' }];
@@ -206,16 +208,35 @@ export default function SpaHome() {
           <p className="text-white/80 font-medium text-sm md:text-base max-w-xl mx-auto">
             Chăm sóc thú cưng chuyên nghiệp, tận tâm.
           </p>
-          <p className="text-white/80 font-medium text-sm md:text-base max-w-xl mx-auto">
-            Chi nhánh: 123 Nguyễn Huệ, Quận 1, TP. HCM.
-          </p>
+
+          {/* Dynamic Address Spa info from address_spa table */}
+          {safeBranches.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-center gap-3 text-white/90 font-medium text-sm max-w-2xl mx-auto pt-1">
+              {safeBranches.map((b) => (
+                <div key={b.id} className="inline-flex items-center gap-2 bg-black/20 backdrop-blur-xs px-4 py-1.5 rounded-full text-xs font-semibold border border-white/10">
+                  <MapPin className="size-3.5 text-yellow-300 shrink-0" />
+                  <span><strong className="text-white">{b.name}:</strong> {b.address}</span>
+                  {b.phone && (
+                    <span className="inline-flex items-center gap-1 ml-1 text-white/80 border-l border-white/20 pl-2">
+                      <Phone className="size-3 text-yellow-300 shrink-0" />
+                      {b.phone}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-white/80 font-medium text-sm md:text-base max-w-xl mx-auto">
+              Hệ thống Spa thú cưng uy tín & chất lượng.
+            </p>
+          )}
 
           {/* Search bar inside Hero */}
           <div className="relative max-w-xl mx-auto mt-4 shadow-lg rounded-full overflow-hidden">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
             <Input
               type="text"
-              placeholder="Tìm dịch vụ Spa..."
+              placeholder="Tìm dịch vụ hoặc chi nhánh Spa..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-12 w-full pl-12 pr-6 rounded-full border-0 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-2 focus-visible:ring-primary/20 text-sm focus:outline-none"
@@ -226,8 +247,28 @@ export default function SpaHome() {
 
       {/* Main Controls Section */}
       <section className="container mx-auto max-w-7xl px-4 py-8">
-        <div className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] pb-6 mb-6">
-          <h2 className="text-xl font-black text-gray-900">Danh Sách Dịch Vụ Spa</h2>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-6 mb-6">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('services')}
+              className={`px-4 py-2 text-sm font-extrabold rounded-xl transition cursor-pointer ${activeTab === 'services'
+                ? 'bg-primary text-white shadow-xs'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+            >
+              Dịch Vụ Spa
+            </button>
+            <button
+              onClick={() => setActiveTab('branches')}
+              className={`px-4 py-2 text-sm font-extrabold rounded-xl transition flex items-center gap-1.5 cursor-pointer ${activeTab === 'branches'
+                ? 'bg-primary text-white shadow-xs'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+            >
+              <MapPin className="size-4" />
+              Chi Nhánh Spa ({safeBranches.length})
+            </button>
+          </div>
 
           {/* My Appointments Button */}
           <Button asChild variant="outline" className="border-primary/30 text-primary hover:bg-primary/5 font-semibold gap-2 w-fit">
@@ -238,21 +279,23 @@ export default function SpaHome() {
           </Button>
         </div>
 
-        {/* Categories Bar */}
-        <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
-          {categoriesToDisplay.map((cat) => (
-            <button
-              key={cat.value}
-              onClick={() => setSelectedCategory(cat.value)}
-              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap ${selectedCategory === cat.value
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
-                }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
+        {/* Categories Bar (Only visible when activeTab === 'services') */}
+        {activeTab === 'services' && (
+          <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
+            {categoriesToDisplay.map((cat) => (
+              <button
+                key={cat.value}
+                onClick={() => setSelectedCategory(cat.value)}
+                className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap cursor-pointer ${selectedCategory === cat.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
+                  }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Content Grids */}
         {loading ? (
@@ -260,6 +303,67 @@ export default function SpaHome() {
             <div className="inline-block size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             <p className="mt-4 font-semibold text-sm">Đang tải dữ liệu Spa...</p>
           </div>
+        ) : activeTab === 'branches' ? (
+          /* BRANCHES / ADDRESS SPA LIST GRID */
+          filteredBranches.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-xl border border-[var(--border-color)] p-8">
+              <p className="text-muted-foreground text-sm">Không tìm thấy chi nhánh Spa nào phù hợp.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {filteredBranches.map((branch) => (
+                <article
+                  key={branch.id}
+                  className="p-6 bg-card rounded-2xl border border-[var(--border-color)] shadow-xs flex flex-col justify-between space-y-4 hover:shadow-md transition"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between">
+                      <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                        <MapPin className="size-5 text-primary shrink-0" />
+                        {branch.name}
+                      </h3>
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                        Đang hoạt động
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-gray-600 font-medium">
+                      <p className="flex items-start gap-2">
+                        <span className="font-bold text-gray-800 shrink-0">Địa chỉ:</span>
+                        <span>{branch.address}</span>
+                      </p>
+                      {branch.phone && (
+                        <p className="flex items-center gap-2">
+                          <Phone className="size-3.5 text-primary shrink-0" />
+                          <span className="font-bold text-gray-800 shrink-0">Hotline:</span>
+                          <span>{branch.phone}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    {branch.description && (
+                      <p className="text-xs text-gray-500 pt-1 line-clamp-3 leading-relaxed bg-gray-50/80 p-3 rounded-xl border border-gray-100 font-medium">
+                        {branch.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-gray-150 flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const defaultServiceId = safeServices[0]?.id;
+                        handleBookClick(defaultServiceId, '', branch.id);
+                      }}
+                      className="bg-primary hover:bg-primary/95 text-white font-bold text-xs px-5 h-9 rounded-xl shadow-xs cursor-pointer"
+                    >
+                      Đặt lịch tại chi nhánh này
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )
         ) : (
           // SERVICES GRID - GROUPED BY BRAND / BASE TITLE (ONLY 1 CARD PER SERVICE TYPE)
           (() => {

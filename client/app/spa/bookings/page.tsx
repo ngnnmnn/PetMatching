@@ -556,8 +556,8 @@ export default function SpaHistory() {
                   <div className="flex items-start gap-2">
                     <MapPin className="size-4 text-primary shrink-0 mt-0.5" />
                     <div>
-                      <strong className="text-gray-900 block">{selectedBooking.addressSpa?.name || 'PetMatch Spa – Quận 1'}</strong>
-                      <span>{selectedBooking.addressSpa?.address || '123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. HCM'}</span>
+                      <strong className="text-gray-900 block">{selectedBooking.addressSpa?.name || 'PetMatch Spa'}</strong>
+                      <span>{selectedBooking.addressSpa?.address || 'Hệ thống Spa PetMatching'}</span>
                       {selectedBooking.addressSpa?.phone && (
                         <span className="block text-gray-500 mt-0.5">SĐT: {selectedBooking.addressSpa.phone}</span>
                       )}

@@ -1,9 +1,24 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Facebook, Instagram, Mail, MapPin, PawPrint, Phone, Youtube } from 'lucide-react';
 import Link from 'next/link';
+import { spaApi } from '@/lib/api/spa';
+import { AddressSpaType } from '@/types';
 
 export default function Footer() {
+  const [spaAddresses, setSpaAddresses] = useState<AddressSpaType[]>([]);
+
+  useEffect(() => {
+    spaApi.getSpaAddresses()
+      .then((res) => {
+        setSpaAddresses(res.data || []);
+      })
+      .catch(() => {
+        setSpaAddresses([]);
+      });
+  }, []);
+
   return (
     <footer className="bg-[var(--text-main)] text-[var(--bg-page)] mt-16 rounded-t-3xl overflow-hidden">
       <div className="mx-auto max-w-[1440px] px-4 py-14 md:px-6 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
@@ -43,18 +58,27 @@ export default function Footer() {
         <div>
           <h4 className="text-sm font-bold uppercase tracking-wider text-white mb-4">Liên hệ & Chi nhánh Spa</h4>
           <ul className="space-y-3 text-sm text-[var(--bg-page)]/75">
-            <li className="flex items-start gap-2.5">
-              <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--primary-color)]" />
-              <div>
-                <span className="font-bold text-white block">PetMatch Spa – Quận 1</span>
-                <span className="text-xs">123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. HCM</span>
-              </div>
-            </li>
-            <li className="flex items-center gap-2.5">
-              <Phone className="h-4 w-4 shrink-0 text-[var(--primary-color)]" />
-              <span>028 9999 8888 • 092 222 2222</span>
-            </li>
-            <li className="flex items-center gap-2.5">
+            {spaAddresses.length > 0 ? (
+              spaAddresses.map((spa) => (
+                <li key={spa.id} className="flex items-start gap-2.5">
+                  <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--primary-color)]" />
+                  <div>
+                    <span className="font-bold text-white block">{spa.name}</span>
+                    <span className="text-xs block">{spa.address}</span>
+                    {spa.phone && <span className="text-xs text-white/80 block mt-0.5">SĐT: {spa.phone}</span>}
+                  </div>
+                </li>
+              ))
+            ) : (
+              <li className="flex items-start gap-2.5">
+                <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--primary-color)]" />
+                <div>
+                  <span className="font-bold text-white block">PetMatch Spa</span>
+                  <span className="text-xs">Chi nhánh PetMatching</span>
+                </div>
+              </li>
+            )}
+            <li className="flex items-center gap-2.5 pt-1">
               <Mail className="h-4 w-4 shrink-0 text-[var(--primary-color)]" />
               <span>petmatch@fpt.edu.vn</span>
             </li>
