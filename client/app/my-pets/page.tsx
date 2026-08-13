@@ -256,12 +256,12 @@ export default function MyPetsPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 xl:grid-cols-3">
             {pets.map((pet) => (
               <article
                 key={pet.id}
                 className={cn(
-                  'group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 relative',
+                  'group relative flex h-full min-h-[455px] flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl',
                   pet.status === 'HIDDEN' && 'opacity-70 bg-muted/40 border-rose-300 dark:border-rose-900',
                 )}
               >
@@ -309,9 +309,9 @@ export default function MyPetsPage() {
                 </div>
 
                 {/* Details */}
-                <div className="space-y-4 p-4">
+                <div className="flex flex-1 flex-col p-4">
                   {/* Badges */}
-                  <div className="flex flex-wrap gap-1.5 text-xs">
+                  <div className="flex min-h-6 flex-wrap content-start gap-1.5 text-xs">
                     {pet.isVaccinated && (
                       <span
                         className={cn(
@@ -342,7 +342,7 @@ export default function MyPetsPage() {
 
                   {/* Breeding option preview for male */}
                   {pet.gender === 'MALE' && pet.isAvailableForMatching && (
-                    <div className="rounded-xl border bg-primary/5 p-3 text-xs space-y-1">
+                    <div className="mt-3 min-h-[54px] rounded-xl border bg-primary/5 p-3 text-xs space-y-1">
                       <span className="font-bold text-primary uppercase tracking-wider text-[10px]">Hình thức phối giống:</span>
                       <p className="font-extrabold text-foreground">
                         {pet.breedingOption === 'CASH'
@@ -354,19 +354,19 @@ export default function MyPetsPage() {
                     </div>
                   )}
 
-                  {/* Action buttons */}
-                  <div className="pt-2 space-y-2">
+                    {/* Action buttons */}
+                  <div className="mt-auto space-y-2 pt-4">
                     <div className="flex gap-2">
                       {pet.gender === 'MALE' ? (
                         <Button
-                          className="flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
+                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
                           onClick={() => openSetupModal(pet)}
                         >
                           <Settings2 className="size-4" />
                           {pet.isAvailableForMatching ? 'Cấu hình Ghép đôi' : 'Bật ghép đôi'}
                         </Button>
                       ) : (
-                        <Button className="flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs" asChild>
+                        <Button className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs" asChild>
                           <Link href="/explore">
                             <Heart className="size-4" />
                             Tìm bạn đời
@@ -378,7 +378,7 @@ export default function MyPetsPage() {
                         variant="outline"
                         title={pet.status === 'HIDDEN' ? 'Hiện lại hồ sơ' : 'Tạm ẩn hồ sơ'}
                         className={cn(
-                          'rounded-xl shrink-0 font-bold text-xs px-3 transition-colors',
+                          'h-10 rounded-xl shrink-0 font-bold text-xs px-3 transition-colors',
                           pet.status === 'HIDDEN'
                             ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300'
                             : 'border-slate-200 text-slate-600 hover:bg-slate-100',
@@ -395,7 +395,7 @@ export default function MyPetsPage() {
                       type="button"
                       variant="outline" 
                       onClick={() => openRecommendationsModal(pet)}
-                      className="w-full gap-2 rounded-xl font-bold border-[#EFEAE2] hover:bg-[#FAF9F6] text-xs shadow-sm cursor-pointer"
+                      className="h-10 w-full gap-2 rounded-xl font-bold border-[#EFEAE2] hover:bg-[#FAF9F6] text-xs shadow-sm cursor-pointer"
                     >
                       <Sparkles className="size-4 text-primary fill-primary/10" />
                       Gợi ý mua sắm thông minh

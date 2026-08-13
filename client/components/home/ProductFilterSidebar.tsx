@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Bone, Brush, Cat, Dog, HeartPulse, Home, Package, Tag, Filter, Check, RotateCcw } from 'lucide-react';
+import { Bone, Brush, Cat, Dog, HeartPulse, Home, Package, Tag, Filter, Check } from 'lucide-react';
 import { ProductCategory } from '@/types';
 
 interface ProductFilterSidebarProps {
@@ -54,94 +53,67 @@ export default function ProductFilterSidebar({
   onCategoriesChange,
   onPricesChange,
 }: ProductFilterSidebarProps) {
-  // Local state to hold filters before clicking Apply
-  const [localSpecies, setLocalSpecies] = useState(species);
-  const [localCategories, setLocalCategories] = useState<string[]>(selectedCategories);
-  const [localPrices, setLocalPrices] = useState<string[]>(selectedPrices);
-
-  // Sync state if props change externally
-  useEffect(() => {
-    setLocalSpecies(species);
-  }, [species]);
-
-  useEffect(() => {
-    setLocalCategories(selectedCategories);
-  }, [selectedCategories]);
-
-  useEffect(() => {
-    setLocalPrices(selectedPrices);
-  }, [selectedPrices]);
-
-  // Toggle handlers for local states (apply instantly to parent)
   const handleSpeciesToggle = (value: string) => {
-    setLocalSpecies(value);
     onSpeciesChange(value);
   };
 
   const handleCategoryToggle = (catValue: string) => {
     let nextCategories: string[];
-    if (localCategories.includes(catValue)) {
-      nextCategories = localCategories.filter((c) => c !== catValue);
+    if (selectedCategories.includes(catValue)) {
+      nextCategories = selectedCategories.filter((c) => c !== catValue);
     } else {
-      nextCategories = [...localCategories, catValue];
+      nextCategories = [...selectedCategories, catValue];
     }
-    setLocalCategories(nextCategories);
     onCategoriesChange(nextCategories);
   };
 
   const handleAllCategoriesToggle = () => {
-    setLocalCategories([]);
     onCategoriesChange([]);
   };
 
   const handlePriceToggle = (priceValue: string) => {
     let nextPrices: string[];
-    if (localPrices.includes(priceValue)) {
-      nextPrices = localPrices.filter((p) => p !== priceValue);
+    if (selectedPrices.includes(priceValue)) {
+      nextPrices = selectedPrices.filter((p) => p !== priceValue);
     } else {
-      nextPrices = [...localPrices, priceValue];
+      nextPrices = [...selectedPrices, priceValue];
     }
-    setLocalPrices(nextPrices);
     onPricesChange(nextPrices);
   };
 
   const handleAllPricesToggle = () => {
-    setLocalPrices([]);
-    onPricesChange([]);
-  };
-
-  // Clear all local and parent filters
-  const handleResetFilters = () => {
-    setLocalSpecies('');
-    setLocalCategories([]);
-    setLocalPrices([]);
-    onSpeciesChange('');
-    onCategoriesChange([]);
     onPricesChange([]);
   };
 
   // Determine species disabled state based on selected categories
-  const isDogSpeciesDisabled = localCategories.some(
+  const isDogSpeciesDisabled = selectedCategories.some(
     (cat) => CATEGORY_SPECIES[cat as ProductCategory] === 'CAT'
   );
-  const isCatSpeciesDisabled = localCategories.some(
+  const isCatSpeciesDisabled = selectedCategories.some(
     (cat) => CATEGORY_SPECIES[cat as ProductCategory] === 'DOG'
   );
 
   // Determine category disabled state based on selected species
   const isCategoryDisabled = (catValue: ProductCategory) => {
-    if (localSpecies === 'DOG' && CATEGORY_SPECIES[catValue] === 'CAT') return true;
-    if (localSpecies === 'CAT' && CATEGORY_SPECIES[catValue] === 'DOG') return true;
+    if (species === 'DOG' && CATEGORY_SPECIES[catValue] === 'CAT') return true;
+    if (species === 'CAT' && CATEGORY_SPECIES[catValue] === 'DOG') return true;
     return false;
   };
 
   return (
-    <aside className="rounded-xl border border-[var(--border-color)] bg-white p-5 shadow-[0_8px_24px_rgba(26,26,26,0.03)] space-y-6 select-none sticky top-24">
+    <aside className="sticky top-24 select-none overflow-hidden rounded-2xl border border-[#E7E3DC] bg-white shadow-[0_12px_36px_rgba(34,34,34,0.07)]">
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-[#F4F4F4] pb-3 text-[var(--text-main)]">
-        <Filter className="size-4 text-[#0F766E]" />
-        <h3 className="text-base font-extrabold tracking-wide">Bộ lọc sản phẩm</h3>
+      <div className="flex items-center gap-3 border-b border-[#EEEAE3] bg-gradient-to-r from-[#F0FDFA] to-white px-5 py-4 text-[var(--text-main)]">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-[#0F766E] text-white shadow-sm">
+          <Filter className="size-4" />
+        </span>
+        <div>
+          <h3 className="text-sm font-black">Bộ lọc sản phẩm</h3>
+          <p className="mt-0.5 text-[10px] font-semibold text-[var(--text-muted)]">Kết quả cập nhật ngay khi chọn</p>
+        </div>
       </div>
+
+      <div className="space-y-6 p-5">
 
       {/* 1. Species Filter */}
       <div className="space-y-2.5">
@@ -152,7 +124,7 @@ export default function ProductFilterSidebar({
             { value: 'DOG', label: 'Dành cho Chó', icon: Dog },
             { value: 'CAT', label: 'Dành cho Mèo', icon: Cat },
           ].map((item) => {
-            const isSelected = localSpecies === item.value;
+            const isSelected = species === item.value;
             const Icon = item.icon;
             const isSpeciesBtnDisabled =
               item.value === 'DOG'
@@ -167,12 +139,12 @@ export default function ProductFilterSidebar({
                 type="button"
                 disabled={isSpeciesBtnDisabled}
                 onClick={() => handleSpeciesToggle(item.value)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold transition text-left ${
+                className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-xs font-bold transition text-left ${
                   isSpeciesBtnDisabled
-                    ? 'opacity-40 bg-gray-100/50 text-gray-400 cursor-not-allowed'
+                    ? 'cursor-not-allowed border-transparent bg-gray-50 text-gray-400 opacity-50'
                     : isSelected
-                      ? 'bg-[#FFF6F0] text-[var(--primary-color)] cursor-pointer'
-                      : 'text-[var(--text-main)] hover:bg-[#FAF9F5] cursor-pointer'
+                      ? 'cursor-pointer border-[#99D5CE] bg-[#EAF8F6] text-[#0F766E] shadow-xs'
+                      : 'cursor-pointer border-transparent text-[var(--text-main)] hover:border-[#E7E3DC] hover:bg-[#FAF9F7]'
                 }`}
               >
                 <span className="flex items-center gap-2">
@@ -189,11 +161,11 @@ export default function ProductFilterSidebar({
       {/* 2. Category Filter */}
       <div className="space-y-2.5">
         <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Danh mục sản phẩm</h4>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2.5 px-1 py-0.5 text-xs font-semibold text-[var(--text-main)] cursor-pointer hover:opacity-90">
+        <div className="flex flex-col gap-1">
+          <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-xs font-bold transition ${selectedCategories.length === 0 ? 'bg-[#FFF4ED] text-[#D94F0B]' : 'text-[var(--text-main)] hover:bg-[#FAF9F7]'}`}>
             <input
               type="checkbox"
-              checked={localCategories.length === 0}
+              checked={selectedCategories.length === 0}
               onChange={handleAllCategoriesToggle}
               className="rounded border-[#DCDAD4] text-[#E45D1C] focus:ring-[#E45D1C]/20 size-4 cursor-pointer accent-[#E45D1C]"
             />
@@ -204,19 +176,19 @@ export default function ProductFilterSidebar({
           </label>
 
           {CATEGORIES.map((cat) => {
-            const isChecked = localCategories.includes(cat.value);
+            const isChecked = selectedCategories.includes(cat.value);
             const Icon = cat.icon;
             const isCatInputDisabled = isCategoryDisabled(cat.value);
 
             return (
               <label
                 key={cat.value}
-                className={`flex items-center gap-2.5 px-1 py-0.5 text-xs font-medium transition duration-150 ${
+                className={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs transition duration-150 ${
                   isCatInputDisabled
                     ? 'opacity-40 text-gray-400 cursor-not-allowed'
                     : isChecked
-                      ? 'text-[var(--text-main)] font-semibold cursor-pointer'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer'
+                      ? 'cursor-pointer bg-[#FFF4ED] font-bold text-[#D94F0B]'
+                      : 'cursor-pointer text-[var(--text-muted)] hover:bg-[#FAF9F7] hover:text-[var(--text-main)]'
                 }`}
               >
                 <input
@@ -239,11 +211,11 @@ export default function ProductFilterSidebar({
       {/* 3. Price Filter */}
       <div className="space-y-2.5">
         <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Khoảng giá tiền</h4>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2.5 px-1 py-0.5 text-xs font-semibold text-[var(--text-main)] cursor-pointer hover:opacity-90">
+        <div className="grid grid-cols-1 gap-1.5">
+          <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-xs font-bold transition ${selectedPrices.length === 0 ? 'border-[#FED7AA] bg-[#FFF7ED] text-[#D94F0B]' : 'border-transparent text-[var(--text-main)] hover:bg-[#FAF9F7]'}`}>
             <input
               type="checkbox"
-              checked={localPrices.length === 0}
+              checked={selectedPrices.length === 0}
               onChange={handleAllPricesToggle}
               className="rounded border-[#DCDAD4] text-[#E45D1C] focus:ring-[#E45D1C]/20 size-4 cursor-pointer accent-[#E45D1C]"
             />
@@ -251,11 +223,11 @@ export default function ProductFilterSidebar({
           </label>
 
           {PRICE_RANGES.map((range) => {
-            const isChecked = localPrices.includes(range.value);
+            const isChecked = selectedPrices.includes(range.value);
             return (
               <label
                 key={range.value}
-                className="flex items-center gap-2.5 px-1 py-0.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer transition duration-150"
+                className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-xs font-semibold transition ${isChecked ? 'border-[#FED7AA] bg-[#FFF7ED] text-[#D94F0B]' : 'border-transparent text-[var(--text-muted)] hover:bg-[#FAF9F7] hover:text-[var(--text-main)]'}`}
               >
                 <input
                   type="checkbox"
@@ -270,16 +242,6 @@ export default function ProductFilterSidebar({
         </div>
       </div>
 
-      {/* Action Buttons: Reset */}
-      <div className="pt-4 border-t border-[#F4F4F4]">
-        <button
-          type="button"
-          onClick={handleResetFilters}
-          className="w-full h-10 rounded-lg border border-[var(--border-color)] bg-white hover:bg-[#FAF9F5] text-[var(--text-muted)] hover:text-[var(--text-main)] font-semibold text-xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
-        >
-          <RotateCcw className="size-3.5" />
-          Thiết lập lại bộ lọc
-        </button>
       </div>
     </aside>
   );

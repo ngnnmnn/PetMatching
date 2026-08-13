@@ -175,6 +175,7 @@ function ShopPageContent() {
   const [selectedPrices, setSelectedPrices] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(true);
+  const [filterResetKey, setFilterResetKey] = useState(0);
 
   // Pet customization state
   const [pets, setPets] = useState<any[]>([]);
@@ -331,6 +332,23 @@ function ShopPageContent() {
     },
     [setFilters],
   );
+
+  const resetShop = useCallback(() => {
+    setSelectedCategories([]);
+    setSelectedPrices([]);
+    setSelectedPet(null);
+    setShowPetRow(false);
+    setCurrentPage(1);
+    setFilters({ limit: 48, page: 1, sortBy: 'popular' });
+    setFilterResetKey((key) => key + 1);
+    localStorage.removeItem('petmatch_shop_selected_pet');
+    router.replace('/shop', { scroll: false });
+  }, [router, setFilters]);
+
+  useEffect(() => {
+    window.addEventListener('shop-reset', resetShop);
+    return () => window.removeEventListener('shop-reset', resetShop);
+  }, [resetShop]);
 
   // Client-side category, price, and pet customization filtering on full loaded catalog
   const filteredProducts = products.filter((product) => {
@@ -619,6 +637,7 @@ function ShopPageContent() {
                 )}
               >
                 <SearchFilterBar
+                  key={filterResetKey}
                   onSearch={handleSearch}
                   onSortChange={handleSortChange}
                   sortBy={filters.sortBy ?? 'popular'}
