@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { CartProvider } from '@/context/CartContext'
 import Chatbot from '@/components/Chatbot'
 import RouteGuard from '@/components/auth/RouteGuard'
+import IdleSessionGuard from '@/components/auth/IdleSessionGuard'
 
 const _geist = Geist({ subsets: ['latin'] })
 const _geistMono = Geist_Mono({ subsets: ['latin'] })
@@ -41,6 +42,7 @@ export default function RootLayout({
   return (
     <html lang="vi" className="bg-background" suppressHydrationWarning>
       <body className="font-sans antialiased">
+        <IdleSessionGuard />
         <CartProvider>
           <RouteGuard>
             {children}
