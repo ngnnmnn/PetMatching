@@ -139,6 +139,39 @@ export default function SpaHome() {
     router.push(targetUrl);
   };
 
+  const getRatingForCard = (card: { id: string; title: string; categoryLabel?: string }) => {
+    const targetTitle = card.title.trim().toLowerCase();
+    const targetCat = (card.categoryLabel || '').trim().toLowerCase();
+
+    const matched = publicFeedbacks.filter((f) => {
+      if (f.booking?.serviceId === card.id || f.booking?.service?.id === card.id) return true;
+      const sName = (f.booking?.service?.name || f.booking?.category?.name || '').trim().toLowerCase();
+      const cleanSName = sName.replace(/\s*\([^)]*\)/g, '').trim();
+      return (
+        cleanSName === targetTitle ||
+        cleanSName === targetCat ||
+        targetTitle.includes(cleanSName) ||
+        cleanSName.includes(targetTitle)
+      );
+    });
+
+    if (matched.length > 0) {
+      const sum = matched.reduce((acc, f) => acc + (Number(f.rateServices) || Number(f.rateStaff) || 5), 0);
+      const avg = sum / matched.length;
+      return {
+        rating: Math.round(avg * 10) / 10,
+        reviews: matched.length,
+        hasReviews: true,
+      };
+    }
+
+    return {
+      rating: 0,
+      reviews: 0,
+      hasReviews: false,
+    };
+  };
+
   const categoriesToDisplay = React.useMemo(() => {
     const list = [{ label: 'Tất cả', value: 'all' }];
     const added = new Set<string>();
@@ -420,7 +453,7 @@ export default function SpaHome() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {uniqueCards.map((card) => {
                   const img = card.imageUrl || SERVICE_IMAGES[card.title] || DEFAULT_IMAGE;
-                  const ratingInfo = RATING_MOCK[card.title] || { rating: 4.8, reviews: 120 };
+                  const ratingInfo = getRatingForCard(card);
 
                   const priceRangeStr = card.minPrice === card.maxPrice
                     ? `${card.minPrice.toLocaleString('vi-VN')}đ`
@@ -457,10 +490,12 @@ export default function SpaHome() {
                             {card.description}
                           </p>
 
-                          <div className="flex items-center gap-1 text-amber-500 font-bold text-xs pt-1">
-                            <Star className="size-3.5 fill-current" />
+                          <div className={`flex items-center gap-1 font-bold text-xs pt-1 ${ratingInfo.hasReviews ? 'text-amber-500' : 'text-gray-400'}`}>
+                            <Star className={`size-3.5 ${ratingInfo.hasReviews ? 'fill-current' : 'text-gray-300'}`} />
                             <span>{ratingInfo.rating.toFixed(1)}</span>
-                            <span className="text-gray-400 font-medium">({ratingInfo.reviews} đánh giá)</span>
+                            <span className="text-gray-400 font-medium">
+                              {ratingInfo.hasReviews ? `(${ratingInfo.reviews} đánh giá)` : '(Chưa có đánh giá)'}
+                            </span>
                           </div>
                         </div>
 
@@ -511,11 +546,30 @@ export default function SpaHome() {
           return 'Chó & Mèo 🐶🐱';
         };
 
+        const formatWeightRange = (min?: number | null, max?: number | null): string => {
+          const hasMin = min !== null && min !== undefined && !isNaN(Number(min));
+          const hasMax = max !== null && max !== undefined && !isNaN(Number(max));
+
+          if (!hasMin && !hasMax) return 'Tất cả cân nặng';
+          const minNum = hasMin ? Number(min) : null;
+          const maxNum = hasMax ? Number(max) : null;
+
+          if (minNum !== null && maxNum !== null) {
+            if (minNum === maxNum) return `${minNum}kg`;
+            return `${minNum} - ${maxNum}kg`;
+          }
+          if (minNum === null && maxNum !== null) return `0 - ${maxNum}kg`;
+          if (minNum !== null && maxNum === null) return `>${minNum}kg`;
+          return 'Tất cả cân nặng';
+        };
+
         const weightRows = matchingVariants.length > 0
           ? matchingVariants.map((s) => {
             let label = s.name;
             if (!/\([^)]+\)/.test(label)) {
-              const weightText = s.description ? s.description : 'Tiêu chuẩn';
+              const weightText = (s.petWeightMin !== null || s.petWeightMax !== null)
+                ? formatWeightRange(s.petWeightMin, s.petWeightMax)
+                : (s.description ? s.description : 'Tiêu chuẩn');
               label = `${s.name} (${weightText})`;
             }
             return {
@@ -533,9 +587,11 @@ export default function SpaHome() {
           ];
 
         const matchedReviews = publicFeedbacks.filter((f) => {
+          if (f.booking?.serviceId === detailCard.id || f.booking?.service?.id === detailCard.id) return true;
           const sName = f.booking?.service?.name || f.booking?.category?.name || '';
           const sBaseName = sName.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
-          return sBaseName === targetTitle;
+          const targetCat = (detailCard.categoryLabel || '').trim().toLowerCase();
+          return sBaseName === targetTitle || sBaseName === targetCat || targetTitle.includes(sBaseName) || sBaseName.includes(targetTitle);
         });
 
         return (

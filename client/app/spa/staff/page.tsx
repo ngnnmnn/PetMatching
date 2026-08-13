@@ -896,15 +896,29 @@ export default function SpaStaff() {
 
                     {/* Right update pane */}
                     <div className="md:col-span-7 flex flex-col justify-center">
-                      {(booking.status === 'ASSIGNED' || booking.status === 'CHECK_IN' || booking.status === 'CONFIRMED' || booking.status === 'LATE') ? (
+                      {(booking.status === 'CONFIRMED' || booking.status === 'ASSIGNED' || booking.status === 'LATE' || booking.status === 'PENDING') ? (
+                        <div className="flex flex-col items-center justify-center p-6 bg-amber-50/70 rounded-2xl border border-amber-200/80 space-y-3">
+                          <p className="text-xs text-amber-900 font-bold text-center">
+                            ⚠️ Khách hàng chưa Check-in. Vui lòng Check-in cho khách trước khi bắt đầu ca làm!
+                          </p>
+                          <Button
+                            onClick={() => handleCheckIn(booking.id)}
+                            disabled={actionLoading === booking.id}
+                            className="bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs h-10 px-6 rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <UserCheck className="size-4" />
+                            {actionLoading === booking.id ? 'Đang Check-in...' : 'Check-in Khách Hàng Ngay'}
+                          </Button>
+                        </div>
+                      ) : (booking.status === 'CHECK_IN' || booking.status === 'ARRIVED') ? (
                         <div className="flex flex-col items-center justify-center p-6 bg-purple-50/50 rounded-2xl border border-purple-100/50 space-y-3">
                           <p className="text-xs text-purple-800 font-bold text-center">
-                            Lịch hẹn đã sẵn sàng. Vui lòng bấm "Xác nhận thực hiện" khi bắt đầu ca làm.
+                            ✅ Khách hàng đã Check-in. Vui lòng bấm "Xác nhận thực hiện" khi bắt đầu ca làm.
                           </p>
                           <Button
                             onClick={() => handleUpdateStatus(booking.id, 'IN_PROGRESS')}
                             disabled={actionLoading === booking.id}
-                            className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-extrabold text-xs h-10 px-6 rounded-xl shadow-md transition"
+                            className="bg-[#6D28D9] hover:bg-[#5b21b6] text-white font-extrabold text-xs h-10 px-6 rounded-xl shadow-md transition cursor-pointer"
                           >
                             {actionLoading === booking.id ? 'Đang cập nhật...' : 'Xác nhận thực hiện ca làm'}
                           </Button>

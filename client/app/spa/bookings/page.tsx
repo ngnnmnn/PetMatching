@@ -183,6 +183,11 @@ export default function SpaHistory() {
           </span>
         );
       case 'ASSIGNED':
+        return (
+          <span className="rounded-full bg-indigo-50 border border-indigo-200 px-3 py-1 text-xs font-bold text-indigo-800">
+            Đã phân công
+          </span>
+        );
       case 'IN_PROGRESS':
         return (
           <span className="rounded-full bg-orange-50 border border-orange-200 px-3 py-1 text-xs font-bold text-orange-800">

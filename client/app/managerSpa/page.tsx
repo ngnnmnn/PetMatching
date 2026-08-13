@@ -556,43 +556,80 @@ function SpaManagerConsoleContent() {
     }
   };
 
-  // Weight change handlers with instant validation and auto-adjust
   const handleMinWeightChange = (val: string) => {
-    if (val === '') {
-      setServiceForm((prev) => ({ ...prev, petWeightMin: '' }));
-      return;
-    }
-    const minNum = parseFloat(val);
-    const maxNum = parseFloat(serviceForm.petWeightMax);
-
-    if (!isNaN(minNum) && !isNaN(maxNum) && minNum > maxNum) {
-      toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn cân nặng tối đa (max)! Đã tự động điều chỉnh max = min');
-      setServiceForm((prev) => ({
-        ...prev,
-        petWeightMin: val,
-        petWeightMax: val,
-      }));
-      return;
-    }
-
     setServiceForm((prev) => ({ ...prev, petWeightMin: val }));
   };
 
   const handleMaxWeightChange = (val: string) => {
-    if (val === '') {
-      setServiceForm((prev) => ({ ...prev, petWeightMax: '' }));
-      return;
-    }
-    const maxNum = parseFloat(val);
-    const minNum = parseFloat(serviceForm.petWeightMin);
-
-    if (!isNaN(minNum) && !isNaN(maxNum) && maxNum < minNum) {
-      toast.error(`Cân nặng tối đa (${maxNum}kg) phải lớn hơn hoặc bằng cân nặng tối thiểu (${minNum}kg)!`);
-      setServiceForm((prev) => ({ ...prev, petWeightMax: String(minNum) }));
-      return;
-    }
-
     setServiceForm((prev) => ({ ...prev, petWeightMax: val }));
+  };
+
+  // Validate weight inputs immediately when user finishes typing (onBlur)
+  const handleWeightBlur = () => {
+    const minVal = serviceForm.petWeightMin;
+    const maxVal = serviceForm.petWeightMax;
+
+    if (minVal !== '' && minVal !== null && minVal !== undefined) {
+      const minNum = parseFloat(minVal);
+      if (!isNaN(minNum) && minNum < 0) {
+        toast.error('Cân nặng tối thiểu không được nhỏ hơn 0kg!');
+        return;
+      }
+    }
+
+    if (maxVal !== '' && maxVal !== null && maxVal !== undefined) {
+      const maxNum = parseFloat(maxVal);
+      if (!isNaN(maxNum) && maxNum < 0) {
+        toast.error('Cân nặng tối đa không được nhỏ hơn 0kg!');
+        return;
+      }
+    }
+
+    if (
+      minVal !== '' && minVal !== null && minVal !== undefined &&
+      maxVal !== '' && maxVal !== null && maxVal !== undefined
+    ) {
+      const minNum = parseFloat(minVal);
+      const maxNum = parseFloat(maxVal);
+      if (!isNaN(minNum) && !isNaN(maxNum) && minNum > maxNum) {
+        toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn hoặc bằng cân nặng tối đa (max)!');
+      }
+    }
+  };
+
+  // Format weight display range according to business rules:
+  // - null/empty both -> "Tất cả cân nặng"
+  // - min == max -> "minkg" (e.g. 0kg)
+  // - max only -> "0 - maxkg"
+  // - min only -> ">minkg"
+  // - both min & max -> "min - maxkg"
+  const formatWeightRange = (min?: number | null, max?: number | null): string => {
+    const hasMin = min !== null && min !== undefined && min !== ('' as any) && !isNaN(Number(min));
+    const hasMax = max !== null && max !== undefined && max !== ('' as any) && !isNaN(Number(max));
+
+    if (!hasMin && !hasMax) {
+      return 'Tất cả cân nặng';
+    }
+
+    const minNum = hasMin ? Number(min) : null;
+    const maxNum = hasMax ? Number(max) : null;
+
+    if (minNum !== null && maxNum !== null) {
+      if (minNum === maxNum) {
+        return `${minNum}kg`;
+      }
+      return `${minNum} - ${maxNum}kg`;
+    }
+
+    if (minNum === null && maxNum !== null) {
+      return `0 - ${maxNum}kg`;
+    }
+
+    if (minNum !== null && maxNum === null) {
+      return `>${minNum}kg`;
+    }
+
+    return 'Tất cả cân nặng';
   };
 
   // Service submit with complete field validation
@@ -601,7 +638,7 @@ function SpaManagerConsoleContent() {
 
     // 1. Validate Brand
     if (!serviceForm.brandId) {
-      toast.error('Vui lòng chọn Thương hiệu Spa!');
+      toast.error('Vui lòng chọn Danh mục dịch vụ!');
       return;
     }
 
@@ -611,26 +648,35 @@ function SpaManagerConsoleContent() {
       return;
     }
 
-    // 3. Validate Price
-    const priceNum = Number(serviceForm.price);
+    // 3. Validate Price (> 0)
+    const priceNum = parseVNDInput(serviceForm.price);
     if (isNaN(priceNum) || priceNum <= 0) {
       toast.error('Vui lòng nhập Giá dịch vụ hợp lệ (lớn hơn 0đ)!');
       return;
     }
 
-    // 4. Validate Single Duration
-    const durationNum = Number(serviceForm.durationMin);
-    if (isNaN(durationNum) || durationNum < 10) {
-      toast.error('Thời gian thực hiện phải từ 10 phút trở lên!');
+    // 4. Validate Duration (> 0)
+    const durationNum = Number(String(serviceForm.durationMin || '').replace(/\D/g, ''));
+    if (isNaN(durationNum) || durationNum <= 0) {
+      toast.error('Thời gian thực hiện phải lớn hơn 0 phút!');
       return;
     }
 
-    // 5. Validate Weight Range
-    const weightMinNum = serviceForm.petWeightMin ? Number(serviceForm.petWeightMin) : null;
-    const weightMaxNum = serviceForm.petWeightMax ? Number(serviceForm.petWeightMax) : null;
+    // 5. Validate Weight Range after submission (sau khi nhập xong)
+    const weightMinNum = serviceForm.petWeightMin !== '' && serviceForm.petWeightMin !== null && serviceForm.petWeightMin !== undefined
+      ? Number(serviceForm.petWeightMin)
+      : null;
+    const weightMaxNum = serviceForm.petWeightMax !== '' && serviceForm.petWeightMax !== null && serviceForm.petWeightMax !== undefined
+      ? Number(serviceForm.petWeightMax)
+      : null;
 
-    if (weightMinNum !== null && weightMinNum < 0) {
+    if (weightMinNum !== null && (isNaN(weightMinNum) || weightMinNum < 0)) {
       toast.error('Cân nặng tối thiểu không được nhỏ hơn 0kg!');
+      return;
+    }
+
+    if (weightMaxNum !== null && (isNaN(weightMaxNum) || weightMaxNum < 0)) {
+      toast.error('Cân nặng tối đa không được nhỏ hơn 0kg!');
       return;
     }
 
@@ -665,8 +711,8 @@ function SpaManagerConsoleContent() {
         durationMax: durationNum,
         isMain: serviceForm.isMain,
         species: serviceForm.species === 'ALL' ? undefined : serviceForm.species,
-        petWeightMin: weightMinNum !== null ? weightMinNum : undefined,
-        petWeightMax: weightMaxNum !== null ? weightMaxNum : undefined,
+        petWeightMin: weightMinNum !== null ? weightMinNum : null,
+        petWeightMax: weightMaxNum !== null ? weightMaxNum : null,
         isActive: serviceForm.isActive
       };
 
@@ -689,18 +735,32 @@ function SpaManagerConsoleContent() {
     }
   };
 
+  // Format price input live while typing (10000 -> 10.000)
+  const formatVNDInput = (val: string) => {
+    const digits = String(val || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return Number(digits).toLocaleString('vi-VN');
+  };
+
+  const parseVNDInput = (val: string) => {
+    const digits = String(val || '').replace(/\D/g, '');
+    return digits ? Number(digits) : 0;
+  };
+
   // Open edit service modal
   const handleEditServiceClick = (service: any) => {
     setEditingService(service);
+    const selectedCatId = service.categoryId || service.category?.id || service.brandId || service.brand?.id || (managerBrands[0]?.id || '');
+    const serviceIsMain = service.isMain ?? (service.category?.isMain ?? true);
     setServiceForm({
-      brandId: service.brandId || (managerBrands[0]?.id || ''),
-      name: service.name,
+      brandId: selectedCatId,
+      name: service.name || '',
       description: service.description || '',
       imageUrl: service.imageUrl || '',
-      price: String(service.price),
+      price: service.price ? Number(service.price).toLocaleString('vi-VN') : '',
       durationMin: String(service.durationMin || 60),
       durationMax: service.durationMax ? String(service.durationMax) : '',
-      isMain: service.isMain ?? true,
+      isMain: serviceIsMain,
       species: service.species || 'ALL',
       petWeightMin: service.petWeightMin !== null && service.petWeightMin !== undefined ? String(service.petWeightMin) : '',
       petWeightMax: service.petWeightMax !== null && service.petWeightMax !== undefined ? String(service.petWeightMax) : '',
@@ -1311,7 +1371,6 @@ function SpaManagerConsoleContent() {
                                           ({group.items.length} biến thể cân nặng)
                                         </span>
                                       </div>
-
                                       <div className="overflow-x-auto">
                                         <table className="w-full text-left text-xs">
                                           <thead>
@@ -1329,9 +1388,7 @@ function SpaManagerConsoleContent() {
                                           <tbody className="divide-y divide-gray-100">
                                             {group.items.map((s: any) => {
                                               const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
-                                              const weightText = s.petWeightMin !== null && s.petWeightMax !== null
-                                                ? `${s.petWeightMin}kg - ${s.petWeightMax}kg`
-                                                : 'Tất cả cân nặng';
+                                              const weightText = formatWeightRange(s.petWeightMin, s.petWeightMax);
 
                                               return (
                                                 <tr key={s.id} className="hover:bg-purple-50/30 transition">
@@ -1631,10 +1688,21 @@ function SpaManagerConsoleContent() {
 
                                   {b.status === 'PENDING' && (
                                     <button
-                                      onClick={() => setSelectedBookingDetail(b)}
+                                      type="button"
+                                      onClick={() => handleConfirmBooking(b.id)}
                                       className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
                                     >
-                                      ✓ Xác nhận & Gán NV
+                                      ✓ Xác nhận
+                                    </button>
+                                  )}
+
+                                  {(b.status === 'CONFIRMED' || (b.status === 'CHECK_IN' && !b.staffId)) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedBookingDetail(b)}
+                                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                    >
+                                      👤 Gán nhân viên
                                     </button>
                                   )}
 
@@ -2208,17 +2276,17 @@ function SpaManagerConsoleContent() {
 
             <form onSubmit={handleServiceSubmit} className="space-y-4">
 
-              {/* Brand & Main/Sub Category */}
+              {/* Category & Main/Sub Classification */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thương hiệu Spa (SpaBrand) *</label>
+                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Danh mục dịch vụ *</label>
                   <select
                     required
                     value={serviceForm.brandId}
                     onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
                     className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
                   >
-                    <option value="">-- Chọn thương hiệu --</option>
+                    <option value="">-- Chọn danh mục dịch vụ --</option>
                     {filteredBrandsForForm.map((b: any) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
@@ -2275,7 +2343,8 @@ function SpaManagerConsoleContent() {
                     min={0}
                     value={serviceForm.petWeightMin}
                     onChange={(e) => handleMinWeightChange(e.target.value)}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
+                    onBlur={handleWeightBlur}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     placeholder="Ví dụ: 1.5"
                   />
                 </div>
@@ -2287,7 +2356,8 @@ function SpaManagerConsoleContent() {
                     min={0}
                     value={serviceForm.petWeightMax}
                     onChange={(e) => handleMaxWeightChange(e.target.value)}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold"
+                    onBlur={handleWeightBlur}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     placeholder="Ví dụ: 3.0"
                   />
                 </div>
@@ -2349,24 +2419,27 @@ function SpaManagerConsoleContent() {
                 <div className="space-y-1">
                   <label className="text-[11px] text-gray-500 font-extrabold uppercase">Giá dịch vụ (đ) *</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    min={0}
                     value={serviceForm.price}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, price: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-black text-primary bg-white"
-                    placeholder="150000"
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, price: formatVNDInput(e.target.value) }))}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-black text-primary bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    placeholder="150.000"
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    min={10}
                     value={serviceForm.durationMin}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, durationMin: e.target.value, durationMax: e.target.value }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
+                    onChange={(e) => {
+                      const cleanVal = e.target.value.replace(/\D/g, '');
+                      setServiceForm(prev => ({ ...prev, durationMin: cleanVal, durationMax: cleanVal }));
+                    }}
+                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     placeholder="60"
                   />
                 </div>
@@ -2567,7 +2640,7 @@ function SpaManagerConsoleContent() {
                   }}
                   className="bg-primary hover:bg-primary/90 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
                 >
-                  ✓ Xác nhận đơn & Phân công
+                  {selectedAssignStaffMap[selectedBookingDetail.id] ? '✓&👤 Xác nhận & Phân công NV' : '✓ Xác nhận lịch hẹn'}
                 </button>
               )}
 

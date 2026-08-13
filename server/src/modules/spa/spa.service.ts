@@ -545,6 +545,11 @@ export class SpaService {
 
     const updatedData: any = {};
     if (dto.status !== undefined) {
+      if (dto.status === SpaBookingStatus.IN_PROGRESS) {
+        if (booking.status !== SpaBookingStatus.CHECK_IN && booking.status !== SpaBookingStatus.ARRIVED) {
+          throw new BadRequestException('Khách hàng chưa Check-in. Vui lòng Check-in cho khách trước khi bắt đầu làm dịch vụ!');
+        }
+      }
       if (dto.status === SpaBookingStatus.COMPLETED) {
         throw new BadRequestException(
           'Vui lòng hoàn tất thanh toán trước khi hoàn thành dịch vụ.',
