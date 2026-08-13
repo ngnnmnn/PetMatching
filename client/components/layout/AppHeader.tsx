@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useCart } from '@/context/CartContext';
 import { productsApi } from '@/lib/api/products';
 import { Product } from '@/types';
+import NotificationBell from '@/components/notifications/NotificationBell';
 
 const MotionLink = motion.create(Link);
 
@@ -395,6 +396,7 @@ export default function AppHeader({ sectionLabel = 'Ghép đôi' }: AppHeaderPro
             </>
           )}
 
+          <NotificationBell />
           <Link
             href="/cart"
             className="relative inline-flex size-10 items-center justify-center rounded-md border border-[var(--border-color)] bg-card text-foreground shadow-sm transition hover:border-primary hover:text-primary"

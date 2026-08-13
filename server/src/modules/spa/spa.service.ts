@@ -1,20 +1,45 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompleteSpaPaymentDto, CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
-import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus, NotificationCategory, NotificationEventType, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PaymentService } from '../payment/payment.service';
 import {
   getSpaBookingRevenue,
   isRecognizedSpaBooking,
 } from '../../common/revenue.utils';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class SpaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
+    private readonly notifications: NotificationsService,
   ) { }
+
+  private notifyBooking(
+    tx: Prisma.TransactionClient,
+    booking: { id: string; userId: string; status: SpaBookingStatus; petName: string | null },
+    eventType: NotificationEventType,
+    content?: string,
+  ) {
+    return this.notifications.create(
+      {
+        userId: booking.userId,
+        category: NotificationCategory.APPOINTMENT,
+        eventType,
+        title: eventType === NotificationEventType.SPA_BOOKING_CREATED
+          ? 'Lịch Spa đã được tạo'
+          : 'Lịch Spa đã cập nhật',
+        content: content ?? `Lịch Spa của ${booking.petName || 'thú cưng'} đã chuyển sang trạng thái ${booking.status}.`,
+        targetUrl: `/spa/bookings?bookingId=${booking.id}`,
+        entityType: 'SPA_BOOKING',
+        entityId: booking.id,
+      },
+      tx,
+    );
+  }
 
   async getBranches() {
     return this.prisma.spaCategory.findMany({
@@ -194,8 +219,8 @@ export class SpaService {
 
     const bookingStatus = validStaffId ? SpaBookingStatus.ASSIGNED : SpaBookingStatus.PENDING;
 
-    return this.prisma.spaBooking.create({
-      data: {
+    return this.prisma.$transaction(async (tx) => {
+      const booking = await tx.spaBooking.create({ data: {
         userId,
         categoryId: categoryId,
         addressSpaId: validAddressSpaId,
@@ -235,7 +260,14 @@ export class SpaService {
         service: {
           select: { name: true, price: true },
         },
-      },
+      } });
+      await this.notifyBooking(
+        tx,
+        booking,
+        NotificationEventType.SPA_BOOKING_CREATED,
+        `Lịch Spa cho ${booking.petName || 'thú cưng'} đã được tạo thành công.`,
+      );
+      return booking;
     });
   }
 
@@ -353,11 +385,13 @@ export class SpaService {
         });
       }
 
-      return tx.spaBooking.update({
+      const updated = await tx.spaBooking.update({
         where: { id: bookingId },
         data: { status: SpaBookingStatus.CANCELLED },
         include: { payment: true },
       });
+      await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      return updated;
     });
   }
 
@@ -476,17 +510,16 @@ export class SpaService {
     }
 
     const now = new Date();
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        status: SpaBookingStatus.CHECK_IN,
-        timeStartReal: now,
-      },
-      include: {
-        service: true,
-        user: true,
-        pet: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { status: SpaBookingStatus.CHECK_IN, timeStartReal: now },
+        include: { service: true, user: true, pet: true },
+      });
+      if (booking.status !== updated.status) {
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
+      return updated;
     });
   }
 
@@ -574,10 +607,8 @@ export class SpaService {
       updatedData.issueReported = dto.issueReported;
     }
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: updatedData,
-      include: {
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({ where: { id: bookingId }, data: updatedData, include: {
         payment: true,
         category: {
           select: {
@@ -598,7 +629,11 @@ export class SpaService {
             avatarUrl: true,
           },
         },
-      },
+      } });
+      if (dto.status !== undefined && booking.status !== updated.status) {
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
+      return updated;
     });
   }
 
@@ -680,6 +715,10 @@ export class SpaService {
           pet: true,
         },
       });
+
+      if (booking.status !== completedBooking.status) {
+        await this.notifyBooking(tx, completedBooking, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
 
       return { payment, booking: completedBooking };
     });
@@ -819,12 +858,12 @@ export class SpaService {
         scheduledAt: { lt: thirtyMinsAgo },
       },
     });
-    if (noShowBookings.length > 0) {
-      await this.prisma.spaBooking.updateMany({
-        where: { id: { in: noShowBookings.map((b) => b.id) } },
-        data: { status: SpaBookingStatus.NO_SHOW },
-      });
-    }
+    if (noShowBookings.length > 0) await this.prisma.$transaction(async (tx) => {
+      for (const booking of noShowBookings) {
+        const updated = await tx.spaBooking.update({ where: { id: booking.id }, data: { status: SpaBookingStatus.NO_SHOW } });
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
+    });
 
     // 2. ASSIGNED -> LATE if scheduledAt in past (0 to 30 mins ago) and not yet in progress
     const lateBookings = await this.prisma.spaBooking.findMany({
@@ -833,12 +872,12 @@ export class SpaService {
         scheduledAt: { lt: now, gte: thirtyMinsAgo },
       },
     });
-    if (lateBookings.length > 0) {
-      await this.prisma.spaBooking.updateMany({
-        where: { id: { in: lateBookings.map((b) => b.id) } },
-        data: { status: SpaBookingStatus.LATE },
-      });
-    }
+    if (lateBookings.length > 0) await this.prisma.$transaction(async (tx) => {
+      for (const booking of lateBookings) {
+        const updated = await tx.spaBooking.update({ where: { id: booking.id }, data: { status: SpaBookingStatus.LATE } });
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
+    });
   }
 
   async getManagerBranches(managerId: string) {
@@ -1516,12 +1555,25 @@ export class SpaService {
       throw new BadRequestException('Nhân viên này đang bận trong khoảng thời gian của ca làm việc.');
     }
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        staffId: staff.userId,
-        status: SpaBookingStatus.ASSIGNED,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { staffId: staff.userId, status: SpaBookingStatus.ASSIGNED },
+      });
+      if (booking.status !== updated.status || booking.staffId !== updated.staffId) {
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+        await this.notifications.create({
+          userId: staff.userId,
+          category: NotificationCategory.APPOINTMENT,
+          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          title: 'Bạn được phân công lịch Spa',
+          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-8).toUpperCase()}.`,
+          targetUrl: `/spa/staff?bookingId=${bookingId}`,
+          entityType: 'SPA_BOOKING',
+          entityId: bookingId,
+        }, tx);
+      }
+      return updated;
     });
   }
 
@@ -1585,6 +1637,7 @@ export class SpaService {
         scheduledAt: newStart,
         timeStartExpected: newStart,
         timeEndExpected: newEnd,
+        reminderSentAt: null,
       },
     });
   }
@@ -1698,11 +1751,15 @@ export class SpaService {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
     }
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        status: SpaBookingStatus.CONFIRMED,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { status: SpaBookingStatus.CONFIRMED },
+      });
+      if (booking.status !== updated.status) {
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
+      return updated;
     });
   }
 
@@ -1808,12 +1865,25 @@ export class SpaService {
       throw new BadRequestException('Nhân viên này đang bận thực hiện một dịch vụ khác (Đang làm). Không thể phân công lúc này.');
     }
 
-    return this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        staffId: staff.userId,
-        status: SpaBookingStatus.ASSIGNED,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: { staffId: staff.userId, status: SpaBookingStatus.ASSIGNED },
+      });
+      if (booking.status !== updated.status || booking.staffId !== updated.staffId) {
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+        await this.notifications.create({
+          userId: staff.userId,
+          category: NotificationCategory.APPOINTMENT,
+          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          title: 'Bạn được phân công lịch Spa',
+          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-8).toUpperCase()}.`,
+          targetUrl: `/spa/staff?bookingId=${bookingId}`,
+          entityType: 'SPA_BOOKING',
+          entityId: bookingId,
+        }, tx);
+      }
+      return updated;
     });
   }
 

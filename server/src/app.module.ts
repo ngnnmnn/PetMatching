@@ -16,6 +16,7 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { VouchersModule } from './modules/vouchers/vouchers.module';
 import { BreedsModule } from './modules/breeds/breeds.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { BreedsModule } from './modules/breeds/breeds.module';
     UploadsModule,
     VouchersModule,
     BreedsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

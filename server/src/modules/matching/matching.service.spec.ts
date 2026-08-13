@@ -101,6 +101,7 @@ describe('MatchingService chat', () => {
     service = new MatchingService(
       prisma as unknown as PrismaService,
       cloudinary as unknown as CloudinaryService,
+      {} as any,
     );
   });
 
@@ -287,6 +288,7 @@ describe('MatchingService moderation', () => {
     service = new MatchingService(
       prisma as PrismaService,
       {} as CloudinaryService,
+      {} as any,
     );
   });
 

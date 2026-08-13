@@ -8,6 +8,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
+import { NotificationCategory, NotificationEventType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ManagerService {
@@ -15,6 +17,7 @@ export class ManagerService {
     private prisma: PrismaService,
     private shippingService: ShippingService,
     private cloudinaryService: CloudinaryService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   getStoreSettings() {
@@ -569,6 +572,22 @@ export class ManagerService {
         include: { payment: true },
       });
 
+      if (order.status !== updatedOrder.status) {
+        await this.notifications.create(
+          {
+            userId: order.userId,
+            category: NotificationCategory.ORDER,
+            eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+            title: 'Đơn hàng đã cập nhật',
+            content: `Đơn hàng #${order.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${updatedOrder.status}.`,
+            targetUrl: `/orders?orderId=${order.id}`,
+            entityType: 'ORDER',
+            entityId: order.id,
+          },
+          tx,
+        );
+      }
+
       return updatedOrder;
     });
   }
@@ -866,10 +885,26 @@ export class ManagerService {
         if (refundProofUrl !== undefined) {
           updateData.refundProofUrl = refundProofUrl;
         }
-        return tx.order.update({
+        const updatedOrder = await tx.order.update({
           where: { id: orderId },
           data: updateData,
         });
+        if (order.status !== updatedOrder.status) {
+          await this.notifications.create(
+            {
+              userId: order.userId,
+              category: NotificationCategory.ORDER,
+              eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+              title: 'Đơn hàng đã hủy và hoàn tiền',
+              content: `Yêu cầu hoàn tiền cho đơn #${order.id.slice(-8).toUpperCase()} đã được duyệt.`,
+              targetUrl: `/orders?orderId=${order.id}`,
+              entityType: 'ORDER',
+              entityId: order.id,
+            },
+            tx,
+          );
+        }
+        return updatedOrder;
       });
     } catch (error) {
       console.error('Approve refund failed:', error);

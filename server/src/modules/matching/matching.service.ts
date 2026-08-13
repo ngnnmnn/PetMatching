@@ -10,6 +10,8 @@ import {
   Gender,
   MatchStatus,
   MatchingRequestStatus,
+  NotificationCategory,
+  NotificationEventType,
   Pet,
   PetStatus,
   Prisma,
@@ -26,6 +28,7 @@ import {
   MATCH_REPORT_REASONS_BY_TARGET,
   ReportMatchDto,
 } from './dto/report-match.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -95,6 +98,7 @@ export class MatchingService {
   constructor(
     private prisma: PrismaService,
     private readonly cloudinary: CloudinaryService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
@@ -296,7 +300,7 @@ export class MatchingService {
         );
       }
 
-      return tx.matchingRequest.create({
+      const createdRequest = await tx.matchingRequest.create({
         data: {
           requesterId: userId,
           femalePetId: femalePet.id,
@@ -306,6 +310,20 @@ export class MatchingService {
         },
         include: this.requestInclude(),
       });
+      await this.notifications.create(
+        {
+          userId: malePet.ownerId,
+          category: NotificationCategory.MATCHING,
+          eventType: NotificationEventType.MATCH_REQUEST_CREATED,
+          title: 'Yêu cầu ghép đôi mới',
+          content: `${femalePet.name} đã gửi yêu cầu ghép đôi với ${malePet.name}.`,
+          targetUrl: '/requests',
+          entityType: 'MATCHING_REQUEST',
+          entityId: createdRequest.id,
+        },
+        tx,
+      );
+      return createdRequest;
     });
 
     return { success: true, request };
@@ -402,6 +420,20 @@ export class MatchingService {
         },
       });
 
+      await this.notifications.create(
+        {
+          userId: request.requesterId,
+          category: NotificationCategory.MATCHING,
+          eventType: NotificationEventType.MATCH_REQUEST_ACCEPTED,
+          title: 'Yêu cầu ghép đôi đã được chấp nhận',
+          content: `${request.malePet.name} đã chấp nhận yêu cầu ghép đôi với ${request.femalePet.name}.`,
+          targetUrl: `/messages?matchId=${match.id}`,
+          entityType: 'MATCHING_REQUEST',
+          entityId: requestId,
+        },
+        tx,
+      );
+
       return { request: updatedRequest, match };
     });
 
@@ -434,7 +466,7 @@ export class MatchingService {
       if (currentRequest?.status !== MatchingRequestStatus.PENDING) {
         throw new BadRequestException('Only pending requests can be updated.');
       }
-      return tx.matchingRequest.update({
+      const rejectedRequest = await tx.matchingRequest.update({
         where: { id: requestId },
         data: {
           status: MatchingRequestStatus.REJECTED,
@@ -442,6 +474,20 @@ export class MatchingService {
         },
         include: this.requestInclude(),
       });
+      await this.notifications.create(
+        {
+          userId: pendingRequest.requesterId,
+          category: NotificationCategory.MATCHING,
+          eventType: NotificationEventType.MATCH_REQUEST_REJECTED,
+          title: 'Yêu cầu ghép đôi bị từ chối',
+          content: `Yêu cầu ghép đôi ${pendingRequest.femalePet.name} với ${pendingRequest.malePet.name} đã bị từ chối.`,
+          targetUrl: '/requests',
+          entityType: 'MATCHING_REQUEST',
+          entityId: requestId,
+        },
+        tx,
+      );
+      return rejectedRequest;
     });
 
     return { success: true, request };

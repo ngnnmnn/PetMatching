@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { NotificationCategory, NotificationEventType, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -15,6 +15,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { PaymentService } from '../payment/payment.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type User = {
   id: string;
@@ -64,6 +65,7 @@ export class UsersService {
     private paymentService: PaymentService,
     private cloudinary: CloudinaryService,
     private shippingService: ShippingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async syncProductStockTx(tx: any, productId: string) {
@@ -905,10 +907,21 @@ export class UsersService {
         });
       }
 
-      return tx.order.update({
+      const updated = await tx.order.update({
         where: { id: orderId },
         data: { status: 'CANCELLED' },
       });
+      await this.notifications.create({
+        userId,
+        category: NotificationCategory.ORDER,
+        eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+        title: 'Đơn hàng đã hủy',
+        content: `Đơn hàng #${order.id.slice(-8).toUpperCase()} đã được hủy.`,
+        targetUrl: `/orders?orderId=${order.id}`,
+        entityType: 'ORDER',
+        entityId: order.id,
+      }, tx);
+      return updated;
     });
   }
 

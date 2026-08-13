@@ -1,6 +1,8 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaymentService } from './payment.service';
+import { NotificationCategory, NotificationEventType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PaymentSyncService implements OnApplicationBootstrap {
@@ -9,6 +11,7 @@ export class PaymentSyncService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -88,10 +91,20 @@ export class PaymentSyncService implements OnApplicationBootstrap {
               });
 
               if (payment.order) {
-                await tx.order.update({
+                const updatedOrder = await tx.order.update({
                   where: { id: payment.order.id },
                   data: { status: targetStatus },
                 });
+                await this.notifications.create({
+                  userId: payment.order.userId,
+                  category: NotificationCategory.ORDER,
+                  eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+                  title: 'Đơn hàng đã cập nhật',
+                  content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${updatedOrder.status}.`,
+                  targetUrl: `/orders?orderId=${updatedOrder.id}`,
+                  entityType: 'ORDER',
+                  entityId: updatedOrder.id,
+                }, tx);
 
                 for (const item of payment.order.items) {
                   if (item.variantId) {
