@@ -36,7 +36,6 @@ import { Product, ProductVariant, ProductCategory, ProductReview } from '@/types
 import ProductCard from '@/components/home/ProductCard';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useCart } from '@/context/CartContext';
-import { useWishlist } from '@/context/WishlistContext';
 
 const CATEGORY_LABELS: Record<ProductCategory, string> = {
   DOG_FOOD: 'Thức ăn cho chó',
@@ -94,8 +93,6 @@ export default function ProductDetailPage() {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const { addToCart } = useCart();
-  const { toggleWishlist, isInWishlist } = useWishlist();
-  const isWishlisted = product ? isInWishlist(product.id) : false;
 
   const searchParams = useSearchParams();
   const shouldScrollToReview = searchParams.get('review') === 'true';
@@ -219,16 +216,7 @@ export default function ProductDetailPage() {
     }, 800);
   };
 
-  const handleToggleWishlist = () => {
-    if (!product) return;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-    if (!token) {
-      toast.error('Vui lòng đăng nhập để lưu sản phẩm yêu thích.');
-      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-      return;
-    }
-    toggleWishlist(product);
-  };
+
 
   const handleReviewImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,

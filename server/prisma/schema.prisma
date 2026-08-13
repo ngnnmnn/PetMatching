@@ -34,7 +34,6 @@ model User {
   addresses            Address[]
   auditLogs            AuditLog[]           @relation("AuditActor")
   cartItems            CartItem[]
-  sentLikes            Like[]               @relation("LikeSender")
   matchingRequests     MatchingRequest[]    @relation("MatchingRequester")
   messages             Message[]
   orders               Order[]
@@ -47,7 +46,6 @@ model User {
   managedSpaCategories SpaCategory[]        @relation("SpaCategoryManager")
   spaStaffProfile      SpaStaff?            @relation("UserSpaStaffProfile")
   managedStores        Store[]              @relation("StoreManager")
-  wishlistItems        WishlistItem[]
   passwordResetTokens  PasswordResetToken[]
   matchingReportsCreated  PetReport[]          @relation("MatchingReportReporter")
   matchingReportsReceived PetReport[]          @relation("MatchingReportSubject")
@@ -100,14 +98,12 @@ model EmailOtp {
 model Pet {
   id                       String            @id @default(cuid())
   name                     String
-  slug                     String?           @unique
   species                  Species
   breed                    String
   gender                   Gender
   /// Ngày sinh - dùng để tính tuổi và kiểm tra điều kiện phối giống
   birthday                 DateTime
   weight                   Float
-  colorDesc                String?
   /// Chủ tự khai báo đã tiêm vaccine (chưa có bằng chứng)
   isVaccinated             Boolean           @default(false)
   /// Chủ tự khai báo có giấy phả hệ (chưa có bằng chứng)
@@ -144,8 +140,6 @@ model Pet {
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
   ownerId                  String
-  sentLikes                Like[]            @relation("LikeFromPet")
-  receivedLikes            Like[]            @relation("LikeToPet")
   matchesAsPet1            Match[]           @relation("MatchPet1")
   matchesAsPet2            Match[]           @relation("MatchPet2")
   sentMatchingRequests     MatchingRequest[] @relation("FemalePetRequests")
@@ -160,23 +154,6 @@ model Pet {
   @@index([breed])
   @@index([location])
   @@map("pets")
-}
-
-model Like {
-  id         String     @id @default(cuid())
-  fromUserId String
-  fromPetId  String
-  toPetId    String
-  status     LikeStatus @default(PENDING)
-  createdAt  DateTime   @default(now())
-  fromPet    Pet        @relation("LikeFromPet", fields: [fromPetId], references: [id])
-  fromUser   User       @relation("LikeSender", fields: [fromUserId], references: [id])
-  toPet      Pet        @relation("LikeToPet", fields: [toPetId], references: [id])
-
-  @@unique([fromPetId, toPetId])
-  @@index([fromUserId])
-  @@index([toPetId, status])
-  @@map("likes")
 }
 
 model MatchingRequest {
@@ -340,8 +317,6 @@ model Store {
   phone       String?
   status      ApprovalStatus @default(PENDING)
   managerId   String?
-  approvedAt  DateTime?
-  suspendedAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   orders      Order[]
@@ -381,7 +356,6 @@ model Product {
   orderItems     OrderItem[]
   reviews        ProductReview[]
   store          Store?          @relation(fields: [storeId], references: [id])
-  wishlistItems  WishlistItem[]
   variants       ProductVariant[]
 
   @@index([category, isActive])
@@ -423,7 +397,6 @@ model Order {
   shippingAddress     String
   districtId          Int?
   wardCode            String?
-  ghnOrderCode        String?
   shippingStatus      String?
   storeId             String?
   refundStatus        String?
@@ -471,8 +444,6 @@ model SpaCategory {
   isMain      Boolean        @default(true)
   status      ApprovalStatus @default(PENDING)
   managerId   String?
-  approvedAt  DateTime?
-  suspendedAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   bookings    SpaBooking[]
@@ -609,16 +580,6 @@ model Complaint {
   @@map("complaints")
 }
 
-model SystemSetting {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("system_settings")
-}
-
 model AuditLog {
   id         String   @id @default(cuid())
   actorId    String?
@@ -651,20 +612,6 @@ model CartItem {
   @@index([productId])
   @@index([variantId])
   @@map("cart_items")
-}
-
-model WishlistItem {
-  id        String   @id @default(cuid())
-  userId    String
-  productId String
-  createdAt DateTime @default(now())
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, productId])
-  @@index([userId])
-  @@index([productId])
-  @@map("wishlist_items")
 }
 
 model AddressSpa {
@@ -752,16 +699,6 @@ enum BreedingOption {
   CASH
   SHARE_LITTER
   NEGOTIATE
-}
-
-/// Trạng thái của một Like (swipe):
-/// PENDING  - Đã like, chờ đối phương like lại
-/// MATCHED  - Hai bên đã like nhau → tạo Match
-/// REJECTED - Đã bỏ qua (swipe trái)
-enum LikeStatus {
-  PENDING
-  MATCHED
-  REJECTED
 }
 
 /// Trạng thái của một Match:
@@ -905,16 +842,20 @@ enum VerificationBadge {
 }
 
 model Voucher {
-  id        String    @id @default(cuid())
-  code      String    @unique
-  type      String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
-  value     Float     @default(0) // Số tiền hoặc % giảm (100 đối với 100% ship)
-  maxUsage  Int? // Số lần sử dụng tối đa
-  usedCount Int       @default(0)
-  isActive  Boolean   @default(true)
-  expiredAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  code              String    @unique
+  type              String    @default("FREE_SHIP") // FREE_SHIP, PERCENTAGE, FIXED
+  value             Float     @default(0) // Số tiền hoặc % giảm (100 đối với 100% ship)
+  minOrderAmount    Float?    @default(0)
+  maxDiscountAmount Float?
+  description       String?
+  maxUsage          Int? // Số lần sử dụng tối đa
+  usedCount         Int       @default(0)
+  isActive          Boolean   @default(true)
+  startDate         DateTime? @default(now())
+  expiredAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@map("vouchers")
 }

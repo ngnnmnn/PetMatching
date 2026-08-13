@@ -61,7 +61,6 @@ type Pet = {
   district?: string | null;
   ward?: string | null;
   distanceKm?: number;
-  colorDesc?: string | null;
   avatarUrl?: string | null;
   avatar?: string | null;
   gallery: string[];

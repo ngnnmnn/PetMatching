@@ -78,74 +78,64 @@ async function main() {
     },
   });
 
-  const lunaPet = await prisma.pet.upsert({
-    where: { slug: 'demo-luna-corgi-female' },
-    update: {
-      ownerId: clientUser.id,
-      status: PetStatus.ACTIVE,
-      isAvailableForMatching: false,
-    },
-    create: {
-      ownerId: clientUser.id,
-      slug: 'demo-luna-corgi-female',
-      name: 'Luna',
-      species: Species.DOG,
-      breed: 'Corgi',
-      gender: Gender.FEMALE,
-      birthday: new Date('2023-03-15'),
-      weight: 11,
-      isVaccinated: true,
-      hasPedigree: true,
-      pedigreeNumber: 'DEMO-F-001',
-      verificationBadge: VerificationBadge.VERIFIED,
-      vaccineVerified: true,
-      pedigreeVerified: true,
-      avatarUrl: 'https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=500&h=500&fit=crop',
-      gallery: ['https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=800'],
-      personality: 'Friendly and calm.',
-      breedingOption: BreedingOption.NEGOTIATE,
-      location: 'TP. Ho Chi Minh',
-      status: PetStatus.ACTIVE,
-      isAvailableForMatching: false,
-    },
+  const upsertPet = async (ownerId, name, data) => {
+    const existing = await prisma.pet.findFirst({ where: { ownerId, name } });
+    if (existing) {
+      return await prisma.pet.update({
+        where: { id: existing.id },
+        data: { ownerId, status: PetStatus.ACTIVE, ...data },
+      });
+    }
+    return await prisma.pet.create({
+      data: { ownerId, name, ...data },
+    });
+  };
+
+  const lunaPet = await upsertPet(clientUser.id, 'Luna', {
+    species: Species.DOG,
+    breed: 'Corgi',
+    gender: Gender.FEMALE,
+    birthday: new Date('2023-03-15'),
+    weight: 11,
+    isVaccinated: true,
+    hasPedigree: true,
+    pedigreeNumber: 'DEMO-F-001',
+    verificationBadge: VerificationBadge.VERIFIED,
+    vaccineVerified: true,
+    pedigreeVerified: true,
+    avatarUrl: 'https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=500&h=500&fit=crop',
+    gallery: ['https://images.unsplash.com/photo-1612536057832-2ff7ead58194?w=800'],
+    personality: 'Friendly and calm.',
+    breedingOption: BreedingOption.NEGOTIATE,
+    location: 'TP. Ho Chi Minh',
+    status: PetStatus.ACTIVE,
+    isAvailableForMatching: false,
   });
 
-  const mochiPet = await prisma.pet.upsert({
-    where: { slug: 'demo-mochi-corgi-male' },
-    update: {
-      ownerId: clientUser.id,
-      status: PetStatus.ACTIVE,
-      isAvailableForMatching: true,
-    },
-    create: {
-      ownerId: clientUser.id,
-      slug: 'demo-mochi-corgi-male',
-      name: 'Mochi',
-      species: Species.DOG,
-      breed: 'Corgi',
-      gender: Gender.MALE,
-      birthday: new Date('2022-10-20'),
-      weight: 13,
-      isVaccinated: true,
-      hasPedigree: true,
-      pedigreeNumber: 'DEMO-M-001',
-      verificationBadge: VerificationBadge.VERIFIED,
-      vaccineVerified: true,
-      pedigreeVerified: true,
-      avatarUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=500&h=500&fit=crop',
-      gallery: ['https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=800'],
-      personality: 'Playful and gentle.',
-      breedingOption: BreedingOption.CASH,
-      breedingFee: 5000000,
-      location: 'TP. Ho Chi Minh',
-      status: PetStatus.ACTIVE,
-      isAvailableForMatching: true,
-    },
+  const mochiPet = await upsertPet(clientUser.id, 'Mochi', {
+    species: Species.DOG,
+    breed: 'Corgi',
+    gender: Gender.MALE,
+    birthday: new Date('2022-10-20'),
+    weight: 13,
+    isVaccinated: true,
+    hasPedigree: true,
+    pedigreeNumber: 'DEMO-M-001',
+    verificationBadge: VerificationBadge.VERIFIED,
+    vaccineVerified: true,
+    pedigreeVerified: true,
+    avatarUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=500&h=500&fit=crop',
+    gallery: ['https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=800'],
+    personality: 'Playful and gentle.',
+    breedingOption: BreedingOption.CASH,
+    breedingFee: 5000000,
+    location: 'TP. Ho Chi Minh',
+    status: PetStatus.ACTIVE,
+    isAvailableForMatching: true,
   });
 
   const candidatePets = [
     {
-      slug: 'candidate-bento-corgi-male',
       name: 'Bento',
       breed: 'Corgi',
       weight: 12,
@@ -154,7 +144,6 @@ async function main() {
       breedingFee: 4500000,
     },
     {
-      slug: 'candidate-bailey-golden-male',
       name: 'Bailey',
       breed: 'Golden Retriever',
       weight: 29,
@@ -165,36 +154,25 @@ async function main() {
   ];
 
   for (const pet of candidatePets) {
-    await prisma.pet.upsert({
-      where: { slug: pet.slug },
-      update: {
-        ownerId: breeder.id,
-        status: PetStatus.ACTIVE,
-        isAvailableForMatching: true,
-      },
-      create: {
-        ownerId: breeder.id,
-        slug: pet.slug,
-        name: pet.name,
-        species: Species.DOG,
-        breed: pet.breed,
-        gender: Gender.MALE,
-        birthday: new Date('2022-06-01'),
-        weight: pet.weight,
-        isVaccinated: true,
-        hasPedigree: true,
-        verificationBadge: VerificationBadge.VERIFIED,
-        vaccineVerified: true,
-        pedigreeVerified: true,
-        avatarUrl: pet.avatarUrl,
-        gallery: [pet.avatarUrl.replace('w=500&h=500', 'w=800')],
-        personality: 'Available for responsible matching.',
-        breedingOption: BreedingOption.CASH,
-        breedingFee: pet.breedingFee,
-        location: pet.location,
-        status: PetStatus.ACTIVE,
-        isAvailableForMatching: true,
-      },
+    await upsertPet(breeder.id, pet.name, {
+      species: Species.DOG,
+      breed: pet.breed,
+      gender: Gender.MALE,
+      birthday: new Date('2022-06-01'),
+      weight: pet.weight,
+      isVaccinated: true,
+      hasPedigree: true,
+      verificationBadge: VerificationBadge.VERIFIED,
+      vaccineVerified: true,
+      pedigreeVerified: true,
+      avatarUrl: pet.avatarUrl,
+      gallery: [pet.avatarUrl.replace('w=500&h=500', 'w=800')],
+      personality: 'Available for responsible matching.',
+      breedingOption: BreedingOption.CASH,
+      breedingFee: pet.breedingFee,
+      location: pet.location,
+      status: PetStatus.ACTIVE,
+      isAvailableForMatching: true,
     });
   }
 

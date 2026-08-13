@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Product } from '@/types';
 import { useCart } from '@/context/CartContext';
-import { useWishlist } from '@/context/WishlistContext';
 import { cn } from '@/lib/utils';
 
 function formatCurrency(value: number) {
@@ -63,8 +62,6 @@ export default function ProductCard({
   const [isEyeHovered, setIsEyeHovered] = useState(false);
 
   const { addToCart } = useCart();
-  const { toggleWishlist, isInWishlist } = useWishlist();
-  const isWishlisted = isInWishlist(product.id);
 
   // Initialize/Update pre-selected variant based on pet weight
   useEffect(() => {
@@ -134,18 +131,6 @@ export default function ProductCard({
     toast.success(`Đã thêm sản phẩm "${product.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}" vào giỏ hàng!`);
   };
 
-  const handleAddToWishlist = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-    if (!token) {
-      toast.error('Vui lòng đăng nhập để lưu sản phẩm yêu thích.');
-      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-      return;
-    }
-    toggleWishlist(product);
-  };
-
   return (
     <article
       className="group relative rounded-2xl border border-[var(--border-color)] bg-white shadow-[0_8px_24px_rgba(26,26,26,0.04)] transition hover:-translate-y-1 hover:border-[#DED8D0] hover:shadow-[0_18px_40px_rgba(26,26,26,0.10)] flex flex-col h-full justify-between z-10 hover:z-50"
@@ -203,7 +188,7 @@ export default function ProductCard({
 
           {/* Quick View Eye Icon Button */}
           <div
-            className="absolute bottom-2.5 right-13 z-20"
+            className="absolute bottom-2.5 right-2.5 z-20"
             onMouseEnter={() => setIsEyeHovered(true)}
             onMouseLeave={() => setIsEyeHovered(false)}
           >
@@ -226,20 +211,6 @@ export default function ProductCard({
               <Eye className="size-4" />
             </button>
           </div>
-
-          {/* Wishlist Button */}
-
-          <button
-            type="button"
-            aria-label="Thêm vào yêu thích"
-            onClick={handleAddToWishlist}
-            className={cn(
-              "absolute bottom-2.5 right-2.5 inline-flex size-9 items-center justify-center rounded-full bg-white/95 shadow-sm transition cursor-pointer z-10",
-              isWishlisted ? "text-red-500 hover:text-red-600" : "text-[var(--text-main)] hover:text-[var(--primary-color)]"
-            )}
-          >
-            <Heart className={cn("size-4", isWishlisted && "fill-red-500")} />
-          </button>
         </div>
 
         <div className="space-y-3 p-4">

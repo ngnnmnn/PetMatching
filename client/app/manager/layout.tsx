@@ -17,12 +17,14 @@ import {
   Users,
   Clock,
   FolderKanban,
+  Tag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 function ManagerNavigation() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
   const [role, setRole] = useState<string>('');
@@ -50,6 +52,7 @@ function ManagerNavigation() {
         { label: 'Danh mục', id: 'categories', href: '/manager?tab=categories', icon: FolderKanban },
         { label: 'Khung giờ', id: 'slots', href: '/manager?tab=slots', icon: Clock },
         { label: 'Nhân viên', id: 'staffs', href: '/manager?tab=staffs', icon: Users },
+        { label: 'Khuyến mãi', id: 'promotions', href: '/manager/promotions', icon: Tag },
       ],
     },
   ] : [
@@ -65,9 +68,23 @@ function ManagerNavigation() {
         { label: 'Sản phẩm', id: 'products', href: '/manager?tab=products', icon: ShoppingBag },
         { label: 'Đơn hàng', id: 'orders', href: '/manager?tab=orders', icon: Package },
         { label: 'Khách hàng', id: 'customers', href: '/manager?tab=customers', icon: Users },
+        { label: 'Khuyến mãi', id: 'promotions', href: '/manager/promotions', icon: Tag },
       ],
     },
   ];
+
+  const isItemActive = (item: { href: string; id: string }) => {
+    if (item.href === '/manager/promotions') {
+      return pathname.startsWith('/manager/promotions');
+    }
+    if (item.href === '/manager') {
+      return pathname === '/manager' && (!searchParams.get('tab') || searchParams.get('tab') === 'dashboard');
+    }
+    if (item.href.startsWith('/manager?tab=')) {
+      return pathname === '/manager' && searchParams.get('tab') === item.id;
+    }
+    return pathname === item.href;
+  };
 
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4">
@@ -79,7 +96,7 @@ function ManagerNavigation() {
             </p>
             <div className="grid gap-1">
               {group.items.map((item) => {
-                const active = currentTab === item.id;
+                const active = isItemActive(item);
                 return (
                   <Link
                     key={item.id}

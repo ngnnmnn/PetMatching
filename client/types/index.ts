@@ -66,7 +66,6 @@ export interface Order {
   shippingAddress: string;
   districtId?: number | null;
   wardCode?: string | null;
-  ghnOrderCode?: string | null;
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
@@ -249,8 +248,6 @@ export interface SpaBranchType {
   description: string | null;
   status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
   managerId: string | null;
-  approvedAt: string | null;
-  suspendedAt: string | null;
   createdAt: string;
   updatedAt: string;
   services?: SpaServiceType[];
@@ -365,3 +362,49 @@ export interface SpaStaffProfileType {
   addressSpaId?: string | null;
   addressSpa?: AddressSpaType | null;
 }
+
+export type VoucherType = 'FREE_SHIP' | 'PERCENTAGE' | 'FIXED';
+
+export interface Voucher {
+  id: string;
+  code: string;
+  type: VoucherType;
+  value: number;
+  minOrderAmount?: number | null;
+  maxDiscountAmount?: number | null;
+  description?: string | null;
+  maxUsage?: number | null;
+  usedCount: number;
+  isActive: boolean;
+  startDate?: string | null;
+  expiredAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVoucherInput {
+  code: string;
+  type: VoucherType;
+  value: number;
+  minOrderAmount?: number;
+  maxDiscountAmount?: number;
+  description?: string;
+  maxUsage?: number;
+  startDate?: string;
+  expiredAt?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateVoucherInput {
+  code?: string;
+  type?: VoucherType;
+  value?: number;
+  minOrderAmount?: number;
+  maxDiscountAmount?: number;
+  description?: string;
+  maxUsage?: number;
+  startDate?: string;
+  expiredAt?: string;
+  isActive?: boolean;
+}
+

@@ -236,7 +236,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
-  const [exportOnlyPendingGhn, setExportOnlyPendingGhn] = useState(false);
   const [exportOnlyRefunded, setExportOnlyRefunded] = useState(false);
   const [exportAllTime, setExportAllTime] = useState(false);
   const [exportingOrders, setExportingOrders] = useState(false);
@@ -434,7 +433,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const eligibleOrdersForGhn = useMemo(() => {
     return filteredOrders.filter(
       (o) =>
-        !o.ghnOrderCode &&
         o.status !== 'CANCELLED' &&
         o.status !== 'SHIPPED' &&
         o.status !== 'DELIVERED' &&
@@ -455,7 +453,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
     setExportStartDate(formatDate(firstDay));
     setExportEndDate(formatDate(now));
-    setExportOnlyPendingGhn(false);
     setExportOnlyRefunded(false);
     setExportAllTime(false);
     setIsExportModalOpen(true);
@@ -468,7 +465,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const res = await managerApi.exportOrders({
         startDate: exportAllTime ? undefined : (exportStartDate || undefined),
         endDate: exportAllTime ? undefined : (exportEndDate || undefined),
-        onlyPendingGhn: exportOnlyPendingGhn || undefined,
         onlyRefunded: exportOnlyRefunded || undefined,
       });
 
@@ -482,9 +478,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         filename += '_toan_bo_thoi_gian';
       } else if (exportStartDate && exportEndDate) {
         filename += `_${exportStartDate}_den_${exportEndDate}`;
-      }
-      if (exportOnlyPendingGhn) {
-        filename += '_chua_gui_ghn';
       }
       if (exportOnlyRefunded) {
         filename += '_da_duyet_hoan_tien';
@@ -4096,28 +4089,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={exportOnlyPendingGhn}
-                        onChange={(e) => {
-                          setExportOnlyPendingGhn(e.target.checked);
-                          if (e.target.checked) setExportOnlyRefunded(false);
-                        }}
-                        className="size-4 rounded border-gray-300 text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer"
-                      />
-                      <span className="text-xs text-gray-700 font-bold">
-                        Chỉ xuất các đơn hàng chưa gửi cho GHN
-                      </span>
-                    </label>
-                    <p className="text-[10px] text-gray-400 font-medium pl-6 leading-relaxed mb-3">
-                      (Bỏ qua các đơn hàng đã bị hủy, đang giao hàng hoặc đã giao hàng thành công bằng đối tác khác).
-                    </p>
-
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
                         checked={exportOnlyRefunded}
                         onChange={(e) => {
                           setExportOnlyRefunded(e.target.checked);
-                          if (e.target.checked) setExportOnlyPendingGhn(false);
                         }}
                         className="size-4 rounded border-gray-300 text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer"
                       />

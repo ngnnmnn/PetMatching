@@ -61,7 +61,6 @@ export interface ManagerOrder {
       imageUrl?: string;
     };
   }[];
-  ghnOrderCode?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
   refundStatus?: string | null;
@@ -142,7 +141,7 @@ export const managerApi = {
   rejectRefund: (id: string) => api.post<any>(`/manager/orders/${id}/reject-refund`),
   updateRefundProof: (id: string, refundProofUrl: string) =>
     api.patch<ManagerOrder>(`/manager/orders/${id}/refund-proof`, { refundProofUrl }),
-  exportOrders: (params: { startDate?: string; endDate?: string; onlyPendingGhn?: boolean; onlyRefunded?: boolean }) =>
+  exportOrders: (params: { startDate?: string; endDate?: string; onlyRefunded?: boolean }) =>
     api.get<Blob>('/manager/orders/export', {
       params,
       responseType: 'blob',

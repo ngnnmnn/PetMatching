@@ -90,13 +90,11 @@ export class ManagerController {
     @Res() res: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('onlyPendingGhn') onlyPendingGhn?: string,
     @Query('onlyRefunded') onlyRefunded?: string,
   ) {
     const buffer = await this.managerService.exportOrdersToExcel({
       startDate,
       endDate,
-      onlyPendingGhn: onlyPendingGhn === 'true',
       onlyRefunded: onlyRefunded === 'true',
     });
     res.set({
