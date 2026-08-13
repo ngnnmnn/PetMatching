@@ -12,6 +12,8 @@ import {
   ComplaintType,
   DocumentStatus,
   DocumentType,
+  NotificationCategory,
+  NotificationEventType,
   OrderStatus,
   PetStatus,
   Prisma,
@@ -39,6 +41,7 @@ import {
   CreateBreedDto,
   UpdateBreedDto,
 } from './dto/admin-actions.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type AdminActor = {
   id: string;
@@ -53,7 +56,10 @@ const ACTIONABLE_DOCUMENT_STATUSES: DocumentStatus[] = [
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async getDashboard() {
     const [primaryStore, primarySpa] = await Promise.all([
@@ -627,13 +633,31 @@ export class AdminService {
         reviewNote,
         reviewedAt: new Date(),
       },
-      include: { pet: { include: { documents: true } } },
+      include: { pet: { include: { documents: true, owner: true } } },
     });
 
     await this.refreshPetVerification(document.petId);
     await this.audit(actor.id, 'ADMIN_REVIEW_PET_DOCUMENT', 'PetDocument', documentId, {
       status: dto.status,
       ...(reviewNote ? { reviewNote } : {}),
+    });
+
+    const statusText: Record<DocumentStatus, string> = {
+      PENDING: 'đang chờ duyệt',
+      REVIEWING: 'đang được xem xét',
+      APPROVED: 'đã được duyệt',
+      REJECTED: 'đã bị từ chối',
+      NEED_MORE_INFO: 'cần bổ sung thông tin',
+    };
+    await this.notifications.create({
+      userId: document.pet.ownerId,
+      category: NotificationCategory.SYSTEM,
+      eventType: NotificationEventType.PET_DOCUMENT_REVIEWED,
+      title: 'Kết quả duyệt giấy tờ thú cưng',
+      content: `Giấy tờ của ${document.pet.name} ${statusText[dto.status]}.${reviewNote ? ` Ghi chú: ${reviewNote}` : ''}`,
+      targetUrl: '/my-pets',
+      entityType: 'PET_DOCUMENT',
+      entityId: document.id,
     });
 
     return this.prisma.petDocument.findUnique({
@@ -743,6 +767,18 @@ export class AdminService {
           targetId: reportId,
         },
       });
+      await this.notifications.create(
+        {
+          userId: current.userId,
+          category: NotificationCategory.SYSTEM,
+          eventType: NotificationEventType.MATCHING_REPORT_RESOLVED,
+          title: 'Báo cáo của bạn đã được xử lý',
+          content: 'Báo cáo ghép đôi bạn gửi đã được quản trị viên xem xét và xử lý.',
+          entityType: 'PET_REPORT',
+          entityId: reportId,
+        },
+        tx,
+      );
       return updated;
     });
     return report;
@@ -1125,21 +1161,51 @@ export class AdminService {
 
   async resolveComplaint(actor: AdminActor, complaintId: string, dto: ResolveComplaintDto) {
     const status = this.mapComplaintStatus(dto.action);
-    const complaint = await this.prisma.complaint.update({
-      where: { id: complaintId },
-      data: {
-        status,
-        actionTaken: dto.action,
-        adminNote: dto.adminNote,
-        resolvedById: actor.id,
-        resolvedAt: new Date(),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const complaint = await tx.complaint.update({
+        where: { id: complaintId },
+        data: {
+          status,
+          actionTaken: dto.action,
+          adminNote: dto.adminNote,
+          resolvedById: actor.id,
+          resolvedAt: new Date(),
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_RESOLVE_COMPLAINT',
+          targetType: 'Complaint',
+          targetId: complaintId,
+          metadata: { action: dto.action },
+        },
+      });
+      if (complaint.reporterId) {
+        const reporterExists = await tx.user.findUnique({
+          where: { id: complaint.reporterId },
+          select: { id: true },
+        });
+        if (reporterExists) {
+          await this.notifications.create(
+            {
+              userId: complaint.reporterId,
+              category: NotificationCategory.SYSTEM,
+              eventType: NotificationEventType.COMPLAINT_STATUS_CHANGED,
+              title: 'Khiếu nại của bạn đã được cập nhật',
+              content:
+                status === ComplaintStatus.ESCALATED
+                  ? 'Khiếu nại của bạn đã được chuyển sang bước xử lý tiếp theo.'
+                  : 'Khiếu nại của bạn đã được quản trị viên xem xét và xử lý.',
+              entityType: 'COMPLAINT',
+              entityId: complaintId,
+            },
+            tx,
+          );
+        }
+      }
+      return complaint;
     });
-
-    await this.audit(actor.id, 'ADMIN_RESOLVE_COMPLAINT', 'Complaint', complaintId, {
-      action: dto.action,
-    });
-    return complaint;
   }
 
   private async refreshPetVerification(petId: string) {

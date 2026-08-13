@@ -1,13 +1,17 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PayOS } from '@payos/node';
-import { PaymentStatus } from '@prisma/client';
+import { NotificationCategory, NotificationEventType, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PaymentService {
   private payos: PayOS;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {
     const clientId = process.env.PAYOS_CLIENT_ID;
     const apiKey = process.env.PAYOS_API_KEY;
     const checksumKey = process.env.PAYOS_CHECKSUM_KEY;
@@ -118,10 +122,20 @@ export class PaymentService {
         payment.order &&
         ['PENDING', 'PAYMENT_ERROR'].includes(payment.order.status)
       ) {
-        await tx.order.update({
+        const updatedOrder = await tx.order.update({
           where: { id: payment.order.id },
           data: { status: 'PROCESSING' },
         });
+        await this.notifications.create({
+          userId: payment.order.userId,
+          category: NotificationCategory.ORDER,
+          eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+          title: 'Thanh toán đơn hàng thành công',
+          content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đang được xử lý.`,
+          targetUrl: `/orders?orderId=${updatedOrder.id}`,
+          entityType: 'ORDER',
+          entityId: updatedOrder.id,
+        }, tx);
       }
 
       if (
@@ -134,7 +148,7 @@ export class PaymentService {
           new Date(
             payment.spaBooking.scheduledAt.getTime() + 45 * 60 * 1000,
           );
-        await tx.spaBooking.update({
+        const updatedBooking = await tx.spaBooking.update({
           where: { id: payment.spaBooking.id },
           data: {
             status: 'COMPLETED',
@@ -144,6 +158,16 @@ export class PaymentService {
             ),
           },
         });
+        await this.notifications.create({
+          userId: payment.spaBooking.userId,
+          category: NotificationCategory.APPOINTMENT,
+          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          title: 'Lịch Spa đã hoàn thành',
+          content: `Lịch Spa của ${updatedBooking.petName || 'thú cưng'} đã hoàn thành.`,
+          targetUrl: `/spa/bookings?bookingId=${updatedBooking.id}`,
+          entityType: 'SPA_BOOKING',
+          entityId: updatedBooking.id,
+        }, tx);
       }
 
       return paidPayment;

@@ -83,6 +83,7 @@ describe('SpaService manager dashboard revenue', () => {
     const service = new SpaService(
       prisma as unknown as PrismaService,
       {} as PaymentService,
+      {} as any,
     );
     Object.defineProperty(service, 'autoUpdateBookingStatuses', {
       value: jest.fn(),

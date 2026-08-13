@@ -27,6 +27,7 @@ describe('ManagerService dashboard revenue', () => {
       prisma as unknown as PrismaService,
       {} as ShippingService,
       {} as CloudinaryService,
+      {} as any,
     );
 
     const result = await service.getDashboardStats('manager-1');

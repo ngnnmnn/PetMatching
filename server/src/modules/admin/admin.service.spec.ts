@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { DocumentStatus } from '@prisma/client';
+import { ComplaintAction, DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminService } from './admin.service';
 
@@ -7,12 +7,13 @@ describe('AdminService matching reports', () => {
   let prisma: any;
   let tx: any;
   let service: AdminService;
+  const notifications = { create: jest.fn() };
 
   beforeEach(() => {
     tx = {
       $queryRaw: jest.fn().mockResolvedValue([]),
       petReport: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'report-1', isResolved: false }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'report-1', userId: 'reporter-1', reportedUserId: 'reported-1', isResolved: false }),
         update: jest.fn().mockResolvedValue({ id: 'report-1', isResolved: true }),
       },
       auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
@@ -21,7 +22,8 @@ describe('AdminService matching reports', () => {
       petReport: { findUnique: jest.fn() },
       $transaction: jest.fn().mockImplementation((callback: (client: any) => unknown) => callback(tx)),
     };
-    service = new AdminService(prisma as PrismaService);
+    notifications.create.mockReset().mockResolvedValue({ id: 'notification-1' });
+    service = new AdminService(prisma as PrismaService, notifications as any);
   });
 
   it('returns report context with messages ordered from oldest to newest', async () => {
@@ -56,6 +58,14 @@ describe('AdminService matching reports', () => {
     expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ action: 'ADMIN_RESOLVE_MATCHING_REPORT' }),
     }));
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'reporter-1' }),
+      tx,
+    );
+    expect(notifications.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'reported-1' }),
+      expect.anything(),
+    );
   });
 
   it('does not resolve the same report twice', async () => {
@@ -72,18 +82,24 @@ describe('AdminService matching reports', () => {
 describe('AdminService pet document review', () => {
   let prisma: any;
   let service: AdminService;
+  const notifications = { create: jest.fn() };
 
   beforeEach(() => {
     prisma = {
       petDocument: {
-        update: jest.fn().mockResolvedValue({ id: 'document-1', petId: 'pet-1' }),
+        update: jest.fn().mockResolvedValue({
+          id: 'document-1',
+          petId: 'pet-1',
+          pet: { id: 'pet-1', name: 'Milo', ownerId: 'owner-1' },
+        }),
         count: jest.fn().mockResolvedValue(0),
         findUnique: jest.fn().mockResolvedValue({ id: 'document-1' }),
       },
       pet: { update: jest.fn().mockResolvedValue({ id: 'pet-1' }) },
       auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     };
-    service = new AdminService(prisma as PrismaService);
+    notifications.create.mockReset().mockResolvedValue({ id: 'notification-1' });
+    service = new AdminService(prisma as PrismaService, notifications as any);
   });
 
   it.each([DocumentStatus.REJECTED, DocumentStatus.NEED_MORE_INFO])(
@@ -121,6 +137,9 @@ describe('AdminService pet document review', () => {
         metadata: expect.objectContaining({ reviewNote: 'Ảnh giấy tờ bị mờ.' }),
       }),
     }));
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'owner-1', entityId: 'document-1' }),
+    );
   });
 
   it('allows approval without a review note', async () => {
@@ -131,5 +150,40 @@ describe('AdminService pet document review', () => {
         { status: DocumentStatus.APPROVED },
       ),
     ).resolves.toEqual({ id: 'document-1' });
+  });
+});
+
+describe('AdminService complaints', () => {
+  it('notifies only the complaint reporter', async () => {
+    const complaint = {
+      id: 'complaint-1',
+      reporterId: 'reporter-1',
+      targetId: 'reported-1',
+    };
+    const tx = {
+      complaint: { update: jest.fn().mockResolvedValue(complaint) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+      user: { findUnique: jest.fn().mockResolvedValue({ id: 'reporter-1' }) },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const notifications = { create: jest.fn().mockResolvedValue({}) };
+    const service = new AdminService(prisma as unknown as PrismaService, notifications as any);
+
+    await service.resolveComplaint(
+      { id: 'admin-1' },
+      complaint.id,
+      { action: ComplaintAction.DISMISS },
+    );
+
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'reporter-1' }),
+      tx,
+    );
+    expect(notifications.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'reported-1' }),
+      expect.anything(),
+    );
   });
 });

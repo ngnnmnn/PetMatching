@@ -52,6 +52,7 @@ model User {
   matchingReportsResolved PetReport[]          @relation("MatchingReportResolver")
   matchingBlocksCreated   UserBlock[]          @relation("UserBlockBlocker")
   matchingBlocksReceived  UserBlock[]          @relation("UserBlockBlocked")
+  notifications           Notification[]
 
   @@map("users")
 }
@@ -215,6 +216,30 @@ model Message {
   @@index([matchId, createdAt])
   @@index([senderId])
   @@map("messages")
+}
+
+model Notification {
+  id         String                    @id @default(cuid())
+  userId     String
+  category   NotificationCategory
+  eventType  NotificationEventType
+  title      String
+  content    String
+  targetUrl  String?
+  entityType String?
+  entityId   String?
+  payload    Json?
+  isRead     Boolean                   @default(false)
+  readAt     DateTime?
+  deletedAt  DateTime?
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+  user       User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deletedAt, createdAt])
+  @@index([userId, deletedAt, isRead])
+  @@index([userId, category, deletedAt, createdAt])
+  @@map("notifications")
 }
 
 model BreedRule {
@@ -507,6 +532,7 @@ model SpaBooking {
   issueReported         String?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
+  reminderSentAt        DateTime?
   addressSpa            AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
   category              SpaCategory?     @relation(fields: [categoryId], references: [id])
   pet                   Pet?             @relation(fields: [petId], references: [id])
@@ -519,6 +545,7 @@ model SpaBooking {
   @@index([categoryId, status])
   @@index([userId])
   @@index([staffId])
+  @@index([reminderSentAt, scheduledAt, status])
   @@map("spa_bookings")
 }
 
@@ -715,6 +742,27 @@ enum MatchingRequestStatus {
   REJECTED
   PASSED
   CANCELLED
+}
+
+enum NotificationCategory {
+  MATCHING
+  ORDER
+  APPOINTMENT
+  SYSTEM
+}
+
+enum NotificationEventType {
+  MATCH_REQUEST_CREATED
+  MATCH_REQUEST_ACCEPTED
+  MATCH_REQUEST_REJECTED
+  SPA_BOOKING_CREATED
+  SPA_BOOKING_STATUS_CHANGED
+  ORDER_STATUS_CHANGED
+  PET_DOCUMENT_REVIEWED
+  MATCHING_REPORT_RESOLVED
+  COMPLAINT_STATUS_CHANGED
+  SPA_BOOKING_REMINDER
+  SYSTEM
 }
 
 /// Vai trò người dùng trên hệ thống

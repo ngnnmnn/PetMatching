@@ -12,6 +12,7 @@ const PRIVATE_ROUTES = [
   '/checkout',
   '/orders',
   '/profile',
+  '/notifications',
   '/spa/book',
   '/spa/bookings',
   '/spa/staff',
@@ -41,7 +42,7 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
       if (storedUser) {
         try {
           user = JSON.parse(storedUser);
-        } catch (e) {
+        } catch {
           user = null;
         }
       }
