@@ -44,12 +44,6 @@ export default function AuthShell({ children }: AuthShellProps) {
 
         <nav className="ml-auto flex items-center gap-2 sm:gap-3" aria-label="Authentication navigation">
           <Link
-            href="/"
-            className="rounded-full bg-[var(--primary-color)] px-4 py-2.5 text-sm font-bold text-white transition duration-200 ease-in-out hover:bg-[#cf5017] hover:shadow-[0_10px_22px_rgba(228,93,28,0.22)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.22)] sm:px-6"
-          >
-            + Tạo hồ sơ
-          </Link>
-          <Link
             href="/login"
             className="rounded-full border border-[var(--primary-color)] bg-transparent px-4 py-2.5 text-sm font-bold text-[var(--primary-color)] transition duration-200 ease-in-out hover:bg-[var(--bg-demo-box)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(228,93,28,0.18)] sm:px-6"
           >
