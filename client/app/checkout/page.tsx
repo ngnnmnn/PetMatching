@@ -733,7 +733,7 @@ function CheckoutPageContent() {
             <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
           </div>
         ) : (
-          <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
             {/* Left side: Address & Payment */}
             <div className="lg:col-span-8 space-y-6">
@@ -1035,7 +1035,8 @@ function CheckoutPageContent() {
                   </div>
 
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={handlePlaceOrder}
                     disabled={submitting}
                     className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none cursor-pointer"
                   >
@@ -1068,7 +1069,7 @@ function CheckoutPageContent() {
               </div>
 
             </div>
-          </form>
+          </div>
         )}
       </div>
 

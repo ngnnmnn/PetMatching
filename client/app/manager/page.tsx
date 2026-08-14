@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -4786,6 +4786,11 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
   const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
   const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
+
+  const handleConfirmBooking = (id?: any) => {};
+  const handleAssignStaff = (id?: any) => {};
+  const handleApplyLateDiscount = (id?: any) => {};
+  const handleRescheduleSubmit = (id?: any) => {};
 
   // Helper to resolve subServices for any booking in Manager view
   const getManagerBookingSubServices = (b: any) => {
