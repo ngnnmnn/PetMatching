@@ -1,95 +1,102 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   BadgeCheck,
-  Check,
-  ChevronRight,
-  Coins,
-  Edit,
+  Eye,
   Heart,
-  Info,
   PawPrint,
   Plus,
   Settings2,
   Sparkles,
   Syringe,
-  ToggleLeft,
-  ToggleRight,
-  Users,
   X,
   Loader2,
-} from 'lucide-react';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import AppHeader from '@/components/layout/AppHeader';
-import api from '@/lib/axios';
-import { useCart } from '@/context/CartContext';
-import { productsApi } from '@/lib/api/products';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "lucide-react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import AppHeader from "@/components/layout/AppHeader";
+import { useCart } from "@/context/CartContext";
+import { productsApi } from "@/lib/api/products";
+import { petsApi, type Pet } from "@/lib/api/pets";
+import { PetProfileDialog } from "@/components/pets/PetProfileDialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import type { Product, ProductVariant } from "@/types";
 
-type Pet = {
-  id: string;
-  name: string;
-  species: 'DOG' | 'CAT';
-  breed: string;
-  gender: 'MALE' | 'FEMALE';
-  weight: number;
-  location: string;
-  avatarUrl?: string | null;
-  gallery: string[];
-  hasPedigree: boolean;
-  isVaccinated: boolean;
-  pedigreeVerified: boolean;
-  vaccineVerified: boolean;
-  isAvailableForMatching: boolean;
-  breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
-  breedingFee?: number | null;
-  shareLitterCount?: number | null;
-  personality?: string | null;
-  status: 'ACTIVE' | 'HIDDEN' | 'INACTIVE';
+type RecommendedProduct = Product & {
+  matchedVariants: ProductVariant[];
+  selectedVariant: ProductVariant | null;
 };
 
 export default function MyPetsPage() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSetupPet, setSelectedSetupPet] = useState<Pet | null>(null);
+  const [selectedDetailPetId, setSelectedDetailPetId] = useState<string | null>(
+    null,
+  );
 
   // Recommendations States
   const { addToCart } = useCart();
-  const [selectedRecommendPet, setSelectedRecommendPet] = useState<Pet | null>(null);
-  const [recommendedProducts, setRecommendedProducts] = useState<any[]>([]);
+  const [selectedRecommendPet, setSelectedRecommendPet] = useState<Pet | null>(
+    null,
+  );
+  const [recommendedProducts, setRecommendedProducts] = useState<
+    RecommendedProduct[]
+  >([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
 
   // Form setup state for male matching modal
   const [isAvailable, setIsAvailable] = useState(false);
-  const [breedingOption, setBreedingOption] = useState<'CASH' | 'SHARE_LITTER' | 'NEGOTIATE'>('NEGOTIATE');
-  const [breedingFee, setBreedingFee] = useState<string>('');
-  const [shareLitterCount, setShareLitterCount] = useState<string>('1');
-  const [personalityNote, setPersonalityNote] = useState<string>('');
+  const [breedingOption, setBreedingOption] = useState<
+    "CASH" | "SHARE_LITTER" | "NEGOTIATE"
+  >("NEGOTIATE");
+  const [breedingFee, setBreedingFee] = useState<string>("");
+  const [shareLitterCount, setShareLitterCount] = useState<string>("1");
+  const [personalityNote, setPersonalityNote] = useState<string>("");
   const [savingSetup, setSavingSetup] = useState(false);
 
-  const loadPets = () => {
-    setLoading(true);
-    api
-      .get<Pet[]>('/pets/my')
-      .then((response) => setPets(response.data))
-      .catch(() => toast.error('Không tải được danh sách hồ sơ thú cưng.'))
-      .finally(() => setLoading(false));
+  const loadPets = async () => {
+    try {
+      const response = await petsApi.getMine();
+      setPets(response.data);
+    } catch {
+      toast.error("Không tải được danh sách hồ sơ thú cưng.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(loadPets, []);
+  useEffect(() => {
+    let active = true;
+    petsApi
+      .getMine()
+      .then((response) => {
+        if (active) setPets(response.data);
+      })
+      .catch(() => {
+        if (active) toast.error("Không tải được danh sách hồ sơ thú cưng.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openSetupModal = (pet: Pet) => {
     setSelectedSetupPet(pet);
     setIsAvailable(pet.isAvailableForMatching);
-    setBreedingOption(pet.breedingOption || 'NEGOTIATE');
-    setBreedingFee(pet.breedingFee ? String(pet.breedingFee) : '');
-    setShareLitterCount(pet.shareLitterCount ? String(pet.shareLitterCount) : '1');
-    setPersonalityNote(pet.personality || '');
+    setBreedingOption(pet.breedingOption || "NEGOTIATE");
+    setBreedingFee(pet.breedingFee ? String(pet.breedingFee) : "");
+    setShareLitterCount(
+      pet.shareLitterCount ? String(pet.shareLitterCount) : "1",
+    );
+    setPersonalityNote(pet.personality || "");
   };
 
   const handleSaveSetup = async () => {
@@ -97,37 +104,42 @@ export default function MyPetsPage() {
     setSavingSetup(true);
 
     try {
-      await api.patch(`/pets/${selectedSetupPet.id}/availability`, {
+      await petsApi.updateAvailability(selectedSetupPet.id, {
         isAvailableForMatching: isAvailable,
         breedingOption,
-        breedingFee: breedingOption === 'CASH' ? Number(breedingFee) || 0 : undefined,
-        shareLitterCount: breedingOption === 'SHARE_LITTER' ? Number(shareLitterCount) || 1 : undefined,
+        breedingFee:
+          breedingOption === "CASH" ? Number(breedingFee) || 0 : undefined,
+        shareLitterCount:
+          breedingOption === "SHARE_LITTER"
+            ? Number(shareLitterCount) || 1
+            : undefined,
         personality: personalityNote.trim() || undefined,
       });
 
-      toast.success(`Đã cập nhật cấu hình ghép đôi cho ${selectedSetupPet.name}!`);
+      toast.success(
+        `Đã cập nhật cấu hình ghép đôi cho ${selectedSetupPet.name}!`,
+      );
       setSelectedSetupPet(null);
       loadPets();
-    } catch (err: any) {
-      const response = err.response?.data;
-      toast.error(response?.message || 'Không thể lưu thiết lập.');
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object" && error !== null && "response" in error
+          ? (error as { response?: { data?: { message?: string } } }).response
+              ?.data?.message
+          : undefined;
+      toast.error(message || "Không thể lưu thiết lập.");
     } finally {
       setSavingSetup(false);
     }
   };
 
-  const handleTogglePetStatus = async (pet: Pet) => {
-    const nextStatus = pet.status === 'HIDDEN' ? 'ACTIVE' : 'HIDDEN';
-    try {
-      await api.patch(`/pets/${pet.id}/availability`, {
-        isAvailableForMatching: pet.isAvailableForMatching,
-        status: nextStatus,
-      });
-      toast.success(nextStatus === 'HIDDEN' ? `Đã tạm ẩn hồ sơ bé ${pet.name}!` : `Đã hiện lại hồ sơ bé ${pet.name}!`);
-      loadPets();
-    } catch {
-      toast.error('Không cập nhật được trạng thái hồ sơ.');
-    }
+  const handlePetUpdated = (updatedPet: Pet) => {
+    setPets((current) =>
+      current.map((pet) => (pet.id === updatedPet.id ? updatedPet : pet)),
+    );
+    setSelectedSetupPet((current) =>
+      current?.id === updatedPet.id ? updatedPet : current,
+    );
   };
 
   const openRecommendationsModal = async (pet: Pet) => {
@@ -135,30 +147,51 @@ export default function MyPetsPage() {
     setLoadingRecommendations(true);
     try {
       const res = await productsApi.getList({ page: 1, limit: 100 });
-      const responseData = res.data;
-      const allProducts = Array.isArray(responseData) 
-        ? responseData 
-        : (responseData as any).data || (responseData as any).products || [];
-      
-      let matched = allProducts.filter((p: any) => {
+      const allProducts = res.data.data;
+
+      const matched = allProducts.filter((p) => {
         if (!p.isActive) return false;
         const target = p.targetSpecies;
-        return target === 'ALL' || target === pet.species;
+        return target === "ALL" || target === pet.species;
       });
 
-      matched = matched.map((p: any) => {
-        let bestVariants = [];
+      const recommendations: RecommendedProduct[] = matched.map((p) => {
+        let bestVariants: ProductVariant[] = [];
         if (p.variants && p.variants.length > 0) {
-          bestVariants = p.variants.filter((v: any) => {
+          bestVariants = p.variants.filter((v) => {
             const nameLower = v.name.toLowerCase();
             const w = pet.weight;
-            
+
             if (w < 5) {
-              return nameLower.includes('size s') || nameLower.includes('500g') || nameLower.includes('200g') || nameLower.includes('1kg') || (!nameLower.includes('size m') && !nameLower.includes('size l') && !nameLower.includes('3kg') && !nameLower.includes('5kg'));
+              return (
+                nameLower.includes("size s") ||
+                nameLower.includes("500g") ||
+                nameLower.includes("200g") ||
+                nameLower.includes("1kg") ||
+                (!nameLower.includes("size m") &&
+                  !nameLower.includes("size l") &&
+                  !nameLower.includes("3kg") &&
+                  !nameLower.includes("5kg"))
+              );
             } else if (w >= 5 && w <= 12) {
-              return nameLower.includes('size m') || nameLower.includes('1.5kg') || nameLower.includes('2kg') || (!nameLower.includes('size s') && !nameLower.includes('size l'));
+              return (
+                nameLower.includes("size m") ||
+                nameLower.includes("1.5kg") ||
+                nameLower.includes("2kg") ||
+                (!nameLower.includes("size s") && !nameLower.includes("size l"))
+              );
             } else {
-              return nameLower.includes('size l') || nameLower.includes('3kg') || nameLower.includes('4kg') || nameLower.includes('5kg') || nameLower.includes('10kg') || nameLower.includes('lớn') || (!nameLower.includes('size s') && !nameLower.includes('size m') && !nameLower.includes('500g'));
+              return (
+                nameLower.includes("size l") ||
+                nameLower.includes("3kg") ||
+                nameLower.includes("4kg") ||
+                nameLower.includes("5kg") ||
+                nameLower.includes("10kg") ||
+                nameLower.includes("lớn") ||
+                (!nameLower.includes("size s") &&
+                  !nameLower.includes("size m") &&
+                  !nameLower.includes("500g"))
+              );
             }
           });
 
@@ -175,11 +208,15 @@ export default function MyPetsPage() {
       });
 
       const breedLower = pet.breed.toLowerCase();
-      matched.sort((a: any, b: any) => {
+      recommendations.sort((a, b) => {
         const aName = a.name.toLowerCase();
         const bName = b.name.toLowerCase();
-        const aBreedMatch = aName.includes(breedLower) || a.description?.toLowerCase().includes(breedLower);
-        const bBreedMatch = bName.includes(breedLower) || b.description?.toLowerCase().includes(breedLower);
+        const aBreedMatch =
+          aName.includes(breedLower) ||
+          a.description?.toLowerCase().includes(breedLower);
+        const bBreedMatch =
+          bName.includes(breedLower) ||
+          b.description?.toLowerCase().includes(breedLower);
 
         if (aBreedMatch && !bBreedMatch) return -1;
         if (!aBreedMatch && bBreedMatch) return 1;
@@ -190,10 +227,10 @@ export default function MyPetsPage() {
         return (b.rating || 0) - (a.rating || 0);
       });
 
-      setRecommendedProducts(matched.slice(0, 8));
+      setRecommendedProducts(recommendations.slice(0, 8));
     } catch (err) {
-      console.error('Failed to get product recommendations', err);
-      toast.error('Lỗi khi tải danh sách gợi ý mua sắm.');
+      console.error("Failed to get product recommendations", err);
+      toast.error("Lỗi khi tải danh sách gợi ý mua sắm.");
     } finally {
       setLoadingRecommendations(false);
     }
@@ -203,16 +240,20 @@ export default function MyPetsPage() {
     setRecommendedProducts((prev) =>
       prev.map((p) => {
         if (p.id === productId) {
-          const matched = p.variants?.find((v: any) => v.id === variantId);
+          const matched = p.variants?.find((v) => v.id === variantId);
           return {
             ...p,
             selectedVariant: matched || p.selectedVariant,
           };
         }
         return p;
-      })
+      }),
     );
   };
+
+  const selectedDetailPet = selectedDetailPetId
+    ? (pets.find((pet) => pet.id === selectedDetailPetId) ?? null)
+    : null;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -228,10 +269,15 @@ export default function MyPetsPage() {
             </div>
             <h1 className="text-3xl font-black">Hồ sơ Thú cưng của tôi</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Quản lý hồ sơ, bật trạng thái sẵn sàng ghép đôi và thiết lập điều kiện phối giống.
+              Quản lý hồ sơ, bật trạng thái sẵn sàng ghép đôi và thiết lập điều
+              kiện phối giống.
             </p>
           </div>
-          <Button className="gap-2 rounded-xl font-bold shadow-md shadow-primary/20" size="lg" asChild>
+          <Button
+            className="gap-2 rounded-xl font-bold shadow-md shadow-primary/20"
+            size="lg"
+            asChild
+          >
             <Link href="/my-pets/new">
               <Plus className="size-5" />
               Tạo hồ sơ mới
@@ -243,15 +289,22 @@ export default function MyPetsPage() {
       {/* Main List */}
       <section className="container mx-auto px-4 py-8">
         {loading ? (
-          <div className="py-20 text-center text-muted-foreground">Đang tải danh sách hồ sơ...</div>
+          <div className="py-20 text-center text-muted-foreground">
+            Đang tải danh sách hồ sơ...
+          </div>
         ) : pets.length === 0 ? (
           <div className="py-20 text-center">
             <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full bg-primary/10 text-primary">
               <PawPrint className="size-10" />
             </div>
             <h2 className="mb-2 text-2xl font-bold">Chưa có hồ sơ thú cưng</h2>
-            <p className="mb-6 text-sm text-muted-foreground">Hãy tạo hồ sơ thú cưng đầu tiên để tham gia cộng đồng ghép đôi.</p>
-            <Button asChild className="rounded-xl font-bold shadow-md shadow-primary/20">
+            <p className="mb-6 text-sm text-muted-foreground">
+              Hãy tạo hồ sơ thú cưng đầu tiên để tham gia cộng đồng ghép đôi.
+            </p>
+            <Button
+              asChild
+              className="rounded-xl font-bold shadow-md shadow-primary/20"
+            >
               <Link href="/my-pets/new">Tạo hồ sơ mới</Link>
             </Button>
           </div>
@@ -261,14 +314,23 @@ export default function MyPetsPage() {
               <article
                 key={pet.id}
                 className={cn(
-                  'group relative flex h-full min-h-[455px] flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl',
-                  pet.status === 'HIDDEN' && 'opacity-70 bg-muted/40 border-rose-300 dark:border-rose-900',
+                  "group relative flex h-full min-h-[455px] flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+                  pet.status === "HIDDEN" &&
+                    "opacity-70 bg-muted/40 border-rose-300 dark:border-rose-900",
                 )}
               >
                 {/* Image */}
-                <div className="relative aspect-video overflow-hidden bg-muted">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDetailPetId(pet.id)}
+                  aria-label={`Xem chi tiết hồ sơ của ${pet.name}`}
+                  title="Xem chi tiết hồ sơ"
+                  className="relative aspect-video w-full cursor-pointer overflow-hidden bg-muted text-left outline-none focus-visible:ring-4 focus-visible:ring-primary/50 focus-visible:ring-inset"
+                >
                   <img
-                    src={pet.avatarUrl || pet.gallery?.[0] || '/placeholder.svg'}
+                    src={
+                      pet.avatarUrl || pet.gallery?.[0] || "/placeholder.svg"
+                    }
                     alt={pet.name}
                     className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
@@ -277,36 +339,51 @@ export default function MyPetsPage() {
                   {/* Gender badge */}
                   <span
                     className={cn(
-                      'absolute left-3 top-3 rounded-lg px-2.5 py-1 text-xs font-black text-white shadow-md',
-                      pet.gender === 'MALE' ? 'bg-blue-600' : 'bg-pink-600',
+                      "absolute left-3 top-3 rounded-lg px-2.5 py-1 text-xs font-black text-white shadow-md",
+                      pet.gender === "MALE" ? "bg-blue-600" : "bg-pink-600",
                     )}
                   >
-                    {pet.gender === 'MALE' ? '♂ Đực' : '♀ Cái'}
+                    {pet.gender === "MALE" ? "♂ Đực" : "♀ Cái"}
                   </span>
 
                   {/* Matching availability indicator / Status */}
-                  {pet.status === 'HIDDEN' ? (
+                  {pet.status === "HIDDEN" ? (
                     <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
                       🔴 Đã tạm ẩn
                     </span>
-                  ) : pet.gender === 'MALE' ? (
+                  ) : pet.gender === "MALE" ? (
                     <span
                       className={cn(
-                        'absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md',
-                        pet.isAvailableForMatching ? 'bg-emerald-500' : 'bg-black/60',
+                        "absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md",
+                        pet.isAvailableForMatching
+                          ? "bg-emerald-500"
+                          : "bg-black/60",
                       )}
                     >
-                      <span className={cn('size-2 rounded-full', pet.isAvailableForMatching ? 'bg-white animate-pulse' : 'bg-gray-400')} />
-                      {pet.isAvailableForMatching ? 'Sẵn sàng phối' : 'Tắt ghép đôi'}
+                      <span
+                        className={cn(
+                          "size-2 rounded-full",
+                          pet.isAvailableForMatching
+                            ? "bg-white animate-pulse"
+                            : "bg-gray-400",
+                        )}
+                      />
+                      {pet.isAvailableForMatching
+                        ? "Sẵn sàng phối"
+                        : "Tắt ghép đôi"}
                     </span>
                   ) : null}
 
                   {/* Bottom title */}
                   <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-                    <h2 className="text-xl font-black drop-shadow-sm">{pet.name}</h2>
-                    <p className="text-xs text-white/80 font-medium">{pet.breed} · {pet.location}</p>
+                    <h2 className="text-xl font-black drop-shadow-sm">
+                      {pet.name}
+                    </h2>
+                    <p className="text-xs text-white/80 font-medium">
+                      {pet.breed} · {pet.location}
+                    </p>
                   </div>
-                </div>
+                </button>
 
                 {/* Details */}
                 <div className="flex flex-1 flex-col p-4">
@@ -315,10 +392,10 @@ export default function MyPetsPage() {
                     {pet.isVaccinated && (
                       <span
                         className={cn(
-                          'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold',
+                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
                           pet.vaccineVerified
-                            ? 'border-blue-200 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 bg-white text-gray-600',
+                            ? "border-blue-200 bg-blue-50 text-blue-700"
+                            : "border-gray-300 bg-white text-gray-600",
                         )}
                       >
                         <Syringe className="size-3.5" />
@@ -328,10 +405,10 @@ export default function MyPetsPage() {
                     {pet.hasPedigree && (
                       <span
                         className={cn(
-                          'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold',
+                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
                           pet.pedigreeVerified
-                            ? 'border-amber-200 bg-amber-50 text-amber-700'
-                            : 'border-gray-300 bg-white text-gray-600',
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-gray-300 bg-white text-gray-600",
                         )}
                       >
                         <BadgeCheck className="size-3.5" />
@@ -341,32 +418,39 @@ export default function MyPetsPage() {
                   </div>
 
                   {/* Breeding option preview for male */}
-                  {pet.gender === 'MALE' && pet.isAvailableForMatching && (
+                  {pet.gender === "MALE" && pet.isAvailableForMatching && (
                     <div className="mt-3 min-h-[54px] rounded-xl border bg-primary/5 p-3 text-xs space-y-1">
-                      <span className="font-bold text-primary uppercase tracking-wider text-[10px]">Hình thức phối giống:</span>
+                      <span className="font-bold text-primary uppercase tracking-wider text-[10px]">
+                        Hình thức phối giống:
+                      </span>
                       <p className="font-extrabold text-foreground">
-                        {pet.breedingOption === 'CASH'
-                          ? `Thu tiền mặt: ${pet.breedingFee?.toLocaleString('vi-VN')} VNĐ`
-                          : pet.breedingOption === 'SHARE_LITTER'
-                          ? `Chia con non (${pet.shareLitterCount || 1} con)`
-                          : 'Thỏa thuận trực tiếp'}
+                        {pet.breedingOption === "CASH"
+                          ? `Thu tiền mặt: ${pet.breedingFee?.toLocaleString("vi-VN")} VNĐ`
+                          : pet.breedingOption === "SHARE_LITTER"
+                            ? `Chia con non (${pet.shareLitterCount || 1} con)`
+                            : "Thỏa thuận trực tiếp"}
                       </p>
                     </div>
                   )}
 
-                    {/* Action buttons */}
+                  {/* Action buttons */}
                   <div className="mt-auto space-y-2 pt-4">
                     <div className="flex gap-2">
-                      {pet.gender === 'MALE' ? (
+                      {pet.gender === "MALE" ? (
                         <Button
                           className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
                           onClick={() => openSetupModal(pet)}
                         >
                           <Settings2 className="size-4" />
-                          {pet.isAvailableForMatching ? 'Cấu hình Ghép đôi' : 'Bật ghép đôi'}
+                          {pet.isAvailableForMatching
+                            ? "Cấu hình Ghép đôi"
+                            : "Bật ghép đôi"}
                         </Button>
                       ) : (
-                        <Button className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs" asChild>
+                        <Button
+                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
+                          asChild
+                        >
                           <Link href="/explore">
                             <Heart className="size-4" />
                             Tìm bạn đời
@@ -376,24 +460,18 @@ export default function MyPetsPage() {
 
                       <Button
                         variant="outline"
-                        title={pet.status === 'HIDDEN' ? 'Hiện lại hồ sơ' : 'Tạm ẩn hồ sơ'}
-                        className={cn(
-                          'h-10 rounded-xl shrink-0 font-bold text-xs px-3 transition-colors',
-                          pet.status === 'HIDDEN'
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300'
-                            : 'border-slate-200 text-slate-600 hover:bg-slate-100',
-                        )}
-                        onClick={() => handleTogglePetStatus(pet)}
+                        title="Xem chi tiết hồ sơ"
+                        className="h-10 shrink-0 gap-1.5 rounded-xl border-slate-200 px-3 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
+                        onClick={() => setSelectedDetailPetId(pet.id)}
                       >
-                        {pet.status === 'HIDDEN'
-                          ? '👁️ Hiện hồ sơ'
-                          : '🙈 Ẩn hồ sơ'}
+                        <Eye className="size-4" />
+                        Xem chi tiết
                       </Button>
                     </div>
 
-                    <Button 
+                    <Button
                       type="button"
-                      variant="outline" 
+                      variant="outline"
                       onClick={() => openRecommendationsModal(pet)}
                       className="h-10 w-full gap-2 rounded-xl font-bold border-[#EFEAE2] hover:bg-[#FAF9F6] text-xs shadow-sm cursor-pointer"
                     >
@@ -408,6 +486,16 @@ export default function MyPetsPage() {
         )}
       </section>
 
+      {selectedDetailPet && (
+        <PetProfileDialog
+          key={selectedDetailPet.id}
+          initialPet={selectedDetailPet}
+          open
+          onClose={() => setSelectedDetailPetId(null)}
+          onPetUpdated={handlePetUpdated}
+        />
+      )}
+
       {/* ============ MALE PET MATCHING SETUP MODAL (MATCHING STITCH SCREEN) ============ */}
       <AnimatePresence>
         {selectedSetupPet && (
@@ -421,38 +509,58 @@ export default function MyPetsPage() {
               {/* Header */}
               <div className="flex items-center justify-between border-b pb-4">
                 <div>
-                  <h2 className="text-xl font-black">Thiết lập Cấu hình Ghép đôi</h2>
-                  <p className="text-xs text-muted-foreground">Dành cho thú cưng đực: <span className="font-bold text-primary">{selectedSetupPet.name}</span> ({selectedSetupPet.breed})</p>
+                  <h2 className="text-xl font-black">
+                    Thiết lập Cấu hình Ghép đôi
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Dành cho thú cưng đực:{" "}
+                    <span className="font-bold text-primary">
+                      {selectedSetupPet.name}
+                    </span>{" "}
+                    ({selectedSetupPet.breed})
+                  </p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => setSelectedSetupPet(null)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSelectedSetupPet(null)}
+                >
                   <X className="size-5" />
                 </Button>
               </div>
 
               {/* Main Toggle Hero Card */}
-              <div className={cn(
-                'rounded-2xl border-2 p-4 transition-all',
-                isAvailable ? 'border-emerald-500 bg-emerald-50/50' : 'border-border bg-muted/30'
-              )}>
+              <div
+                className={cn(
+                  "rounded-2xl border-2 p-4 transition-all",
+                  isAvailable
+                    ? "border-emerald-500 bg-emerald-50/50"
+                    : "border-border bg-muted/30",
+                )}
+              >
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <span className="text-sm font-black">Trạng thái Sẵn sàng Ghép đôi</span>
+                    <span className="text-sm font-black">
+                      Trạng thái Sẵn sàng Ghép đôi
+                    </span>
                     <p className="text-xs text-muted-foreground">
-                      {isAvailable ? 'Hồ sơ đang hiển thị trong hệ thống đề xuất cho pet cái.' : 'Hồ sơ đang ẩn khỏi kết quả tìm kiếm.'}
+                      {isAvailable
+                        ? "Hồ sơ đang hiển thị trong hệ thống đề xuất cho pet cái."
+                        : "Hồ sơ đang ẩn khỏi kết quả tìm kiếm."}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsAvailable(!isAvailable)}
                     className={cn(
-                      'relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                      isAvailable ? 'bg-emerald-500' : 'bg-gray-300'
+                      "relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      isAvailable ? "bg-emerald-500" : "bg-gray-300",
                     )}
                   >
                     <span
                       className={cn(
-                        'pointer-events-none inline-block size-6 rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
-                        isAvailable ? 'translate-x-5' : 'translate-x-0'
+                        "pointer-events-none inline-block size-6 rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                        isAvailable ? "translate-x-5" : "translate-x-0",
                       )}
                     />
                   </button>
@@ -469,21 +577,36 @@ export default function MyPetsPage() {
                   {/* Option 1: CASH */}
                   <label
                     className={cn(
-                      'flex flex-col rounded-xl border-2 p-3.5 cursor-pointer transition-all',
-                      breedingOption === 'CASH' ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                      "flex flex-col rounded-xl border-2 p-3.5 cursor-pointer transition-all",
+                      breedingOption === "CASH"
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-card",
                     )}
-                    onClick={() => setBreedingOption('CASH')}
+                    onClick={() => setBreedingOption("CASH")}
                   >
                     <div className="flex items-center gap-3">
-                      <input type="radio" name="breedingOption" checked={breedingOption === 'CASH'} readOnly className="accent-primary" />
+                      <input
+                        type="radio"
+                        name="breedingOption"
+                        checked={breedingOption === "CASH"}
+                        readOnly
+                        className="accent-primary"
+                      />
                       <div className="flex-1">
-                        <span className="text-sm font-bold">Thu tiền mặt (CASH)</span>
-                        <p className="text-xs text-muted-foreground">Chủ thú cưng cái sẽ trả phí phối giống theo mức bạn quy định.</p>
+                        <span className="text-sm font-bold">
+                          Thu tiền mặt (CASH)
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          Chủ thú cưng cái sẽ trả phí phối giống theo mức bạn
+                          quy định.
+                        </p>
                       </div>
                     </div>
-                    {breedingOption === 'CASH' && (
+                    {breedingOption === "CASH" && (
                       <div className="mt-3 pl-7">
-                        <label className="text-xs font-semibold text-muted-foreground">Mức phí phối giống (VNĐ):</label>
+                        <label className="text-xs font-semibold text-muted-foreground">
+                          Mức phí phối giống (VNĐ):
+                        </label>
                         <Input
                           type="number"
                           value={breedingFee}
@@ -498,21 +621,36 @@ export default function MyPetsPage() {
                   {/* Option 2: SHARE_LITTER */}
                   <label
                     className={cn(
-                      'flex flex-col rounded-xl border-2 p-3.5 cursor-pointer transition-all',
-                      breedingOption === 'SHARE_LITTER' ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                      "flex flex-col rounded-xl border-2 p-3.5 cursor-pointer transition-all",
+                      breedingOption === "SHARE_LITTER"
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-card",
                     )}
-                    onClick={() => setBreedingOption('SHARE_LITTER')}
+                    onClick={() => setBreedingOption("SHARE_LITTER")}
                   >
                     <div className="flex items-center gap-3">
-                      <input type="radio" name="breedingOption" checked={breedingOption === 'SHARE_LITTER'} readOnly className="accent-primary" />
+                      <input
+                        type="radio"
+                        name="breedingOption"
+                        checked={breedingOption === "SHARE_LITTER"}
+                        readOnly
+                        className="accent-primary"
+                      />
                       <div className="flex-1">
-                        <span className="text-sm font-bold">Chia con non (SHARE_LITTER)</span>
-                        <p className="text-xs text-muted-foreground">Chủ thú cưng đực sẽ nhận số lượng con non thỏa thuận trong lứa đẻ.</p>
+                        <span className="text-sm font-bold">
+                          Chia con non (SHARE_LITTER)
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          Chủ thú cưng đực sẽ nhận số lượng con non thỏa thuận
+                          trong lứa đẻ.
+                        </p>
                       </div>
                     </div>
-                    {breedingOption === 'SHARE_LITTER' && (
+                    {breedingOption === "SHARE_LITTER" && (
                       <div className="mt-3 pl-7">
-                        <label className="text-xs font-semibold text-muted-foreground">Số con muốn nhận:</label>
+                        <label className="text-xs font-semibold text-muted-foreground">
+                          Số con muốn nhận:
+                        </label>
                         <select
                           value={shareLitterCount}
                           onChange={(e) => setShareLitterCount(e.target.value)}
@@ -520,7 +658,9 @@ export default function MyPetsPage() {
                         >
                           <option value="1">1 con (Ưu tiên chọn trước)</option>
                           <option value="2">2 con</option>
-                          <option value="3">Thỏa thuận tỷ lệ theo số lượng lứa</option>
+                          <option value="3">
+                            Thỏa thuận tỷ lệ theo số lượng lứa
+                          </option>
                         </select>
                       </div>
                     )}
@@ -529,15 +669,28 @@ export default function MyPetsPage() {
                   {/* Option 3: NEGOTIATE */}
                   <label
                     className={cn(
-                      'flex items-center gap-3 rounded-xl border-2 p-3.5 cursor-pointer transition-all',
-                      breedingOption === 'NEGOTIATE' ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                      "flex items-center gap-3 rounded-xl border-2 p-3.5 cursor-pointer transition-all",
+                      breedingOption === "NEGOTIATE"
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-card",
                     )}
-                    onClick={() => setBreedingOption('NEGOTIATE')}
+                    onClick={() => setBreedingOption("NEGOTIATE")}
                   >
-                    <input type="radio" name="breedingOption" checked={breedingOption === 'NEGOTIATE'} readOnly className="accent-primary" />
+                    <input
+                      type="radio"
+                      name="breedingOption"
+                      checked={breedingOption === "NEGOTIATE"}
+                      readOnly
+                      className="accent-primary"
+                    />
                     <div>
-                      <span className="text-sm font-bold">Thỏa thuận trực tiếp</span>
-                      <p className="text-xs text-muted-foreground">Trao đổi điều kiện cụ thể với đối phương qua tin nhắn sau khi kết nối.</p>
+                      <span className="text-sm font-bold">
+                        Thỏa thuận trực tiếp
+                      </span>
+                      <p className="text-xs text-muted-foreground">
+                        Trao đổi điều kiện cụ thể với đối phương qua tin nhắn
+                        sau khi kết nối.
+                      </p>
                     </div>
                   </label>
                 </div>
@@ -559,7 +712,11 @@ export default function MyPetsPage() {
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1 rounded-xl font-bold" onClick={() => setSelectedSetupPet(null)}>
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-xl font-bold"
+                  onClick={() => setSelectedSetupPet(null)}
+                >
                   Hủy
                 </Button>
                 <Button
@@ -567,7 +724,7 @@ export default function MyPetsPage() {
                   onClick={() => handleSaveSetup()}
                   disabled={savingSetup}
                 >
-                  {savingSetup ? 'Đang lưu...' : 'Lưu cấu hình ghép đôi'}
+                  {savingSetup ? "Đang lưu..." : "Lưu cấu hình ghép đôi"}
                 </Button>
               </div>
             </motion.div>
@@ -592,13 +749,25 @@ export default function MyPetsPage() {
                     <Sparkles className="size-6 fill-primary/10 animate-pulse" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-black text-foreground">Gợi ý mua sắm thông minh</h2>
+                    <h2 className="text-xl font-black text-foreground">
+                      Gợi ý mua sắm thông minh
+                    </h2>
                     <p className="text-xs text-muted-foreground">
-                      Sản phẩm được tối ưu cho bé <span className="font-bold text-primary">{selectedRecommendPet.name}</span> ({selectedRecommendPet.breed} · {selectedRecommendPet.weight}kg)
+                      Sản phẩm được tối ưu cho bé{" "}
+                      <span className="font-bold text-primary">
+                        {selectedRecommendPet.name}
+                      </span>{" "}
+                      ({selectedRecommendPet.breed} ·{" "}
+                      {selectedRecommendPet.weight}kg)
                     </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" className="rounded-full hover:bg-slate-100" onClick={() => setSelectedRecommendPet(null)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full hover:bg-slate-100"
+                  onClick={() => setSelectedRecommendPet(null)}
+                >
                   <X className="size-5" />
                 </Button>
               </div>
@@ -607,23 +776,37 @@ export default function MyPetsPage() {
               {loadingRecommendations ? (
                 <div className="py-20 text-center flex flex-col items-center justify-center gap-3">
                   <Loader2 className="size-8 animate-spin text-primary" />
-                  <p className="text-sm font-bold text-muted-foreground">Đang nghiên cứu và đối khớp sản phẩm phù hợp...</p>
+                  <p className="text-sm font-bold text-muted-foreground">
+                    Đang nghiên cứu và đối khớp sản phẩm phù hợp...
+                  </p>
                 </div>
               ) : recommendedProducts.length === 0 ? (
                 <div className="py-20 text-center text-muted-foreground text-sm font-medium">
-                  Chưa có sản phẩm nào phù hợp được tìm thấy cho bé thú cưng này.
+                  Chưa có sản phẩm nào phù hợp được tìm thấy cho bé thú cưng
+                  này.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {recommendedProducts.map((p) => {
                     const variant = p.selectedVariant;
-                    const price = variant ? (variant.salePrice ?? variant.sellingPrice) : (p.salePrice ?? p.sellingPrice);
-                    const originalPrice = variant ? variant.sellingPrice : p.sellingPrice;
-                    const isDiscounted = variant ? (!!variant.salePrice && variant.salePrice < variant.sellingPrice) : (!!p.salePrice && p.salePrice < p.sellingPrice);
-                    const imageUrl = variant?.imageUrl || p.imageUrl || '/placeholder.svg';
+                    const price = variant
+                      ? (variant.salePrice ?? variant.sellingPrice)
+                      : (p.salePrice ?? p.sellingPrice);
+                    const originalPrice = variant
+                      ? variant.sellingPrice
+                      : p.sellingPrice;
+                    const isDiscounted = variant
+                      ? !!variant.salePrice &&
+                        variant.salePrice < variant.sellingPrice
+                      : !!p.salePrice && p.salePrice < p.sellingPrice;
+                    const imageUrl =
+                      variant?.imageUrl || p.imageUrl || "/placeholder.svg";
 
                     return (
-                      <div key={p.id} className="group rounded-2xl border bg-card p-3 shadow-sm hover:shadow-md transition duration-300 flex flex-col justify-between space-y-3 relative">
+                      <div
+                        key={p.id}
+                        className="group rounded-2xl border bg-card p-3 shadow-sm hover:shadow-md transition duration-300 flex flex-col justify-between space-y-3 relative"
+                      >
                         {/* Discount Tag */}
                         {isDiscounted && (
                           <span className="absolute left-2.5 top-2.5 z-10 rounded-lg bg-red-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
@@ -643,20 +826,23 @@ export default function MyPetsPage() {
                         {/* Text Details */}
                         <div className="space-y-1">
                           <span className="text-[9px] bg-slate-100 text-slate-600 font-extrabold uppercase px-1.5 py-0.5 rounded">
-                            {p.brand || 'PetMatch'}
+                            {p.brand || "PetMatch"}
                           </span>
-                          <h4 className="text-xs font-bold text-foreground line-clamp-2 mt-1 leading-snug group-hover:text-primary transition" title={p.name}>
+                          <h4
+                            className="text-xs font-bold text-foreground line-clamp-2 mt-1 leading-snug group-hover:text-primary transition"
+                            title={p.name}
+                          >
                             {p.name}
                           </h4>
-                          
+
                           {/* Price */}
                           <div className="flex items-baseline gap-1.5 pt-1">
                             <span className="text-sm font-black text-primary">
-                              {price.toLocaleString('vi-VN')}đ
+                              {price.toLocaleString("vi-VN")}đ
                             </span>
                             {isDiscounted && (
                               <span className="text-[10px] text-muted-foreground line-through font-medium">
-                                {originalPrice.toLocaleString('vi-VN')}đ
+                                {originalPrice.toLocaleString("vi-VN")}đ
                               </span>
                             )}
                           </div>
@@ -665,15 +851,20 @@ export default function MyPetsPage() {
                         {/* Variant Selector Dropdown */}
                         {p.variants && p.variants.length > 0 && (
                           <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-muted-foreground uppercase">Kích cỡ / Phân loại:</label>
+                            <label className="text-[9px] font-bold text-muted-foreground uppercase">
+                              Kích cỡ / Phân loại:
+                            </label>
                             <select
-                              value={variant?.id || ''}
-                              onChange={(e) => handleVariantChange(p.id, e.target.value)}
+                              value={variant?.id || ""}
+                              onChange={(e) =>
+                                handleVariantChange(p.id, e.target.value)
+                              }
                               className="w-full rounded-lg border bg-background p-1.5 text-[11px] font-bold outline-none cursor-pointer focus:border-primary"
                             >
-                              {p.variants.map((v: any) => (
+                              {p.variants.map((v) => (
                                 <option key={v.id} value={v.id}>
-                                  {v.name} ({v.sellingPrice.toLocaleString('vi-VN')}đ)
+                                  {v.name} (
+                                  {v.sellingPrice.toLocaleString("vi-VN")}đ)
                                 </option>
                               ))}
                             </select>
@@ -683,15 +874,21 @@ export default function MyPetsPage() {
                         {/* Action Add To Cart */}
                         <Button
                           size="sm"
-                          disabled={variant ? variant.stock <= 0 : p.stock <= 0}
+                          disabled={
+                            variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0
+                          }
                           className="w-full rounded-xl font-bold text-xs"
                           onClick={() => {
                             const vId = variant?.id || undefined;
                             addToCart(p, 1, false, vId);
-                            toast.success(`Đã thêm sản phẩm "${p.name}${variant ? ` (${variant.name})` : ''}" vào giỏ hàng!`);
+                            toast.success(
+                              `Đã thêm sản phẩm "${p.name}${variant ? ` (${variant.name})` : ""}" vào giỏ hàng!`,
+                            );
                           }}
                         >
-                          {(variant ? variant.stock <= 0 : p.stock <= 0) ? 'Hết hàng' : 'Thêm vào giỏ'}
+                          {(variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0)
+                            ? "Hết hàng"
+                            : "Thêm vào giỏ"}
                         </Button>
                       </div>
                     );
@@ -702,7 +899,6 @@ export default function MyPetsPage() {
           </div>
         )}
       </AnimatePresence>
-
     </main>
   );
 }
