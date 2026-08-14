@@ -234,8 +234,10 @@ export default function ProductDetailPage() {
       try {
         const uploaded = await uploadImages(files, 'review');
         setEditImages((prev) => [...prev, ...uploaded.map((img) => img.url)]);
-      } catch (err) {
-        toast.error('Lỗi khi tải ảnh lên. Vui lòng thử lại.');
+      } catch (err: any) {
+        console.error('Failed to upload review image:', err);
+        const msg = err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.';
+        toast.error(msg);
       } finally {
         setUploadingEditImages(false);
       }
@@ -248,8 +250,10 @@ export default function ProductDetailPage() {
       try {
         const uploaded = await uploadImages(files, 'review');
         setSubmitImages((prev) => [...prev, ...uploaded.map((img) => img.url)]);
-      } catch (err) {
-        toast.error('Lỗi khi tải ảnh lên. Vui lòng thử lại.');
+      } catch (err: any) {
+        console.error('Failed to upload review image:', err);
+        const msg = err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.';
+        toast.error(msg);
       } finally {
         setUploadingReviewImages(false);
       }

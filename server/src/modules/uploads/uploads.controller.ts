@@ -54,7 +54,7 @@ export class UploadsController {
       throw new BadRequestException('Không tìm thấy ảnh để tải lên.');
     }
 
-    const folder = this.folderFor(dto.purpose, request.user.id);
+    const folder = this.folderFor(dto.purpose || 'reviews', request.user.id);
     const isDocument =
       dto.purpose === UploadPurpose.VACCINE_DOCUMENT ||
       dto.purpose === UploadPurpose.PEDIGREE_DOCUMENT;
@@ -74,15 +74,17 @@ export class UploadsController {
     return { images };
   }
 
-  private folderFor(purpose: UploadPurpose, userId: string): string {
-    const folderByPurpose: Record<UploadPurpose, string> = {
+  private folderFor(purpose: UploadPurpose | string, userId: string): string {
+    const folderByPurpose: Record<string, string> = {
       [UploadPurpose.PET_AVATAR]: 'pets/avatar',
       [UploadPurpose.PET_GALLERY]: 'pets/gallery',
       [UploadPurpose.VACCINE_DOCUMENT]: 'pet-documents/vaccines',
       [UploadPurpose.PEDIGREE_DOCUMENT]: 'pet-documents/pedigrees',
       [UploadPurpose.PRODUCT]: 'products',
       [UploadPurpose.SPA_RESULT]: 'spa-results',
+      [UploadPurpose.REVIEW]: 'reviews',
     };
-    return `petmatching/users/${userId}/${folderByPurpose[purpose]}`;
+    const subFolder = folderByPurpose[purpose] || 'reviews';
+    return `petmatching/users/${userId}/${subFolder}`;
   }
 }

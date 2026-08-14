@@ -1,4 +1,4 @@
-import { IsEnum } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export enum UploadPurpose {
   PET_AVATAR = 'pet-avatar',
@@ -7,9 +7,11 @@ export enum UploadPurpose {
   PEDIGREE_DOCUMENT = 'pedigree-document',
   PRODUCT = 'product',
   SPA_RESULT = 'spa-result',
+  REVIEW = 'review',
 }
 
 export class UploadImagesDto {
-  @IsEnum(UploadPurpose)
-  purpose!: UploadPurpose;
+  @IsString()
+  @IsOptional()
+  purpose?: string;
 }

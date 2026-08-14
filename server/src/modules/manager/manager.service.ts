@@ -376,9 +376,34 @@ export class ManagerService {
   }
 
   async deleteProduct(id: string) {
-    return this.prisma.product.delete({
-      where: { id },
-    });
+    try {
+      // Check if product is referenced in order items
+      const orderCount = await this.prisma.orderItem.count({
+        where: { productId: id },
+      });
+      if (orderCount > 0) {
+        throw new BadRequestException(
+          `Không thể xóa sản phẩm này vì đã có ${orderCount} đơn hàng mua sản phẩm này. Bạn nên ngưng kinh doanh (ẩn) sản phẩm thay vì xóa.`,
+        );
+      }
+
+      // Delete cart items associated with this product first if any
+      await this.prisma.cartItem.deleteMany({
+        where: { productId: id },
+      });
+
+      return await this.prisma.product.delete({
+        where: { id },
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      console.error(`Lỗi khi xóa sản phẩm ${id}:`, error);
+      throw new BadRequestException(
+        'Không thể xóa sản phẩm này do đã phát sinh lịch sử đơn hàng hoặc đánh giá liên quan. Bạn có thể ẩn sản phẩm thay vì xóa.',
+      );
+    }
   }
 
   async getOrders() {
@@ -1684,11 +1709,18 @@ export class ManagerService {
       throw new NotFoundException('Không tìm thấy biến thể sản phẩm.');
     }
 
-    const deleted = await this.prisma.productVariant.delete({
-      where: { id: variantId },
-    });
+    try {
+      const deleted = await this.prisma.productVariant.delete({
+        where: { id: variantId },
+      });
 
-    await this.syncProductStock(existing.productId);
-    return deleted;
+      await this.syncProductStock(existing.productId);
+      return deleted;
+    } catch (error) {
+      console.error(`Lỗi khi xóa biến thể ${variantId}:`, error);
+      throw new BadRequestException(
+        'Không thể xóa biến thể này vì đã phát sinh lịch sử đơn hàng đặt mua biến thể.',
+      );
+    }
   }
 }

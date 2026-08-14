@@ -884,7 +884,7 @@ export default function OrdersPage() {
                           let currentIdx = statusOrder.indexOf(order.status);
 
                           const steps = [
-                            { label: 'Xác nhận', icon: '1' },
+                            { label: 'Chờ xác nhận', icon: '1' },
                             { label: 'Đang xử lý', icon: '2' },
                             { label: 'Đã gói hàng', icon: '3' },
                             { label: 'Đang giao', icon: '4' },

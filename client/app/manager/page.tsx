@@ -874,9 +874,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       toast.success('Xóa sản phẩm thành công!');
       const res = await managerApi.getProducts();
       setProducts(res.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete product', error);
-      toast.error('Lỗi khi xóa sản phẩm.');
+      const msg = error.response?.data?.message || 'Lỗi khi xóa sản phẩm. Sản phẩm có thể đã được gắn vào đơn hàng.';
+      toast.error(msg);
     }
   };
 
@@ -1001,9 +1002,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       loadVariants(currentProduct.id);
       const prodRes = await managerApi.getProducts();
       setProducts(prodRes.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete variant', error);
-      toast.error('Lỗi khi xóa biến thể.');
+      const msg = error.response?.data?.message || 'Lỗi khi xóa biến thể.';
+      toast.error(msg);
     }
   };
 
