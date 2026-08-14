@@ -94,7 +94,7 @@ export default function AdminDashboardPage() {
       },
       {
         label: 'Cần xử lý',
-        value: data.stats.pets.pendingVerification + data.stats.matching.pendingReports + data.stats.store.pendingComplaints + data.stats.spa.pendingComplaints,
+        value: data.stats.pets.pendingVerification + data.stats.matching.pendingReports,
         detail: 'Mục đang chờ quản trị viên xem xét',
         icon: AlertTriangle,
         color: 'red',
@@ -112,9 +112,9 @@ export default function AdminDashboardPage() {
         tone: 'amber',
       },
       {
-        label: 'Báo cáo ghép đôi',
+        label: 'Kiểm duyệt ghép đôi',
         value: data.stats.matching.pendingReports,
-        href: '/admin/reports?type=MATCHING&status=PENDING',
+        href: '/admin/reports?status=PENDING',
         tone: 'red',
       },
       {
@@ -124,22 +124,10 @@ export default function AdminDashboardPage() {
         tone: 'primary',
       },
       {
-        label: 'Khiếu nại cửa hàng',
-        value: data.stats.store.pendingComplaints,
-        href: '/admin/reports?type=STORE&status=PENDING',
-        tone: 'red',
-      },
-      {
         label: 'Spa cần kích hoạt',
         value: data.stats.spa.pendingBranches,
         href: '/admin/spas',
         tone: 'primary',
-      },
-      {
-        label: 'Khiếu nại spa',
-        value: data.stats.spa.pendingComplaints,
-        href: '/admin/reports?type=SPA&status=PENDING',
-        tone: 'red',
       },
     ];
   }, [data]);

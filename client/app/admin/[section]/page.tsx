@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
@@ -47,19 +47,8 @@ const ADMIN_PAGE_SIZE = 10;
 
 const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER', 'SPA_STAFF'];
 const accountStatusOptions: AccountStatus[] = ['ACTIVE', 'SUSPENDED'];
-const complaintTypeOptions = [
-  ['ALL', 'Tất cả nhóm'],
-  ['STORE', 'Cửa hàng'],
-  ['SPA', 'Spa'],
-  ['MATCHING', 'Ghép đôi'],
-  ['PET', 'Thú cưng'],
-  ['USER', 'Người dùng'],
-  ['REVIEW', 'Đánh giá'],
-] as const;
 const complaintTargetOptions = [
   ['ALL', 'Tất cả đối tượng'],
-  ['ORDER', 'Đơn hàng'],
-  ['PRODUCT', 'Sản phẩm'],
   ['PET', 'Thú cưng'],
   ['USER', 'Người dùng'],
 ] as const;
@@ -67,8 +56,6 @@ const complaintStatusOptions = [
   ['ALL', 'Tất cả trạng thái'],
   ['PENDING', 'Chờ xử lý'],
   ['RESOLVED', 'Đã xử lý'],
-  ['ESCALATED', 'Đã chuyển cấp'],
-  ['DISMISSED', 'Đã bỏ qua'],
 ] as const;
 const readOnlySections = new Set(['stores', 'system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-bookings']);
 
@@ -116,18 +103,6 @@ const sectionConfig: Record<string, {
       { key: 'userNote', label: 'Ghi chú người dùng', render: (row) => row.userNote ?? '-' },
       { key: 'reviewNote', label: 'Phản hồi Admin', render: (row) => row.reviewNote ?? '-' },
       { key: 'createdAt', label: 'Ngày gửi', render: dateCell },
-    ],
-  },
-  'matching-reports': {
-    title: 'Báo cáo ghép đôi',
-    description: 'Các báo cáo liên quan đến thú cưng, hồ sơ và hoạt động ghép đôi.',
-    loader: adminApi.matchingReports,
-    columns: [
-      { key: 'petId', label: 'Mã thú cưng' },
-      { key: 'userId', label: 'Người báo cáo' },
-      { key: 'reason', label: 'Lý do' },
-      { key: 'isResolved', label: 'Đã xử lý', render: (row) => row.isResolved ? 'Có' : 'Không' },
-      { key: 'createdAt', label: 'Ngày tạo', render: dateCell },
     ],
   },
   stores: {
@@ -215,16 +190,15 @@ const sectionConfig: Record<string, {
     ],
   },
   reports: {
-    title: 'Báo cáo & khiếu nại',
-    description: 'Hàng chờ kiểm duyệt tập trung cho mọi loại báo cáo và khiếu nại.',
-    loader: loadAllReports,
-    columns: complaintColumns(),
+    title: 'Kiểm duyệt ghép đôi',
+    description: 'Tiếp nhận và xử lý các phản ánh phát sinh trong quá trình ghép đôi và trò chuyện.',
+    loader: loadMatchingReports,
+    columns: matchingReportColumns(),
   },
 };
 
 export default function AdminSectionPage() {
   const params = useParams<{ section: string }>();
-  const router = useRouter();
   const section = params.section;
   const config = sectionConfig[section] ?? sectionConfig.reports;
   const hasActions = !readOnlySections.has(section);
@@ -232,9 +206,9 @@ export default function AdminSectionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState('');
-  const [complaintType, setComplaintType] = useState('ALL');
   const [complaintTarget, setComplaintTarget] = useState('ALL');
-  const [complaintStatus, setComplaintStatus] = useState('ALL');
+  const [complaintStatus, setComplaintStatus] = useState('PENDING');
+  const [reportSearch, setReportSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] = useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] = useState<PetModerationFlow | null>(null);
@@ -253,29 +227,31 @@ export default function AdminSectionPage() {
   }, [config, section]);
 
   useEffect(() => {
-    if (section === 'matching-reports') {
-      router.replace('/admin/reports?type=MATCHING');
-      return;
-    }
     load();
-  }, [load, router, section]);
+  }, [load]);
 
   useEffect(() => {
     if (section !== 'reports') return;
     const query = new URLSearchParams(window.location.search);
-    setComplaintType(query.get('type') ?? 'ALL');
     setComplaintTarget(query.get('targetType') ?? 'ALL');
-    setComplaintStatus(query.get('status') ?? 'ALL');
+    setComplaintStatus(query.get('status') ?? 'PENDING');
   }, [section]);
 
   const visibleRows = useMemo(() => {
     if (section !== 'reports') return rows;
+    const normalizedSearch = reportSearch.trim().toLocaleLowerCase('vi');
     return rows.filter((row) =>
-      (complaintType === 'ALL' || row.type === complaintType) &&
       (complaintTarget === 'ALL' || row.targetType === complaintTarget) &&
-      (complaintStatus === 'ALL' || row.status === complaintStatus),
+      (complaintStatus === 'ALL' || row.status === complaintStatus) &&
+      (!normalizedSearch || [
+        row.reporter?.name,
+        row.reporter?.email,
+        row.reportedUser?.name,
+        row.pet?.name,
+        formatMatchingReportReason(row.reason),
+      ].some((value) => String(value ?? '').toLocaleLowerCase('vi').includes(normalizedSearch))),
     );
-  }, [complaintStatus, complaintTarget, complaintType, rows, section]);
+  }, [complaintStatus, complaintTarget, reportSearch, rows, section]);
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / ADMIN_PAGE_SIZE));
   const activePage = Math.min(currentPage, totalPages);
@@ -329,8 +305,10 @@ export default function AdminSectionPage() {
       await action();
       toast.success(success);
       load();
+      return true;
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Thao tác thất bại.');
+      return false;
     } finally {
       setSavingId('');
     }
@@ -419,12 +397,12 @@ export default function AdminSectionPage() {
         ) : (
           <div>
             {section === 'reports' && (
-              <ComplaintFilters
-                type={complaintType}
+              <MatchingReportFilters
                 target={complaintTarget}
                 status={complaintStatus}
-                onTypeChange={(value) => {
-                  setComplaintType(value);
+                search={reportSearch}
+                onSearchChange={(value) => {
+                  setReportSearch(value);
                   setCurrentPage(1);
                 }}
                 onTargetChange={(value) => {
@@ -489,7 +467,7 @@ export default function AdminSectionPage() {
               currentPage={activePage}
               totalItems={visibleRows.length}
               onPageChange={setCurrentPage}
-              itemLabel="mục"
+              itemLabel="phản ánh"
             />
           </div>
         )}
@@ -533,6 +511,17 @@ export default function AdminSectionPage() {
         report={matchingReportDetail}
         open={Boolean(matchingReportDetail)}
         onOpenChange={(open) => !open && setMatchingReportDetail(null)}
+        resolving={Boolean(matchingReportDetail && savingId === matchingReportDetail.id)}
+        onResolve={() => {
+          if (!matchingReportDetail) return;
+          runAction(
+            matchingReportDetail,
+            () => adminApi.resolveMatchingReport(matchingReportDetail.id),
+            'Đã xử lý phản ánh.',
+          ).then((resolved) => {
+            if (resolved) setMatchingReportDetail(null);
+          });
+        }}
       />
       {matchingReportLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
@@ -547,45 +536,67 @@ function MatchingReportDialog({
   report,
   open,
   onOpenChange,
+  resolving,
+  onResolve,
 }: {
   report: Row | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  resolving: boolean;
+  onResolve: () => void;
 }) {
-  const messages = report?.match?.messages ?? [];
+  const messages = (report?.match?.messages ?? []).slice(-30);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
+      <DialogContent className="flex h-[min(90vh,820px)] flex-col overflow-hidden sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Kiểm tra báo cáo ghép đôi</DialogTitle>
+          <DialogTitle>Xem xét phản ánh</DialogTitle>
           <DialogDescription>
-            Xem thông tin báo cáo và tối đa 100 tin nhắn gần nhất trong match.
+            Kiểm tra nội dung phản ánh và ngữ cảnh trò chuyện trước khi xử lý.
           </DialogDescription>
         </DialogHeader>
         {report && (
-          <div className="grid min-h-0 gap-4 overflow-y-auto pr-1">
-            <div className="grid gap-3 rounded-xl border bg-[#F8FAFC] p-4 text-sm sm:grid-cols-2">
-              <p><span className="font-black">Người báo cáo:</span> {report.reporter?.name ?? report.userId}</p>
-              <p><span className="font-black">Loại đối tượng:</span> {formatComplaintTarget(report.targetType)}</p>
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="shrink-0 rounded-xl border bg-[#F8FAFC] p-4 text-sm">
+              <p className="mb-3 text-[11px] font-black uppercase tracking-wider text-[#64748B]">Nội dung phản ánh</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+              <p><span className="font-black">Người phản ánh:</span> {report.reporter?.name ?? report.userId}</p>
+              <p><span className="font-black">Bên bị phản ánh:</span> {report.reportedUser?.name ?? report.reportedUserId ?? '-'}</p>
               <p>
                 <span className="font-black">Đối tượng:</span>{' '}
+                {formatComplaintTarget(report.targetType)} —{' '}
                 {report.targetType === 'PET'
                   ? (report.pet?.name ?? report.petId)
                   : (report.reportedUser?.name ?? report.reportedUserId ?? '-')}
               </p>
-              {report.targetType === 'PET' && (
-                <p><span className="font-black">Chủ thú cưng:</span> {report.reportedUser?.name ?? '-'}</p>
-              )}
+              <p><span className="font-black">Gửi lúc:</span> {new Date(report.createdAt).toLocaleString('vi-VN')}</p>
               <p><span className="font-black">Lý do:</span> {formatMatchingReportReason(report.reason)}</p>
-              <p className="sm:col-span-2"><span className="font-black">Chi tiết:</span> {report.detail || 'Không có'}</p>
+              </div>
+              <div className="mt-4 rounded-lg border border-[#E5EAF0] bg-white p-3">
+                <p className="text-[11px] font-black uppercase tracking-wider text-[#64748B]">Mô tả của người phản ánh</p>
+                <p className="mt-2 whitespace-pre-wrap break-words font-semibold text-[#334155]">{report.detail || 'Không cung cấp mô tả.'}</p>
+              </div>
+              {report.isResolved && (
+                <div className="mt-4 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900 sm:grid-cols-2">
+                  <p><span className="font-black">Trạng thái:</span> Đã xử lý</p>
+                  <p><span className="font-black">Người xử lý:</span> {report.resolver?.name ?? '-'}</p>
+                  <p className="sm:col-span-2"><span className="font-black">Xử lý lúc:</span> {report.resolvedAt ? new Date(report.resolvedAt).toLocaleString('vi-VN') : '-'}</p>
+                </div>
+              )}
             </div>
-            <div>
-              <h3 className="mb-3 text-sm font-black text-[#172033]">Lịch sử trò chuyện</h3>
-              <div className="grid max-h-[430px] gap-3 overflow-y-auto rounded-xl border p-3">
+            <div className="flex min-h-0 flex-1 flex-col">
+              <h3 className="mb-1 text-sm font-black text-[#172033]">Ngữ cảnh cuộc trò chuyện</h3>
+              <p className="mb-3 text-xs font-semibold text-[#64748B]">Hiển thị tối đa 30 tin nhắn gần thời điểm gửi phản ánh.</p>
+              <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto overscroll-contain rounded-xl border p-3 pr-2">
                 {messages.map((message: Row) => (
                   <div key={message.id} className="rounded-lg bg-[#F8FAFC] p-3 text-sm">
                     <div className="flex justify-between gap-3 text-xs text-[#64748B]">
-                      <span className="font-black text-[#334155]">{message.sender?.name ?? message.senderId}</span>
+                      <span className="font-black text-[#334155]">
+                        {message.sender?.name ?? message.senderId}{' '}
+                        <span className="font-bold text-primary">
+                          {message.senderId === report.reporter?.id ? '· Người phản ánh' : message.senderId === report.reportedUser?.id ? '· Bên bị phản ánh' : ''}
+                        </span>
+                      </span>
                       <span>{new Date(message.createdAt).toLocaleString('vi-VN')}</span>
                     </div>
                     {message.content && <p className="mt-2 whitespace-pre-wrap break-words">{message.content}</p>}
@@ -596,9 +607,17 @@ function MatchingReportDialog({
                     )}
                   </div>
                 ))}
-                {!messages.length && <p className="py-8 text-center text-sm text-[#64748B]">Match không có tin nhắn.</p>}
+                {!messages.length && <p className="py-8 text-center text-sm text-[#64748B]">Cuộc ghép đôi không có tin nhắn.</p>}
               </div>
             </div>
+            {!report.isResolved && (
+              <div className="shrink-0 flex justify-end border-t bg-white pt-4">
+                <button type="button" disabled={resolving} onClick={onResolve} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-black text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60">
+                  {resolving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                  Đánh dấu đã xử lý
+                </button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
@@ -1810,31 +1829,10 @@ function ActionGroup({
     );
   }
 
-  if (section === 'matching-reports' && !row.isResolved) {
-    return (
-      <div className="flex justify-end">
-        <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveMatchingReport(row.id), 'Đã xử lý báo cáo.')} />
-      </div>
-    );
-  }
-
-  if (section === 'reports' && row.reportSource === 'MATCHING') {
+  if (section === 'reports') {
     return (
       <div className="flex justify-end gap-2">
-        <IconButton label="Kiểm tra" icon={Eye} onClick={() => onInspectMatchingReport?.()} />
-        {row.status === 'PENDING' && (
-          <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveMatchingReport(row.id), 'Đã xử lý báo cáo ghép đôi.')} />
-        )}
-      </div>
-    );
-  }
-
-  if (section === 'reports' && row.status === 'PENDING') {
-
-    return (
-      <div className="flex justify-end gap-2">
-        <IconButton label="Xử lý" icon={CheckCircle2} onClick={() => onAction(() => adminApi.resolveComplaint(row.id, 'RESOLVE'), 'Đã xử lý khiếu nại.')} />
-        <IconButton label="Chuyển cấp" icon={ShieldAlert} onClick={() => onAction(() => adminApi.resolveComplaint(row.id, 'ESCALATE'), 'Đã chuyển cấp khiếu nại.')} />
+        <IconButton label="Xem xét" icon={Eye} onClick={() => onInspectMatchingReport?.()} />
       </div>
     );
   }
@@ -1994,31 +1992,29 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function ComplaintFilters({
-  type,
+function MatchingReportFilters({
   target,
   status,
-  onTypeChange,
+  search,
+  onSearchChange,
   onTargetChange,
   onStatusChange,
 }: {
-  type: string;
   target: string;
   status: string;
-  onTypeChange: (value: string) => void;
+  search: string;
+  onSearchChange: (value: string) => void;
   onTargetChange: (value: string) => void;
   onStatusChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-3 border-b bg-card p-4 xl:grid-cols-3">
+    <div className="grid gap-3 border-b bg-card p-4 xl:grid-cols-[minmax(260px,1fr)_auto_auto]">
       <div className="space-y-2">
-        <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Nhóm báo cáo</p>
-        <AdminSegmentedFilter
-          ariaLabel="Lọc theo nhóm báo cáo"
-          value={type}
-          onChange={onTypeChange}
-          options={complaintTypeOptions.map(([value, label]) => ({ value, label }))}
-        />
+        <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Tìm kiếm</p>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Tên, email, thú cưng hoặc lý do..." aria-label="Tìm kiếm phản ánh ghép đôi" className="pl-9" />
+        </div>
       </div>
       <div className="space-y-2">
         <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Đối tượng</p>
@@ -2042,44 +2038,34 @@ function ComplaintFilters({
   );
 }
 
-function complaintColumns() {
+function matchingReportColumns() {
   return [
-    { key: 'title', label: 'Tiêu đề' },
-    { key: 'type', label: 'Nhóm', render: (row: Row) => formatComplaintType(row.type) },
-    { key: 'targetType', label: 'Đối tượng', render: (row: Row) => row.reportSource === 'MATCHING' ? row.targetId : formatComplaintTarget(row.targetType) },
-    { key: 'reporterId', label: 'Người báo cáo', render: (row: Row) => row.reporter?.name ?? row.reporterId },
+    { key: 'reason', label: 'Lý do', render: (row: Row) => formatMatchingReportReason(row.reason) },
+    { key: 'targetType', label: 'Đối tượng', render: (row: Row) => formatComplaintTarget(row.targetType) },
+    { key: 'targetId', label: 'Người/Thú cưng bị phản ánh' },
+    { key: 'reporterId', label: 'Người phản ánh', render: (row: Row) => row.reporter?.name ?? row.reporterId },
     { key: 'detail', label: 'Chi tiết' },
-    { key: 'status', label: 'Trạng thái' },
-    { key: 'actionTaken', label: 'Hành động', render: (row: Row) => row.actionTaken ? formatStatus(row.actionTaken) : '-' },
-    { key: 'createdAt', label: 'Ngày tạo', render: dateCell },
+    { key: 'status', label: 'Trạng thái', render: (row: Row) => formatStatus(row.status) },
+    { key: 'createdAt', label: 'Ngày gửi', render: dateCell },
   ];
 }
 
-async function loadAllReports(): Promise<{ data: Row[] }> {
-  const [complaintsResponse, matchingReportsResponse] = await Promise.all([
-    adminApi.complaints(),
-    adminApi.matchingReports(),
-  ]);
-
-  const complaints = Array.isArray(complaintsResponse.data) ? complaintsResponse.data : [];
-  const matchingReports = Array.isArray(matchingReportsResponse.data)
-    ? matchingReportsResponse.data.map((report: Row) => ({
+async function loadMatchingReports(): Promise<{ data: Row[] }> {
+  const matchingReportsResponse = await adminApi.matchingReports();
+  const matchingReports: Row[] = Array.isArray(matchingReportsResponse.data)
+    ? matchingReportsResponse.data.map((report: Row): Row => ({
       ...report,
-      reportSource: 'MATCHING',
-      type: 'MATCHING',
       status: report.isResolved ? 'RESOLVED' : 'PENDING',
-      title: formatMatchingReportReason(report.reason),
       reporterId: report.userId,
       targetType: report.targetType ?? 'USER',
       targetId: report.targetType === 'PET'
         ? (report.pet?.name ?? report.petId)
         : (report.reportedUser?.name ?? report.reportedUserId),
-      actionTaken: report.isResolved ? 'RESOLVE' : null,
     }))
     : [];
 
   return {
-    data: [...complaints, ...matchingReports].sort(
+    data: matchingReports.sort(
       (left, right) =>
         new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     ),
@@ -2116,18 +2102,6 @@ function formatRole(role?: string) {
   };
 
   return role ? roles[role] ?? role : '-';
-}
-
-function formatComplaintType(type?: string) {
-  const labels: Record<string, string> = {
-    STORE: 'Cửa hàng',
-    SPA: 'Spa',
-    MATCHING: 'Ghép đôi',
-    PET: 'Thú cưng',
-    USER: 'Người dùng',
-    REVIEW: 'Đánh giá',
-  };
-  return type ? labels[type] ?? type : '-';
 }
 
 function formatComplaintTarget(target?: string) {

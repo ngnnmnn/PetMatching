@@ -6,7 +6,6 @@ import { ReactNode, useEffect, useState } from 'react';
 import {
   Activity,
   ClipboardCheck,
-  FileWarning,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -27,7 +26,6 @@ const navGroups = [
       { label: 'Bảng điều khiển', href: '/admin', icon: LayoutDashboard },
       { label: 'Thông tin hệ thống', href: '/admin/system-profile', icon: MapPin },
       { label: 'Người dùng & vai trò', href: '/admin/users', icon: UsersRound },
-      { label: 'Báo cáo & khiếu nại', href: '/admin/reports', icon: FileWarning },
     ],
   },
   {
@@ -36,6 +34,7 @@ const navGroups = [
       { label: 'Thú cưng', href: '/admin/pets', icon: PawPrint },
       { label: 'Xác minh thú cưng', href: '/admin/pet-verifications', icon: ClipboardCheck },
       { label: 'Quy tắc giống', href: '/admin/breed-rules', icon: SlidersHorizontal },
+      { label: 'Kiểm duyệt ghép đôi', href: '/admin/reports', icon: ShieldCheck },
     ],
   },
   {
