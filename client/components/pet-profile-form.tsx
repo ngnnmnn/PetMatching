@@ -279,8 +279,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         vaccineNote: formData.isVaccinated ? "Đã tiêm đủ 3 mũi cơ bản" : undefined,
         pedigreeDocumentUrls: pedigreePhoto ? [pedigreePhoto] : undefined,
         pedigreeNote: formData.pedigreeNumber.trim() || "Giấy tờ phả hệ VKA/TICA",
-        breedingOption: breedingOptionMap[formData.breedingOption] || undefined,
-        breedingFee: formData.breedingPrice ? Number(formData.breedingPrice) : undefined,
+        breedingOption: gender === "MALE" ? breedingOptionMap[formData.breedingOption] || undefined : undefined,
+        breedingFee: gender === "MALE" && formData.breedingPrice ? Number(formData.breedingPrice) : undefined,
       })
       onComplete?.()
     } catch {
@@ -444,7 +444,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, gender: "female" })}
+                    onClick={() => setFormData({
+                      ...formData,
+                      gender: "female",
+                      breedingOption: "",
+                      breedingPrice: "",
+                    })}
                     className={cn(
                       "rounded-xl border-2 p-4 font-semibold transition-all",
                       formData.gender === "female" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50",
@@ -681,35 +686,39 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 <p className="text-right text-xs text-muted-foreground">{formData.personality.length}/500 ký tự</p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="breedingOption">Hình thức phối giống mong muốn</Label>
-                <Select value={formData.breedingOption} onValueChange={(value) => setFormData({ ...formData, breedingOption: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn hình thức" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {breedingOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {formData.gender === "male" && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="breedingOption">Hình thức phối giống mong muốn</Label>
+                    <Select value={formData.breedingOption} onValueChange={(value) => setFormData({ ...formData, breedingOption: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn hình thức" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {breedingOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              {formData.breedingOption === "cash" && (
-                <div className="space-y-2">
-                  <Label htmlFor="breedingPrice">Số tiền (VNĐ)</Label>
-                  <Input
-                    id="breedingPrice"
-                    type="number"
-                    min="0"
-                    step="100000"
-                    placeholder="Ví dụ: 5000000"
-                    value={formData.breedingPrice}
-                    onChange={(event) => setFormData({ ...formData, breedingPrice: event.target.value })}
-                  />
-                </div>
+                  {formData.breedingOption === "cash" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="breedingPrice">Số tiền (VNĐ)</Label>
+                      <Input
+                        id="breedingPrice"
+                        type="number"
+                        min="0"
+                        step="100000"
+                        placeholder="Ví dụ: 5000000"
+                        value={formData.breedingPrice}
+                        onChange={(event) => setFormData({ ...formData, breedingPrice: event.target.value })}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
