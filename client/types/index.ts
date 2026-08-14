@@ -288,6 +288,7 @@ export interface SpaBookingType {
   timeStartReal?: string | null;
   timeEndReal?: string | null;
   completionDiffMinutes?: number | null;
+  rescheduleCount?: number;
   note: string | null;
   petConditionAfter?: string | null;
   photoAfter?: string | null;
@@ -329,8 +330,12 @@ export interface SpaBookingType {
     avatarUrl?: string | null;
   } | null;
   feedback?: {
-    rating: number;
+    id?: string;
+    rateStaff?: number;
+    rateServices?: number;
+    rating?: number;
     comment?: string | null;
+    createdAt?: string;
   } | null;
   addressSpaId?: string | null;
   addressSpa?: {

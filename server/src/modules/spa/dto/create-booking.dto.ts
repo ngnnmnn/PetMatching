@@ -78,6 +78,12 @@ export class ManagerRescheduleDto {
   scheduledAt: string;
 }
 
+export class RescheduleBookingDto {
+  @IsNotEmpty()
+  @IsDateString()
+  scheduledAt: string;
+}
+
 export class ManagerUpdateServicesDto {
   @IsNotEmpty()
   @IsString()

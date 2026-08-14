@@ -73,9 +73,12 @@ export default function BookingDialog({
       setFetchingPets(true);
       api.get('/pets/my')
         .then((res) => {
-          setPets(res.data || []);
-          if (res.data && res.data.length > 0) {
-            setSelectedPetId(res.data[0].id);
+          const petList = res.data || [];
+          setPets(petList);
+          if (petList.length === 1) {
+            setSelectedPetId(petList[0].id);
+          } else if (petList.length > 1) {
+            setSelectedPetId('');
           } else {
             setSelectedPetId('custom');
           }
@@ -153,6 +156,11 @@ export default function BookingDialog({
 
     if (!time) {
       toast.error('Vui lòng chọn giờ hẹn.');
+      return;
+    }
+
+    if (pets.length > 0 && !selectedPetId) {
+      toast.error('Vui lòng chọn thú cưng.');
       return;
     }
 

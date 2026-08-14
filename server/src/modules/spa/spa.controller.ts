@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, RescheduleBookingDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -62,6 +62,16 @@ export class SpaController {
   @Patch('bookings/:id/cancel')
   cancelBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.cancelBooking(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('bookings/:id/reschedule')
+  userRescheduleBooking(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: RescheduleBookingDto,
+  ) {
+    return this.spaService.userRescheduleBooking(req.user.id, bookingId, dto.scheduledAt);
   }
 
   @UseGuards(JwtAuthGuard)

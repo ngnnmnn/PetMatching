@@ -297,6 +297,8 @@ export class SpaService {
             name: true,
             description: true,
             price: true,
+            durationMin: true,
+            durationMax: true,
           },
         },
         pet: true,
@@ -321,7 +323,7 @@ export class SpaService {
       allSubServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
           where: { id: { in: allSubServiceIds } },
-          select: { id: true, name: true, price: true, description: true },
+          select: { id: true, name: true, price: true, description: true, durationMin: true, durationMax: true },
         })
         : [];
 
@@ -340,6 +342,7 @@ export class SpaService {
 
       return {
         ...b,
+        rescheduleCount: Number((b as any).rescheduleCount) || 0,
         priceSnapshot: mainPrice,
         totalPrice,
         subServicesTotal,
@@ -362,19 +365,26 @@ export class SpaService {
       throw new BadRequestException('Bạn không có quyền hủy lịch hẹn này.');
     }
 
-    if (
-      booking.status === SpaBookingStatus.COMPLETED ||
-      booking.status === SpaBookingStatus.CANCELLED ||
-      booking.status === SpaBookingStatus.NO_SHOW
-    ) {
-      throw new BadRequestException('Không thể hủy lịch hẹn đã hoàn thành, đã hủy hoặc vắng mặt.');
+    // Allow cancellation ONLY when status is PENDING, CONFIRMED, or ASSIGNED (same as rescheduling)
+    const allowedStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+    ];
+
+    if (!allowedStatuses.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ có thể hủy lịch khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+      );
     }
 
-    // Check cancellation policy: at least 2 hours before scheduledAt
+    // Check cancellation policy: at least 30 minutes before scheduled time
     const now = Date.now();
-    const scheduleTime = new Date(booking.scheduledAt).getTime();
-    if (scheduleTime - now < 2 * 60 * 60 * 1000) {
-      throw new BadRequestException('Bạn chỉ có thể hủy lịch đặt Spa trước thời gian hẹn tối thiểu 2 tiếng.');
+    const scheduleTime = new Date(booking.scheduledAt || booking.timeStartExpected).getTime();
+    const thirtyMinutesMs = 30 * 60 * 1000;
+
+    if (scheduleTime - now < thirtyMinutesMs) {
+      throw new BadRequestException('Bạn chỉ có thể hủy lịch hẹn trước thời gian đặt lịch ít nhất 30 phút.');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -1481,6 +1491,7 @@ export class SpaService {
 
       return {
         ...b,
+        rescheduleCount: Number((b as any).rescheduleCount) || 0,
         priceSnapshot: mainPrice,
         totalPrice,
         subServicesTotal: subRevenue,
@@ -1625,13 +1636,17 @@ export class SpaService {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
     }
 
+    if (((booking as any).rescheduleCount || 0) >= 2) {
+      throw new BadRequestException('Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.');
+    }
+
     const newStart = new Date(scheduledAt);
     const durationMs = (booking.timeEndExpected && booking.timeStartExpected)
       ? (booking.timeEndExpected.getTime() - booking.timeStartExpected.getTime())
       : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    return this.prisma.spaBooking.update({
+    const updated = await this.prisma.spaBooking.update({
       where: { id: bookingId },
       data: {
         scheduledAt: newStart,
@@ -1640,6 +1655,95 @@ export class SpaService {
         reminderSentAt: null,
       },
     });
+
+    await this.prisma.$executeRaw`
+      UPDATE "spa_bookings"
+      SET "rescheduleCount" = COALESCE("rescheduleCount", 0) + 1
+      WHERE id = ${bookingId}
+    `;
+
+    const finalBooking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+    });
+
+    return finalBooking || updated;
+  }
+
+  async userRescheduleBooking(userId: string, bookingId: string, scheduledAt: string) {
+    const booking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    if (booking.userId !== userId) {
+      throw new ForbiddenException('Bạn không có quyền đổi lịch hẹn này.');
+    }
+
+    if (((booking as any).rescheduleCount || 0) >= 2) {
+      throw new BadRequestException('Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.');
+    }
+
+    // Allow rescheduling ONLY when status is PENDING, CONFIRMED, or ASSIGNED
+    const allowedStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+    ];
+
+    if (!allowedStatuses.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ có thể đổi lịch khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+      );
+    }
+
+    // Time restriction: Rescheduling can only be done at least 30 minutes before scheduled booking time
+    const currentScheduledTime = new Date(booking.scheduledAt || booking.timeStartExpected).getTime();
+    const now = Date.now();
+    const thirtyMinutesMs = 30 * 60 * 1000;
+
+    if (currentScheduledTime - now < thirtyMinutesMs) {
+      throw new BadRequestException('Bạn chỉ có thể đổi lịch hẹn trước thời gian đặt lịch ít nhất 30 phút.');
+    }
+
+    const newStart = new Date(scheduledAt);
+    if (isNaN(newStart.getTime())) {
+      throw new BadRequestException('Thời gian đổi lịch không hợp lệ.');
+    }
+
+    if (newStart.getTime() <= now) {
+      throw new BadRequestException('Thời gian hẹn mới phải ở trong tương lai.');
+    }
+
+    const durationMs =
+      booking.timeEndExpected && booking.timeStartExpected
+        ? booking.timeEndExpected.getTime() - booking.timeStartExpected.getTime()
+        : 45 * 60 * 1000;
+    const newEnd = new Date(newStart.getTime() + durationMs);
+
+    const updated = await this.prisma.spaBooking.update({
+      where: { id: bookingId },
+      data: {
+        scheduledAt: newStart,
+        timeStartExpected: newStart,
+        timeEndExpected: newEnd,
+        reminderSentAt: null,
+      },
+    });
+
+    await this.prisma.$executeRaw`
+      UPDATE "spa_bookings"
+      SET "rescheduleCount" = COALESCE("rescheduleCount", 0) + 1
+      WHERE id = ${bookingId}
+    `;
+
+    const finalBooking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+    });
+
+    return finalBooking || updated;
   }
 
   async managerUpdateBookingServices(managerId: string, bookingId: string, mainServiceId: string, subServiceIds: string[] = []) {

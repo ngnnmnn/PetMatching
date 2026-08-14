@@ -676,27 +676,46 @@ export default function SpaHome() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {matchedReviews.map((rev: any, idx: number) => (
-                        <div key={idx} className="p-3.5 bg-gray-50/80 border border-gray-200 rounded-2xl space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="size-7 rounded-full bg-purple-200 text-purple-800 font-black text-xs flex items-center justify-center">
-                                {rev.user?.name ? rev.user.name.charAt(0).toUpperCase() : 'K'}
+                      {matchedReviews.map((rev: any, idx: number) => {
+                        const serviceName = rev.booking?.service?.name || rev.booking?.category?.name || detailCard.title;
+                        const reviewDate = rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('vi-VN') : '';
+
+                        return (
+                          <div key={idx} className="p-3.5 bg-gray-50/80 border border-gray-200 rounded-2xl space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2.5">
+                                <div className="size-7 rounded-full bg-purple-200 text-purple-800 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                                  {rev.user?.name ? rev.user.name.charAt(0).toUpperCase() : 'K'}
+                                </div>
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-xs text-gray-900 leading-none">{rev.user?.name || 'Khách hàng'}</span>
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-900 bg-purple-100/80 border border-purple-250 px-2 py-0.5 rounded-md">
+                                      <Sparkles className="size-2.5 text-purple-600 shrink-0" />
+                                      {serviceName}
+                                    </span>
+                                  </div>
+                                  {reviewDate && (
+                                    <span className="text-[10px] text-gray-400 font-medium block">
+                                      {reviewDate}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                              <span className="font-bold text-xs text-gray-900">{rev.user?.name || 'Khách hàng'}</span>
+                              <div className="flex items-center gap-1 text-amber-500 font-bold text-xs shrink-0 pt-0.5">
+                                <Star className="size-3.5 fill-amber-400 text-amber-400" />
+                                <span>{rev.rateServices || rev.rateStaff || 5}.0</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1 text-amber-500 font-bold text-xs">
-                              <Star className="size-3.5 fill-amber-400 text-amber-400" />
-                              <span>{rev.rateServices || rev.rateStaff || 5}.0</span>
-                            </div>
+
+                            {rev.comment && (
+                              <p className="text-xs text-gray-700 font-medium italic pl-9.5 leading-relaxed">
+                                "{rev.comment}"
+                              </p>
+                            )}
                           </div>
-                          {rev.comment && (
-                            <p className="text-xs text-gray-600 font-medium italic pl-9">
-                              "{rev.comment}"
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

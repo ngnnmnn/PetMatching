@@ -1633,7 +1633,7 @@ function SpaManagerConsoleContent() {
                             LATE: 'bg-rose-50 text-rose-700 border-rose-250'
                           }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
-                          const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status);
+                          const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
                           const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
 
                           return (
@@ -2669,7 +2669,7 @@ function SpaManagerConsoleContent() {
                 </button>
               )}
 
-              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(selectedBookingDetail.status) && (
+              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(selectedBookingDetail.status) && (selectedBookingDetail.rescheduleCount || 0) < 2 && (
                 <button
                   type="button"
                   onClick={() => {

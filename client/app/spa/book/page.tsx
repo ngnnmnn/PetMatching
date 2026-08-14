@@ -356,8 +356,10 @@ function SpaBookingWizard() {
 
         const myPets = petsRes.data || [];
         setPets(myPets);
-        if (myPets.length > 0) {
+        if (myPets.length === 1) {
           setSelectedPetId(myPets[0].id);
+        } else {
+          setSelectedPetId('');
         }
 
         setBookingDate(getLocalDateString());

@@ -32,6 +32,8 @@ export const spaApi = {
   createBooking: (data: CreateBookingData) => api.post<any>('/spa/bookings', data),
   getMyBookings: () => api.get<SpaBookingType[]>('/spa/bookings/my'),
   cancelBooking: (id: string) => api.patch<any>(`/spa/bookings/${id}/cancel`),
+  rescheduleUserBooking: (id: string, scheduledAt: string) =>
+    api.patch<any>(`/spa/bookings/${id}/reschedule`, { scheduledAt }),
   getPublicFeedbacks: () => api.get<any[]>('/spa/feedbacks'),
   createFeedback: (id: string, data: { rateStaff: number; rateServices: number; comment?: string }) =>
     api.post<any>(`/spa/bookings/${id}/feedback`, data),
