@@ -81,20 +81,19 @@ export class AdminService {
       pendingStoreOrders,
       activeProducts,
       outOfStockProducts,
-      pendingStoreComplaints,
       totalSpaBranches,
       activeSpaBranches,
       pendingSpaBranches,
       totalSpaServices,
       totalSpaBookings,
-      pendingSpaComplaints,
+      pendingSpaBookings,
       storeRevenue,
       spaRevenue,
       legacySpaRevenue,
       recentUsers,
       recentPets,
       recentDocuments,
-      recentComplaints,
+      recentMatchingReports,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.pet.count(),
@@ -112,17 +111,12 @@ export class AdminService {
       this.prisma.order.count({ where: { status: OrderStatus.PENDING } }),
       this.prisma.product.count({ where: { isActive: true } }),
       this.prisma.product.count({ where: { stock: 0 } }),
-      this.prisma.complaint.count({
-        where: { type: ComplaintType.STORE, status: ComplaintStatus.PENDING },
-      }),
       this.prisma.addressSpa.count(),
       this.prisma.addressSpa.count({ where: { status: ApprovalStatus.ACTIVE } }),
       this.prisma.addressSpa.count({ where: { status: ApprovalStatus.PENDING } }),
       this.prisma.spaService.count(),
       this.prisma.spaBooking.count(),
-      this.prisma.complaint.count({
-        where: { type: ComplaintType.SPA, status: ComplaintStatus.PENDING },
-      }),
+      this.prisma.spaBooking.count({ where: { status: SpaBookingStatus.PENDING } }),
       this.prisma.order.aggregate({
         where: recognizedStoreRevenueWhere(primaryStore?.id),
         _sum: { totalAmount: true },
@@ -163,10 +157,19 @@ export class AdminService {
           pet: { select: { name: true } },
         },
       }),
-      this.prisma.complaint.findMany({
+      this.prisma.petReport.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
-        select: { id: true, type: true, status: true, title: true, createdAt: true },
+        select: {
+          id: true,
+          reason: true,
+          targetType: true,
+          isResolved: true,
+          createdAt: true,
+          reporter: { select: { name: true } },
+          reportedUser: { select: { name: true } },
+          pet: { select: { name: true } },
+        },
       }),
     ]);
 
@@ -184,7 +187,6 @@ export class AdminService {
           pendingOrders: pendingStoreOrders,
           activeProducts,
           outOfStockProducts,
-          pendingComplaints: pendingStoreComplaints,
           revenue: storeRevenue._sum.totalAmount ?? 0,
         },
         spa: {
@@ -193,7 +195,7 @@ export class AdminService {
           pendingBranches: pendingSpaBranches,
           totalServices: totalSpaServices,
           totalBookings: totalSpaBookings,
-          pendingComplaints: pendingSpaComplaints,
+          pendingBookings: pendingSpaBookings,
           revenue: (spaRevenue._sum.totalPrice ?? 0) + (legacySpaRevenue._sum.priceSnapshot ?? 0),
         },
       },
@@ -201,7 +203,7 @@ export class AdminService {
         users: recentUsers,
         pets: recentPets,
         petDocuments: recentDocuments,
-        complaints: recentComplaints,
+        matchingReports: recentMatchingReports,
       },
     };
   }

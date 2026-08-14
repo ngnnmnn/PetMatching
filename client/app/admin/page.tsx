@@ -33,7 +33,6 @@ type DashboardData = {
       pendingOrders: number;
       activeProducts: number;
       outOfStockProducts: number;
-      pendingComplaints: number;
       revenue: number;
     };
     spa: {
@@ -42,7 +41,7 @@ type DashboardData = {
       pendingBranches: number;
       totalServices: number;
       totalBookings: number;
-      pendingComplaints: number;
+      pendingBookings?: number;
       revenue: number;
     };
   };
@@ -50,7 +49,16 @@ type DashboardData = {
     users: Array<{ id: string; name: string; email: string; role: string; createdAt: string }>;
     pets: Array<{ id: string; name: string; species: string; verificationBadge: string; createdAt: string }>;
     petDocuments: Array<{ id: string; status: string; type: string; createdAt: string; pet?: { name?: string } }>;
-    complaints: Array<{ id: string; type: string; status: string; title: string; createdAt: string }>;
+    matchingReports?: Array<{
+      id: string;
+      reason: string;
+      targetType: string;
+      isResolved: boolean;
+      createdAt: string;
+      reporter?: { name?: string };
+      reportedUser?: { name?: string };
+      pet?: { name?: string };
+    }>;
   };
 };
 
@@ -94,7 +102,7 @@ export default function AdminDashboardPage() {
       },
       {
         label: 'Cần xử lý',
-        value: data.stats.pets.pendingVerification + data.stats.matching.pendingReports,
+        value: data.stats.pets.pendingVerification + data.stats.matching.pendingReports + data.stats.store.pendingOrders + (data.stats.spa.pendingBookings ?? 0),
         detail: 'Mục đang chờ quản trị viên xem xét',
         icon: AlertTriangle,
         color: 'red',
@@ -124,12 +132,12 @@ export default function AdminDashboardPage() {
         tone: 'primary',
       },
       {
-        label: 'Spa cần kích hoạt',
-        value: data.stats.spa.pendingBranches,
-        href: '/admin/spas',
+        label: 'Lịch Spa chờ xác nhận',
+        value: data.stats.spa.pendingBookings ?? 0,
+        href: '/admin/spa-bookings',
         tone: 'primary',
       },
-    ];
+    ].filter((item) => item.value > 0);
   }, [data]);
 
   if (loading) return <LoadingState />;
@@ -183,11 +191,16 @@ export default function AdminDashboardPage() {
             </div>
             <span className="flex size-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><Clock3 className="size-5" /></span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {pendingItems.map((item) => (
-              <PendingLink key={item.label} {...item} />
-            ))}
-          </div>
+          {pendingItems.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {pendingItems.map((item) => <PendingLink key={item.label} {...item} />)}
+            </div>
+          ) : (
+            <div className="flex min-h-28 items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white"><CheckCircle2 className="size-5" /></span>
+              <div><p className="text-sm font-black">Không có công việc tồn đọng</p><p className="mt-1 text-xs font-semibold">Tất cả hàng chờ hiện đã được xử lý.</p></div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
@@ -242,7 +255,7 @@ export default function AdminDashboardPage() {
               { label: 'Lịch đặt', value: data.stats.spa.totalBookings },
               { label: 'Trạng thái nhận lịch', value: data.stats.spa.activeBranches ? 'Đang mở' : 'Tạm ngừng' },
               { label: 'Dịch vụ', value: data.stats.spa.totalServices },
-              { label: 'Khiếu nại chờ xử lý', value: data.stats.spa.pendingComplaints },
+              { label: 'Lịch chờ xác nhận', value: data.stats.spa.pendingBookings ?? 0 },
             ]}
           />
         </div>
@@ -269,11 +282,11 @@ export default function AdminDashboardPage() {
           meta: `${formatStatus(item.species)} - ${formatStatus(item.verificationBadge)}`,
           status: formatDate(item.createdAt),
         }))} />
-        <ActivityPanel icon={AlertTriangle} title="Khiếu nại gần đây" href="/admin/reports" rows={data.recentActivities.complaints.map((item) => ({
+        <ActivityPanel icon={AlertTriangle} title="Phản ánh ghép đôi gần đây" href="/admin/reports" rows={(data.recentActivities.matchingReports ?? []).map((item) => ({
           id: item.id,
-          title: item.title,
-          meta: formatStatus(item.type),
-          status: formatStatus(item.status),
+          title: formatMatchingReportReason(item.reason),
+          meta: `${item.reporter?.name ?? 'Người dùng'} → ${item.targetType === 'PET' ? (item.pet?.name ?? 'Thú cưng') : (item.reportedUser?.name ?? 'Người dùng')}`,
+          status: item.isResolved ? 'Đã xử lý' : 'Chờ xử lý',
         }))} />
         </div>
       </section>
@@ -526,6 +539,19 @@ function formatRole(role?: string) {
   };
 
   return role ? roles[role] ?? role : '-';
+}
+
+function formatMatchingReportReason(reason?: string) {
+  const labels: Record<string, string> = {
+    INAPPROPRIATE_MESSAGE: 'Tin nhắn không phù hợp',
+    HARASSMENT: 'Quấy rối',
+    FAKE_INFORMATION: 'Thông tin giả',
+    PET_SAFETY: 'An toàn thú cưng',
+    NO_SHOW: 'Không đến gặp',
+    OTHER: 'Lý do khác',
+  };
+
+  return reason ? labels[reason] ?? reason : '-';
 }
 
 function formatStatus(status?: string) {
