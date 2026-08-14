@@ -9,8 +9,9 @@ import {
 import { BreedingOption, PetStatus } from '@prisma/client';
 
 export class UpdateAvailabilityDto {
+  @IsOptional()
   @IsBoolean()
-  isAvailableForMatching!: boolean;
+  isAvailableForMatching?: boolean;
 
   @IsOptional()
   @IsEnum(BreedingOption)
@@ -33,5 +34,4 @@ export class UpdateAvailabilityDto {
   @IsOptional()
   @IsString()
   personality?: string;
-
 }
