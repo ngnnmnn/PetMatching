@@ -200,7 +200,13 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       return formData.name && formData.species && breedValid && formData.gender
     }
     if (step === 2) {
-      return formData.birthday && formData.weight && (provinceName || formData.location)
+      const isBirthdayValid = formData.birthday
+        ? new Date(formData.birthday) <= new Date() && (new Date().getTime() - new Date(formData.birthday).getTime()) / (1000 * 60 * 60 * 24 * 365) <= 30
+        : false;
+      const isWeightValid = formData.weight
+        ? Number(formData.weight) > 0 && Number(formData.weight) <= 150
+        : false;
+      return isBirthdayValid && isWeightValid && (provinceName || formData.location)
     }
     return true
   }
@@ -481,6 +487,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     <span className="whitespace-nowrap text-sm font-medium text-primary">{calculateAge()}</span>
                   )}
                 </div>
+                {formData.birthday && new Date(formData.birthday) > new Date() && (
+                  <p className="text-xs font-semibold text-destructive mt-1">Ngày sinh không được vượt quá ngày hiện tại.</p>
+                )}
+                {formData.birthday && new Date(formData.birthday) <= new Date() && (new Date().getTime() - new Date(formData.birthday).getTime()) / (1000 * 60 * 60 * 24 * 365) > 30 && (
+                  <p className="text-xs font-semibold text-destructive mt-1">Thú cưng không thể quá 30 tuổi. Vui lòng kiểm tra lại.</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -498,6 +510,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">kg</span>
                 </div>
+                {formData.weight && Number(formData.weight) <= 0 && (
+                  <p className="text-xs font-semibold text-destructive mt-1">Cân nặng phải lớn hơn 0 kg.</p>
+                )}
+                {formData.weight && Number(formData.weight) > 150 && (
+                  <p className="text-xs font-semibold text-destructive mt-1">Cân nặng quá lớn (tối đa 150kg). Vui lòng kiểm tra lại.</p>
+                )}
               </div>
 
               <div className="space-y-4 rounded-2xl border bg-muted/20 p-4">

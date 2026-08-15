@@ -29,6 +29,7 @@ import {
   ReportMatchDto,
 } from './dto/report-match.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { getProvinceCoords } from './province-coordinates';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -203,34 +204,48 @@ export class MatchingService {
       );
 
       let distanceKm = 10;
-      if (
-        femalePet.latitude != null &&
-        femalePet.longitude != null &&
-        candidate.latitude != null &&
-        candidate.longitude != null
-      ) {
-        distanceKm = calculateHaversineDistance(
-          femalePet.latitude,
-          femalePet.longitude,
-          candidate.latitude,
-          candidate.longitude,
-        );
-      } else if (
-        femalePet.district &&
-        candidate.district &&
-        femalePet.district.trim().toLowerCase() ===
-          candidate.district.trim().toLowerCase()
-      ) {
-        distanceKm = 3.5;
-      } else if (
+      const femaleLat = femalePet.latitude;
+      const femaleLng = femalePet.longitude;
+      const candLat = candidate.latitude;
+      const candLng = candidate.longitude;
+
+      const isSameLocation =
         femalePet.location &&
         candidate.location &&
-        femalePet.location.trim().toLowerCase() ===
-          candidate.location.trim().toLowerCase()
-      ) {
+        femalePet.location.trim().toLowerCase() === candidate.location.trim().toLowerCase();
+
+      const isSameDistrict =
+        isSameLocation &&
+        femalePet.district &&
+        candidate.district &&
+        femalePet.district.trim().toLowerCase() === candidate.district.trim().toLowerCase();
+
+      if (femaleLat != null && femaleLng != null && candLat != null && candLng != null) {
+        distanceKm = calculateHaversineDistance(femaleLat, femaleLng, candLat, candLng);
+      } else if (isSameDistrict) {
+        distanceKm = 3.5;
+      } else if (isSameLocation) {
         distanceKm = 12.0;
       } else {
-        distanceKm = 45.0;
+        const fCoords =
+          femaleLat != null && femaleLng != null
+            ? { lat: femaleLat, lng: femaleLng }
+            : getProvinceCoords(femalePet.location);
+        const cCoords =
+          candLat != null && candLng != null
+            ? { lat: candLat, lng: candLng }
+            : getProvinceCoords(candidate.location);
+
+        if (fCoords && cCoords) {
+          distanceKm = calculateHaversineDistance(
+            fCoords.lat,
+            fCoords.lng,
+            cCoords.lat,
+            cCoords.lng,
+          );
+        } else {
+          distanceKm = 250.0;
+        }
       }
 
       return {

@@ -156,7 +156,7 @@ const initialFilters: FilterState = {
   breed: 'ALL',
   ageMin: 1,
   ageMax: 5,
-  distanceRadius: 30,
+  distanceRadius: 0,
   coatColor: 'ALL',
   purebredOnly: false,
   vaccinatedOnly: false,
@@ -315,7 +315,7 @@ export default function UnifiedMatchingHubPage() {
     if (selectedPetId && isSelectedFemale && candidates.length === 0 && !loadingCandidates) {
       fetchCandidates();
     }
-  }, [filters]);
+  }, [selectedPetId, isSelectedFemale, fetchCandidates]);
 
   // Load Requests & Matches
   const loadRequestsAndMatches = useCallback(() => {
@@ -883,8 +883,18 @@ export default function UnifiedMatchingHubPage() {
               </div>
               <div className="p-6 overflow-y-auto space-y-6 flex-1">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Bán kính khoảng cách: {filters.distanceRadius} km</label>
-                  <input type="range" min="5" max="100" value={filters.distanceRadius} onChange={(e) => setFilters({ ...filters, distanceRadius: Number(e.target.value) })} className="w-full accent-primary" />
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn quốc)'}
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2000"
+                    step="25"
+                    value={filters.distanceRadius}
+                    onChange={(e) => setFilters({ ...filters, distanceRadius: Number(e.target.value) })}
+                    className="w-full accent-primary"
+                  />
                 </div>
                 <div className="space-y-2 pt-4 border-t">
                   <label className="flex items-center justify-between text-xs font-bold cursor-pointer">
@@ -902,7 +912,7 @@ export default function UnifiedMatchingHubPage() {
                 </div>
               </div>
               <div className="p-4 border-t">
-                <Button className="w-full rounded-xl font-bold py-6" onClick={() => setIsFilterOpen(false)}>Áp dụng bộ lọc</Button>
+                <Button className="w-full rounded-xl font-bold py-6" onClick={() => { setIsFilterOpen(false); fetchCandidates(); }}>Áp dụng bộ lọc</Button>
               </div>
             </motion.div>
           </div>
