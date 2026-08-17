@@ -217,6 +217,67 @@ export class SpaService {
       );
     }
 
+    if (validAddressSpaId) {
+      const activeStaffs = await this.prisma.spaStaff.findMany({
+        where: { addressSpaId: validAddressSpaId, status: 'ACTIVE' },
+      });
+      if (activeStaffs.length === 0) {
+        throw new BadRequestException('Chi nhánh hiện không có nhân viên nào đang hoạt động. Vui lòng chọn chi nhánh khác.');
+      }
+
+      const overlappingBookings = await this.prisma.spaBooking.findMany({
+        where: {
+          addressSpaId: validAddressSpaId,
+          status: {
+            in: [
+              SpaBookingStatus.PENDING,
+              SpaBookingStatus.CONFIRMED,
+              SpaBookingStatus.ASSIGNED,
+              SpaBookingStatus.IN_PROGRESS,
+              SpaBookingStatus.CHECK_IN,
+              SpaBookingStatus.LATE,
+              SpaBookingStatus.ARRIVED,
+            ],
+          },
+          scheduledAt: {
+            gte: new Date(timeStartExpected.getTime() - 24 * 60 * 60 * 1000),
+            lte: new Date(timeEndExpected.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          service: { select: { durationMin: true, durationMax: true } },
+        },
+      });
+
+      const activeOverlapping = overlappingBookings.filter((b) => {
+        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        return bStart < timeEndExpected && bEnd > timeStartExpected;
+      });
+
+      const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
+      const unassignedBookings = activeOverlapping.filter((b) => !b.staffId);
+
+      const freeStaffs = activeStaffs.filter((staff) => {
+        const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        return !isStaffBusy(staffAssigned, timeStartExpected, timeEndExpected);
+      });
+
+      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
+
+      if (remainingSlots <= 0) {
+        throw new BadRequestException('Khung giờ này tại chi nhánh đã kín lịch (hết nhân viên khả dụng). Vui lòng chọn khung giờ khác.');
+      }
+
+      if (validStaffId) {
+        const targetStaffIsFree = freeStaffs.some((s) => s.userId === validStaffId || s.id === validStaffId);
+        if (!targetStaffIsFree) {
+          throw new BadRequestException('Nhân viên được chọn đã có lịch bận trong khung giờ này. Vui lòng chọn nhân viên khác hoặc để trống.');
+        }
+      }
+    }
+
     const bookingStatus = validStaffId ? SpaBookingStatus.ASSIGNED : SpaBookingStatus.PENDING;
 
     return this.prisma.$transaction(async (tx) => {
@@ -1641,10 +1702,91 @@ export class SpaService {
     }
 
     const newStart = new Date(scheduledAt);
+    if (isNaN(newStart.getTime())) {
+      throw new BadRequestException('Thời gian đổi lịch không hợp lệ.');
+    }
+
     const durationMs = (booking.timeEndExpected && booking.timeStartExpected)
       ? (booking.timeEndExpected.getTime() - booking.timeStartExpected.getTime())
       : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
+
+    const startHour = newStart.getHours();
+    const startMin = newStart.getMinutes();
+    const totalDurationMinutes = Math.round(durationMs / (60 * 1000));
+    const startMinsFromMidnight = startHour * 60 + startMin;
+    const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
+
+    if (startMinsFromMidnight < 9 * 60 || endMinsFromMidnight > 18 * 60) {
+      throw new BadRequestException(
+        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
+      );
+    }
+
+    let nextStaffId = booking.staffId;
+    let nextStatus = booking.status;
+
+    if (booking.addressSpaId) {
+      const activeStaffs = await this.prisma.spaStaff.findMany({
+        where: { addressSpaId: booking.addressSpaId, status: 'ACTIVE' },
+      });
+      if (activeStaffs.length === 0) {
+        throw new BadRequestException('Chi nhánh hiện không có nhân viên nào đang hoạt động.');
+      }
+
+      const overlappingBookings = await this.prisma.spaBooking.findMany({
+        where: {
+          addressSpaId: booking.addressSpaId,
+          id: { not: bookingId },
+          status: {
+            in: [
+              SpaBookingStatus.PENDING,
+              SpaBookingStatus.CONFIRMED,
+              SpaBookingStatus.ASSIGNED,
+              SpaBookingStatus.IN_PROGRESS,
+              SpaBookingStatus.CHECK_IN,
+              SpaBookingStatus.LATE,
+              SpaBookingStatus.ARRIVED,
+            ],
+          },
+          scheduledAt: {
+            gte: new Date(newStart.getTime() - 24 * 60 * 60 * 1000),
+            lte: new Date(newEnd.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          service: { select: { durationMin: true, durationMax: true } },
+        },
+      });
+
+      const activeOverlapping = overlappingBookings.filter((b) => {
+        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        return bStart < newEnd && bEnd > newStart;
+      });
+
+      const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
+      const unassignedBookings = activeOverlapping.filter((b) => !b.staffId);
+
+      const freeStaffs = activeStaffs.filter((staff) => {
+        const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        return !isStaffBusy(staffAssigned, newStart, newEnd);
+      });
+
+      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
+      if (remainingSlots <= 0) {
+        throw new BadRequestException('Khung giờ mới tại chi nhánh đã kín lịch (hết nhân viên khả dụng). Vui lòng chọn khung giờ khác.');
+      }
+
+      if (booking.staffId) {
+        const currentStaffIsFree = freeStaffs.some((s) => s.userId === booking.staffId || s.id === booking.staffId);
+        if (!currentStaffIsFree) {
+          nextStaffId = null;
+          nextStatus = SpaBookingStatus.CONFIRMED;
+        }
+      }
+    }
 
     const updated = await this.prisma.spaBooking.update({
       where: { id: bookingId },
@@ -1653,6 +1795,8 @@ export class SpaService {
         timeStartExpected: newStart,
         timeEndExpected: newEnd,
         reminderSentAt: null,
+        staffId: nextStaffId,
+        status: nextStatus,
       },
     });
 
@@ -1723,6 +1867,83 @@ export class SpaService {
         : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
+    const startHour = newStart.getHours();
+    const startMin = newStart.getMinutes();
+    const totalDurationMinutes = Math.round(durationMs / (60 * 1000));
+    const startMinsFromMidnight = startHour * 60 + startMin;
+    const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
+
+    if (startMinsFromMidnight < 9 * 60 || endMinsFromMidnight > 18 * 60) {
+      throw new BadRequestException(
+        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
+      );
+    }
+
+    let nextStaffId = booking.staffId;
+    let nextStatus = booking.status;
+
+    if (booking.addressSpaId) {
+      const activeStaffs = await this.prisma.spaStaff.findMany({
+        where: { addressSpaId: booking.addressSpaId, status: 'ACTIVE' },
+      });
+      if (activeStaffs.length === 0) {
+        throw new BadRequestException('Chi nhánh hiện không có nhân viên nào đang hoạt động.');
+      }
+
+      const overlappingBookings = await this.prisma.spaBooking.findMany({
+        where: {
+          addressSpaId: booking.addressSpaId,
+          id: { not: bookingId },
+          status: {
+            in: [
+              SpaBookingStatus.PENDING,
+              SpaBookingStatus.CONFIRMED,
+              SpaBookingStatus.ASSIGNED,
+              SpaBookingStatus.IN_PROGRESS,
+              SpaBookingStatus.CHECK_IN,
+              SpaBookingStatus.LATE,
+              SpaBookingStatus.ARRIVED,
+            ],
+          },
+          scheduledAt: {
+            gte: new Date(newStart.getTime() - 24 * 60 * 60 * 1000),
+            lte: new Date(newEnd.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          service: { select: { durationMin: true, durationMax: true } },
+        },
+      });
+
+      const activeOverlapping = overlappingBookings.filter((b) => {
+        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        return bStart < newEnd && bEnd > newStart;
+      });
+
+      const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
+      const unassignedBookings = activeOverlapping.filter((b) => !b.staffId);
+
+      const freeStaffs = activeStaffs.filter((staff) => {
+        const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        return !isStaffBusy(staffAssigned, newStart, newEnd);
+      });
+
+      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
+      if (remainingSlots <= 0) {
+        throw new BadRequestException('Khung giờ mới tại chi nhánh đã kín lịch (hết nhân viên khả dụng). Vui lòng chọn khung giờ khác.');
+      }
+
+      if (booking.staffId) {
+        const currentStaffIsFree = freeStaffs.some((s) => s.userId === booking.staffId || s.id === booking.staffId);
+        if (!currentStaffIsFree) {
+          nextStaffId = null;
+          nextStatus = SpaBookingStatus.CONFIRMED;
+        }
+      }
+    }
+
     const updated = await this.prisma.spaBooking.update({
       where: { id: bookingId },
       data: {
@@ -1730,6 +1951,8 @@ export class SpaService {
         timeStartExpected: newStart,
         timeEndExpected: newEnd,
         reminderSentAt: null,
+        staffId: nextStaffId,
+        status: nextStatus,
       },
     });
 
@@ -1901,6 +2124,7 @@ export class SpaService {
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
         staffId: { in: allStaffKeys },
+        id: { not: bookingId },
         status: {
           in: [
             SpaBookingStatus.ASSIGNED,
@@ -1912,7 +2136,7 @@ export class SpaService {
         },
       },
       include: {
-        service: { select: { durationMin: true } },
+        service: { select: { durationMin: true, durationMax: true } },
       },
     });
 
@@ -1952,21 +2176,38 @@ export class SpaService {
       where: {
         OR: [{ userId: staffId }, { id: staffId }],
         addressSpaId: booking.addressSpaId,
+        status: 'ACTIVE',
       },
     });
     if (!staff) {
-      throw new BadRequestException('Nhân viên không thuộc chi nhánh này.');
+      throw new BadRequestException('Nhân viên không thuộc chi nhánh này hoặc đang không hoạt động.');
     }
 
-    const currentlyBusyBooking = await this.prisma.spaBooking.findFirst({
+    const start = booking.timeStartExpected || new Date(booking.scheduledAt);
+    const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
+
+    const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
         staffId: staff.userId,
-        status: { in: [SpaBookingStatus.IN_PROGRESS, SpaBookingStatus.CHECK_IN] },
         id: { not: bookingId },
+        status: {
+          in: [
+            SpaBookingStatus.ASSIGNED,
+            SpaBookingStatus.IN_PROGRESS,
+            SpaBookingStatus.CONFIRMED,
+            SpaBookingStatus.CHECK_IN,
+            SpaBookingStatus.LATE,
+          ],
+        },
+      },
+      include: {
+        service: { select: { durationMin: true, durationMax: true } },
       },
     });
-    if (currentlyBusyBooking) {
-      throw new BadRequestException('Nhân viên này đang bận thực hiện một dịch vụ khác (Đang làm). Không thể phân công lúc này.');
+
+    const busy = isStaffBusy(activeBookings, start, end);
+    if (busy) {
+      throw new BadRequestException('Nhân viên này đang bận trong khoảng thời gian của ca làm việc.');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -2260,22 +2501,22 @@ export class SpaService {
       },
     });
 
-    const staffIds = staffs.map((s) => s.userId);
     const targetDate = new Date(dateStr);
     const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
     const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
 
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
-        staffId: { in: staffIds },
+        addressSpaId: branchId,
         status: {
           in: [
+            SpaBookingStatus.PENDING,
+            SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.ASSIGNED,
             SpaBookingStatus.IN_PROGRESS,
-            SpaBookingStatus.COMPLETED,
-            SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.CHECK_IN,
             SpaBookingStatus.LATE,
+            SpaBookingStatus.ARRIVED,
           ],
         },
         scheduledAt: {
@@ -2285,7 +2526,7 @@ export class SpaService {
       },
       include: {
         service: {
-          select: { durationMin: true },
+          select: { durationMin: true, durationMax: true },
         },
       },
     });
@@ -2322,13 +2563,23 @@ export class SpaService {
       );
       const slotEnd = new Date(slotStart.getTime() + durationMin * 60 * 1000);
 
-      const availableStaffs = [];
+      // Bookings overlapping with this time slot
+      const overlappingBookings = activeBookings.filter((b) => {
+        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        return bStart < slotEnd && bEnd > slotStart;
+      });
 
+      const assignedBookings = overlappingBookings.filter((b) => !!b.staffId);
+      const unassignedBookings = overlappingBookings.filter((b) => !b.staffId);
+
+      const freeStaffs = [];
       for (const staff of staffs) {
-        const staffBookings = activeBookings.filter((b) => b.staffId === staff.userId);
+        const staffBookings = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
         const busy = isStaffBusy(staffBookings, slotStart, slotEnd);
         if (!busy) {
-          availableStaffs.push({
+          freeStaffs.push({
             id: staff.userId,
             name: staff.user.name,
             email: staff.user.email,
@@ -2337,10 +2588,13 @@ export class SpaService {
         }
       }
 
+      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
+      const availableStaffs = freeStaffs.slice(0, remainingSlots);
+
       result.push({
         time: timeStr,
-        isAvailable: availableStaffs.length > 0,
-        remainingSlots: availableStaffs.length,
+        isAvailable: remainingSlots > 0,
+        remainingSlots,
         availableStaffs,
       });
     }
@@ -2397,14 +2651,9 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
       continue;
     }
 
-    // Staff currently doing a service (IN_PROGRESS or CHECK_IN) is busy!
-    if (b.status === SpaBookingStatus.IN_PROGRESS || b.status === SpaBookingStatus.CHECK_IN) {
-      return true;
-    }
-
-    let start = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+    const start = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
     const duration = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
-    let end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
+    const end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
 
     if (start < candidateEnd && end > candidateStart) {
       return true; // Overlaps - staff is busy

@@ -50,7 +50,6 @@ function ManagerNavigation() {
         { label: 'Lịch hẹn', id: 'bookings', href: '/manager?tab=bookings', icon: Calendar },
         { label: 'Dịch vụ', id: 'services', href: '/manager?tab=services', icon: Scissors },
         { label: 'Danh mục', id: 'categories', href: '/manager?tab=categories', icon: FolderKanban },
-        { label: 'Khung giờ', id: 'slots', href: '/manager?tab=slots', icon: Clock },
         { label: 'Nhân viên', id: 'staffs', href: '/manager?tab=staffs', icon: Users },
         { label: 'Khuyến mãi', id: 'promotions', href: '/manager/promotions', icon: Tag },
       ],
