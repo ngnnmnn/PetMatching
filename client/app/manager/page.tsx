@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -5030,6 +5030,78 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     }
   };
 
+  // Confirm booking to CONFIRMED
+  const handleConfirmBooking = async (bookingId: string) => {
+    try {
+      await spaApi.confirmBooking(bookingId);
+      toast.success('Xác nhận lịch hẹn thành công!');
+      const stRes = await spaApi.getAvailableStaffForBooking(bookingId);
+      setAvailableStaffsMap(prev => ({ ...prev, [bookingId]: stRes.data || [] }));
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi xác nhận lịch hẹn.');
+    }
+  };
+
+  // Assign staff to booking
+  const handleAssignStaff = async () => {
+    if (!assignConfirmBooking || !assignConfirmStaff) return;
+    setAssigningLoading(true);
+    try {
+      await spaApi.assignStaff(assignConfirmBooking.id, assignConfirmStaff.id);
+      toast.success(`Đã phân công lịch hẹn cho ${assignConfirmStaff.name}!`);
+      setAssignConfirmBooking(null);
+      setAssignConfirmStaff(null);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi phân công nhân viên.');
+    } finally {
+      setAssigningLoading(false);
+    }
+  };
+
+  // Toggle staff status (ACTIVE / INACTIVE)
+  const handleToggleStaffStatus = async (staffId: string) => {
+    try {
+      await spaApi.toggleStaffStatus(staffId);
+      toast.success('Cập nhật trạng thái nhân viên thành công!');
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật trạng thái nhân viên.');
+    }
+  };
+
+  // Reschedule booking submission
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleBooking || !rescheduleDate || !selectedRescheduleSlot) {
+      toast.error('Vui lòng chọn đầy đủ ngày và giờ.');
+      return;
+    }
+    setSubmittingReschedule(true);
+    try {
+      const scheduledAt = `${rescheduleDate}T${selectedRescheduleSlot}:00`;
+      await spaApi.rescheduleBooking(rescheduleBooking.id, scheduledAt);
+      toast.success('Đổi lịch hẹn của khách hàng thành công!');
+      setRescheduleBooking(null);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi đổi lịch hẹn.');
+    } finally {
+      setSubmittingReschedule(false);
+    }
+  };
+
+  // Apply late discount 10%
+  const handleApplyLateDiscount = async (bookingId: string) => {
+    try {
+      await spaApi.applyLateDiscount(bookingId);
+      toast.success('Đã tự động giảm 10% giá đơn hàng do trễ hẹn!');
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi áp dụng giảm giá.');
+    }
+  };
+
   // Format price input live while typing (10000 -> 10.000)
   const formatVNDInput = (val: string) => {
     const digits = String(val || '').replace(/\D/g, '');
@@ -6319,10 +6391,10 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         disabled={!slot.isAvailable}
                         onClick={() => setSelectedRescheduleSlot(slot.time)}
                         className={`py-2 px-1 border rounded-lg text-center transition flex flex-col items-center justify-center ${!slot.isAvailable
-                            ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                            : selectedRescheduleSlot === slot.time
-                              ? 'bg-primary border-primary text-white shadow-sm font-bold'
-                              : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
+                          ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                          : selectedRescheduleSlot === slot.time
+                            ? 'bg-primary border-primary text-white shadow-sm font-bold'
+                            : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
                           }`}
                       >
                         <span className="text-xs font-black">{slot.time}</span>
@@ -6586,15 +6658,15 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 </span>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${{
-                  PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
-                  CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
-                  ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-                  IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
-                  COMPLETED: 'bg-green-100 text-green-800 border-green-300',
-                  CANCELLED: 'bg-red-100 text-red-800 border-red-300',
-                  NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
-                  LATE: 'bg-rose-100 text-rose-800 border-rose-300',
-                }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
+                PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
+                CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
+                ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+                IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
+                COMPLETED: 'bg-green-100 text-green-800 border-green-300',
+                CANCELLED: 'bg-red-100 text-red-800 border-red-300',
+                NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
+                LATE: 'bg-rose-100 text-rose-800 border-rose-300',
+              }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
                 }`}>
                 {selectedBookingDetail.status === 'PENDING' ? '🚨 Chờ xác nhận' : selectedBookingDetail.status}
               </span>
