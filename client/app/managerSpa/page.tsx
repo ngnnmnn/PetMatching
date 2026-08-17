@@ -68,11 +68,6 @@ function SpaManagerConsoleContent() {
   const [feedbackSearch, setFeedbackSearch] = useState<string>('');
   const [feedbackStarFilter, setFeedbackStarFilter] = useState<string>('ALL');
 
-  // Date and slot states
-  const [slotDate, setSlotDate] = useState<string>('');
-  const [slotsData, setSlotsData] = useState<any[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
-
   // Assignment & Detail states
   const [selectedBookingDetail, setSelectedBookingDetail] = useState<any | null>(null);
   const [managerStaffs, setManagerStaffs] = useState<any[]>([]);
@@ -173,6 +168,11 @@ function SpaManagerConsoleContent() {
   // Booking search and filters
   const [bookingSearch, setBookingSearch] = useState<string>('');
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('ALL');
+  const [bookingDateFilterType, setBookingDateFilterType] = useState<string>('ALL');
+  const [bookingCustomDate, setBookingCustomDate] = useState<string>('');
+  const [bookingStartDate, setBookingStartDate] = useState<string>('');
+  const [bookingEndDate, setBookingEndDate] = useState<string>('');
+  const [bookingTimeSlotFilter, setBookingTimeSlotFilter] = useState<string>('ALL');
 
   // Service filters
   const [serviceTypeFilter, setServiceTypeFilter] = useState<string>('ALL');
@@ -317,10 +317,6 @@ function SpaManagerConsoleContent() {
     }));
   };
 
-  useEffect(() => {
-    // Set default slot date to today
-    setSlotDate(new Date().toISOString().split('T')[0]);
-  }, []);
 
   // Fetch branches and categories managed by this manager
   useEffect(() => {
@@ -349,7 +345,7 @@ function SpaManagerConsoleContent() {
   // Fetch data based on active tab and selected branch
   const refreshData = async () => {
     // For tabs that don't need a branch (categories, services), don't block on selectedBranchId
-    const needsBranch = ['dashboard', 'bookings', 'staffs', 'slots', 'feedbacks'].includes(currentTab);
+    const needsBranch = ['dashboard', 'bookings', 'staffs', 'feedbacks'].includes(currentTab);
     if (needsBranch && !selectedBranchId) return;
     setLoading(true);
     try {
@@ -419,23 +415,6 @@ function SpaManagerConsoleContent() {
   useEffect(() => {
     refreshData();
   }, [selectedBranchId, currentTab]);
-
-  // Fetch slots data when slots tab date changes
-  useEffect(() => {
-    const fetchSlots = async () => {
-      if (!selectedBranchId || !slotDate || currentTab !== 'slots') return;
-      setLoadingSlots(true);
-      try {
-        const res = await spaApi.getAvailability(selectedBranchId, slotDate);
-        setSlotsData(res.data || []);
-      } catch (err) {
-        toast.error('Lỗi khi tải danh sách khung giờ.');
-      } finally {
-        setLoadingSlots(false);
-      }
-    };
-    fetchSlots();
-  }, [selectedBranchId, slotDate, currentTab]);
 
   // Fetch slots for reschedule when date changes
   useEffect(() => {
@@ -869,17 +848,135 @@ function SpaManagerConsoleContent() {
     }
   };
 
-  // Filter bookings list
-  const filteredBookings = bookings.filter(b => {
-    const sName = b.service?.name || '';
-    const cName = b.user?.name || '';
-    const matchesSearch = sName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      cName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      b.id.toLowerCase().includes(bookingSearch.toLowerCase());
+  const navigateToBookingsTab = (targetBooking?: any, filterStatus?: string, filterDate?: string) => {
+    if (filterStatus) {
+      setBookingStatusFilter(filterStatus);
+    }
+    if (filterDate) {
+      setBookingDateFilterType('SPECIFIC_DATE');
+      setBookingCustomDate(filterDate);
+    }
+    if (targetBooking) {
+      setSelectedBookingDetail(targetBooking);
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', 'bookings');
+    window.history.pushState({}, '', url.toString());
+    window.dispatchEvent(new Event('popstate'));
+  };
 
-    const matchesStatus = bookingStatusFilter === 'ALL' || b.status === bookingStatusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Filter bookings list
+  const filteredBookings = useMemo(() => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
+    // This week (Monday to Sunday)
+    const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek, 0, 0, 0, 0);
+    const sunday = new Date(monday.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+
+    // This month (1st of month to last of month)
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    return bookings.filter((b) => {
+      const sName = b.service?.name || (b.mainServiceResolved as any)?.name || '';
+      const cName = b.user?.name || '';
+      const petName = b.petName || b.pet?.name || '';
+      const matchesSearch =
+        !bookingSearch ||
+        sName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        cName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        petName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        b.id.toLowerCase().includes(bookingSearch.toLowerCase());
+
+      const matchesStatus = bookingStatusFilter === 'ALL' || b.status === bookingStatusFilter;
+
+      const bookingDate = new Date(b.scheduledAt);
+      const bDateStr = `${bookingDate.getFullYear()}-${String(bookingDate.getMonth() + 1).padStart(2, '0')}-${String(bookingDate.getDate()).padStart(2, '0')}`;
+      const bHour = String(bookingDate.getHours()).padStart(2, '0');
+      const bMin = String(bookingDate.getMinutes()).padStart(2, '0');
+      const bTimeSlot = `${bHour}:${bMin}`;
+
+      let matchesDate = true;
+      if (bookingDateFilterType === 'TODAY') {
+        matchesDate = bDateStr === todayStr;
+      } else if (bookingDateFilterType === 'TOMORROW') {
+        matchesDate = bDateStr === tomorrowStr;
+      } else if (bookingDateFilterType === 'YESTERDAY') {
+        matchesDate = bDateStr === yesterdayStr;
+      } else if (bookingDateFilterType === 'THIS_WEEK') {
+        matchesDate = bookingDate >= monday && bookingDate <= sunday;
+      } else if (bookingDateFilterType === 'THIS_MONTH') {
+        matchesDate = bookingDate >= firstDayOfMonth && bookingDate <= lastDayOfMonth;
+      } else if (bookingDateFilterType === 'SPECIFIC_DATE' && bookingCustomDate) {
+        matchesDate = bDateStr === bookingCustomDate;
+      } else if (bookingDateFilterType === 'CUSTOM_RANGE') {
+        if (bookingStartDate && bookingEndDate) {
+          matchesDate = bDateStr >= bookingStartDate && bDateStr <= bookingEndDate;
+        } else if (bookingStartDate) {
+          matchesDate = bDateStr >= bookingStartDate;
+        } else if (bookingEndDate) {
+          matchesDate = bDateStr <= bookingEndDate;
+        }
+      }
+
+      let matchesTimeSlot = true;
+      if (bookingTimeSlotFilter && bookingTimeSlotFilter !== 'ALL') {
+        matchesTimeSlot = bTimeSlot === bookingTimeSlotFilter;
+      }
+
+      return matchesSearch && matchesStatus && matchesDate && matchesTimeSlot;
+    });
+  }, [bookings, bookingSearch, bookingStatusFilter, bookingDateFilterType, bookingCustomDate, bookingStartDate, bookingEndDate, bookingTimeSlotFilter]);
+
+  const dateFilterLabel = useMemo(() => {
+    let datePart = '';
+    if (bookingDateFilterType === 'TODAY') datePart = 'Hôm nay';
+    else if (bookingDateFilterType === 'TOMORROW') datePart = 'Ngày mai';
+    else if (bookingDateFilterType === 'YESTERDAY') datePart = 'Hôm qua';
+    else if (bookingDateFilterType === 'THIS_WEEK') datePart = 'Tuần này';
+    else if (bookingDateFilterType === 'THIS_MONTH') datePart = 'Tháng này';
+    else if (bookingDateFilterType === 'SPECIFIC_DATE' && bookingCustomDate) {
+      const parts = bookingCustomDate.split('-');
+      if (parts.length === 3) {
+        datePart = `Ngày ${parts[2]}/${parts[1]}/${parts[0]}`;
+      } else {
+        datePart = `Ngày ${bookingCustomDate}`;
+      }
+    } else if (bookingDateFilterType === 'CUSTOM_RANGE') {
+      if (bookingStartDate && bookingEndDate) datePart = `Từ ${bookingStartDate} đến ${bookingEndDate}`;
+      else if (bookingStartDate) datePart = `Từ ${bookingStartDate}`;
+      else if (bookingEndDate) datePart = `Đến ${bookingEndDate}`;
+    }
+
+    let timePart = '';
+    if (bookingTimeSlotFilter && bookingTimeSlotFilter !== 'ALL') {
+      timePart = `Khung giờ ${bookingTimeSlotFilter}`;
+    }
+
+    if (datePart && timePart) return `${datePart} • ${timePart}`;
+    if (datePart) return datePart;
+    if (timePart) return `${timePart} (Tất cả ngày)`;
+    return '';
+  }, [bookingDateFilterType, bookingCustomDate, bookingStartDate, bookingEndDate, bookingTimeSlotFilter]);
+
+  const bookingCountsSummary = useMemo(() => {
+    const total = filteredBookings.length;
+    const pending = filteredBookings.filter((b) => b.status === 'PENDING').length;
+    const needStaff = filteredBookings.filter((b) => (b.status === 'CONFIRMED' || b.status === 'CHECK_IN' || b.status === 'ARRIVED') && !b.staffId).length;
+    const assigned = filteredBookings.filter((b) => b.status === 'ASSIGNED').length;
+    const inProgress = filteredBookings.filter((b) => b.status === 'IN_PROGRESS').length;
+    const completed = filteredBookings.filter((b) => b.status === 'COMPLETED').length;
+    const cancelled = filteredBookings.filter((b) => b.status === 'CANCELLED' || b.status === 'NO_SHOW').length;
+    return { total, pending, needStaff, assigned, inProgress, completed, cancelled };
+  }, [filteredBookings]);
 
   if (branches.length === 0 && !loading) {
     return (
@@ -1104,13 +1201,8 @@ function SpaManagerConsoleContent() {
                   {stats.unconfirmedBookingsCount > 0 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('tab', 'bookings');
-                        window.history.pushState({}, '', url.toString());
-                        window.dispatchEvent(new Event('popstate'));
-                      }}
-                      className="text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                      onClick={() => navigateToBookingsTab(null, 'PENDING', new Date().toISOString().split('T')[0])}
+                      className="text-xs font-black bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shadow-2xs"
                     >
                       <AlertCircle className="size-3.5 text-amber-600" />
                       {stats.unconfirmedBookingsCount} lịch hẹn cần xác nhận (Chuyển qua trang lịch hẹn ➔)
@@ -1125,8 +1217,8 @@ function SpaManagerConsoleContent() {
                         <th className="px-6 py-3.5">Khách hàng / Bé</th>
                         <th className="px-6 py-3.5">Dịch vụ</th>
                         <th className="px-6 py-3.5">Ghi chú</th>
+                        <th className="px-6 py-3.5">Nhân viên phụ trách</th>
                         <th className="px-6 py-3.5 text-center">Trạng thái</th>
-                        <th className="px-6 py-3.5 text-center">Phân công nhân viên</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -1157,70 +1249,29 @@ function SpaManagerConsoleContent() {
                               <td className="px-6 py-4 text-xs italic text-gray-500 max-w-[200px] truncate" title={b.note}>
                                 {b.note ? `"${b.note}"` : '—'}
                               </td>
+                              <td className="px-6 py-4 font-semibold text-xs text-gray-700">
+                                {b.staffName ? (
+                                  <span className="font-bold text-xs text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                    ✨ {b.staffName}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                    Chưa phân công
+                                  </span>
+                                )}
+                              </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status}
+                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center items-center">
-                                  {b.status === 'PENDING' && (
-                                    <button
-                                      onClick={() => handleConfirmBooking(b.id)}
-                                      className="bg-primary hover:bg-primary/95 text-white px-3 py-1 text-xs font-bold rounded-lg shadow-sm transition"
-                                    >
-                                      Xác nhận
-                                    </button>
-                                  )}
 
-                                  {b.status === 'CONFIRMED' && (
-                                    <div className="flex items-center gap-1.5">
-                                      <select
-                                        value={selectedAssignStaffMap[b.id] || ''}
-                                        onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [b.id]: e.target.value }))}
-                                        className="border border-gray-300 rounded-lg text-xs font-semibold px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary h-8"
-                                      >
-                                        <option value="">-- Chọn nhân viên --</option>
-                                        {(availableStaffsMap[b.id] || []).map((st: any) => (
-                                          <option key={st.id} value={st.id}>{st.name}</option>
-                                        ))}
-                                      </select>
-
-                                      {selectedAssignStaffMap[b.id] && (
-                                        <button
-                                          onClick={() => {
-                                            const stId = selectedAssignStaffMap[b.id];
-                                            const staffName = (availableStaffsMap[b.id] || []).find((s: any) => s.id === stId)?.name || 'Nhân viên';
-                                            setAssignConfirmBooking(b);
-                                            setAssignConfirmStaff({ id: stId, name: staffName });
-                                          }}
-                                          className="bg-purple-600 hover:bg-purple-750 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm transition h-8"
-                                        >
-                                          Phân công
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {b.status === 'ASSIGNED' && (
-                                    <span className="text-[11px] font-bold text-gray-500 leading-tight">
-                                      Nhân viên: <span className="font-black text-purple-700">✨ {b.staffName}</span>
-                                    </span>
-                                  )}
-
-                                  {['IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'LATE'].includes(b.status) && (
-                                    <span className="text-[11px] text-gray-400 font-semibold italic">
-                                      {b.staffName ? `Đã giao: ${b.staffName}` : 'Không phân công'}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Không có lịch hẹn nào phát sinh hôm nay.</td>
+                          <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không có lịch hẹn nào phát sinh hôm nay.</td>
                         </tr>
                       )}
                     </tbody>
@@ -1557,45 +1608,165 @@ function SpaManagerConsoleContent() {
                 <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên và áp dụng giảm giá trễ hẹn 10%.</p>
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-col gap-3 rounded-2xl border border-gray-150 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm theo tên khách hàng, tên dịch vụ hoặc mã..."
-                    value={bookingSearch}
-                    onChange={(e) => setBookingSearch(e.target.value)}
-                    className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-10 text-sm focus:border-primary focus:bg-white focus:outline-none"
-                  />
-                  {bookingSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setBookingSearch('')}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  )}
+              {/* Filters Toolbar */}
+              <div className="bg-white rounded-2xl border border-gray-150 p-4 shadow-sm space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  {/* Search input */}
+                  <div className="md:col-span-4 relative">
+                    <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm theo tên khách, pet, dịch vụ, mã #..."
+                      value={bookingSearch}
+                      onChange={(e) => setBookingSearch(e.target.value)}
+                      className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-10 text-sm focus:border-primary focus:bg-white focus:outline-none font-medium"
+                    />
+                    {bookingSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setBookingSearch('')}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition cursor-pointer"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Status filter */}
+                  <div className="md:col-span-3">
+                    <div className="flex items-center gap-2">
+                      <Filter className="size-4 text-gray-400 shrink-0" />
+                      <select
+                        value={bookingStatusFilter}
+                        onChange={(e) => setBookingStatusFilter(e.target.value)}
+                        className="w-full rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none cursor-pointer"
+                      >
+                        <option value="ALL">🌐 Tất cả trạng thái</option>
+                        <option value="PENDING">🚨 Pending (Chờ xác nhận)</option>
+                        <option value="CONFIRMED">👤 Confirmed (Cần gán NV)</option>
+                        <option value="CHECK_IN">📍 Check-in (Khách đã đến)</option>
+                        <option value="ASSIGNED">✨ Assigned (Đã giao việc)</option>
+                        <option value="IN_PROGRESS">🔄 In Progress (Đang làm)</option>
+                        <option value="COMPLETED">✅ Completed (Hoàn thành)</option>
+                        <option value="CANCELLED">❌ Cancelled (Đã hủy)</option>
+                        <option value="NO_SHOW">⏱️ No Show (Vắng mặt)</option>
+                        <option value="LATE">⚠️ Late (Trễ hẹn)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Date Filter Type dropdown */}
+                  <div className="md:col-span-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="size-4 text-gray-400 shrink-0" />
+                      <select
+                        value={bookingDateFilterType}
+                        onChange={(e) => {
+                          setBookingDateFilterType(e.target.value);
+                          if (e.target.value === 'SPECIFIC_DATE' && !bookingCustomDate) {
+                            const now = new Date();
+                            setBookingCustomDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none cursor-pointer"
+                      >
+                        <option value="ALL">📅 Tất cả ngày</option>
+                        <option value="TODAY">⚡ Hôm nay</option>
+                        <option value="THIS_WEEK">📆 Tuần này</option>
+                        <option value="THIS_MONTH">🗓️ Tháng này</option>
+                        <option value="SPECIFIC_DATE">🎯 Chọn ngày cụ thể...</option>
+                        <option value="CUSTOM_RANGE">↔️ Khoảng ngày...</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Time Slot Filter dropdown */}
+                  <div className="md:col-span-2">
+                    <div className="flex items-center gap-2">
+                      <Clock className="size-4 text-gray-400 shrink-0" />
+                      <select
+                        value={bookingTimeSlotFilter}
+                        onChange={(e) => setBookingTimeSlotFilter(e.target.value)}
+                        className="w-full rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none cursor-pointer"
+                      >
+                        <option value="ALL">⏰ Tất cả giờ</option>
+                        {['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'].map((time) => (
+                          <option key={time} value={time}>
+                            ⏰ {time}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Filter className="size-4 text-gray-400" />
-                  <select
-                    value={bookingStatusFilter}
-                    onChange={(e) => setBookingStatusFilter(e.target.value)}
-                    className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-sm font-bold text-gray-700 focus:outline-none"
-                  >
-                    <option value="ALL">Tất cả trạng thái</option>
-                    <option value="PENDING">Pending (Chờ xác nhận)</option>
-                    <option value="CONFIRMED">Confirmed (Đã xác nhận)</option>
-                    <option value="CHECK_IN">Check-in (Khách đã đến)</option>
-                    <option value="ASSIGNED">Assigned (Đã giao việc)</option>
-                    <option value="IN_PROGRESS">In Progress (Đang làm)</option>
-                    <option value="COMPLETED">Completed (Hoàn thành)</option>
-                    <option value="CANCELLED">Cancelled (Đã hủy)</option>
-                    <option value="NO_SHOW">No Show (Vắng mặt)</option>
-                    <option value="LATE">Late (Trễ hẹn)</option>
-                  </select>
+
+                {/* Row: Left (Count & Date Picker Inputs) | Right (Date Label & Reset Button) */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-gray-100 text-xs">
+                  {/* Left: Booking count + Date Pickers */}
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="font-extrabold text-gray-900 mr-1">
+                      🔍 Tìm thấy <span className="text-primary font-black text-sm">{filteredBookings.length}</span> lịch hẹn
+                    </span>
+
+                    {/* Date Pickers if SPECIFIC_DATE or CUSTOM_RANGE */}
+                    {bookingDateFilterType === 'SPECIFIC_DATE' && (
+                      <div className="flex items-center gap-1.5 animate-fadeIn">
+                        <span className="text-xs font-bold text-gray-600">Chọn ngày:</span>
+                        <input
+                          type="date"
+                          value={bookingCustomDate}
+                          onChange={(e) => setBookingCustomDate(e.target.value)}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-1 text-xs font-bold text-gray-800 focus:border-primary focus:outline-none shadow-2xs"
+                        />
+                      </div>
+                    )}
+
+                    {bookingDateFilterType === 'CUSTOM_RANGE' && (
+                      <div className="flex flex-wrap items-center gap-1.5 animate-fadeIn">
+                        <span className="text-xs font-bold text-gray-600">Từ:</span>
+                        <input
+                          type="date"
+                          value={bookingStartDate}
+                          onChange={(e) => setBookingStartDate(e.target.value)}
+                          className="rounded-xl border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-800 focus:border-primary focus:outline-none shadow-2xs"
+                        />
+                        <span className="text-xs font-bold text-gray-600">Đến:</span>
+                        <input
+                          type="date"
+                          value={bookingEndDate}
+                          onChange={(e) => setBookingEndDate(e.target.value)}
+                          className="rounded-xl border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-800 focus:border-primary focus:outline-none shadow-2xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Date filter label & Reset filter button */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    {dateFilterLabel && bookingDateFilterType !== 'SPECIFIC_DATE' && bookingDateFilterType !== 'CUSTOM_RANGE' && (
+                      <span className="bg-orange-50 text-orange-800 font-bold px-2 py-0.5 rounded-full border border-orange-200 text-[11px]">
+                        📅 {dateFilterLabel}
+                      </span>
+                    )}
+                    {(bookingSearch || bookingStatusFilter !== 'ALL' || bookingDateFilterType !== 'ALL' || bookingTimeSlotFilter !== 'ALL') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBookingSearch('');
+                          setBookingStatusFilter('ALL');
+                          setBookingDateFilterType('ALL');
+                          setBookingCustomDate('');
+                          setBookingStartDate('');
+                          setBookingEndDate('');
+                          setBookingTimeSlotFilter('ALL');
+                        }}
+                        className="text-xs font-bold text-red-600 hover:text-red-800 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <X className="size-3.5" />
+                        <span>Đặt lại bộ lọc</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1742,92 +1913,6 @@ function SpaManagerConsoleContent() {
                   </table>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* TAB CONTENT: SLOTS (TIME SLOTS MANAGEMENT) */}
-          {currentTab === 'slots' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900">Quản lý thời gian & Nhân viên khả dụng</h2>
-                  <p className="text-sm font-semibold text-gray-500">Xem tất cả mốc thời gian 30p của ngày và danh sách kỹ thuật viên rảnh rỗi.</p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={slotDate}
-                    min={new Date().toISOString().split('T')[0]}
-                    onKeyDown={(e) => e.preventDefault()}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const todayStr = new Date().toISOString().split('T')[0];
-                      if (!val || val >= todayStr) {
-                        setSlotDate(val);
-                      } else {
-                        setSlotDate(todayStr);
-                      }
-                    }}
-                    className="h-10 rounded-xl border border-gray-150 bg-white px-3 py-1.5 text-sm font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {loadingSlots ? (
-                <div className="flex h-64 items-center justify-center">
-                  <Loader2 className="size-8 animate-spin text-primary" />
-                  <span className="ml-2 text-sm font-bold text-gray-500">Đang tải lịch rảnh nhân viên...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Slots Table */}
-                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi sáng (9:00 - 12:00)</h3>
-                    <div className="divide-y">
-                      {slotsData.slice(0, 6).map((slot: any) => (
-                        <div key={slot.time} className="py-3 flex items-center justify-between">
-                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                            <Clock className="size-4 text-primary" />
-                            {slot.time}
-                          </span>
-                          <div className="text-right">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                              }`}>
-                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
-                            </span>
-                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
-                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi chiều (14:00 - 18:00)</h3>
-                    <div className="divide-y">
-                      {slotsData.slice(6).map((slot: any) => (
-                        <div key={slot.time} className="py-3 flex items-center justify-between">
-                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                            <Clock className="size-4 text-primary" />
-                            {slot.time}
-                          </span>
-                          <div className="text-right">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                              }`}>
-                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
-                            </span>
-                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
-                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

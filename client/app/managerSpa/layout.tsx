@@ -33,7 +33,6 @@ function SpaManagerNavigation() {
         { label: 'Lịch hẹn', id: 'bookings', href: '/managerSpa?tab=bookings', icon: Calendar },
         { label: 'Dịch vụ', id: 'services', href: '/managerSpa?tab=services', icon: Scissors },
         { label: 'Danh mục', id: 'categories', href: '/managerSpa?tab=categories', icon: FolderKanban },
-        { label: 'Khung giờ', id: 'slots', href: '/managerSpa?tab=slots', icon: Clock },
         { label: 'Nhân viên', id: 'staffs', href: '/managerSpa?tab=staffs', icon: Users },
         { label: 'Đánh giá', id: 'feedbacks', href: '/managerSpa?tab=feedbacks', icon: Star },
       ],

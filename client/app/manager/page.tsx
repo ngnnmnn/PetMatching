@@ -183,7 +183,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     loading: false,
   });
   const [isSaved, setIsSaved] = useState(false);
@@ -349,7 +349,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const matchesSearch =
         customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         order.id.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       let matchesStatus = false;
       if (filterStatus === 'ALL') {
         matchesStatus = true;
@@ -367,7 +367,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const filteredCustomers = useMemo(() => {
     let result = [...customers];
-    
+
     // 1. Filter new customers (0 total orders, even if cancelled)
     if (customerFilterNew === 'new') {
       result = result.filter(c => c.isNewCustomer);
@@ -376,7 +376,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     // 2. Search query (name, email, phone)
     if (customerSearch.trim()) {
       const query = customerSearch.toLowerCase();
-      result = result.filter(c => 
+      result = result.filter(c =>
         c.name.toLowerCase().includes(query) ||
         c.email.toLowerCase().includes(query) ||
         c.phone.includes(query)
@@ -472,7 +472,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
+
       let filename = 'danh_sach_don_hang';
       if (exportAllTime) {
         filename += '_toan_bo_thoi_gian';
@@ -489,7 +489,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Xuất file Excel thành công!');
       setIsExportModalOpen(false);
     } catch (err: any) {
@@ -834,8 +834,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
     if (product.specifications) {
       try {
-        const specs = typeof product.specifications === 'string' 
-          ? JSON.parse(product.specifications) 
+        const specs = typeof product.specifications === 'string'
+          ? JSON.parse(product.specifications)
           : product.specifications;
         const list = Object.entries(specs).map(([key, val]) => ({
           key,
@@ -1015,8 +1015,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       return;
     }
 
-    const sellingPrice = variantForm.sellingPrice 
-      ? Number(variantForm.sellingPrice) 
+    const sellingPrice = variantForm.sellingPrice
+      ? Number(variantForm.sellingPrice)
       : Number(productForm.sellingPrice || 0);
     const stock = Number(variantForm.stock);
 
@@ -1163,7 +1163,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
           setIsImportModalOpen(false);
           setImportFile(null);
           setImportImages([]);
-          
+
           if (folderName) {
             const importedFolders = JSON.parse(localStorage.getItem('imported_folders') || '[]');
             if (!importedFolders.includes(folderName)) {
@@ -1370,7 +1370,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Filter className="size-4 text-[#B0B0B0]" />
-              
+
               {/* Category Filter */}
               <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
                 <span className="text-gray-400">Danh mục:</span>
@@ -1462,8 +1462,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           <td className="px-6 py-4 text-right">
                             {(() => {
                               const currentPrice = p.salePrice ?? p.sellingPrice;
-                              const unitProfit = p.importPrice 
-                                ? currentPrice - p.importPrice 
+                              const unitProfit = p.importPrice
+                                ? currentPrice - p.importPrice
                                 : currentPrice * 0.5;
                               const margin = ((unitProfit / currentPrice) * 100).toFixed(0) + '%';
                               return (
@@ -1740,7 +1740,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                     <div>
                       <label className="block text-xs font-bold mb-1">Ảnh chính sản phẩm *</label>
-                      
+
                       {/* Live Image Preview Box */}
                       {productForm.imageUrl && (
                         <div className="relative aspect-video w-full max-w-[200px] overflow-hidden rounded-2xl border border-[#EFEAE2] bg-[#FAF9F7] mb-2.5 shadow-sm group">
@@ -1915,195 +1915,195 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       Cấu hình phân loại / biến thể
                     </h4>
 
-                      {/* Mini Variant Form */}
-                      <div className="p-3 border border-[#EFEAE2] rounded-2xl bg-[#F9F8F6]/50 space-y-3">
-                        <p className="font-bold text-[10px] uppercase tracking-wider text-gray-500">
-                          {editingVariant || editingLocalVariantIndex !== null ? 'Chỉnh sửa biến thể' : 'Thêm biến thể mới'}
-                        </p>
-                        
+                    {/* Mini Variant Form */}
+                    <div className="p-3 border border-[#EFEAE2] rounded-2xl bg-[#F9F8F6]/50 space-y-3">
+                      <p className="font-bold text-[10px] uppercase tracking-wider text-gray-500">
+                        {editingVariant || editingLocalVariantIndex !== null ? 'Chỉnh sửa biến thể' : 'Thêm biến thể mới'}
+                      </p>
+
+                      <div>
+                        <label className="block text-[10px] font-bold mb-1">Tên phân loại *</label>
+                        <input
+                          type="text"
+                          placeholder="Ví dụ: Size S, Màu Đỏ, Hộp 500g"
+                          value={variantForm.name}
+                          onChange={(e) => setVariantForm({ ...variantForm, name: e.target.value })}
+                          className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold mb-1">Tên phân loại *</label>
+                          <label className="block text-[10px] font-bold mb-1">Giá bán lẻ (Để trống = Giá chính)</label>
                           <input
-                            type="text"
-                            placeholder="Ví dụ: Size S, Màu Đỏ, Hộp 500g"
-                            value={variantForm.name}
-                            onChange={(e) => setVariantForm({ ...variantForm, name: e.target.value })}
+                            type="number"
+                            min="1"
+                            placeholder="VND"
+                            value={variantForm.sellingPrice}
+                            onChange={(e) => setVariantForm({ ...variantForm, sellingPrice: e.target.value })}
                             className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
                           />
                         </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-bold mb-1">Giá bán lẻ (Để trống = Giá chính)</label>
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="VND"
-                              value={variantForm.sellingPrice}
-                              onChange={(e) => setVariantForm({ ...variantForm, sellingPrice: e.target.value })}
-                              className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold mb-1">Giá khuyến mãi</label>
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="VND"
-                              value={variantForm.salePrice}
-                              onChange={(e) => setVariantForm({ ...variantForm, salePrice: e.target.value })}
-                              className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
-                            />
-                          </div>
+                        <div>
+                          <label className="block text-[10px] font-bold mb-1">Giá khuyến mãi</label>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="VND"
+                            value={variantForm.salePrice}
+                            onChange={(e) => setVariantForm({ ...variantForm, salePrice: e.target.value })}
+                            className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
+                          />
                         </div>
+                      </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-bold mb-1">Số lượng kho *</label>
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="Ví dụ: 10"
-                              value={variantForm.stock}
-                              onChange={(e) => setVariantForm({ ...variantForm, stock: e.target.value })}
-                              className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
-                            />
-                          </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold mb-1">Số lượng kho *</label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Ví dụ: 10"
+                            value={variantForm.stock}
+                            onChange={(e) => setVariantForm({ ...variantForm, stock: e.target.value })}
+                            className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
+                          />
                         </div>
+                      </div>
 
-                        {/* Separate block for variant image with live preview */}
-                        <div className="space-y-2">
-                          <label className="block text-[10px] font-bold mb-1">Ảnh biến thể (Tải file hoặc điền URL)</label>
-                          {variantForm.imageUrl && (
-                            <div className="relative aspect-video w-full max-w-[120px] overflow-hidden rounded-xl border border-[#EFEAE2] bg-gray-50 mb-2">
-                              <img
-                                src={variantForm.imageUrl}
-                                alt="Variant Preview"
-                                className="h-full w-full object-cover"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setVariantForm({ ...variantForm, imageUrl: '' })}
-                                className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-                                aria-label="Xóa ảnh"
-                              >
-                                <X className="size-3" />
-                              </button>
-                            </div>
-                          )}
-                          <div className="flex gap-2">
-                            <input
-                              id="integrated-variant-image-file"
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  setUploadingVariantImage(true);
-                                  try {
-                                    const res = await uploadImages([file], 'product');
-                                    setVariantForm({ ...variantForm, imageUrl: res[0].url });
-                                    toast.success('Tải ảnh biến thể thành công!');
-                                  } catch (err: any) {
-                                    toast.error(err.message || 'Lỗi khi tải ảnh lên.');
-                                  } finally {
-                                    setUploadingVariantImage(false);
-                                  }
+                      {/* Separate block for variant image with live preview */}
+                      <div className="space-y-2">
+                        <label className="block text-[10px] font-bold mb-1">Ảnh biến thể (Tải file hoặc điền URL)</label>
+                        {variantForm.imageUrl && (
+                          <div className="relative aspect-video w-full max-w-[120px] overflow-hidden rounded-xl border border-[#EFEAE2] bg-gray-50 mb-2">
+                            <img
+                              src={variantForm.imageUrl}
+                              alt="Variant Preview"
+                              className="h-full w-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setVariantForm({ ...variantForm, imageUrl: '' })}
+                              className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+                              aria-label="Xóa ảnh"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <input
+                            id="integrated-variant-image-file"
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setUploadingVariantImage(true);
+                                try {
+                                  const res = await uploadImages([file], 'product');
+                                  setVariantForm({ ...variantForm, imageUrl: res[0].url });
+                                  toast.success('Tải ảnh biến thể thành công!');
+                                } catch (err: any) {
+                                  toast.error(err.message || 'Lỗi khi tải ảnh lên.');
+                                } finally {
+                                  setUploadingVariantImage(false);
                                 }
-                              }}
-                            />
-                            <input
-                              type="text"
-                              placeholder="URL ảnh hoặc tải file..."
-                              value={variantForm.imageUrl}
-                              onChange={(e) => setVariantForm({ ...variantForm, imageUrl: e.target.value })}
-                              className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none text-[11px]"
-                            />
-                            <button
-                              type="button"
-                              disabled={uploadingVariantImage}
-                              onClick={() => document.getElementById('integrated-variant-image-file')?.click()}
-                              className="px-3 rounded-xl border border-[#0F766E] font-bold text-[#0F766E] hover:bg-[#0F766E]/5 transition flex items-center justify-center text-[10px] shrink-0 disabled:opacity-50"
-                            >
-                              {uploadingVariantImage ? (
-                                <Loader2 className="size-3 animate-spin" />
-                              ) : (
-                                'Tải ảnh'
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-1.5">
-                          {(editingLocalVariantIndex !== null || editingVariant) && (
-                            <button
-                              type="button"
-                              onClick={editingProduct ? handleCancelEditVariant : () => {
-                                setEditingLocalVariantIndex(null);
-                                setVariantForm({ name: '', sellingPrice: '', salePrice: '', stock: '', imageUrl: '' });
-                              }}
-                              className="rounded-xl border px-3 py-1.5 font-bold hover:bg-gray-50 transition text-[10px]"
-                            >
-                              Hủy bỏ
-                            </button>
-                          )}
+                              }
+                            }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="URL ảnh hoặc tải file..."
+                            value={variantForm.imageUrl}
+                            onChange={(e) => setVariantForm({ ...variantForm, imageUrl: e.target.value })}
+                            className="flex-1 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none text-[11px]"
+                          />
                           <button
                             type="button"
-                            onClick={editingProduct ? handleVariantSubmit : handleLocalVariantSubmit}
-                            className="rounded-xl bg-[#0F766E] px-4 py-1.5 font-bold text-white hover:bg-[#115E59] transition text-[10px]"
+                            disabled={uploadingVariantImage}
+                            onClick={() => document.getElementById('integrated-variant-image-file')?.click()}
+                            className="px-3 rounded-xl border border-[#0F766E] font-bold text-[#0F766E] hover:bg-[#0F766E]/5 transition flex items-center justify-center text-[10px] shrink-0 disabled:opacity-50"
                           >
-                            {editingVariant || editingLocalVariantIndex !== null ? 'Cập nhật' : 'Thêm mới'}
+                            {uploadingVariantImage ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              'Tải ảnh'
+                            )}
                           </button>
                         </div>
                       </div>
 
-                      {/* Variants List */}
-                      <div className="flex-1 space-y-2">
-                        <p className="font-bold text-[10px] uppercase tracking-wider text-gray-500">
-                          Danh sách biến thể ({editingProduct ? variants.length : localVariants.length})
-                        </p>
-                        {loadingVariants ? (
-                          <div className="flex justify-center py-4">
-                            <Loader2 className="size-5 animate-spin text-[var(--primary-color)]" />
-                          </div>
-                        ) : (editingProduct ? variants : localVariants).length === 0 ? (
-                          <p className="text-[10px] text-gray-400 italic py-2">Chưa cấu hình biến thể nào. Sản phẩm sẽ sử dụng phân loại mặc định chính.</p>
-                        ) : (
-                          (editingProduct ? variants : localVariants).map((v: any, index: number) => (
-                            <div key={v.id || index} className="flex items-center justify-between p-2 rounded-xl border border-[#EFEAE2] bg-white text-[11px]">
-                              <div className="flex items-center gap-2">
-                                {v.imageUrl && (
-                                  <img src={v.imageUrl} alt="" className="size-8 rounded-lg object-cover border border-[#EFEAE2]" />
-                                )}
-                                <div>
-                                  <p className="font-bold text-[var(--text-main)]">{v.name}</p>
-                                  <p className="text-gray-400 text-[10px]">
-                                    Giá: {v.sellingPrice ? Number(v.sellingPrice).toLocaleString('vi-VN') : 'Mặc định'}đ | Kho: {v.stock}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => editingProduct ? handleEditVariantClick(v) : handleEditLocalVariant(index)}
-                                  className="p-1 text-gray-500 hover:text-primary transition cursor-pointer"
-                                >
-                                  <Edit2 className="size-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => editingProduct ? handleDeleteVariant(v.id) : handleDeleteLocalVariant(index)}
-                                  className="p-1 text-gray-500 hover:text-red-500 transition cursor-pointer"
-                                >
-                                  <Trash2 className="size-3" />
-                                </button>
-                              </div>
-                            </div>
-                          ))
+                      <div className="flex justify-end gap-2 pt-1.5">
+                        {(editingLocalVariantIndex !== null || editingVariant) && (
+                          <button
+                            type="button"
+                            onClick={editingProduct ? handleCancelEditVariant : () => {
+                              setEditingLocalVariantIndex(null);
+                              setVariantForm({ name: '', sellingPrice: '', salePrice: '', stock: '', imageUrl: '' });
+                            }}
+                            className="rounded-xl border px-3 py-1.5 font-bold hover:bg-gray-50 transition text-[10px]"
+                          >
+                            Hủy bỏ
+                          </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={editingProduct ? handleVariantSubmit : handleLocalVariantSubmit}
+                          className="rounded-xl bg-[#0F766E] px-4 py-1.5 font-bold text-white hover:bg-[#115E59] transition text-[10px]"
+                        >
+                          {editingVariant || editingLocalVariantIndex !== null ? 'Cập nhật' : 'Thêm mới'}
+                        </button>
                       </div>
                     </div>
+
+                    {/* Variants List */}
+                    <div className="flex-1 space-y-2">
+                      <p className="font-bold text-[10px] uppercase tracking-wider text-gray-500">
+                        Danh sách biến thể ({editingProduct ? variants.length : localVariants.length})
+                      </p>
+                      {loadingVariants ? (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="size-5 animate-spin text-[var(--primary-color)]" />
+                        </div>
+                      ) : (editingProduct ? variants : localVariants).length === 0 ? (
+                        <p className="text-[10px] text-gray-400 italic py-2">Chưa cấu hình biến thể nào. Sản phẩm sẽ sử dụng phân loại mặc định chính.</p>
+                      ) : (
+                        (editingProduct ? variants : localVariants).map((v: any, index: number) => (
+                          <div key={v.id || index} className="flex items-center justify-between p-2 rounded-xl border border-[#EFEAE2] bg-white text-[11px]">
+                            <div className="flex items-center gap-2">
+                              {v.imageUrl && (
+                                <img src={v.imageUrl} alt="" className="size-8 rounded-lg object-cover border border-[#EFEAE2]" />
+                              )}
+                              <div>
+                                <p className="font-bold text-[var(--text-main)]">{v.name}</p>
+                                <p className="text-gray-400 text-[10px]">
+                                  Giá: {v.sellingPrice ? Number(v.sellingPrice).toLocaleString('vi-VN') : 'Mặc định'}đ | Kho: {v.stock}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => editingProduct ? handleEditVariantClick(v) : handleEditLocalVariant(index)}
+                                className="p-1 text-gray-500 hover:text-primary transition cursor-pointer"
+                              >
+                                <Edit2 className="size-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => editingProduct ? handleDeleteVariant(v.id) : handleDeleteLocalVariant(index)}
+                                className="p-1 text-gray-500 hover:text-red-500 transition cursor-pointer"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2247,7 +2247,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                               } catch (err: any) {
                                                 toast.error(err.response?.data?.message || 'Không thể xóa đơn vị tính.');
                                               } finally {
-                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                                               }
                                             }
                                           });
@@ -2359,7 +2359,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                   {/* Category List Scrollable Content */}
                   <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                    
+
                     {/* List of existing categories */}
                     <div className="border border-[#EFEAE2] rounded-2xl overflow-hidden bg-[#FAF9F7]">
                       <table className="w-full text-left text-xs font-semibold">
@@ -2412,7 +2412,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                                 console.error(err);
                                                 toast.error(err.response?.data?.message || 'Lỗi khi cập nhật danh mục.');
                                               } finally {
-                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                                               }
                                             }
                                           });
@@ -2465,7 +2465,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                                 console.error(err);
                                                 toast.error(err.response?.data?.message || 'Không thể xóa danh mục.');
                                               } finally {
-                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                                               }
                                             }
                                           });
@@ -2512,7 +2512,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 console.error(error);
                                 toast.error(error.response?.data?.message || 'Lỗi khi tạo danh mục mới.');
                               } finally {
-                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => {}, loading: false });
+                                setConfirmState({ isOpen: false, title: '', message: '', onConfirm: () => { }, loading: false });
                               }
                             }
                           });
@@ -2585,7 +2585,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   >
                     <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-                  
+
                   {/* Header */}
                   <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
                     <div className="flex items-center gap-3">
@@ -2632,7 +2632,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </div>
                             <span className="text-[11px] text-gray-400 font-extrabold block mt-1.5">{feedbacks.length} đánh giá khách hàng</span>
                           </div>
-                          
+
                           <div className="md:col-span-2 text-xs text-gray-500 space-y-1.5 font-bold">
                             {[5, 4, 3, 2, 1].map((stars) => {
                               const count = feedbacks.filter((f) => f.rating === stars).length;
@@ -2714,7 +2714,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           )}
 
-                    {/* Variant Management Modal */}
+          {/* Variant Management Modal */}
           {isVariantModalOpen && selectedProductForVariants && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
@@ -2912,7 +2912,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               <div>
                                 <p className="font-bold text-[var(--text-main)] text-sm">{v.name}</p>
                                 <p className="text-gray-500 text-[11px] mt-0.5">
-                                  Giá bán lẻ: {v.sellingPrice ? v.sellingPrice.toLocaleString('vi-VN') : 'Mặc định'}đ 
+                                  Giá bán lẻ: {v.sellingPrice ? v.sellingPrice.toLocaleString('vi-VN') : 'Mặc định'}đ
                                   {v.salePrice && ` | Khuyến mãi: ${v.salePrice.toLocaleString('vi-VN')}đ`}
                                   {` | Kho: ${v.stock}`}
                                 </p>
@@ -3050,7 +3050,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             const files = Array.from(e.target.files || []);
                             const excel = files.find(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
                             const images = files.filter(f => f.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name));
-                            
+
                             if (!excel) {
                               toast.error('Không tìm thấy file Excel (.xlsx hoặc .xls) trong thư mục bạn chọn!');
                               setImportFile(null);
@@ -3080,13 +3080,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             <Upload className="size-8 text-gray-400 mx-auto animate-bounce" />
                           )}
                           <p className="text-sm font-bold text-gray-600">
-                            {importFile 
-                              ? `Thư mục: ${(importFile as any).webkitRelativePath?.split('/')[0] || ''}` 
+                            {importFile
+                              ? `Thư mục: ${(importFile as any).webkitRelativePath?.split('/')[0] || ''}`
                               : 'Tải lên thư mục hóa đơn tương ứng'}
                           </p>
                           <p className="text-[10px] text-gray-400 font-medium">
-                            {importImages.length > 0 
-                              ? `Đã nhận diện file Excel: ${importFile?.name} và ${importImages.length} ảnh sản phẩm` 
+                            {importImages.length > 0
+                              ? `Đã nhận diện file Excel: ${importFile?.name} và ${importImages.length} ảnh sản phẩm`
                               : 'Chọn thư mục chứa file Excel và các thư mục ảnh con'}
                           </p>
                         </div>
@@ -3515,11 +3515,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 >
                   <X className="size-5" />
                 </button>
-                
+
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
                   Chi tiết đơn hàng: {selectedOrderDetails.id}
                 </h3>
-                
+
                 {/* Delivery Info */}
                 {(() => {
                   const info = parseShippingAddress(selectedOrderDetails.shippingAddress);
@@ -3541,7 +3541,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
                   );
                 })()}
-                
+
                 {/* Order Items Table */}
                 <div className="overflow-hidden rounded-xl border border-[#EFEAE2]">
                   <table className="w-full text-left border-collapse text-xs">
@@ -3794,7 +3794,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-between items-center pt-2 border-t">
                   {selectedOrderDetails.refundStatus === 'PENDING' || selectedOrderDetails.refundStatus === 'FAILED' ? (
                     <div className="flex gap-2">
@@ -4339,7 +4339,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   >
                     <ChevronsRight className="size-5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-                  
+
                   {/* Header */}
                   <div className="px-6 py-5 border-b border-[#EFEAE2] flex items-center justify-between bg-[#F9F8F6]">
                     <div className="flex items-center gap-3">
@@ -4393,7 +4393,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       <h4 className="text-xs font-black text-[#8A8980] uppercase tracking-wider">
                         Lịch sử đơn hàng ({selectedCustomer.orders?.length || 0})
                       </h4>
-                      
+
                       {selectedCustomer.orders && selectedCustomer.orders.length > 0 ? (
                         <div className="space-y-4">
                           {selectedCustomer.orders.map((order: any) => (
@@ -4418,19 +4418,19 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                   <span className={cn(
                                     "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
                                     order.status === 'DELIVERED' ? "bg-green-50 text-green-700 border-green-100" :
-                                    order.status === 'CANCELLED' ? "bg-red-50 text-red-700 border-red-100" :
-                                    order.status === 'PROCESSING' ? "bg-blue-50 text-blue-700 border-blue-100" :
-                                    order.status === 'SHIPPED' ? "bg-purple-50 text-purple-700 border-purple-100" :
-                                    "bg-gray-50 text-gray-700 border-gray-100"
+                                      order.status === 'CANCELLED' ? "bg-red-50 text-red-700 border-red-100" :
+                                        order.status === 'PROCESSING' ? "bg-blue-50 text-blue-700 border-blue-100" :
+                                          order.status === 'SHIPPED' ? "bg-purple-50 text-purple-700 border-purple-100" :
+                                            "bg-gray-50 text-gray-700 border-gray-100"
                                   )}>
                                     {order.status === 'DELIVERED' ? 'Hoàn thành' :
-                                     order.status === 'CANCELLED' ? 'Đã hủy' :
-                                     order.status === 'PROCESSING' ? 'Đang xử lý' :
-                                     order.status === 'SHIPPED' ? 'Đang giao' :
-                                     order.status === 'EXPIRED' ? 'Hết hạn' :
-                                     order.status === 'PAYMENT_ERROR' ? 'Lỗi thanh toán' :
-                                     order.status === 'PENDING' ? 'Chờ thanh toán' :
-                                     order.status}
+                                      order.status === 'CANCELLED' ? 'Đã hủy' :
+                                        order.status === 'PROCESSING' ? 'Đang xử lý' :
+                                          order.status === 'SHIPPED' ? 'Đang giao' :
+                                            order.status === 'EXPIRED' ? 'Hết hạn' :
+                                              order.status === 'PAYMENT_ERROR' ? 'Lỗi thanh toán' :
+                                                order.status === 'PENDING' ? 'Chờ thanh toán' :
+                                                  order.status}
                                   </span>
                                 </div>
                               </div>
@@ -4772,11 +4772,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const [services, setServices] = useState<any[]>([]);
   const [staffs, setStaffs] = useState<any[]>([]);
   const [managerBrands, setManagerBrands] = useState<any[]>([]);
-  
-  // Date and slot states
-  const [slotDate, setSlotDate] = useState<string>('');
-  const [slotsData, setSlotsData] = useState<any[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
 
   // Assignment & Detail states
   const [selectedBookingDetail, setSelectedBookingDetail] = useState<any | null>(null);
@@ -4786,7 +4781,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
   const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
   const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
-
   // Helper to resolve subServices for any booking in Manager view
   const getManagerBookingSubServices = (b: any) => {
     if (!b) return [];
@@ -4960,10 +4954,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     }));
   };
 
-  useEffect(() => {
-    // Set default slot date to today
-    setSlotDate(new Date().toISOString().split('T')[0]);
-  }, []);
 
   // Fetch branches and categories managed by this manager
   useEffect(() => {
@@ -4999,7 +4989,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
       if (currentTab === 'dashboard') {
         const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId);
         setStats(statsRes.data);
-        
+
         // Auto fetch available staffs for confirmed bookings
         const todayBookings = statsRes.data?.todayBookings || [];
         const confirmed = todayBookings.filter((b: any) => b.status === 'CONFIRMED');
@@ -5335,10 +5325,10 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const filteredBookings = bookings.filter(b => {
     const sName = b.service?.name || '';
     const cName = b.user?.name || '';
-    const matchesSearch = sName.toLowerCase().includes(bookingSearch.toLowerCase()) || 
-                          cName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-                          b.id.toLowerCase().includes(bookingSearch.toLowerCase());
-    
+    const matchesSearch = sName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      cName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      b.id.toLowerCase().includes(bookingSearch.toLowerCase());
+
     const matchesStatus = bookingStatusFilter === 'ALL' || b.status === bookingStatusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -5358,7 +5348,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
 
   return (
     <div className="space-y-6">
-      
+
       {/* Dynamic Purple Header */}
       <section className="bg-primary text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -5368,7 +5358,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             📍 Quản lý: <span className="font-bold">{branchNames || 'Chi nhánh Spa'}</span>
           </p>
         </div>
-        
+
         {/* Branch switcher dropdown if multiple branches */}
         {branches.length > 1 && (
           <div className="bg-white/10 border border-white/20 rounded-xl px-3 py-1.5 flex items-center gap-2">
@@ -5396,7 +5386,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
           {/* TAB CONTENT: DASHBOARD */}
           {(currentTab === 'dashboard' || !currentTab) && stats && (
             <div className="space-y-6 animate-fadeIn">
-              
+
               {/* Metrics cards row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Metric 1 */}
@@ -5461,7 +5451,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
 
               {/* Charts row */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
+
                 {/* Revenue by Service custom chart */}
                 <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-7 space-y-4">
                   <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Doanh thu theo dịch vụ</h3>
@@ -5564,8 +5554,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         <th className="px-6 py-3.5">Khách hàng / Bé</th>
                         <th className="px-6 py-3.5">Dịch vụ</th>
                         <th className="px-6 py-3.5">Ghi chú</th>
+                        <th className="px-6 py-3.5">Nhân viên phụ trách</th>
                         <th className="px-6 py-3.5 text-center">Trạng thái</th>
-                        <th className="px-6 py-3.5 text-center">Phân công nhân viên</th>
+                        <th className="px-6 py-3.5 text-center">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -5596,70 +5587,44 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               <td className="px-6 py-4 text-xs italic text-gray-500 max-w-[200px] truncate" title={b.note}>
                                 {b.note ? `"${b.note}"` : '—'}
                               </td>
+                              <td className="px-6 py-4 font-semibold text-xs text-gray-700">
+                                {b.staffName ? (
+                                  <span className="font-bold text-xs text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                    ✨ {b.staffName}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                    Chưa phân công
+                                  </span>
+                                )}
+                              </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status}
+                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center items-center">
-                                  {b.status === 'PENDING' && (
-                                    <button
-                                      onClick={() => handleConfirmBooking(b.id)}
-                                      className="bg-primary hover:bg-primary/95 text-white px-3 py-1 text-xs font-bold rounded-lg shadow-sm transition"
-                                    >
-                                      Xác nhận
-                                    </button>
-                                  )}
-
-                                  {b.status === 'CONFIRMED' && (
-                                    <div className="flex items-center gap-1.5">
-                                      <select
-                                        value={selectedAssignStaffMap[b.id] || ''}
-                                        onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [b.id]: e.target.value }))}
-                                        className="border border-gray-300 rounded-lg text-xs font-semibold px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary h-8"
-                                      >
-                                        <option value="">-- Chọn nhân viên --</option>
-                                        {(availableStaffsMap[b.id] || []).map((st: any) => (
-                                          <option key={st.id} value={st.id}>{st.name}</option>
-                                        ))}
-                                      </select>
-                                      
-                                      {selectedAssignStaffMap[b.id] && (
-                                        <button
-                                          onClick={() => {
-                                            const stId = selectedAssignStaffMap[b.id];
-                                            const staffName = (availableStaffsMap[b.id] || []).find((s: any) => s.id === stId)?.name || 'Nhân viên';
-                                            setAssignConfirmBooking(b);
-                                            setAssignConfirmStaff({ id: stId, name: staffName });
-                                          }}
-                                          className="bg-purple-600 hover:bg-purple-750 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm transition h-8"
-                                        >
-                                          Phân công
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {b.status === 'ASSIGNED' && (
-                                    <span className="text-[11px] font-bold text-gray-500 leading-tight">
-                                      Nhân viên: <span className="font-black text-purple-700">✨ {b.staffName}</span>
-                                    </span>
-                                  )}
-
-                                  {['IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'LATE'].includes(b.status) && (
-                                    <span className="text-[11px] text-gray-400 font-semibold italic">
-                                      {b.staffName ? `Đã giao: ${b.staffName}` : 'Không phân công'}
-                                    </span>
-                                  )}
-                                </div>
+                              <td className="px-6 py-4 text-center whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const url = new URL(window.location.href);
+                                    url.searchParams.set('tab', 'bookings');
+                                    window.history.pushState({}, '', url.toString());
+                                    window.dispatchEvent(new Event('popstate'));
+                                  }}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/30 rounded-xl text-xs font-black transition shadow-2xs cursor-pointer"
+                                  title="Chuyển sang trang Quản lý Lịch hẹn để xác nhận & phân công"
+                                >
+                                  <span>Quản lý / Phân công</span>
+                                  <ChevronRight className="size-3.5" />
+                                </button>
                               </td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Không có lịch hẹn nào phát sinh hôm nay.</td>
+                          <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không có lịch hẹn nào phát sinh hôm nay.</td>
                         </tr>
                       )}
                     </tbody>
@@ -5842,9 +5807,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                                   <td className="py-2.5 px-3 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
                                                   <td className="py-2.5 px-3 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
                                                   <td className="py-2.5 px-3 text-center">
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${
-                                                      s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                                    }`}>
+                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                                      }`}>
                                                       {s.isActive ? 'Bật' : 'Tắt'}
                                                     </span>
                                                   </td>
@@ -5944,9 +5908,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                           <tr key={c.id} className="hover:bg-gray-50/30 transition">
                             <td className="px-6 py-4 space-y-1">
                               <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
-                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${
-                                c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                              }`}>
+                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}>
                                 {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
                               </span>
                             </td>
@@ -5962,9 +5925,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               {c._count?.bookings || 0} lượt
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                                c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                              }`}>
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                }`}>
                                 {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
                               </span>
                             </td>
@@ -6000,7 +5962,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             <div className="space-y-6 animate-fadeIn">
               <div>
                 <h2 className="text-xl font-black text-gray-900">Danh sách tất cả lịch hẹn</h2>
-                <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên và áp dụng giảm giá trễ hẹn 10%.</p>
+                <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên.</p>
               </div>
 
               {/* Filters */}
@@ -6191,84 +6153,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             </div>
           )}
 
-          {/* TAB CONTENT: SLOTS (TIME SLOTS MANAGEMENT) */}
-          {currentTab === 'slots' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900">Quản lý thời gian & Nhân viên khả dụng</h2>
-                  <p className="text-sm font-semibold text-gray-500">Xem tất cả mốc thời gian 30p của ngày và danh sách kỹ thuật viên rảnh rỗi.</p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={slotDate}
-                    onChange={(e) => setSlotDate(e.target.value)}
-                    className="h-10 rounded-xl border border-gray-150 bg-white px-3 py-1.5 text-sm font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {loadingSlots ? (
-                <div className="flex h-64 items-center justify-center">
-                  <Loader2 className="size-8 animate-spin text-primary" />
-                  <span className="ml-2 text-sm font-bold text-gray-500">Đang tải lịch rảnh nhân viên...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Slots Table */}
-                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi sáng (9:00 - 12:00)</h3>
-                    <div className="divide-y">
-                      {slotsData.slice(0, 6).map((slot: any) => (
-                        <div key={slot.time} className="py-3 flex items-center justify-between">
-                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                            <Clock className="size-4 text-primary" />
-                            {slot.time}
-                          </span>
-                          <div className="text-right">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                              slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                            }`}>
-                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
-                            </span>
-                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
-                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden p-5 space-y-4">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Khung giờ buổi chiều (14:00 - 18:00)</h3>
-                    <div className="divide-y">
-                      {slotsData.slice(6).map((slot: any) => (
-                        <div key={slot.time} className="py-3 flex items-center justify-between">
-                          <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                            <Clock className="size-4 text-primary" />
-                            {slot.time}
-                          </span>
-                          <div className="text-right">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${
-                              slot.isAvailable ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                            }`}>
-                              {slot.isAvailable ? `${slot.remainingSlots} nhân viên rảnh` : 'Bận hết'}
-                            </span>
-                            <p className="text-[10px] text-gray-400 font-semibold mt-1">
-                              {slot.isAvailable ? slot.availableStaffs.map((s: any) => s.name).join(', ') : 'Tất cả nhân viên bận lịch'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* TAB CONTENT: STAFFS */}
           {currentTab === 'staffs' && (
             <div className="space-y-6 animate-fadeIn">
@@ -6400,7 +6284,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             >
               <X className="size-5" />
             </button>
-            
+
             <div>
               <h3 className="text-base font-black text-gray-900">Đổi lịch hẹn Spa</h3>
               <p className="text-xs text-gray-450 mt-1 font-semibold">Khách hàng: {rescheduleBooking.user?.name || 'Khách hàng'} ({rescheduleBooking.petName || 'Bé cưng'}) • Dịch vụ: {rescheduleBooking.service?.name}</p>
@@ -6434,13 +6318,12 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         key={slot.time}
                         disabled={!slot.isAvailable}
                         onClick={() => setSelectedRescheduleSlot(slot.time)}
-                        className={`py-2 px-1 border rounded-lg text-center transition flex flex-col items-center justify-center ${
-                          !slot.isAvailable
+                        className={`py-2 px-1 border rounded-lg text-center transition flex flex-col items-center justify-center ${!slot.isAvailable
                             ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
                             : selectedRescheduleSlot === slot.time
-                            ? 'bg-primary border-primary text-white shadow-sm font-bold'
-                            : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
-                        }`}
+                              ? 'bg-primary border-primary text-white shadow-sm font-bold'
+                              : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
+                          }`}
                       >
                         <span className="text-xs font-black">{slot.time}</span>
                         {slot.isAvailable && (
@@ -6494,7 +6377,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
             </div>
 
             <form onSubmit={handleServiceSubmit} className="space-y-4">
-              
+
               {/* Category & Main/Sub Classification */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -6702,8 +6585,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   {new Date(selectedBookingDetail.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedBookingDetail.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                 </span>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${
-                {
+              <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${{
                   PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
                   CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
                   ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
@@ -6713,7 +6595,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
                   LATE: 'bg-rose-100 text-rose-800 border-rose-300',
                 }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
-              }`}>
+                }`}>
                 {selectedBookingDetail.status === 'PENDING' ? '🚨 Chờ xác nhận' : selectedBookingDetail.status}
               </span>
             </div>
