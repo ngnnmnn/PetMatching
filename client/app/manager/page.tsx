@@ -43,6 +43,7 @@ import { spaApi } from '@/lib/api/spa';
 import { Category } from '@/types';
 import { uploadImages } from '@/lib/api/uploads';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import AppPagination from '@/components/ui/app-pagination';
 import {
   Pagination,
   PaginationContent,
@@ -4797,6 +4798,33 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     return [];
   };
 
+  // Helper to translate status to Vietnamese (matching user order history)
+  const getSpaStatusText = (status: string) => {
+    switch (status) {
+      case 'PENDING':
+        return 'Chờ xác nhận';
+      case 'CONFIRMED':
+        return 'Đã xác nhận';
+      case 'CHECK_IN':
+      case 'ARRIVED':
+        return 'Khách đã đến';
+      case 'ASSIGNED':
+        return 'Đã phân công';
+      case 'IN_PROGRESS':
+        return 'Đang thực hiện';
+      case 'COMPLETED':
+        return 'Đã hoàn thành';
+      case 'CANCELLED':
+        return 'Đã hủy';
+      case 'NO_SHOW':
+        return 'Khách vắng mặt';
+      case 'LATE':
+        return 'Trễ hẹn';
+      default:
+        return status;
+    }
+  };
+
   // Reschedule states
   const [rescheduleBooking, setRescheduleBooking] = useState<any | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState<string>('');
@@ -4844,6 +4872,29 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
   const [categoryTypeFilter, setCategoryTypeFilter] = useState<string>('ALL');
 
   const [expandedServiceGroups, setExpandedServiceGroups] = useState<Record<string, boolean>>({});
+
+  // Pagination states for all Spa Manager tabs
+  const [spaBookingPage, setSpaBookingPage] = useState<number>(1);
+  const SPA_BOOKING_PAGE_SIZE = 10;
+  const [spaServicePage, setSpaServicePage] = useState<number>(1);
+  const SPA_SERVICE_PAGE_SIZE = 10;
+  const [spaCategoryPage, setSpaCategoryPage] = useState<number>(1);
+  const SPA_CATEGORY_PAGE_SIZE = 10;
+  const [spaStaffPage, setSpaStaffPage] = useState<number>(1);
+  const SPA_STAFF_PAGE_SIZE = 9;
+
+  // Reset pagination on search & filter change
+  useEffect(() => {
+    setSpaBookingPage(1);
+  }, [bookingSearch, bookingStatusFilter]);
+
+  useEffect(() => {
+    setSpaServicePage(1);
+  }, [serviceTypeFilter, serviceBrandFilter]);
+
+  useEffect(() => {
+    setSpaCategoryPage(1);
+  }, [categoryTypeFilter]);
 
   const toggleServiceGroup = (groupKey: string) => {
     setExpandedServiceGroups((prev) => ({
@@ -5674,7 +5725,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
+                                  {getSpaStatusText(b.status)}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
@@ -5777,7 +5828,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {groupedServices.length > 0 ? (
-                        groupedServices.map((group) => {
+                        groupedServices
+                          .slice((spaServicePage - 1) * SPA_SERVICE_PAGE_SIZE, spaServicePage * SPA_SERVICE_PAGE_SIZE)
+                          .map((group) => {
                           const isExpanded = !!expandedServiceGroups[group.groupKey];
                           const activeCount = group.items.filter((i) => i.isActive).length;
 
@@ -5842,7 +5895,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               {/* EXPANDED SUB-SERVICES LIST */}
                               {isExpanded && (
                                 <tr>
-                                  <td colSpan={7} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
+                                  <td colSpan={8} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
                                     <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
                                       <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
                                         <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
@@ -5920,6 +5973,14 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     </tbody>
                   </table>
                 </div>
+
+                <AppPagination
+                  currentPage={spaServicePage}
+                  totalItems={groupedServices.length}
+                  pageSize={SPA_SERVICE_PAGE_SIZE}
+                  onPageChange={setSpaServicePage}
+                  itemLabel="nhóm dịch vụ"
+                />
               </div>
             </div>
           )}
@@ -5972,13 +6033,26 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {managerBrands
-                        .filter((c: any) => {
+                      {(() => {
+                        const filteredCategories = managerBrands.filter((c: any) => {
                           if (categoryTypeFilter === 'MAIN' && !c.isMain) return false;
                           if (categoryTypeFilter === 'SUB' && c.isMain) return false;
                           return true;
-                        })
-                        .map((c: any) => (
+                        });
+
+                        if (filteredCategories.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                                Không tìm thấy danh mục nào.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filteredCategories
+                          .slice((spaCategoryPage - 1) * SPA_CATEGORY_PAGE_SIZE, spaCategoryPage * SPA_CATEGORY_PAGE_SIZE)
+                          .map((c: any) => (
                           <tr key={c.id} className="hover:bg-gray-50/30 transition">
                             <td className="px-6 py-4 space-y-1">
                               <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
@@ -6023,10 +6097,23 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
+
+                <AppPagination
+                  currentPage={spaCategoryPage}
+                  totalItems={managerBrands.filter((c: any) => {
+                    if (categoryTypeFilter === 'MAIN' && !c.isMain) return false;
+                    if (categoryTypeFilter === 'SUB' && c.isMain) return false;
+                    return true;
+                  }).length}
+                  pageSize={SPA_CATEGORY_PAGE_SIZE}
+                  onPageChange={setSpaCategoryPage}
+                  itemLabel="danh mục"
+                />
               </div>
             </div>
           )}
@@ -6068,15 +6155,15 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-sm font-bold text-gray-700 focus:outline-none"
                   >
                     <option value="ALL">Tất cả trạng thái</option>
-                    <option value="PENDING">Pending (Chờ xác nhận)</option>
-                    <option value="CONFIRMED">Confirmed (Đã xác nhận)</option>
-                    <option value="CHECK_IN">Check-in (Khách đã đến)</option>
-                    <option value="ASSIGNED">Assigned (Đã giao việc)</option>
-                    <option value="IN_PROGRESS">In Progress (Đang làm)</option>
-                    <option value="COMPLETED">Completed (Hoàn thành)</option>
-                    <option value="CANCELLED">Cancelled (Đã hủy)</option>
-                    <option value="NO_SHOW">No Show (Vắng mặt)</option>
-                    <option value="LATE">Late (Trễ hẹn)</option>
+                    <option value="PENDING">Chờ xác nhận</option>
+                    <option value="CONFIRMED">Đã xác nhận</option>
+                    <option value="CHECK_IN">Khách đã đến</option>
+                    <option value="ASSIGNED">Đã phân công</option>
+                    <option value="IN_PROGRESS">Đang thực hiện</option>
+                    <option value="COMPLETED">Đã hoàn thành</option>
+                    <option value="CANCELLED">Đã hủy</option>
+                    <option value="NO_SHOW">Khách vắng mặt</option>
+                    <option value="LATE">Trễ hẹn</option>
                   </select>
                 </div>
               </div>
@@ -6098,7 +6185,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     </thead>
                     <tbody className="divide-y">
                       {filteredBookings.length > 0 ? (
-                        filteredBookings.map((b: any) => {
+                        filteredBookings
+                          .slice((spaBookingPage - 1) * SPA_BOOKING_PAGE_SIZE, spaBookingPage * SPA_BOOKING_PAGE_SIZE)
+                          .map((b: any) => {
                           const dateObj = new Date(b.scheduledAt);
                           const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
                           const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
@@ -6156,7 +6245,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
+                                  {getSpaStatusText(b.status)}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -6223,6 +6312,14 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     </tbody>
                   </table>
                 </div>
+
+                <AppPagination
+                  currentPage={spaBookingPage}
+                  totalItems={filteredBookings.length}
+                  pageSize={SPA_BOOKING_PAGE_SIZE}
+                  onPageChange={setSpaBookingPage}
+                  itemLabel="lịch hẹn"
+                />
               </div>
             </div>
           )}
@@ -6236,81 +6333,93 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
               </div>
 
               {/* Staffs Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {staffs.length > 0 ? (
-                  staffs.map((s: any) => (
-                    <div
-                      key={s.id}
-                      className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        {s.avatarUrl ? (
-                          <img
-                            src={s.avatarUrl}
-                            alt={s.name}
-                            className="size-12 rounded-full object-cover border"
-                          />
-                        ) : (
-                          <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
-                            {s.name.slice(0, 1).toUpperCase()}
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {staffs.length > 0 ? (
+                    staffs
+                      .slice((spaStaffPage - 1) * SPA_STAFF_PAGE_SIZE, spaStaffPage * SPA_STAFF_PAGE_SIZE)
+                      .map((s: any) => (
+                      <div
+                        key={s.id}
+                        className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          {s.avatarUrl ? (
+                            <img
+                              src={s.avatarUrl}
+                              alt={s.name}
+                              className="size-12 rounded-full object-cover border"
+                            />
+                          ) : (
+                            <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
+                              {s.name.slice(0, 1).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
+                            <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
+                            <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
                           </div>
-                        )}
-                        <div>
-                          <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
-                          <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
-                          <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
+                        </div>
+
+                        {/* Performance metrics breakdown */}
+                        <div className="space-y-2 border-t pt-4">
+                          <div className="flex items-center justify-between text-xs font-bold">
+                            <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
+                            <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {s.onTimeRate ?? 100}%
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              style={{ width: `${s.onTimeRate ?? 100}%` }}
+                              className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-2">
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
+                              <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
+                              <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
+                            </div>
+                            <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
+                              <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
+                              <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                              <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
+                              <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
+                            </div>
+                            <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                              <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
+                              <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="border-t pt-3 flex justify-between items-center">
+                          <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
+                          <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
                         </div>
                       </div>
-
-                      {/* Performance metrics breakdown */}
-                      <div className="space-y-2 border-t pt-4">
-                        <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
-                          <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {s.onTimeRate ?? 100}%
-                          </span>
-                        </div>
-                        <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            style={{ width: `${s.onTimeRate ?? 100}%` }}
-                            className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
-                            <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
-                          </div>
-                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
-                            <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
-                            <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
-                            <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="border-t pt-3 flex justify-between items-center">
-                        <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
-                        <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
+                      Không tìm thấy nhân viên nào ở chi nhánh này.
                     </div>
-                  ))
-                ) : (
-                  <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
-                    Không tìm thấy nhân viên nào ở chi nhánh này.
-                  </div>
-                )}
+                  )}
+                </div>
+
+                <AppPagination
+                  currentPage={spaStaffPage}
+                  totalItems={staffs.length}
+                  pageSize={SPA_STAFF_PAGE_SIZE}
+                  onPageChange={setSpaStaffPage}
+                  itemLabel="nhân viên"
+                />
               </div>
             </div>
           )}
@@ -6662,6 +6771,8 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
               <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${{
                 PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
                 CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
+                CHECK_IN: 'bg-teal-100 text-teal-800 border-teal-300',
+                ARRIVED: 'bg-teal-100 text-teal-800 border-teal-300',
                 ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
                 IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
                 COMPLETED: 'bg-green-100 text-green-800 border-green-300',
@@ -6670,7 +6781,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 LATE: 'bg-rose-100 text-rose-800 border-rose-300',
               }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
                 }`}>
-                {selectedBookingDetail.status === 'PENDING' ? '🚨 Chờ xác nhận' : selectedBookingDetail.status}
+                {getSpaStatusText(selectedBookingDetail.status)}
               </span>
             </div>
 

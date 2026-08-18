@@ -36,6 +36,7 @@ import { spaApi } from '@/lib/api/spa';
 import { uploadImages } from '@/lib/api/uploads';
 import { SpaBookingType, SpaServiceType } from '@/types';
 import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
+import AppPagination from '@/components/ui/app-pagination';
 
 // Preset sample photos for easy mock upload
 const PRESET_PHOTOS = [
@@ -55,6 +56,17 @@ export default function SpaStaff() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Pagination states
+  const [dashboardPage, setDashboardPage] = useState<number>(1);
+  const DASHBOARD_PAGE_SIZE = 6;
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const HISTORY_PAGE_SIZE = 5;
+
+  // Reset dashboard page when filter changes
+  useEffect(() => {
+    setDashboardPage(1);
+  }, [activeTab, selectedDate]);
+
   // Sub services selection modal state
   const [addingSubServicesForId, setAddingSubServicesForId] = useState<string | null>(null);
   const [allSubServices, setAllSubServices] = useState<SpaServiceType[]>([]);
@@ -64,6 +76,11 @@ export default function SpaStaff() {
   // History modal state
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
+
+  // Reset history page when search query changes
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historySearchQuery, historyModalOpen]);
 
   // Payment completion modal states
   const [completingBooking, setCompletingBooking] = useState<SpaBookingType | null>(null);
@@ -639,7 +656,9 @@ export default function SpaStaff() {
                       <p className="text-xs font-semibold">Chưa tìm thấy đơn hoàn thành nào phù hợp.</p>
                     </div>
                   ) : (
-                    filteredHistory.map((b) => {
+                    filteredHistory
+                      .slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE)
+                      .map((b) => {
                       const subList = getBookingSubServices(b);
                       return (
                         <div
@@ -697,6 +716,15 @@ export default function SpaStaff() {
                   )}
                 </div>
 
+                <AppPagination
+                  currentPage={historyPage}
+                  totalItems={filteredHistory.length}
+                  pageSize={HISTORY_PAGE_SIZE}
+                  onPageChange={setHistoryPage}
+                  itemLabel="ca làm cũ"
+                  className="mt-2 py-2 px-3 border-t bg-gray-50/80"
+                />
+
                 {/* Modal Footer */}
                 <div className="flex justify-end pt-3 border-t">
                   <Button
@@ -724,7 +752,9 @@ export default function SpaStaff() {
           </div>
         ) : (
           <div className="space-y-6">
-            {filteredBookings.map((booking) => {
+            {filteredBookings
+              .slice((dashboardPage - 1) * DASHBOARD_PAGE_SIZE, dashboardPage * DASHBOARD_PAGE_SIZE)
+              .map((booking) => {
               const currentEditState = editStates[booking.id] || {
                 status: booking.status,
                 petConditionAfter: '',
@@ -1056,6 +1086,14 @@ export default function SpaStaff() {
                 </div>
               );
             })}
+
+            <AppPagination
+              currentPage={dashboardPage}
+              totalItems={filteredBookings.length}
+              pageSize={DASHBOARD_PAGE_SIZE}
+              onPageChange={setDashboardPage}
+              itemLabel="lịch làm việc"
+            />
           </div>
         )}
       </div>

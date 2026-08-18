@@ -23,6 +23,7 @@ import {
 import AppHeader from '@/components/layout/AppHeader';
 import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
+import AppPagination from '@/components/ui/app-pagination';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBookingType, SpaServiceType } from '@/types';
 
@@ -32,6 +33,10 @@ export default function SpaHistory() {
   const [allServices, setAllServices] = useState<SpaServiceType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const PAGE_SIZE = 6;
 
   // Detail Modal State
   const [selectedBooking, setSelectedBooking] = useState<SpaBookingType | null>(null);
@@ -465,7 +470,9 @@ export default function SpaHistory() {
           </div>
         ) : (
           <div className="space-y-4">
-            {sortedBookings.map((booking) => (
+            {sortedBookings
+              .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+              .map((booking) => (
               <div
                 key={booking.id}
                 onClick={() => openDetailModal(booking)}
@@ -521,9 +528,19 @@ export default function SpaHistory() {
                           const subList = getBookingSubServices(booking);
                           if (subList.length === 0) return null;
                           return (
-                            <span className="text-xs text-purple-700 font-medium block mt-0.5">
-                              + {subList.length} dịch vụ phụ chọn thêm
-                            </span>
+                            <div className="mt-1 space-y-0.5">
+                              <span className="text-[11px] font-bold text-gray-500 block">Dịch vụ thêm:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {subList.map((sub, i) => (
+                                  <span
+                                    key={i}
+                                    className="inline-block rounded bg-gray-100 text-gray-700 text-[10px] font-medium px-1.5 py-0.5"
+                                  >
+                                    + {sub.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
                           );
                         })()}
                       </div>
@@ -618,6 +635,13 @@ export default function SpaHistory() {
                 </div>
               </div>
             ))}
+            <AppPagination
+              currentPage={currentPage}
+              totalItems={sortedBookings.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+              itemLabel="lịch hẹn"
+            />
           </div>
         )}
       </div>

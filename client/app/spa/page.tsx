@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBranchType, SpaServiceType, AddressSpaType } from '@/types';
 import BookingDialog from '@/components/spa/BookingDialog';
+import AppPagination from '@/components/ui/app-pagination';
 
 // Map images for high aesthetic mockups based on services
 const SERVICE_IMAGES: Record<string, string> = {
@@ -53,7 +54,6 @@ const CATEGORIES = [
 
 export default function SpaHome() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'services' | 'branches'>('services');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -61,6 +61,15 @@ export default function SpaHome() {
   const [services, setServices] = useState<SpaServiceType[]>([]);
   const [categoriesList, setCategoriesList] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Pagination states for services
+  const [servicePage, setServicePage] = useState<number>(1);
+  const SERVICE_PAGE_SIZE = 9;
+
+  // Reset pagination when searching or changing category
+  useEffect(() => {
+    setServicePage(1);
+  }, [searchQuery, selectedCategory]);
 
   // Booking dialog state
   const [bookingDialogOpen, setBookingDialogOpen] = useState<boolean>(false);
@@ -196,7 +205,7 @@ export default function SpaHome() {
     return list;
   }, [categoriesList, safeServices]);
 
-  // Filtering services based on search, tabs and selected sub-categories
+  // Filtering services based on search and selected sub-categories
   const filteredServices = safeServices.filter((service) => {
     if (!service || !service.name) return false;
     const catName = service.category?.name || service.brand?.name || '';
@@ -211,15 +220,6 @@ export default function SpaHome() {
     if (selectedCategory === 'all') return true;
 
     return catName.toLowerCase() === selectedCategory.toLowerCase() || catName.toLowerCase().includes(selectedCategory.toLowerCase());
-  });
-
-  const filteredBranches = safeBranches.filter((branch) => {
-    if (!branch || !branch.name) return false;
-    return (
-      branch.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (branch.description && branch.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (branch.address && branch.address.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
   });
 
   return (
@@ -269,7 +269,7 @@ export default function SpaHome() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
             <Input
               type="text"
-              placeholder="Tìm dịch vụ hoặc chi nhánh Spa..."
+              placeholder="Tìm dịch vụ Spa..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-12 w-full pl-12 pr-6 rounded-full border-0 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-2 focus-visible:ring-primary/20 text-sm focus:outline-none"
@@ -279,28 +279,9 @@ export default function SpaHome() {
       </section>
 
       {/* Main Controls Section */}
-      <section className="container mx-auto max-w-7xl px-4 py-8">
+      <section id="spa-content-section" className="container mx-auto max-w-7xl px-4 py-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--border-color)] pb-6 mb-6">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('services')}
-              className={`px-4 py-2 text-sm font-extrabold rounded-xl transition cursor-pointer ${activeTab === 'services'
-                ? 'bg-primary text-white shadow-xs'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-            >
-              Dịch Vụ Spa
-            </button>
-            <button
-              onClick={() => setActiveTab('branches')}
-              className={`px-4 py-2 text-sm font-extrabold rounded-xl transition flex items-center gap-1.5 cursor-pointer ${activeTab === 'branches'
-                ? 'bg-primary text-white shadow-xs'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-            >
-              <MapPin className="size-4" />
-              Chi Nhánh Spa ({safeBranches.length})
-            </button>
           </div>
 
           {/* My Appointments Button */}
@@ -312,23 +293,21 @@ export default function SpaHome() {
           </Button>
         </div>
 
-        {/* Categories Bar (Only visible when activeTab === 'services') */}
-        {activeTab === 'services' && (
-          <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
-            {categoriesToDisplay.map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => setSelectedCategory(cat.value)}
-                className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap cursor-pointer ${selectedCategory === cat.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
-                  }`}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Categories Bar */}
+        <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
+          {categoriesToDisplay.map((cat) => (
+            <button
+              key={cat.value}
+              onClick={() => setSelectedCategory(cat.value)}
+              className={`px-4 py-2 text-xs font-bold rounded-full transition whitespace-nowrap cursor-pointer ${selectedCategory === cat.value
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-white border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-page)]'
+                }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
 
         {/* Content Grids */}
         {loading ? (
@@ -336,67 +315,6 @@ export default function SpaHome() {
             <div className="inline-block size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             <p className="mt-4 font-semibold text-sm">Đang tải dữ liệu Spa...</p>
           </div>
-        ) : activeTab === 'branches' ? (
-          /* BRANCHES / ADDRESS SPA LIST GRID */
-          filteredBranches.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl border border-[var(--border-color)] p-8">
-              <p className="text-muted-foreground text-sm">Không tìm thấy chi nhánh Spa nào phù hợp.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {filteredBranches.map((branch) => (
-                <article
-                  key={branch.id}
-                  className="p-6 bg-card rounded-2xl border border-[var(--border-color)] shadow-xs flex flex-col justify-between space-y-4 hover:shadow-md transition"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between">
-                      <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                        <MapPin className="size-5 text-primary shrink-0" />
-                        {branch.name}
-                      </h3>
-                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                        Đang hoạt động
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5 text-xs text-gray-600 font-medium">
-                      <p className="flex items-start gap-2">
-                        <span className="font-bold text-gray-800 shrink-0">Địa chỉ:</span>
-                        <span>{branch.address}</span>
-                      </p>
-                      {branch.phone && (
-                        <p className="flex items-center gap-2">
-                          <Phone className="size-3.5 text-primary shrink-0" />
-                          <span className="font-bold text-gray-800 shrink-0">Hotline:</span>
-                          <span>{branch.phone}</span>
-                        </p>
-                      )}
-                    </div>
-
-                    {branch.description && (
-                      <p className="text-xs text-gray-500 pt-1 line-clamp-3 leading-relaxed bg-gray-50/80 p-3 rounded-xl border border-gray-100 font-medium">
-                        {branch.description}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="pt-3 border-t border-gray-150 flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        const defaultServiceId = safeServices[0]?.id;
-                        handleBookClick(defaultServiceId, '', branch.id);
-                      }}
-                      className="bg-primary hover:bg-primary/95 text-white font-bold text-xs px-5 h-9 rounded-xl shadow-xs cursor-pointer"
-                    >
-                      Đặt lịch tại chi nhánh này
-                    </Button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )
         ) : (
           // SERVICES GRID - GROUPED BY BRAND / BASE TITLE (ONLY 1 CARD PER SERVICE TYPE)
           (() => {
@@ -449,78 +367,94 @@ export default function SpaHome() {
               );
             }
 
+            const paginatedCards = uniqueCards.slice(
+              (servicePage - 1) * SERVICE_PAGE_SIZE,
+              servicePage * SERVICE_PAGE_SIZE
+            );
+
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {uniqueCards.map((card) => {
-                  const img = card.imageUrl || SERVICE_IMAGES[card.title] || DEFAULT_IMAGE;
-                  const ratingInfo = getRatingForCard(card);
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {paginatedCards.map((card) => {
+                    const img = card.imageUrl || SERVICE_IMAGES[card.title] || DEFAULT_IMAGE;
+                    const ratingInfo = getRatingForCard(card);
 
-                  const priceRangeStr = card.minPrice === card.maxPrice
-                    ? `${card.minPrice.toLocaleString('vi-VN')}đ`
-                    : `${card.minPrice.toLocaleString('vi-VN')}đ – ${card.maxPrice.toLocaleString('vi-VN')}đ`;
+                    const priceRangeStr = card.minPrice === card.maxPrice
+                      ? `${card.minPrice.toLocaleString('vi-VN')}đ`
+                      : `${card.minPrice.toLocaleString('vi-VN')}đ – ${card.maxPrice.toLocaleString('vi-VN')}đ`;
 
-                  return (
-                    <article
-                      key={card.id}
-                      onClick={() => setDetailCard(card)}
-                      className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-card shadow-xs transition-all duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col h-full cursor-pointer group"
-                    >
-                      <div className="relative aspect-video bg-muted overflow-hidden">
-                        <img
-                          src={img}
-                          alt={card.title}
-                          className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                        <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-xs px-3 py-1 text-[10px] font-extrabold text-white uppercase tracking-wider">
-                          {card.categoryLabel}
-                        </span>
-                        {card.minPrice !== card.maxPrice && (
-                          <span className="absolute bottom-3 right-3 rounded-full bg-purple-900/80 backdrop-blur-xs px-2.5 py-0.5 text-[10px] font-bold text-purple-100">
-                            Theo mốc cân nặng
+                    return (
+                      <article
+                        key={card.id}
+                        onClick={() => setDetailCard(card)}
+                        className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-card shadow-xs transition-all duration-200 hover:-translate-y-1 hover:shadow-md flex flex-col h-full cursor-pointer group"
+                      >
+                        <div className="relative aspect-video bg-muted overflow-hidden">
+                          <img
+                            src={img}
+                            alt={card.title}
+                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-xs px-3 py-1 text-[10px] font-extrabold text-white uppercase tracking-wider">
+                            {card.categoryLabel}
                           </span>
-                        )}
-                      </div>
-
-                      <div className="p-5 flex flex-col flex-1 space-y-3 justify-between">
-                        <div className="space-y-1.5">
-                          <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-1 group-hover:text-primary transition-colors">
-                            {card.title}
-                          </h3>
-                          <p className="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
-                            {card.description}
-                          </p>
-
-                          <div className={`flex items-center gap-1 font-bold text-xs pt-1 ${ratingInfo.hasReviews ? 'text-amber-500' : 'text-gray-400'}`}>
-                            <Star className={`size-3.5 ${ratingInfo.hasReviews ? 'fill-current' : 'text-gray-300'}`} />
-                            <span>{ratingInfo.rating.toFixed(1)}</span>
-                            <span className="text-gray-400 font-medium">
-                              {ratingInfo.hasReviews ? `(${ratingInfo.reviews} đánh giá)` : '(Chưa có đánh giá)'}
+                          {card.minPrice !== card.maxPrice && (
+                            <span className="absolute bottom-3 right-3 rounded-full bg-purple-900/80 backdrop-blur-xs px-2.5 py-0.5 text-[10px] font-bold text-purple-100">
+                              Theo mốc cân nặng
                             </span>
-                          </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center justify-between pt-4 border-t border-gray-150 mt-auto">
-                          <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-400 font-bold uppercase">Khoảng giá dịch vụ</span>
-                            <span className="text-base font-black text-primary">
-                              {priceRangeStr}
-                            </span>
+                        <div className="p-5 flex flex-col flex-1 space-y-3 justify-between">
+                          <div className="space-y-1.5">
+                            <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+                              {card.title}
+                            </h3>
+                            <p className="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
+                              {card.description}
+                            </p>
+
+                            <div className={`flex items-center gap-1 font-bold text-xs pt-1 ${ratingInfo.hasReviews ? 'text-amber-500' : 'text-gray-400'}`}>
+                              <Star className={`size-3.5 ${ratingInfo.hasReviews ? 'fill-current' : 'text-gray-300'}`} />
+                              <span>{ratingInfo.rating.toFixed(1)}</span>
+                              <span className="text-gray-400 font-medium">
+                                {ratingInfo.hasReviews ? `(${ratingInfo.reviews} đánh giá)` : '(Chưa có đánh giá)'}
+                              </span>
+                            </div>
                           </div>
-                          <Button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleBookClick(card.id, card.title, card.brandId);
-                            }}
-                            className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl cursor-pointer"
-                          >
-                            Đặt lịch
-                          </Button>
+
+                          <div className="flex items-center justify-between pt-4 border-t border-gray-150 mt-auto">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-gray-400 font-bold uppercase">Khoảng giá dịch vụ</span>
+                              <span className="text-base font-black text-primary">
+                                {priceRangeStr}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBookClick(card.id, card.title, card.brandId);
+                              }}
+                              className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-4 h-9 shadow-xs rounded-xl cursor-pointer"
+                            >
+                              Đặt lịch
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <AppPagination
+                  currentPage={servicePage}
+                  totalItems={uniqueCards.length}
+                  pageSize={SERVICE_PAGE_SIZE}
+                  onPageChange={setServicePage}
+                  itemLabel="dịch vụ"
+                  scrollToId="spa-content-section"
+                />
               </div>
             );
           })()

@@ -43,6 +43,7 @@ import {
 import { toast } from 'sonner';
 import { spaApi } from '@/lib/api/spa';
 import { uploadImages } from '@/lib/api/uploads';
+import AppPagination from '@/components/ui/app-pagination';
 
 function SpaManagerConsoleContent() {
   const searchParams = useSearchParams();
@@ -106,6 +107,33 @@ function SpaManagerConsoleContent() {
       return Math.max(0, total - mainPrice - (b.discountAmount || 0));
     }
     return 0;
+  };
+
+  // Helper to translate status to Vietnamese (matching user order history)
+  const getSpaStatusText = (status: string) => {
+    switch (status) {
+      case 'PENDING':
+        return 'Chờ xác nhận';
+      case 'CONFIRMED':
+        return 'Đã xác nhận';
+      case 'CHECK_IN':
+      case 'ARRIVED':
+        return 'Khách đã đến';
+      case 'ASSIGNED':
+        return 'Đã phân công';
+      case 'IN_PROGRESS':
+        return 'Đang thực hiện';
+      case 'COMPLETED':
+        return 'Đã hoàn thành';
+      case 'CANCELLED':
+        return 'Đã hủy';
+      case 'NO_SHOW':
+        return 'Khách vắng mặt';
+      case 'LATE':
+        return 'Trễ hẹn';
+      default:
+        return status;
+    }
   };
 
   // Reschedule states
@@ -191,6 +219,35 @@ function SpaManagerConsoleContent() {
   const [categoryTypeFilter, setCategoryTypeFilter] = useState<string>('ALL');
 
   const [expandedServiceGroups, setExpandedServiceGroups] = useState<Record<string, boolean>>({});
+
+  // Pagination states for all tabs
+  const [bookingPage, setBookingPage] = useState<number>(1);
+  const BOOKING_PAGE_SIZE = 10;
+  const [servicePage, setServicePage] = useState<number>(1);
+  const SERVICE_PAGE_SIZE = 10;
+  const [categoryPage, setCategoryPage] = useState<number>(1);
+  const CATEGORY_PAGE_SIZE = 10;
+  const [staffPage, setStaffPage] = useState<number>(1);
+  const STAFF_PAGE_SIZE = 9;
+  const [feedbackPage, setFeedbackPage] = useState<number>(1);
+  const FEEDBACK_PAGE_SIZE = 8;
+
+  // Reset pagination on search & filter change
+  useEffect(() => {
+    setBookingPage(1);
+  }, [bookingSearch, bookingStatusFilter, bookingDateFilterType, bookingCustomDate, bookingStartDate, bookingEndDate, bookingTimeSlotFilter]);
+
+  useEffect(() => {
+    setServicePage(1);
+  }, [serviceTypeFilter, serviceBrandFilter]);
+
+  useEffect(() => {
+    setCategoryPage(1);
+  }, [categoryTypeFilter]);
+
+  useEffect(() => {
+    setFeedbackPage(1);
+  }, [feedbackSearch, feedbackStarFilter]);
 
   const toggleServiceGroup = (groupKey: string) => {
     setExpandedServiceGroups((prev) => ({
@@ -1262,7 +1319,7 @@ function SpaManagerConsoleContent() {
                               </td>
                               <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
+                                  {getSpaStatusText(b.status)}
                                 </span>
                               </td>
 
@@ -1350,137 +1407,139 @@ function SpaManagerConsoleContent() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {groupedServices.length > 0 ? (
-                        groupedServices.map((group) => {
-                          const isExpanded = !!expandedServiceGroups[group.groupKey];
-                          const activeCount = group.items.filter((i) => i.isActive).length;
+                        groupedServices
+                          .slice((servicePage - 1) * SERVICE_PAGE_SIZE, servicePage * SERVICE_PAGE_SIZE)
+                          .map((group) => {
+                            const isExpanded = !!expandedServiceGroups[group.groupKey];
+                            const activeCount = group.items.filter((i) => i.isActive).length;
 
-                          const priceStr = group.minPrice === group.maxPrice
-                            ? `${group.minPrice.toLocaleString('vi-VN')}đ`
-                            : `${group.minPrice.toLocaleString('vi-VN')}đ – ${group.maxPrice.toLocaleString('vi-VN')}đ`;
+                            const priceStr = group.minPrice === group.maxPrice
+                              ? `${group.minPrice.toLocaleString('vi-VN')}đ`
+                              : `${group.minPrice.toLocaleString('vi-VN')}đ – ${group.maxPrice.toLocaleString('vi-VN')}đ`;
 
-                          const durationStr = group.minDuration === group.maxDuration
-                            ? `${group.minDuration} phút`
-                            : `${group.minDuration} – ${group.maxDuration} phút`;
+                            const durationStr = group.minDuration === group.maxDuration
+                              ? `${group.minDuration} phút`
+                              : `${group.minDuration} – ${group.maxDuration} phút`;
 
-                          return (
-                            <React.Fragment key={group.groupKey}>
-                              {/* PARENT GROUP ROW */}
-                              <tr
-                                onClick={() => toggleServiceGroup(group.groupKey)}
-                                className="hover:bg-orange-50/40 transition cursor-pointer bg-white group"
-                              >
-                                <td className="px-4 py-3 font-semibold">
-                                  <div className="flex items-center gap-2">
-                                    <button type="button" className="p-0.5 text-gray-400 group-hover:text-primary transition">
-                                      {isExpanded ? <ChevronDown className="size-4 text-primary" /> : <ChevronRight className="size-4" />}
-                                    </button>
-                                    <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition">
-                                      {group.baseName}
-                                    </span>
-                                  </div>
-                                </td>
-
-                                <td className="px-4 py-3">
-                                  <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                                    {group.categoryName}
-                                  </span>
-                                </td>
-
-                                <td className="px-4 py-3 text-center font-medium text-gray-600 text-xs">{durationStr}</td>
-                                <td className="px-4 py-3 text-right font-black text-primary text-xs">{priceStr}</td>
-                                <td className="px-4 py-3 text-center font-bold text-purple-700 text-xs">{group.totalBookings} lượt</td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${activeCount > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                    }`}>
-                                    {activeCount > 0 ? `Đang bật (${activeCount}/${group.items.length})` : 'Tắt'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleServiceGroup(group.groupKey);
-                                    }}
-                                    className="px-2.5 py-1 rounded-lg border border-primary/25 text-primary font-bold text-[11px] hover:bg-orange-50 transition inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    {isExpanded ? 'Thu gọn' : 'Xem các mốc kg'}
-                                  </button>
-                                </td>
-                              </tr>
-
-                              {/* EXPANDED SUB-SERVICES LIST */}
-                              {isExpanded && (
-                                <tr>
-                                  <td colSpan={7} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
-                                    <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
-                                      <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                                        <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
-                                          ⚖️ Danh sách mốc cân nặng: <span className="text-primary">{group.baseName}</span>
-                                        </h4>
-                                        <span className="text-[10px] text-gray-400 font-medium">
-                                          ({group.items.length} biến thể cân nặng)
-                                        </span>
-                                      </div>
-                                      <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-xs">
-                                          <thead>
-                                            <tr className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[10px] border-b border-gray-150">
-                                              <th className="py-2 px-3">Tên mốc dịch vụ</th>
-                                              <th className="py-2 px-3">Đối tượng</th>
-                                              <th className="py-2 px-3">Khoảng cân nặng</th>
-                                              <th className="py-2 px-3 text-center">Thời gian</th>
-                                              <th className="py-2 px-3 text-right">Đơn giá</th>
-                                              <th className="py-2 px-3 text-center">Lượt đặt</th>
-                                              <th className="py-2 px-3 text-center">Trạng thái</th>
-                                              <th className="py-2 px-3 text-center">Chỉnh sửa</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-gray-100">
-                                            {group.items.map((s: any) => {
-                                              const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
-                                              const weightText = formatWeightRange(s.petWeightMin, s.petWeightMax);
-
-                                              return (
-                                                <tr key={s.id} className="hover:bg-purple-50/30 transition">
-                                                  <td className="py-2 px-3 font-bold text-gray-900 text-xs">{s.name}</td>
-                                                  <td className="py-2 px-3 font-semibold text-gray-700">{speciesBadge}</td>
-                                                  <td className="py-2 px-3 font-medium text-gray-600">{weightText}</td>
-                                                  <td className="py-2 px-3 text-center font-medium text-gray-700">{s.durationMin} phút</td>
-                                                  <td className="py-2 px-3 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
-                                                  <td className="py-2 px-3 text-center font-bold text-purple-700">{s._count?.bookings || 0} lượt</td>
-                                                  <td className="py-2 px-3 text-center">
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                                      }`}>
-                                                      {s.isActive ? 'Bật' : 'Tắt'}
-                                                    </span>
-                                                  </td>
-                                                  <td className="py-2 px-3 text-center">
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEditServiceClick(s);
-                                                      }}
-                                                      className="p-1 rounded-md border border-gray-200 text-gray-500 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
-                                                      title="Chỉnh sửa mốc này"
-                                                    >
-                                                      <Edit2 className="size-3.5" />
-                                                    </button>
-                                                  </td>
-                                                </tr>
-                                              );
-                                            })}
-                                          </tbody>
-                                        </table>
-                                      </div>
+                            return (
+                              <React.Fragment key={group.groupKey}>
+                                {/* PARENT GROUP ROW */}
+                                <tr
+                                  onClick={() => toggleServiceGroup(group.groupKey)}
+                                  className="hover:bg-orange-50/40 transition cursor-pointer bg-white group"
+                                >
+                                  <td className="px-4 py-3 font-semibold">
+                                    <div className="flex items-center gap-2">
+                                      <button type="button" className="p-0.5 text-gray-400 group-hover:text-primary transition">
+                                        {isExpanded ? <ChevronDown className="size-4 text-primary" /> : <ChevronRight className="size-4" />}
+                                      </button>
+                                      <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition">
+                                        {group.baseName}
+                                      </span>
                                     </div>
                                   </td>
+
+                                  <td className="px-4 py-3">
+                                    <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                                      {group.categoryName}
+                                    </span>
+                                  </td>
+
+                                  <td className="px-4 py-3 text-center font-medium text-gray-600 text-xs">{durationStr}</td>
+                                  <td className="px-4 py-3 text-right font-black text-primary text-xs">{priceStr}</td>
+                                  <td className="px-4 py-3 text-center font-bold text-purple-700 text-xs">{group.totalBookings} lượt</td>
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${activeCount > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                      }`}>
+                                      {activeCount > 0 ? `Đang bật (${activeCount}/${group.items.length})` : 'Tắt'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleServiceGroup(group.groupKey);
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg border border-primary/25 text-primary font-bold text-[11px] hover:bg-orange-50 transition inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      {isExpanded ? 'Thu gọn' : 'Xem các mốc kg'}
+                                    </button>
+                                  </td>
                                 </tr>
-                              )}
-                            </React.Fragment>
-                          );
-                        })
+
+                                {/* EXPANDED SUB-SERVICES LIST */}
+                                {isExpanded && (
+                                  <tr>
+                                    <td colSpan={7} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
+                                      <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
+                                        <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
+                                          <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                                            ⚖️ Danh sách mốc cân nặng: <span className="text-primary">{group.baseName}</span>
+                                          </h4>
+                                          <span className="text-[10px] text-gray-400 font-medium">
+                                            ({group.items.length} biến thể cân nặng)
+                                          </span>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-left text-xs">
+                                            <thead>
+                                              <tr className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[10px] border-b border-gray-150">
+                                                <th className="py-2 px-3">Tên mốc dịch vụ</th>
+                                                <th className="py-2 px-3">Đối tượng</th>
+                                                <th className="py-2 px-3">Khoảng cân nặng</th>
+                                                <th className="py-2 px-3 text-center">Thời gian</th>
+                                                <th className="py-2 px-3 text-right">Đơn giá</th>
+                                                <th className="py-2 px-3 text-center">Lượt đặt</th>
+                                                <th className="py-2 px-3 text-center">Trạng thái</th>
+                                                <th className="py-2 px-3 text-center">Chỉnh sửa</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                              {group.items.map((s: any) => {
+                                                const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
+                                                const weightText = formatWeightRange(s.petWeightMin, s.petWeightMax);
+
+                                                return (
+                                                  <tr key={s.id} className="hover:bg-purple-50/30 transition">
+                                                    <td className="py-2 px-3 font-bold text-gray-900 text-xs">{s.name}</td>
+                                                    <td className="py-2 px-3 font-semibold text-gray-700">{speciesBadge}</td>
+                                                    <td className="py-2 px-3 font-medium text-gray-600">{weightText}</td>
+                                                    <td className="py-2 px-3 text-center font-medium text-gray-700">{s.durationMin} phút</td>
+                                                    <td className="py-2 px-3 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
+                                                    <td className="py-2 px-3 text-center font-bold text-purple-700">{s._count?.bookings || 0} lượt</td>
+                                                    <td className="py-2 px-3 text-center">
+                                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                                        }`}>
+                                                        {s.isActive ? 'Bật' : 'Tắt'}
+                                                      </span>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-center">
+                                                      <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleEditServiceClick(s);
+                                                        }}
+                                                        className="p-1 rounded-md border border-gray-200 text-gray-500 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
+                                                        title="Chỉnh sửa mốc này"
+                                                      >
+                                                        <Edit2 className="size-3.5" />
+                                                      </button>
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
                       ) : (
                         <tr>
                           <td colSpan={7} className="px-4 py-8 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
@@ -1489,6 +1548,14 @@ function SpaManagerConsoleContent() {
                     </tbody>
                   </table>
                 </div>
+
+                <AppPagination
+                  currentPage={servicePage}
+                  totalItems={groupedServices.length}
+                  pageSize={SERVICE_PAGE_SIZE}
+                  onPageChange={setServicePage}
+                  itemLabel="nhóm dịch vụ"
+                />
               </div>
             </div>
           )}
@@ -1541,61 +1608,87 @@ function SpaManagerConsoleContent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {managerBrands
-                        .filter((c: any) => {
+                      {(() => {
+                        const filteredCategories = managerBrands.filter((c: any) => {
                           if (categoryTypeFilter === 'MAIN' && !c.isMain) return false;
                           if (categoryTypeFilter === 'SUB' && c.isMain) return false;
                           return true;
-                        })
-                        .map((c: any) => (
-                          <tr key={c.id} className="hover:bg-gray-50/30 transition">
-                            <td className="px-6 py-4 space-y-1">
-                              <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
-                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                }`}>
-                                {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-xs font-semibold text-gray-600 max-w-[250px] truncate" title={c.description || 'Chưa có mô tả'}>
-                              {c.description || <span className="italic text-gray-400">Không có mô tả</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center font-bold text-gray-800">
-                              <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                {c._count?.services || 0} dịch vụ
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center font-extrabold text-purple-700">
-                              {c._count?.bookings || 0} lượt
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                }`}>
-                                {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleEditCategoryClick(c)}
-                                  className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
-                                  title="Chỉnh sửa danh mục"
-                                >
-                                  <Edit2 className="size-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteCategoryClick(c)}
-                                  className="p-1.5 rounded-lg border text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
-                                  title="Xóa danh mục"
-                                >
-                                  <Trash2 className="size-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                        });
+
+                        if (filteredCategories.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                                Không tìm thấy danh mục nào.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filteredCategories
+                          .slice((categoryPage - 1) * CATEGORY_PAGE_SIZE, categoryPage * CATEGORY_PAGE_SIZE)
+                          .map((c: any) => (
+                            <tr key={c.id} className="hover:bg-gray-50/30 transition">
+                              <td className="px-6 py-4 space-y-1">
+                                <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
+                                <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  }`}>
+                                  {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-xs font-semibold text-gray-600 max-w-[250px] truncate" title={c.description || 'Chưa có mô tả'}>
+                                {c.description || <span className="italic text-gray-400">Không có mô tả</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center font-bold text-gray-800">
+                                <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
+                                  {c._count?.services || 0} dịch vụ
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center font-extrabold text-purple-700">
+                                {c._count?.bookings || 0} lượt
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                  }`}>
+                                  {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleEditCategoryClick(c)}
+                                    className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
+                                    title="Chỉnh sửa danh mục"
+                                  >
+                                    <Edit2 className="size-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCategoryClick(c)}
+                                    className="p-1.5 rounded-lg border text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                                    title="Xóa danh mục"
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
+
+                <AppPagination
+                  currentPage={categoryPage}
+                  totalItems={managerBrands.filter((c: any) => {
+                    if (categoryTypeFilter === 'MAIN' && !c.isMain) return false;
+                    if (categoryTypeFilter === 'SUB' && c.isMain) return false;
+                    return true;
+                  }).length}
+                  pageSize={CATEGORY_PAGE_SIZE}
+                  onPageChange={setCategoryPage}
+                  itemLabel="danh mục"
+                />
               </div>
             </div>
           )}
@@ -1642,15 +1735,15 @@ function SpaManagerConsoleContent() {
                         className="w-full rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none cursor-pointer"
                       >
                         <option value="ALL">🌐 Tất cả trạng thái</option>
-                        <option value="PENDING">🚨 Pending (Chờ xác nhận)</option>
-                        <option value="CONFIRMED">👤 Confirmed (Cần gán NV)</option>
-                        <option value="CHECK_IN">📍 Check-in (Khách đã đến)</option>
-                        <option value="ASSIGNED">✨ Assigned (Đã giao việc)</option>
-                        <option value="IN_PROGRESS">🔄 In Progress (Đang làm)</option>
-                        <option value="COMPLETED">✅ Completed (Hoàn thành)</option>
-                        <option value="CANCELLED">❌ Cancelled (Đã hủy)</option>
-                        <option value="NO_SHOW">⏱️ No Show (Vắng mặt)</option>
-                        <option value="LATE">⚠️ Late (Trễ hẹn)</option>
+                        <option value="PENDING">🚨 Chờ xác nhận</option>
+                        <option value="CONFIRMED">👤 Đã xác nhận</option>
+                        <option value="CHECK_IN">📍 Khách đã đến</option>
+                        <option value="ASSIGNED">✨ Đã phân công</option>
+                        <option value="IN_PROGRESS">🔄 Đang thực hiện</option>
+                        <option value="COMPLETED">✅ Đã hoàn thành</option>
+                        <option value="CANCELLED">❌ Đã hủy</option>
+                        <option value="NO_SHOW">🚶‍♂️ Khách vắng mặt</option>
+                        <option value="LATE">⏰ Trễ hẹn</option>
                       </select>
                     </div>
                   </div>
@@ -1787,123 +1880,125 @@ function SpaManagerConsoleContent() {
                     </thead>
                     <tbody className="divide-y">
                       {filteredBookings.length > 0 ? (
-                        filteredBookings.map((b: any) => {
-                          const dateObj = new Date(b.scheduledAt);
-                          const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-                          const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                          const statusStyle = {
-                            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
-                            CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
-                            CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
-                            ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
-                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                            IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
-                            COMPLETED: 'bg-green-50 text-green-700 border-green-200',
-                            CANCELLED: 'bg-red-50 text-red-700 border-red-200',
-                            NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
-                            LATE: 'bg-rose-50 text-rose-700 border-rose-250'
-                          }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
+                        filteredBookings
+                          .slice((bookingPage - 1) * BOOKING_PAGE_SIZE, bookingPage * BOOKING_PAGE_SIZE)
+                          .map((b: any) => {
+                            const dateObj = new Date(b.scheduledAt);
+                            const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+                            const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                            const statusStyle = {
+                              PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+                              CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
+                              CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
+                              ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
+                              ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                              IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
+                              COMPLETED: 'bg-green-50 text-green-700 border-green-200',
+                              CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+                              NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
+                              LATE: 'bg-rose-50 text-rose-700 border-rose-250'
+                            }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
-                          const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
-                          const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
+                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
+                            const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
 
-                          return (
-                            <tr
-                              key={b.id}
-                              onClick={() => setSelectedBookingDetail(b)}
-                              className="hover:bg-gray-50/70 transition cursor-pointer"
-                            >
-                              <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
-                              <td className="px-6 py-4">
-                                <span className="font-extrabold text-gray-900 block">{timeStr}</span>
-                                <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="space-y-0.5">
-                                  <p className="font-bold text-gray-800 text-xs">{b.user?.name || 'Khách hàng'}</p>
-                                  <p className="text-[10px] text-gray-500 font-semibold">Pet: <span className="text-gray-700 font-extrabold">{b.petName || b.pet?.name || 'Thú cưng'}</span></p>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <p className="font-bold text-gray-800 text-xs">{b.service?.name || (b.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}</p>
-                                <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
-                                {(() => {
-                                  const subList = getManagerBookingSubServices(b);
-                                  if (subList.length === 0) return null;
-                                  return (
-                                    <div className="text-[10px] text-purple-700 font-bold pt-0.5 line-clamp-1" title={subList.map((s: any) => s.name).join(', ')}>
-                                      + {subList.length} dịch vụ lẻ
-                                    </div>
-                                  );
-                                })()}
-                                {b.discountAmount ? (
-                                  <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
-                                ) : null}
-                              </td>
-                              <td className="px-6 py-4 font-semibold text-xs text-gray-700">
-                                {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
-                              </td>
-                              <td className="px-6 py-4 text-center whitespace-nowrap">
-                                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {b.status === 'PENDING' ? '🚨 Chờ xác nhận' : b.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex flex-col items-center gap-1.5">
-                                  <button
-                                    onClick={() => setSelectedBookingDetail(b)}
-                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                  >
-                                    <Eye className="size-3.5" /> Xem chi tiết
-                                  </button>
-
-                                  {b.status === 'PENDING' && (
+                            return (
+                              <tr
+                                key={b.id}
+                                onClick={() => setSelectedBookingDetail(b)}
+                                className="hover:bg-gray-50/70 transition cursor-pointer"
+                              >
+                                <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
+                                <td className="px-6 py-4">
+                                  <span className="font-extrabold text-gray-900 block">{timeStr}</span>
+                                  <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-gray-800 text-xs">{b.user?.name || 'Khách hàng'}</p>
+                                    <p className="text-[10px] text-gray-500 font-semibold">Pet: <span className="text-gray-700 font-extrabold">{b.petName || b.pet?.name || 'Thú cưng'}</span></p>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <p className="font-bold text-gray-800 text-xs">{b.service?.name || (b.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}</p>
+                                  <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
+                                  {(() => {
+                                    const subList = getManagerBookingSubServices(b);
+                                    if (subList.length === 0) return null;
+                                    return (
+                                      <div className="text-[10px] text-purple-700 font-bold pt-0.5 line-clamp-1" title={subList.map((s: any) => s.name).join(', ')}>
+                                        + {subList.length} dịch vụ lẻ
+                                      </div>
+                                    );
+                                  })()}
+                                  {b.discountAmount ? (
+                                    <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
+                                  ) : null}
+                                </td>
+                                <td className="px-6 py-4 font-semibold text-xs text-gray-700">
+                                  {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
+                                </td>
+                                <td className="px-6 py-4 text-center whitespace-nowrap">
+                                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
+                                    {getSpaStatusText(b.status)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex flex-col items-center gap-1.5">
                                     <button
-                                      type="button"
-                                      onClick={() => handleConfirmBooking(b.id)}
-                                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                    >
-                                      ✓ Xác nhận
-                                    </button>
-                                  )}
-
-                                  {(b.status === 'CONFIRMED' || (b.status === 'CHECK_IN' && !b.staffId)) && (
-                                    <button
-                                      type="button"
                                       onClick={() => setSelectedBookingDetail(b)}
-                                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
                                     >
-                                      👤 Gán nhân viên
+                                      <Eye className="size-3.5" /> Xem chi tiết
                                     </button>
-                                  )}
 
-                                  {canReschedule && (
-                                    <button
-                                      onClick={() => {
-                                        setRescheduleBooking(b);
-                                        setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-                                        setSelectedRescheduleSlot('');
-                                      }}
-                                      className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                    >
-                                      <Calendar className="size-3.5" /> Đổi lịch
-                                    </button>
-                                  )}
+                                    {b.status === 'PENDING' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConfirmBooking(b.id)}
+                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      >
+                                        ✓ Xác nhận
+                                      </button>
+                                    )}
 
-                                  {isLateOfferable && (
-                                    <button
-                                      onClick={() => handleApplyLateDiscount(b.id)}
-                                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
-                                      title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
-                                    >
-                                      🎁 Giảm 10%
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
+                                    {(b.status === 'CONFIRMED' || (b.status === 'CHECK_IN' && !b.staffId)) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedBookingDetail(b)}
+                                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      >
+                                        👤 Gán nhân viên
+                                      </button>
+                                    )}
+
+                                    {canReschedule && (
+                                      <button
+                                        onClick={() => {
+                                          setRescheduleBooking(b);
+                                          setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                                          setSelectedRescheduleSlot('');
+                                        }}
+                                        className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      >
+                                        <Calendar className="size-3.5" /> Đổi lịch
+                                      </button>
+                                    )}
+
+                                    {isLateOfferable && (
+                                      <button
+                                        onClick={() => handleApplyLateDiscount(b.id)}
+                                        className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
+                                        title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
+                                      >
+                                        🎁 Giảm 10%
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                       ) : (
                         <tr>
                           <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không tìm thấy lịch hẹn phù hợp.</td>
@@ -1912,6 +2007,14 @@ function SpaManagerConsoleContent() {
                     </tbody>
                   </table>
                 </div>
+
+                <AppPagination
+                  currentPage={bookingPage}
+                  totalItems={filteredBookings.length}
+                  pageSize={BOOKING_PAGE_SIZE}
+                  onPageChange={setBookingPage}
+                  itemLabel="lịch hẹn"
+                />
               </div>
             </div>
           )}
@@ -1925,129 +2028,141 @@ function SpaManagerConsoleContent() {
               </div>
 
               {/* Staffs Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {staffs.length > 0 ? (
-                  staffs.map((s: any) => (
-                    <div
-                      key={s.id}
-                      className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {s.avatarUrl ? (
-                            <img
-                              src={s.avatarUrl}
-                              alt={s.name}
-                              className="size-12 rounded-full object-cover border"
-                            />
-                          ) : (
-                            <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
-                              {s.name.slice(0, 1).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
-                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${s.status === 'ACTIVE'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-gray-100 text-gray-500 border-gray-200'
-                                }`}>
-                                ● {s.status === 'ACTIVE' ? 'Hoạt động' : 'Tạm dừng'}
-                              </span>
-                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${s.isBusy || s.workStatus === 'BUSY'
-                                ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                }`}>
-                                {s.isBusy || s.workStatus === 'BUSY' ? '🔴 Đang làm (Bận)' : '🟢 Đang rảnh'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
-                            <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
-                              {s.currentBooking ? `✨ Đang làm pet: ${s.currentBooking.petName || 'Thú cưng'}` : 'Nhân viên Spa'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* 5-star rating display column on the far right */}
-                        <div className="text-right flex flex-col items-end shrink-0">
-                          <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded-xl">
-                            <span className="text-xs font-black text-amber-700">{s.averageRating ? s.averageRating.toFixed(1) : '0'}</span>
-                            <div className="flex text-amber-400">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star
-                                  key={star}
-                                  className={`size-3.5 ${star <= Math.round(s.averageRating || 0) ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          <span className="text-[10px] font-bold text-gray-400 mt-1">({s.feedbackCount || 0} đánh giá)</span>
-                        </div>
-                      </div>
-
-                      {/* Performance metrics breakdown */}
-                      <div className="space-y-2 border-t pt-4">
-                        <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
-                          <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {s.onTimeRate ?? 100}%
-                          </span>
-                        </div>
-                        <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            style={{ width: `${s.onTimeRate ?? 100}%` }}
-                            className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
-                            <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
-                          </div>
-                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
-                            <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
-                            <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                            <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
-                            <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="border-t pt-3 flex justify-between items-center">
-                        <div>
-                          <span className="text-[11px] text-gray-400 font-bold uppercase block">Doanh thu tạo ra:</span>
-                          <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
-                        </div>
-
-                        {/* Status Toggle Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStaffStatus(s.id)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${s.status === 'ACTIVE'
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-300'
-                            }`}
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {staffs.length > 0 ? (
+                    staffs
+                      .slice((staffPage - 1) * STAFF_PAGE_SIZE, staffPage * STAFF_PAGE_SIZE)
+                      .map((s: any) => (
+                        <div
+                          key={s.id}
+                          className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
                         >
-                          {s.status === 'ACTIVE' ? '🟢 Bật (Đang hoạt động)' : '⚪ Tắt (Đang dừng)'}
-                        </button>
-                      </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {s.avatarUrl ? (
+                                <img
+                                  src={s.avatarUrl}
+                                  alt={s.name}
+                                  className="size-12 rounded-full object-cover border"
+                                />
+                              ) : (
+                                <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
+                                  {s.name.slice(0, 1).toUpperCase()}
+                                </div>
+                              )}
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${s.status === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-gray-100 text-gray-500 border-gray-200'
+                                    }`}>
+                                    ● {s.status === 'ACTIVE' ? 'Hoạt động' : 'Tạm dừng'}
+                                  </span>
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${s.isBusy || s.workStatus === 'BUSY'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}>
+                                    {s.isBusy || s.workStatus === 'BUSY' ? '🔴 Đang làm (Bận)' : '🟢 Đang rảnh'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
+                                <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                  {s.currentBooking ? `✨ Đang làm pet: ${s.currentBooking.petName || 'Thú cưng'}` : 'Nhân viên Spa'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 5-star rating display column on the far right */}
+                            <div className="text-right flex flex-col items-end shrink-0">
+                              <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded-xl">
+                                <span className="text-xs font-black text-amber-700">{s.averageRating ? s.averageRating.toFixed(1) : '0'}</span>
+                                <div className="flex text-amber-400">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star
+                                      key={star}
+                                      className={`size-3.5 ${star <= Math.round(s.averageRating || 0) ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-bold text-gray-400 mt-1">({s.feedbackCount || 0} đánh giá)</span>
+                            </div>
+                          </div>
+
+                          {/* Performance metrics breakdown */}
+                          <div className="space-y-2 border-t pt-4">
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
+                              <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                {s.onTimeRate ?? 100}%
+                              </span>
+                            </div>
+                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${s.onTimeRate ?? 100}%` }}
+                                className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-2">
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
+                                <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
+                              </div>
+                              <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
+                                <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
+                                <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
+                              </div>
+                              <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
+                                <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="border-t pt-3 flex justify-between items-center">
+                            <div>
+                              <span className="text-[11px] text-gray-400 font-bold uppercase block">Doanh thu tạo ra:</span>
+                              <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
+                            </div>
+
+                            {/* Status Toggle Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStaffStatus(s.id)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${s.status === 'ACTIVE'
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                                : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-300'
+                                }`}
+                            >
+                              {s.status === 'ACTIVE' ? '🟢 Bật (Đang hoạt động)' : '⚪ Tắt (Đang dừng)'}
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                  ) : (
+                    <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
+                      Không tìm thấy nhân viên nào ở chi nhánh này.
                     </div>
-                  ))
-                ) : (
-                  <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
-                    Không tìm thấy nhân viên nào ở chi nhánh này.
-                  </div>
-                )}
+                  )}
+                </div>
+
+                <AppPagination
+                  currentPage={staffPage}
+                  totalItems={staffs.length}
+                  pageSize={STAFF_PAGE_SIZE}
+                  onPageChange={setStaffPage}
+                  itemLabel="nhân viên"
+                />
               </div>
             </div>
           )}
@@ -2100,119 +2215,129 @@ function SpaManagerConsoleContent() {
               {/* Feedbacks Grid / List */}
               <div className="space-y-4">
                 {filteredFeedbacks.length > 0 ? (
-                  filteredFeedbacks.map((f: any) => {
-                    const booking = f.booking || {};
-                    const petName = booking.petName || booking.pet?.name || 'Thú cưng';
-                    const mainService = booking.service?.name
-                      || (booking.mainServiceResolved as any)?.name
-                      || 'Dịch vụ Spa';
-                    const subServices = (booking.subServices || []).map((s: any) => s.name).join(', ');
-                    const staffName = booking.staff?.name || 'Chưa phân công';
+                  filteredFeedbacks
+                    .slice((feedbackPage - 1) * FEEDBACK_PAGE_SIZE, feedbackPage * FEEDBACK_PAGE_SIZE)
+                    .map((f: any) => {
+                      const booking = f.booking || {};
+                      const petName = booking.petName || booking.pet?.name || 'Thú cưng';
+                      const mainService = booking.service?.name
+                        || (booking.mainServiceResolved as any)?.name
+                        || 'Dịch vụ Spa';
+                      const subServices = (booking.subServices || []).map((s: any) => s.name).join(', ');
+                      const staffName = booking.staff?.name || 'Chưa phân công';
 
-                    return (
-                      <div key={f.id} className="bg-white border border-gray-150 rounded-2xl p-5 shadow-xs space-y-4 hover:border-gray-300 transition">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
-                          <div className="flex items-center gap-3">
-                            {f.user?.avatarUrl ? (
-                              <img src={f.user.avatarUrl} alt={f.user.name} className="size-11 rounded-full object-cover border" />
-                            ) : (
-                              <div className="size-11 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-sm border border-primary/20">
-                                {(f.user?.name || 'K').slice(0, 1).toUpperCase()}
+                      return (
+                        <div key={f.id} className="bg-white border border-gray-150 rounded-2xl p-5 shadow-xs space-y-4 hover:border-gray-300 transition">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                            <div className="flex items-center gap-3">
+                              {f.user?.avatarUrl ? (
+                                <img src={f.user.avatarUrl} alt={f.user.name} className="size-11 rounded-full object-cover border" />
+                              ) : (
+                                <div className="size-11 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-sm border border-primary/20">
+                                  {(f.user?.name || 'K').slice(0, 1).toUpperCase()}
+                                </div>
+                              )}
+                              <div>
+                                <h4 className="font-black text-sm text-gray-900 leading-tight">{f.user?.name || 'Khách hàng'}</h4>
+                                <p className="text-[11px] text-gray-500 font-semibold">{f.user?.email || f.user?.phone || 'Chưa có thông tin liên hệ'}</p>
                               </div>
-                            )}
+                            </div>
+
+                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                              <span className="text-[11px] font-bold text-gray-400">
+                                {new Date(f.createdAt).toLocaleString('vi-VN', { dateStyle: 'medium', timeStyle: 'short' })}
+                              </span>
+                              <button
+                                onClick={() => setSelectedBookingDetail(booking)}
+                                className="inline-flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer"
+                              >
+                                <Eye className="size-3.5" /> Xem đơn hàng ➔
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Booking Context & Ratings Row */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50/80 p-3.5 rounded-xl border border-gray-150/70 text-xs">
                             <div>
-                              <h4 className="font-black text-sm text-gray-900 leading-tight">{f.user?.name || 'Khách hàng'}</h4>
-                              <p className="text-[11px] text-gray-500 font-semibold">{f.user?.email || f.user?.phone || 'Chưa có thông tin liên hệ'}</p>
+                              <span className="text-gray-400 font-bold block text-[10px] uppercase">Thú cưng:</span>
+                              <span className="font-extrabold text-gray-800 flex items-center gap-1.5 mt-0.5">
+                                🐶 {petName}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-gray-400 font-bold block text-[10px] uppercase">Dịch vụ đã dùng:</span>
+                              <span className="font-extrabold text-gray-800 block mt-0.5">
+                                {mainService} {subServices ? `(+ ${subServices})` : ''}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-gray-400 font-bold block text-[10px] uppercase">Kỹ thuật viên phụ trách:</span>
+                              <span className="font-extrabold text-purple-700 block mt-0.5">
+                                ✨ {staffName}
+                              </span>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 self-start sm:self-auto">
-                            <span className="text-[11px] font-bold text-gray-400">
-                              {new Date(f.createdAt).toLocaleString('vi-VN', { dateStyle: 'medium', timeStyle: 'short' })}
-                            </span>
-                            <button
-                              onClick={() => setSelectedBookingDetail(booking)}
-                              className="inline-flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer"
-                            >
-                              <Eye className="size-3.5" /> Xem đơn hàng ➔
-                            </button>
-                          </div>
-                        </div>
+                          {/* Ratings & Comment Section */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Rate Services */}
+                            <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl p-3 flex items-center justify-between">
+                              <span className="text-xs font-bold text-amber-900">Đánh giá dịch vụ:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black text-amber-700">{f.rateServices}/5</span>
+                                <div className="flex text-amber-400">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star
+                                      key={star}
+                                      className={`size-4 ${star <= f.rateServices ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
 
-                        {/* Booking Context & Ratings Row */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50/80 p-3.5 rounded-xl border border-gray-150/70 text-xs">
-                          <div>
-                            <span className="text-gray-400 font-bold block text-[10px] uppercase">Thú cưng:</span>
-                            <span className="font-extrabold text-gray-800 flex items-center gap-1.5 mt-0.5">
-                              🐶 {petName}
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-gray-400 font-bold block text-[10px] uppercase">Dịch vụ đã dùng:</span>
-                            <span className="font-extrabold text-gray-800 block mt-0.5">
-                              {mainService} {subServices ? `(+ ${subServices})` : ''}
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-gray-400 font-bold block text-[10px] uppercase">Kỹ thuật viên phụ trách:</span>
-                            <span className="font-extrabold text-purple-700 block mt-0.5">
-                              ✨ {staffName}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Ratings & Comment Section */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {/* Rate Services */}
-                          <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl p-3 flex items-center justify-between">
-                            <span className="text-xs font-bold text-amber-900">Đánh giá dịch vụ:</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-black text-amber-700">{f.rateServices}/5</span>
-                              <div className="flex text-amber-400">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <Star
-                                    key={star}
-                                    className={`size-4 ${star <= f.rateServices ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
-                                  />
-                                ))}
+                            {/* Rate Staff */}
+                            <div className="bg-purple-50/50 border border-purple-200/60 rounded-xl p-3 flex items-center justify-between">
+                              <span className="text-xs font-bold text-purple-900">Đánh giá nhân viên:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black text-purple-700">{f.rateStaff}/5</span>
+                                <div className="flex text-amber-400">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star
+                                      key={star}
+                                      className={`size-4 ${star <= f.rateStaff ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
+                                    />
+                                  ))}
+                                </div>
                               </div>
                             </div>
                           </div>
 
-                          {/* Rate Staff */}
-                          <div className="bg-purple-50/50 border border-purple-200/60 rounded-xl p-3 flex items-center justify-between">
-                            <span className="text-xs font-bold text-purple-900">Đánh giá nhân viên:</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-black text-purple-700">{f.rateStaff}/5</span>
-                              <div className="flex text-amber-400">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <Star
-                                    key={star}
-                                    className={`size-4 ${star <= f.rateStaff ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
-                                  />
-                                ))}
-                              </div>
+                          {/* Customer Comment */}
+                          {f.comment && (
+                            <div className="bg-gray-50 rounded-xl p-3 border border-gray-150 text-xs font-semibold text-gray-700">
+                              <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Lời nhắn từ khách hàng:</span>
+                              "{f.comment}"
                             </div>
-                          </div>
+                          )}
                         </div>
-
-                        {/* Customer Comment */}
-                        {f.comment && (
-                          <div className="bg-gray-50 rounded-xl p-3 border border-gray-150 text-xs font-semibold text-gray-700">
-                            <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Lời nhắn từ khách hàng:</span>
-                            "{f.comment}"
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                      );
+                    })
                 ) : (
                   <div className="py-16 text-center text-gray-400 bg-white border border-gray-150 rounded-2xl">
                     Chưa có đánh giá nào từ khách hàng ở chi nhánh này.
                   </div>
                 )}
+
+                <AppPagination
+                  currentPage={feedbackPage}
+                  totalItems={filteredFeedbacks.length}
+                  pageSize={FEEDBACK_PAGE_SIZE}
+                  onPageChange={setFeedbackPage}
+                  itemLabel="đánh giá"
+                />
               </div>
             </div>
           )}
@@ -2611,6 +2736,8 @@ function SpaManagerConsoleContent() {
               <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${{
                 PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
                 CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
+                CHECK_IN: 'bg-teal-100 text-teal-800 border-teal-300',
+                ARRIVED: 'bg-teal-100 text-teal-800 border-teal-300',
                 ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
                 IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
                 COMPLETED: 'bg-green-100 text-green-800 border-green-300',
@@ -2619,7 +2746,7 @@ function SpaManagerConsoleContent() {
                 LATE: 'bg-rose-100 text-rose-800 border-rose-300',
               }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
                 }`}>
-                {selectedBookingDetail.status === 'PENDING' ? '🚨 Chờ xác nhận' : selectedBookingDetail.status}
+                {getSpaStatusText(selectedBookingDetail.status)}
               </span>
             </div>
 
