@@ -11,6 +11,15 @@ export type ComplaintAction =
   | 'SUSPEND_ACCOUNT'
   | 'RESOLVE'
   | 'ESCALATE';
+export type ResolveMatchingReportPayload = {
+  status: 'RESOLVED' | 'DISMISSED' | 'INSUFFICIENT_EVIDENCE';
+  action: ComplaintAction;
+  adminNote: string;
+  resolutionMessage: string;
+};
+export type ModerateReportAbusePayload = {
+  action: 'WARNING' | 'BLOCK';
+};
 export type HidePetReason =
   | 'CONTENT_VIOLATION'
   | 'INACCURATE_INFORMATION'
@@ -100,7 +109,14 @@ export const adminApi = {
     api.patch(`/admin/pet-verifications/${id}/review`, { status, reviewNote }),
   matchingReports: () => api.get('/admin/matching-reports'),
   matchingReport: (id: string) => api.get(`/admin/matching-reports/${id}`),
-  resolveMatchingReport: (id: string) => api.patch(`/admin/matching-reports/${id}/resolve`),
+  startMatchingReportReview: (id: string) =>
+    api.patch(`/admin/matching-reports/${id}/review`),
+  resolveMatchingReport: (id: string, data: ResolveMatchingReportPayload) =>
+    api.patch(`/admin/matching-reports/${id}/resolve`, data),
+  moderateMatchingReportReporter: (
+    id: string,
+    data: ModerateReportAbusePayload,
+  ) => api.patch(`/admin/matching-reports/${id}/reporter-moderation`, data),
   breedRules: (params?: { species?: Species; active?: string; search?: string }) =>
     api.get<BreedRule[]>('/admin/breed-rules', { params }),
   createBreedRule: (data: BreedRulePayload) => api.post<BreedRule>('/admin/breed-rules', data),

@@ -22,7 +22,10 @@ import {
   AdminRole,
   adminApi,
   ApprovalStatus,
+  ComplaintAction,
   HidePetReason,
+  ModerateReportAbusePayload,
+  ResolveMatchingReportPayload,
   RestorePetReason,
 } from '@/lib/api/admin';
 
@@ -55,7 +58,10 @@ const complaintTargetOptions = [
 const complaintStatusOptions = [
   ['ALL', 'Tất cả trạng thái'],
   ['PENDING', 'Chờ xử lý'],
-  ['RESOLVED', 'Đã xử lý'],
+  ['REVIEWING', 'Đang xem xét'],
+  ['RESOLVED', 'Có vi phạm'],
+  ['DISMISSED', 'Không vi phạm'],
+  ['INSUFFICIENT_EVIDENCE', 'Chưa đủ bằng chứng'],
 ] as const;
 const readOnlySections = new Set(['stores', 'system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-bookings']);
 
@@ -285,9 +291,15 @@ export default function AdminSectionPage() {
         pending: groups.filter((group) => group.variants.every((service) => !service.isActive)).length,
       };
     }
-    const pending = rows.filter((row) => row.status === 'PENDING').length;
+    const pending = rows.filter((row) =>
+      ['PENDING', 'REVIEWING'].includes(row.status),
+    ).length;
     const active = section === 'reports'
-        ? rows.filter((row) => row.status === 'RESOLVED').length
+        ? rows.filter((row) =>
+            ['RESOLVED', 'DISMISSED', 'INSUFFICIENT_EVIDENCE'].includes(
+              row.status,
+            ),
+          ).length
         : rows.filter((row) => row.status === 'ACTIVE' || row.accountStatus === 'ACTIVE').length;
     if (section === 'store-products') {
       return {
@@ -333,6 +345,14 @@ export default function AdminSectionPage() {
   const inspectMatchingReport = async (row: Row) => {
     setMatchingReportLoading(true);
     try {
+      if (row.status === 'PENDING') {
+        await adminApi.startMatchingReportReview(row.id);
+        setRows((current) =>
+          current.map((item) =>
+            item.id === row.id ? { ...item, status: 'REVIEWING' } : item,
+          ),
+        );
+      }
       const response = await adminApi.matchingReport(row.id);
       setMatchingReportDetail(response.data);
     } catch (error: unknown) {
@@ -341,6 +361,31 @@ export default function AdminSectionPage() {
       toast.error(message ?? 'Không thể tải chi tiết báo cáo.');
     } finally {
       setMatchingReportLoading(false);
+    }
+  };
+
+  const moderateMatchingReportReporter = async (
+    payload: ModerateReportAbusePayload,
+  ) => {
+    if (!matchingReportDetail) return;
+    const reportId = matchingReportDetail.id;
+    setSavingId(`reporter:${reportId}`);
+    try {
+      await adminApi.moderateMatchingReportReporter(reportId, payload);
+      toast.success(
+        payload.action === 'WARNING'
+          ? 'Đã gửi cảnh báo đến người phản ánh.'
+          : 'Đã khóa tài khoản người phản ánh.',
+      );
+      const response = await adminApi.matchingReport(reportId);
+      setMatchingReportDetail(response.data);
+      load();
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      toast.error(message ?? 'Không thể xử lý tài khoản người phản ánh.');
+    } finally {
+      setSavingId('');
     }
   };
 
@@ -508,15 +553,25 @@ export default function AdminSectionPage() {
       )}
 
       <MatchingReportDialog
+        key={matchingReportDetail?.id ?? 'closed'}
         report={matchingReportDetail}
         open={Boolean(matchingReportDetail)}
         onOpenChange={(open) => !open && setMatchingReportDetail(null)}
         resolving={Boolean(matchingReportDetail && savingId === matchingReportDetail.id)}
-        onResolve={() => {
+        moderatingReporter={Boolean(
+          matchingReportDetail &&
+            savingId === `reporter:${matchingReportDetail.id}`,
+        )}
+        onModerateReporter={moderateMatchingReportReporter}
+        onResolve={(payload) => {
           if (!matchingReportDetail) return;
           runAction(
             matchingReportDetail,
-            () => adminApi.resolveMatchingReport(matchingReportDetail.id),
+            () =>
+              adminApi.resolveMatchingReport(
+                matchingReportDetail.id,
+                payload,
+              ),
             'Đã xử lý phản ánh.',
           ).then((resolved) => {
             if (resolved) setMatchingReportDetail(null);
@@ -537,15 +592,79 @@ function MatchingReportDialog({
   open,
   onOpenChange,
   resolving,
+  moderatingReporter,
   onResolve,
+  onModerateReporter,
 }: {
   report: Row | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   resolving: boolean;
-  onResolve: () => void;
+  moderatingReporter: boolean;
+  onResolve: (payload: ResolveMatchingReportPayload) => void;
+  onModerateReporter: (
+    payload: ModerateReportAbusePayload,
+  ) => Promise<void>;
 }) {
-  const messages = (report?.match?.messages ?? []).slice(-30);
+  const initialAction: ComplaintAction =
+    report?.resolutionOptions?.RESOLVED?.[0] ?? 'RESOLVE';
+  const [resolutionStatus, setResolutionStatus] = useState<
+    ResolveMatchingReportPayload['status']
+  >('RESOLVED');
+  const [action, setAction] = useState<ComplaintAction>(initialAction);
+  const [adminNote, setAdminNote] = useState('');
+  const [resolutionMessage, setResolutionMessage] = useState(
+    () =>
+      report?.resolutionMessageTemplates?.RESOLVED?.[initialAction] ?? '',
+  );
+  const messages = report?.match?.messages ?? [];
+  const reporterActivity = report?.reporterActivity;
+  const isTerminal = Boolean(
+    report &&
+      ['RESOLVED', 'DISMISSED', 'INSUFFICIENT_EVIDENCE'].includes(
+        report.status,
+      ),
+  );
+  const isViolationConclusion = resolutionStatus === 'RESOLVED';
+  const availableActions: ComplaintAction[] = isViolationConclusion
+    ? (report?.resolutionOptions?.RESOLVED ?? [])
+    : ['DISMISS', 'RESOLVE'];
+
+  const changeConclusion = (
+    conclusion: 'RESOLVED' | 'NOT_CONFIRMED',
+  ) => {
+    const nextStatus: ResolveMatchingReportPayload['status'] =
+      conclusion === 'RESOLVED' ? 'RESOLVED' : 'DISMISSED';
+    const nextAction: ComplaintAction =
+      conclusion === 'RESOLVED'
+        ? (report?.resolutionOptions?.RESOLVED?.[0] ?? 'WARNING')
+        : 'DISMISS';
+    setResolutionStatus(nextStatus);
+    setAction(nextAction);
+    setResolutionMessage(
+      report?.resolutionMessageTemplates?.[nextStatus]?.[nextAction] ?? '',
+    );
+  };
+
+  const changeAction = (nextAction: ComplaintAction) => {
+    const nextStatus: ResolveMatchingReportPayload['status'] =
+      isViolationConclusion
+        ? 'RESOLVED'
+        : nextAction === 'DISMISS'
+          ? 'DISMISSED'
+          : 'INSUFFICIENT_EVIDENCE';
+    setResolutionStatus(nextStatus);
+    setAction(nextAction);
+    setResolutionMessage(
+      report?.resolutionMessageTemplates?.[nextStatus]?.[nextAction] ??
+        '',
+    );
+  };
+
+  const canResolve = Boolean(
+    adminNote.trim() && resolutionMessage.trim() && availableActions.length,
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(90vh,820px)] flex-col overflow-hidden sm:max-w-3xl">
@@ -556,8 +675,9 @@ function MatchingReportDialog({
           </DialogDescription>
         </DialogHeader>
         {report && (
-          <div className="flex min-h-0 flex-1 flex-col gap-4">
-            <div className="shrink-0 rounded-xl border bg-[#F8FAFC] p-4 text-sm">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-2">
+              <div className="rounded-xl border bg-[#F8FAFC] p-4 text-sm">
               <p className="mb-3 text-[11px] font-black uppercase tracking-wider text-[#64748B]">Nội dung phản ánh</p>
               <div className="grid gap-3 sm:grid-cols-2">
               <p><span className="font-black">Người phản ánh:</span> {report.reporter?.name ?? report.userId}</p>
@@ -576,18 +696,88 @@ function MatchingReportDialog({
                 <p className="text-[11px] font-black uppercase tracking-wider text-[#64748B]">Mô tả của người phản ánh</p>
                 <p className="mt-2 whitespace-pre-wrap break-words font-semibold text-[#334155]">{report.detail || 'Không cung cấp mô tả.'}</p>
               </div>
-              {report.isResolved && (
+              {isTerminal && (
                 <div className="mt-4 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900 sm:grid-cols-2">
-                  <p><span className="font-black">Trạng thái:</span> Đã xử lý</p>
+                  <p><span className="font-black">Kết luận:</span> {formatMatchingReportConclusion(report.status)}</p>
+                  <p><span className="font-black">Biện pháp:</span> {formatComplaintAction(report.actionTaken)}</p>
                   <p><span className="font-black">Người xử lý:</span> {report.resolver?.name ?? '-'}</p>
-                  <p className="sm:col-span-2"><span className="font-black">Xử lý lúc:</span> {report.resolvedAt ? new Date(report.resolvedAt).toLocaleString('vi-VN') : '-'}</p>
+                  <p><span className="font-black">Xử lý lúc:</span> {report.resolvedAt ? new Date(report.resolvedAt).toLocaleString('vi-VN') : '-'}</p>
+                  <p className="sm:col-span-2"><span className="font-black">Ghi chú nội bộ:</span> {report.adminNote ?? '-'}</p>
+                  <p className="sm:col-span-2"><span className="font-black">Phản hồi đã gửi:</span> {report.resolutionMessage ?? '-'}</p>
                 </div>
               )}
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col">
+              </div>
+              {reporterActivity && reporterActivity.level !== 'NORMAL' && (
+                <div
+                  className={`rounded-xl border p-4 text-sm ${
+                    reporterActivity.level === 'SUSPECTED_SPAM'
+                      ? 'border-red-200 bg-red-50 text-red-950'
+                      : 'border-amber-200 bg-amber-50 text-amber-950'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 size-5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-black">
+                        {reporterActivity.level === 'SUSPECTED_SPAM'
+                          ? 'Có dấu hiệu spam phản ánh'
+                          : 'Tần suất phản ánh cao'}
+                      </p>
+                      <p className="mt-1 font-medium">
+                        {reporterActivity.level === 'SUSPECTED_SPAM'
+                          ? `Đã gửi ${reporterActivity.reportsLast7Days} phản ánh trong 7 ngày gần nhất.`
+                          : `Đã gửi ${reporterActivity.reportsLast24Hours} phản ánh trong 24 giờ gần nhất.`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 border-t border-current/15 pt-4">
+                    <p className="font-black">Xử lý người gửi phản ánh</p>
+                    {report.reporter?.accountStatus === 'SUSPENDED' ? (
+                      <p className="mt-2 rounded-lg bg-red-100 p-3 font-bold text-red-800">
+                        Tài khoản này hiện đang bị khóa.
+                      </p>
+                    ) : reporterActivity.level === 'HIGH_FREQUENCY' ? (
+                      <button
+                        type="button"
+                        disabled={moderatingReporter}
+                        onClick={() =>
+                          onModerateReporter({ action: 'WARNING' })
+                        }
+                        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 font-black text-amber-800 disabled:opacity-60"
+                      >
+                        {moderatingReporter && (
+                          <Loader2 className="size-4 animate-spin" />
+                        )}
+                        Gửi cảnh báo
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={moderatingReporter}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              'Khóa tài khoản này do có dấu hiệu spam phản ánh?',
+                            )
+                          ) {
+                            onModerateReporter({ action: 'BLOCK' });
+                          }
+                        }}
+                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 font-black text-white disabled:opacity-60"
+                      >
+                        {moderatingReporter && (
+                          <Loader2 className="size-4 animate-spin" />
+                        )}
+                        Khóa tài khoản
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div>
               <h3 className="mb-1 text-sm font-black text-[#172033]">Ngữ cảnh cuộc trò chuyện</h3>
               <p className="mb-3 text-xs font-semibold text-[#64748B]">Hiển thị tối đa 30 tin nhắn gần thời điểm gửi phản ánh.</p>
-              <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto overscroll-contain rounded-xl border p-3 pr-2">
+              <div className="grid min-h-32 max-h-64 content-start gap-3 overflow-y-auto overscroll-contain rounded-xl border p-3 pr-2">
                 {messages.map((message: Row) => (
                   <div key={message.id} className="rounded-lg bg-[#F8FAFC] p-3 text-sm">
                     <div className="flex justify-between gap-3 text-xs text-[#64748B]">
@@ -609,12 +799,88 @@ function MatchingReportDialog({
                 ))}
                 {!messages.length && <p className="py-8 text-center text-sm text-[#64748B]">Cuộc ghép đôi không có tin nhắn.</p>}
               </div>
+              </div>
+              {!isTerminal && (
+                <div className="space-y-4 border-t bg-white pt-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="space-y-2 text-sm font-bold">
+                    <span>Kết luận xử lý</span>
+                    <select
+                      value={isViolationConclusion ? 'RESOLVED' : 'NOT_CONFIRMED'}
+                      onChange={(event) =>
+                        changeConclusion(
+                          event.target.value as 'RESOLVED' | 'NOT_CONFIRMED',
+                        )
+                      }
+                      className="h-10 w-full rounded-lg border bg-white px-3"
+                    >
+                      <option value="RESOLVED">Xác nhận có vi phạm</option>
+                      <option value="NOT_CONFIRMED">Chưa xác nhận có vi phạm</option>
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm font-bold">
+                    <span>Biện pháp áp dụng</span>
+                    <select
+                      value={action}
+                      onChange={(event) =>
+                        changeAction(event.target.value as ComplaintAction)
+                      }
+                      className="h-10 w-full rounded-lg border bg-white px-3"
+                    >
+                      {availableActions.map((value) => (
+                        <option key={value} value={value}>
+                          {formatComplaintAction(value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="block space-y-2 text-sm font-bold">
+                  <span>Ghi chú nội bộ</span>
+                  <textarea
+                    value={adminNote}
+                    onChange={(event) => setAdminNote(event.target.value)}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder="Căn cứ và lý do đưa ra quyết định..."
+                    className="w-full resize-none rounded-lg border bg-white p-3 font-medium"
+                  />
+                </label>
+                <label className="block space-y-2 text-sm font-bold">
+                  <span>Nội dung kết quả gửi cho người phản ánh</span>
+                  <textarea
+                    value={resolutionMessage}
+                    onChange={(event) =>
+                      setResolutionMessage(event.target.value)
+                    }
+                    maxLength={1000}
+                    rows={3}
+                    className="w-full resize-none rounded-lg border bg-white p-3 font-medium"
+                  />
+                  <span className="block text-xs font-medium text-muted-foreground">
+                    Nội dung được tạo sẵn theo kết luận và biện pháp, có thể chỉnh sửa trước khi gửi.
+                  </span>
+                </label>
+                </div>
+              )}
             </div>
-            {!report.isResolved && (
-              <div className="shrink-0 flex justify-end border-t bg-white pt-4">
-                <button type="button" disabled={resolving} onClick={onResolve} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-black text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60">
+            {!isTerminal && (
+              <div className="flex shrink-0 justify-end border-t bg-white pt-4">
+                <button
+                    type="button"
+                    disabled={resolving || !canResolve}
+                    onClick={() =>
+                      onResolve({
+                        status: resolutionStatus,
+                        action,
+                        adminNote: adminNote.trim(),
+                        resolutionMessage: resolutionMessage.trim(),
+                      })
+                    }
+                    className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-black text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   {resolving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                  Đánh dấu đã xử lý
+                  Hoàn tất xử lý
                 </button>
               </div>
             )}
@@ -2055,7 +2321,6 @@ async function loadMatchingReports(): Promise<{ data: Row[] }> {
   const matchingReports: Row[] = Array.isArray(matchingReportsResponse.data)
     ? matchingReportsResponse.data.map((report: Row): Row => ({
       ...report,
-      status: report.isResolved ? 'RESOLVED' : 'PENDING',
       reporterId: report.userId,
       targetType: report.targetType ?? 'USER',
       targetId: report.targetType === 'PET'
@@ -2213,6 +2478,24 @@ function renderAdminCell(column: { key: string; render?: (row: Row) => ReactNode
   return column.render ? column.render(row) : renderValue(row[column.key]);
 }
 
+function formatComplaintAction(action?: ComplaintAction) {
+  const labels: Partial<Record<ComplaintAction, string>> = {
+    DISMISS: 'Không xử lý',
+    WARNING: 'Gửi cảnh cáo người dùng',
+    HIDE_CONTENT: 'Ẩn thú cưng khỏi ghép đôi',
+    SUSPEND_ACCOUNT: 'Tạm khóa tài khoản',
+    RESOLVE: 'Cần thêm bằng chứng',
+    ESCALATE: 'Chuyển cấp xử lý',
+  };
+  return action ? labels[action] ?? action : '-';
+}
+
+function formatMatchingReportConclusion(status?: string) {
+  return status === 'RESOLVED'
+    ? 'Xác nhận có vi phạm'
+    : 'Chưa xác nhận có vi phạm';
+}
+
 function getSpaWeightKey(row: Row) {
   const min = row.petWeightMin == null ? '' : Number(row.petWeightMin);
   const max = row.petWeightMax == null ? '' : Number(row.petWeightMax);
@@ -2254,8 +2537,9 @@ function formatStatus(status?: string) {
     REJECTED: 'Đã từ chối',
     NEED_MORE_INFO: 'Cần bổ sung',
     RESOLVED: 'Đã xử lý',
-    DISMISSED: 'Đã bỏ qua',
-    ESCALATED: 'Đã chuyển cấp',
+    DISMISSED: 'Không phát hiện vi phạm',
+    INSUFFICIENT_EVIDENCE: 'Chưa đủ bằng chứng',
+    ESCALATED: 'Chuyển cấp xử lý',
     WARNING: 'Cảnh báo',
     HIDE_CONTENT: 'Ẩn nội dung',
     SUSPEND_ACCOUNT: 'Khóa tài khoản',

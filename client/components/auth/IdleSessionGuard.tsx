@@ -24,7 +24,7 @@ export default function IdleSessionGuard() {
       clearSession()
       sessionStorage.setItem(
         'auth_notice',
-        'Bạn đã được đăng xuất do không hoạt động trong 30 phút. Vui lòng đăng nhập lại.',
+        'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
       )
       window.dispatchEvent(new Event('auth-change'))
       window.location.replace('/login')
