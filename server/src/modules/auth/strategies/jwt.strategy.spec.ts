@@ -14,14 +14,6 @@ describe('JwtStrategy suspended accounts', () => {
           accountStatus: AccountStatus.SUSPENDED,
         }),
       },
-      petReport: {
-        findFirst: jest.fn().mockResolvedValue({
-          reason: 'FAKE_INFORMATION',
-          resolvedAt: new Date(),
-          createdAt: new Date(),
-        }),
-      },
-      auditLog: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const strategy = new JwtStrategy(prisma as any);
 
@@ -32,7 +24,7 @@ describe('JwtStrategy suspended accounts', () => {
     expect(error).toBeInstanceOf(UnauthorizedException);
     expect(error.getResponse()).toEqual({
       code: 'ACCOUNT_SUSPENDED',
-      message: expect.stringContaining('cung cấp thông tin giả'),
+      message: expect.stringContaining('vi phạm tiêu chuẩn cộng đồng'),
     });
   });
 });

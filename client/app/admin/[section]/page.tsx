@@ -46,6 +46,8 @@ type PetDocumentReviewFlow = {
   document: Row;
 };
 
+type ReuploadDocumentType = 'VACCINE_RECORD' | 'PEDIGREE_CERT';
+
 const ADMIN_PAGE_SIZE = 10;
 
 const roleOptions: AdminRole[] = ['USER', 'STORE_MANAGER', 'SPA_MANAGER', 'SPA_STAFF'];
@@ -58,7 +60,6 @@ const complaintTargetOptions = [
 const complaintStatusOptions = [
   ['ALL', 'Tất cả trạng thái'],
   ['PENDING', 'Chờ xử lý'],
-  ['REVIEWING', 'Đang xem xét'],
   ['RESOLVED', 'Có vi phạm'],
   ['DISMISSED', 'Không vi phạm'],
   ['INSUFFICIENT_EVIDENCE', 'Chưa đủ bằng chứng'],
@@ -239,8 +240,11 @@ export default function AdminSectionPage() {
   useEffect(() => {
     if (section !== 'reports') return;
     const query = new URLSearchParams(window.location.search);
+    const status = query.get('status');
     setComplaintTarget(query.get('targetType') ?? 'ALL');
-    setComplaintStatus(query.get('status') ?? 'PENDING');
+    setComplaintStatus(
+      status === 'REVIEWING' ? 'PENDING' : status ?? 'PENDING',
+    );
   }, [section]);
 
   const visibleRows = useMemo(() => {
@@ -248,7 +252,10 @@ export default function AdminSectionPage() {
     const normalizedSearch = reportSearch.trim().toLocaleLowerCase('vi');
     return rows.filter((row) =>
       (complaintTarget === 'ALL' || row.targetType === complaintTarget) &&
-      (complaintStatus === 'ALL' || row.status === complaintStatus) &&
+      (complaintStatus === 'ALL' ||
+        (complaintStatus === 'PENDING'
+          ? ['PENDING', 'REVIEWING'].includes(row.status)
+          : row.status === complaintStatus)) &&
       (!normalizedSearch || [
         row.reporter?.name,
         row.reporter?.email,
@@ -617,6 +624,7 @@ function MatchingReportDialog({
     () =>
       report?.resolutionMessageTemplates?.RESOLVED?.[initialAction] ?? '',
   );
+  const [documentTypes, setDocumentTypes] = useState<ReuploadDocumentType[]>([]);
   const messages = report?.match?.messages ?? [];
   const reporterActivity = report?.reporterActivity;
   const isTerminal = Boolean(
@@ -629,6 +637,10 @@ function MatchingReportDialog({
   const availableActions: ComplaintAction[] = isViolationConclusion
     ? (report?.resolutionOptions?.RESOLVED ?? [])
     : ['DISMISS', 'RESOLVE'];
+  const isPetDocumentRequest =
+    report?.targetType === 'PET' &&
+    resolutionStatus === 'INSUFFICIENT_EVIDENCE' &&
+    action === 'RESOLVE';
 
   const changeConclusion = (
     conclusion: 'RESOLVED' | 'NOT_CONFIRMED',
@@ -662,8 +674,19 @@ function MatchingReportDialog({
   };
 
   const canResolve = Boolean(
-    adminNote.trim() && resolutionMessage.trim() && availableActions.length,
+    adminNote.trim() &&
+      resolutionMessage.trim() &&
+      availableActions.length &&
+      (!isPetDocumentRequest || documentTypes.length),
   );
+
+  const toggleDocumentType = (type: ReuploadDocumentType) => {
+    setDocumentTypes((current) =>
+      current.includes(type)
+        ? current.filter((value) => value !== type)
+        : [...current, type],
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -829,12 +852,35 @@ function MatchingReportDialog({
                     >
                       {availableActions.map((value) => (
                         <option key={value} value={value}>
-                          {formatComplaintAction(value)}
+                          {value === 'RESOLVE' && report.targetType === 'PET'
+                            ? 'Yêu cầu tải lại giấy tờ'
+                            : formatComplaintAction(value)}
                         </option>
                       ))}
                     </select>
                   </label>
                 </div>
+                {isPetDocumentRequest && (
+                  <fieldset className="rounded-xl border bg-muted/20 p-4">
+                    <legend className="px-1 text-sm font-black">Giấy tờ cần tải lại</legend>
+                    <div className="mt-2 flex flex-wrap gap-4 text-sm font-bold">
+                      {([
+                        ['VACCINE_RECORD', 'Sổ tiêm phòng'],
+                        ['PEDIGREE_CERT', 'Giấy chứng nhận phả hệ'],
+                      ] as const).map(([value, label]) => (
+                        <label key={value} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={documentTypes.includes(value)}
+                            onChange={() => toggleDocumentType(value)}
+                            className="size-4 accent-primary"
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
                 <label className="block space-y-2 text-sm font-bold">
                   <span>Ghi chú nội bộ</span>
                   <textarea
@@ -875,6 +921,7 @@ function MatchingReportDialog({
                         action,
                         adminNote: adminNote.trim(),
                         resolutionMessage: resolutionMessage.trim(),
+                        ...(isPetDocumentRequest ? { documentTypes } : {}),
                       })
                     }
                     className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-black text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1083,9 +1130,9 @@ function RoleBadge({ role }: { role?: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${tones[role ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>{formatRole(role)}</span>;
 }
 
-function AccountStatusBadge({ status }: { status?: string }) {
+function AccountStatusBadge({ status, label }: { status?: string; label?: ReactNode }) {
   const tone = status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : status === 'SUSPENDED' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800';
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black ${tone}`}><span className="size-2 rounded-full bg-current opacity-70" />{formatStatus(status)}</span>;
+  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black ${tone}`}><span className="size-2 rounded-full bg-current opacity-70" />{label ?? formatStatus(status)}</span>;
 }
 
 function getInitials(name?: string) {
@@ -2311,7 +2358,14 @@ function matchingReportColumns() {
     { key: 'targetId', label: 'Người/Thú cưng bị phản ánh' },
     { key: 'reporterId', label: 'Người phản ánh', render: (row: Row) => row.reporter?.name ?? row.reporterId },
     { key: 'detail', label: 'Chi tiết' },
-    { key: 'status', label: 'Trạng thái', render: (row: Row) => formatStatus(row.status) },
+    {
+      key: 'status',
+      label: 'Trạng thái',
+      render: (row: Row) =>
+        ['PENDING', 'REVIEWING'].includes(row.status)
+          ? 'Chờ xử lý'
+          : formatStatus(row.status),
+    },
     { key: 'createdAt', label: 'Ngày gửi', render: dateCell },
   ];
 }
@@ -2472,7 +2526,7 @@ function formatMatchingReportReason(reason?: string) {
 
 function renderAdminCell(column: { key: string; render?: (row: Row) => ReactNode }, row: Row) {
   if (column.key === 'status' || column.key === 'accountStatus') {
-    return <AccountStatusBadge status={row[column.key]} />;
+    return <AccountStatusBadge status={row[column.key]} label={column.render?.(row)} />;
   }
   if (column.key === 'role') return <RoleBadge role={row.role} />;
   return column.render ? column.render(row) : renderValue(row[column.key]);

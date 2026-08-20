@@ -16,6 +16,7 @@ export type ResolveMatchingReportPayload = {
   action: ComplaintAction;
   adminNote: string;
   resolutionMessage: string;
+  documentTypes?: Array<'VACCINE_RECORD' | 'PEDIGREE_CERT'>;
 };
 export type ModerateReportAbusePayload = {
   action: 'WARNING' | 'BLOCK';

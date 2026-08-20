@@ -34,6 +34,7 @@ type TransactionMock = {
     update: jest.MockedFunction<AsyncMock>;
     deleteMany: jest.MockedFunction<AsyncMock>;
     findMany: jest.MockedFunction<AsyncMock>;
+    count: jest.MockedFunction<AsyncMock>;
   };
 };
 
@@ -105,6 +106,7 @@ describe('PetsService profile details and updates', () => {
         update: jest.fn().mockResolvedValue({}),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
     const prisma = {
@@ -206,6 +208,21 @@ describe('PetsService profile details and updates', () => {
 
     const update = transactionPetUpdate.mock.calls[0]?.[0];
     expect(update?.data).toMatchObject({ isAvailableForMatching: false });
+  });
+
+  it('does not enable matching while documents need to be uploaded again', async () => {
+    transactionPetFindUnique.mockResolvedValue({
+      ...pet,
+      isAvailableForMatching: false,
+    });
+    tx.petDocument.count.mockResolvedValue(1);
+
+    await expect(
+      service.updateAvailability('owner-1', pet.id, {
+        isAvailableForMatching: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
   });
 
   it('replaces an unapproved vaccine document and resubmits it', async () => {

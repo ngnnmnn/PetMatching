@@ -13,6 +13,5 @@ export function formatMatchingReportReason(reason?: string | null) {
     : 'vi phạm tiêu chuẩn cộng đồng';
 }
 
-export function buildAccountSuspensionMessage(reason?: string | null) {
-  return `Tài khoản của bạn đã bị tạm khóa do ${formatMatchingReportReason(reason)}. Vui lòng liên hệ quản trị viên nếu cần hỗ trợ.`;
-}
+export const COMMUNITY_STANDARDS_BLOCK_MESSAGE =
+  'Tài khoản của bạn đã bị khóa do vi phạm tiêu chuẩn cộng đồng. Vui lòng liên hệ quản trị viên nếu cần hỗ trợ.';

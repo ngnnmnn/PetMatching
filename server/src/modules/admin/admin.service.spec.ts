@@ -3,6 +3,7 @@ import {
   ComplaintAction,
   ComplaintStatus,
   DocumentStatus,
+  DocumentType,
   PetStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -13,6 +14,7 @@ describe('AdminService matching reports', () => {
   let tx: any;
   let service: AdminService;
   const notifications = { create: jest.fn() };
+  const cloudinary = { destroyByUrl: jest.fn() };
   const reportCreatedAt = new Date('2026-08-08T03:00:00Z');
 
   const openReport = () => ({
@@ -27,7 +29,7 @@ describe('AdminService matching reports', () => {
     resolvedById: 'admin-1',
     reviewStartedAt: new Date('2026-08-08T03:05:00Z'),
     createdAt: reportCreatedAt,
-    pet: { name: 'Milo', status: PetStatus.ACTIVE },
+    pet: { name: 'Milo', status: PetStatus.ACTIVE, ownerId: 'reported-1' },
   });
 
   beforeEach(() => {
@@ -42,6 +44,12 @@ describe('AdminService matching reports', () => {
         }),
       },
       pet: { update: jest.fn().mockResolvedValue({ id: 'pet-1' }) },
+      petDocument: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn().mockResolvedValue(0),
+      },
       user: { update: jest.fn().mockResolvedValue({ id: 'reported-1' }) },
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -55,7 +63,8 @@ describe('AdminService matching reports', () => {
       $transaction: jest.fn().mockImplementation((callback: (client: any) => unknown) => callback(tx)),
     };
     notifications.create.mockReset().mockResolvedValue({ id: 'notification-1' });
-    service = new AdminService(prisma as PrismaService, notifications as any);
+    cloudinary.destroyByUrl.mockReset().mockResolvedValue(undefined);
+    service = new AdminService(prisma as PrismaService, notifications as any, cloudinary as any);
   });
 
   it('returns report context with messages ordered from oldest to newest', async () => {
@@ -228,6 +237,71 @@ describe('AdminService matching reports', () => {
     );
   });
 
+  it('requests new pet documents, disables matching and removes old images', async () => {
+    tx.petReport.findUnique.mockResolvedValue({
+      ...openReport(),
+      targetType: 'PET',
+    });
+    tx.petDocument.findMany.mockResolvedValue([
+      { imageUrls: ['https://res.cloudinary.com/demo/image/upload/old.jpg'] },
+    ]);
+
+    await service.resolveMatchingReport({ id: 'admin-1', name: 'Admin' }, 'report-1', {
+      status: ComplaintStatus.INSUFFICIENT_EVIDENCE,
+      action: ComplaintAction.RESOLVE,
+      adminNote: 'Cần xác minh lại giấy tờ.',
+      resolutionMessage: 'Chủ sở hữu đã được yêu cầu tải lại giấy tờ.',
+      documentTypes: [DocumentType.VACCINE_RECORD],
+    });
+
+    expect(tx.petDocument.deleteMany).toHaveBeenCalledWith({
+      where: { petId: 'pet-1', type: { in: [DocumentType.VACCINE_RECORD] } },
+    });
+    expect(tx.petDocument.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({
+        petId: 'pet-1',
+        type: DocumentType.VACCINE_RECORD,
+        imageUrls: [],
+        status: DocumentStatus.NEED_MORE_INFO,
+      })],
+    });
+    expect(tx.pet.update).toHaveBeenCalledWith({
+      where: { id: 'pet-1' },
+      data: expect.objectContaining({
+        isAvailableForMatching: false,
+        vaccineVerified: false,
+      }),
+    });
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'reported-1',
+        targetUrl: '/my-pets?editPet=pet-1',
+      }),
+      tx,
+    );
+    expect(cloudinary.destroyByUrl).toHaveBeenCalledWith(
+      'https://res.cloudinary.com/demo/image/upload/old.jpg',
+    );
+  });
+
+  it('requires a document type when requesting pet document reupload', async () => {
+    tx.petReport.findUnique.mockResolvedValue({
+      ...openReport(),
+      targetType: 'PET',
+    });
+
+    await expect(
+      service.resolveMatchingReport({ id: 'admin-1' }, 'report-1', {
+        status: ComplaintStatus.INSUFFICIENT_EVIDENCE,
+        action: ComplaintAction.RESOLVE,
+        adminNote: 'Cần xác minh lại giấy tờ.',
+        resolutionMessage: 'Chủ sở hữu cần tải lại giấy tờ.',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.petDocument.deleteMany).not.toHaveBeenCalled();
+    expect(tx.petReport.update).not.toHaveBeenCalled();
+  });
+
   it('warns a reporter when their activity reaches the yellow threshold', async () => {
     tx.petReport.findUnique.mockResolvedValue({
       ...openReport(),
@@ -322,6 +396,7 @@ describe('AdminService pet document review', () => {
   let prisma: any;
   let service: AdminService;
   const notifications = { create: jest.fn() };
+  const cloudinary = { destroyByUrl: jest.fn() };
 
   beforeEach(() => {
     prisma = {
@@ -338,7 +413,7 @@ describe('AdminService pet document review', () => {
       auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     };
     notifications.create.mockReset().mockResolvedValue({ id: 'notification-1' });
-    service = new AdminService(prisma as PrismaService, notifications as any);
+    service = new AdminService(prisma as PrismaService, notifications as any, cloudinary as any);
   });
 
   it.each([DocumentStatus.REJECTED, DocumentStatus.NEED_MORE_INFO])(
@@ -408,7 +483,11 @@ describe('AdminService complaints', () => {
       $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const notifications = { create: jest.fn().mockResolvedValue({}) };
-    const service = new AdminService(prisma as unknown as PrismaService, notifications as any);
+    const service = new AdminService(
+      prisma as unknown as PrismaService,
+      notifications as any,
+      { destroyByUrl: jest.fn() } as any,
+    );
 
     await service.resolveComplaint(
       { id: 'admin-1' },

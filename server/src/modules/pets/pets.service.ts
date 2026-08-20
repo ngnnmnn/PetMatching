@@ -408,6 +408,16 @@ export class PetsService {
           'Only male pets can be available for matching.',
         );
       }
+      if (isMatchingAvailable) {
+        const documentsNeedingReupload = await tx.petDocument.count({
+          where: { petId, status: DocumentStatus.NEED_MORE_INFO },
+        });
+        if (documentsNeedingReupload) {
+          throw new BadRequestException(
+            'Vui lòng tải lại giấy tờ và chờ xác minh trước khi bật ghép đôi.',
+          );
+        }
+      }
 
       const updatedPet = await tx.pet.update({
         where: { id: petId },

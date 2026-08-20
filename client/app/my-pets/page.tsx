@@ -38,6 +38,7 @@ export default function MyPetsPage() {
   const [selectedDetailPetId, setSelectedDetailPetId] = useState<string | null>(
     null,
   );
+  const [editModePetId, setEditModePetId] = useState<string | null>(null);
 
   // Recommendations States
   const { addToCart } = useCart();
@@ -75,7 +76,13 @@ export default function MyPetsPage() {
     petsApi
       .getMine()
       .then((response) => {
-        if (active) setPets(response.data);
+        if (!active) return;
+        setPets(response.data);
+        const petId = new URLSearchParams(window.location.search).get("editPet");
+        if (petId && response.data.some((pet) => pet.id === petId)) {
+          setEditModePetId(petId);
+          setSelectedDetailPetId(petId);
+        }
       })
       .catch(() => {
         if (active) toast.error("Không tải được danh sách hồ sơ thú cưng.");
@@ -491,7 +498,11 @@ export default function MyPetsPage() {
           key={selectedDetailPet.id}
           initialPet={selectedDetailPet}
           open
-          onClose={() => setSelectedDetailPetId(null)}
+          startInEditMode={editModePetId === selectedDetailPet.id}
+          onClose={() => {
+            setSelectedDetailPetId(null);
+            setEditModePetId(null);
+          }}
           onPetUpdated={handlePetUpdated}
         />
       )}
