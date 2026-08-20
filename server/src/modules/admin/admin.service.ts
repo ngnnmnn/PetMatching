@@ -23,15 +23,15 @@ import {
   VerificationBadge,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import {
   recognizedSpaRevenueWhere,
   recognizedStoreRevenueWhere,
 } from '../../common/revenue.utils';
 import {
-  buildAccountSuspensionMessage,
+  COMMUNITY_STANDARDS_BLOCK_MESSAGE,
   formatMatchingReportReason,
 } from '../../common/matching-report-reason';
-import { REPORT_ABUSE_BLOCK_MESSAGE } from '../../common/account-suspension';
 import {
   GrantSpaManagerDto,
   CreateBreedRuleDto,
@@ -81,6 +81,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   async getDashboard() {
@@ -764,7 +765,7 @@ export class AdminService {
         report.targetType,
       ),
       resolutionMessageTemplates:
-        this.getMatchingReportResolutionMessageTemplates(),
+        this.getMatchingReportResolutionMessageTemplates(report.targetType),
       reporterActivity,
     };
   }
@@ -807,13 +808,13 @@ export class AdminService {
     reportId: string,
     dto: ResolveMatchingReportDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const { updated, obsoleteDocumentImageUrls } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "pet_reports" WHERE "id" = ${reportId} FOR UPDATE`,
       );
       const current = await tx.petReport.findUnique({
         where: { id: reportId },
-        include: { pet: { select: { name: true, status: true } } },
+        include: { pet: { select: { name: true, status: true, ownerId: true } } },
       });
       if (!current) {
         throw new NotFoundException('Không tìm thấy phản ánh ghép đôi.');
@@ -842,9 +843,19 @@ export class AdminService {
         current.targetType,
         dto.status,
         dto.action,
+        dto.documentTypes,
       );
 
       await this.applyMatchingReportAction(tx, current, dto.action);
+      const obsoleteDocumentImageUrls =
+        current.targetType === 'PET' && dto.status === ComplaintStatus.INSUFFICIENT_EVIDENCE
+          ? await this.requestPetDocumentReupload(tx, actor, current, dto.documentTypes ?? [])
+          : [];
+      const resolutionPayload = {
+        status: dto.status,
+        action: dto.action,
+        ...(dto.documentTypes?.length ? { documentTypes: dto.documentTypes } : {}),
+      };
 
       const updated = await tx.petReport.update({
         where: { id: reportId },
@@ -864,7 +875,7 @@ export class AdminService {
           action: 'ADMIN_RESOLVE_MATCHING_REPORT',
           targetType: 'PetReport',
           targetId: reportId,
-          metadata: { status: dto.status, action: dto.action },
+          metadata: resolutionPayload,
         },
       });
       await this.notifications.create(
@@ -877,14 +888,19 @@ export class AdminService {
           targetUrl: '/notifications',
           entityType: 'PET_REPORT',
           entityId: reportId,
-          payload: { status: dto.status, action: dto.action },
+          payload: resolutionPayload,
         },
         tx,
       );
 
       await this.notifyMatchingReportSubject(tx, current, dto.action);
-      return updated;
+      return { updated, obsoleteDocumentImageUrls };
     });
+
+    await Promise.all(
+      obsoleteDocumentImageUrls.map((url) => this.cloudinary.destroyByUrl(url)),
+    );
+    return updated;
   }
 
   async moderateMatchingReportReporter(
@@ -988,7 +1004,7 @@ export class AdminService {
           category: NotificationCategory.SYSTEM,
           eventType: NotificationEventType.SYSTEM,
           title: 'Tài khoản đã bị khóa',
-          content: REPORT_ABUSE_BLOCK_MESSAGE,
+          content: COMMUNITY_STANDARDS_BLOCK_MESSAGE,
           targetUrl: '/notifications',
           entityType: 'REPORT_ABUSE_BLOCK',
           entityId: reportId,
@@ -1500,7 +1516,7 @@ export class AdminService {
     };
   }
 
-  private getMatchingReportResolutionMessageTemplates() {
+  private getMatchingReportResolutionMessageTemplates(targetType: string) {
     return {
       [ComplaintStatus.RESOLVED]: {
         [ComplaintAction.WARNING]:
@@ -1516,7 +1532,9 @@ export class AdminService {
       },
       [ComplaintStatus.INSUFFICIENT_EVIDENCE]: {
         [ComplaintAction.RESOLVE]:
-          'PetMatch đã xem xét phản ánh nhưng chưa có đủ bằng chứng để áp dụng biện pháp xử lý. Thông tin vẫn được lưu để hỗ trợ các lần kiểm tra tiếp theo.',
+          targetType === 'PET'
+            ? 'PetMatch đã yêu cầu chủ sở hữu tải lại giấy tờ của thú cưng để xác minh. Hồ sơ này đã tạm dừng ghép đôi cho đến khi giấy tờ mới được duyệt.'
+            : 'PetMatch đã xem xét phản ánh nhưng chưa có đủ bằng chứng để áp dụng biện pháp xử lý. Thông tin vẫn được lưu để hỗ trợ các lần kiểm tra tiếp theo.',
       },
     };
   }
@@ -1535,6 +1553,7 @@ export class AdminService {
     targetType: string,
     status: ComplaintStatus,
     action: ComplaintAction,
+    documentTypes?: DocumentType[],
   ) {
     if (status === ComplaintStatus.DISMISSED) {
       if (action !== ComplaintAction.DISMISS) {
@@ -1550,7 +1569,20 @@ export class AdminService {
           'Không được áp dụng biện pháp khi chưa đủ bằng chứng.',
         );
       }
+      if (targetType === 'PET' && !documentTypes?.length) {
+        throw new BadRequestException('Vui lòng chọn ít nhất một loại giấy tờ cần tải lại.');
+      }
+      if (targetType !== 'PET' && documentTypes?.length) {
+        throw new BadRequestException(
+          'Chỉ có thể yêu cầu tải lại giấy tờ khi xử lý phản ánh thú cưng.',
+        );
+      }
       return;
+    }
+    if (documentTypes?.length) {
+      throw new BadRequestException(
+        'Loại giấy tờ chỉ được dùng với biện pháp yêu cầu tải lại giấy tờ.',
+      );
     }
     if (status !== ComplaintStatus.RESOLVED) {
       throw new BadRequestException('Kết luận xử lý không hợp lệ.');
@@ -1565,6 +1597,85 @@ export class AdminService {
         'Biện pháp xử lý không phù hợp với đối tượng bị phản ánh.',
       );
     }
+  }
+
+  private async requestPetDocumentReupload(
+    tx: Prisma.TransactionClient,
+    actor: AdminActor,
+    report: {
+      id: string;
+      petId: string;
+      pet: { name: string; ownerId: string };
+    },
+    documentTypes: DocumentType[],
+  ) {
+    const documents = await tx.petDocument.findMany({
+      where: { petId: report.petId, type: { in: documentTypes } },
+      select: { imageUrls: true },
+    });
+    const obsoleteImageUrls = [
+      ...new Set(documents.flatMap((document) => document.imageUrls)),
+    ];
+
+    await tx.petDocument.deleteMany({
+      where: { petId: report.petId, type: { in: documentTypes } },
+    });
+    await tx.petDocument.createMany({
+      data: documentTypes.map((type) => ({
+        petId: report.petId,
+        type,
+        title: type === DocumentType.VACCINE_RECORD
+          ? 'Sổ tiêm phòng'
+          : 'Giấy chứng nhận phả hệ',
+        imageUrls: [],
+        status: DocumentStatus.NEED_MORE_INFO,
+        reviewerId: actor.id,
+        reviewerName: actor.name,
+        reviewNote: 'Vui lòng tải lại giấy tờ để PetMatch xác minh.',
+        reviewedAt: new Date(),
+      })),
+    });
+
+    const approvedDocumentCount = await tx.petDocument.count({
+      where: { petId: report.petId, status: DocumentStatus.APPROVED },
+    });
+    await tx.pet.update({
+      where: { id: report.petId },
+      data: {
+        isAvailableForMatching: false,
+        verificationBadge: approvedDocumentCount
+          ? VerificationBadge.VERIFIED
+          : VerificationBadge.PENDING,
+        ...(documentTypes.includes(DocumentType.VACCINE_RECORD)
+          ? { vaccineVerified: false }
+          : {}),
+        ...(documentTypes.includes(DocumentType.PEDIGREE_CERT)
+          ? { pedigreeVerified: false }
+          : {}),
+      },
+    });
+
+    const documentNames = documentTypes.map((type) =>
+      type === DocumentType.VACCINE_RECORD
+        ? 'sổ tiêm phòng'
+        : 'giấy chứng nhận phả hệ',
+    );
+    await this.notifications.create(
+      {
+        userId: report.pet.ownerId,
+        category: NotificationCategory.SYSTEM,
+        eventType: NotificationEventType.PET_DOCUMENT_REVIEWED,
+        title: 'Yêu cầu tải lại giấy tờ thú cưng',
+        content: `PetMatch yêu cầu bạn tải lại ${documentNames.join(' và ')} của ${report.pet.name} để xác minh. Hồ sơ đã tạm dừng ghép đôi cho đến khi giấy tờ mới được duyệt.`,
+        targetUrl: `/my-pets?editPet=${report.petId}`,
+        entityType: 'PET_DOCUMENT_REUPLOAD',
+        entityId: report.id,
+        payload: { documentTypes },
+      },
+      tx,
+    );
+
+    return obsoleteImageUrls;
   }
 
   private async applyMatchingReportAction(
@@ -1637,8 +1748,8 @@ export class AdminService {
             }
           : action === ComplaintAction.SUSPEND_ACCOUNT
             ? {
-                title: 'Tài khoản đã bị tạm khóa',
-                content: buildAccountSuspensionMessage(report.reason),
+                title: 'Tài khoản đã bị khóa',
+                content: COMMUNITY_STANDARDS_BLOCK_MESSAGE,
                 targetUrl: '/notifications',
               }
             : null;

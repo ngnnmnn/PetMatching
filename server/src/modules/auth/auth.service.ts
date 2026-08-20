@@ -20,7 +20,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { getAccountSuspensionMessage } from '../../common/account-suspension';
+import { COMMUNITY_STANDARDS_BLOCK_MESSAGE } from '../../common/matching-report-reason';
 
 type AuthUser = {
   id: string;
@@ -122,7 +122,7 @@ export class AuthService {
   async refreshAccessToken(userId: string) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new UnauthorizedException('User not found');
-    await this.ensureAccountActive(user);
+    this.ensureAccountActive(user.accountStatus);
 
     return {
       accessToken: this.signAccessToken(user),
@@ -194,7 +194,7 @@ export class AuthService {
       );
     }
 
-    await this.ensureAccountActive(user);
+    this.ensureAccountActive(user.accountStatus);
 
     if (!user.isVerified) {
       await this.ensureOtpAccountNotLocked(user);
@@ -629,7 +629,7 @@ export class AuthService {
     );
 
     if (userByGoogleId) {
-      await this.ensureAccountActive(userByGoogleId);
+      this.ensureAccountActive(userByGoogleId.accountStatus);
       if (userByGoogleId.username && userByGoogleId.passwordHash) {
         return this.buildAuthResponse(
           userByGoogleId,
@@ -648,7 +648,7 @@ export class AuthService {
 
     const userByEmail = await this.usersService.findByEmail(email);
     if (userByEmail) {
-      await this.ensureAccountActive(userByEmail);
+      this.ensureAccountActive(userByEmail.accountStatus);
       if (userByEmail.googleId && userByEmail.googleId !== googleUser.sub) {
         throw new ConflictException(
           'Email này đã được liên kết với một tài khoản Google khác.',
@@ -799,14 +799,11 @@ export class AuthService {
     }
   }
 
-  private async ensureAccountActive(user: {
-    id: string;
-    accountStatus?: string;
-  }) {
-    if (user.accountStatus !== AccountStatus.SUSPENDED) return;
+  private ensureAccountActive(accountStatus?: string) {
+    if (accountStatus !== AccountStatus.SUSPENDED) return;
     throw new UnauthorizedException({
       code: 'ACCOUNT_SUSPENDED',
-      message: await getAccountSuspensionMessage(this.prisma, user.id),
+      message: COMMUNITY_STANDARDS_BLOCK_MESSAGE,
     });
   }
 
@@ -817,7 +814,7 @@ export class AuthService {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
-      await this.ensureAccountActive(user);
+      this.ensureAccountActive(user.accountStatus);
       return {
         success: true,
         user: {

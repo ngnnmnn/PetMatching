@@ -4,10 +4,14 @@ import {
   ComplaintAction,
   ComplaintStatus,
   DocumentStatus,
+  DocumentType,
   Species,
   UserRole,
 } from '@prisma/client';
 import {
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsIn,
@@ -113,6 +117,11 @@ const matchingReportResolutionStatuses = [
   ComplaintStatus.INSUFFICIENT_EVIDENCE,
 ] as const;
 
+const matchingReportDocumentTypes = [
+  DocumentType.VACCINE_RECORD,
+  DocumentType.PEDIGREE_CERT,
+] as const;
+
 export class ResolveMatchingReportDto {
   @IsIn(matchingReportResolutionStatuses)
   status!: (typeof matchingReportResolutionStatuses)[number];
@@ -129,6 +138,13 @@ export class ResolveMatchingReportDto {
   @IsNotEmpty()
   @MaxLength(1000)
   resolutionMessage!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsIn(matchingReportDocumentTypes, { each: true })
+  documentTypes?: (typeof matchingReportDocumentTypes)[number][];
 }
 
 const reportAbuseModerationActions = ['WARNING', 'BLOCK'] as const;

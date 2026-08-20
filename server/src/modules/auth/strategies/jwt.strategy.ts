@@ -3,7 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AccountStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { getAccountSuspensionMessage } from '../../../common/account-suspension';
+import { COMMUNITY_STANDARDS_BLOCK_MESSAGE } from '../../../common/matching-report-reason';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -48,7 +48,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (user.accountStatus === AccountStatus.SUSPENDED) {
       throw new UnauthorizedException({
         code: 'ACCOUNT_SUSPENDED',
-        message: await getAccountSuspensionMessage(this.prisma, user.id),
+        message: COMMUNITY_STANDARDS_BLOCK_MESSAGE,
       });
     }
 

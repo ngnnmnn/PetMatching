@@ -80,6 +80,7 @@ type DialogMode = "view" | "edit";
 type PetProfileDialogProps = {
   initialPet: Pet;
   open: boolean;
+  startInEditMode?: boolean;
   onClose: () => void;
   onPetUpdated: (pet: Pet) => void;
 };
@@ -145,12 +146,14 @@ function apiErrorMessage(error: unknown, fallback: string) {
 export function PetProfileDialog({
   initialPet,
   open,
+  startInEditMode = false,
   onClose,
   onPetUpdated,
 }: PetProfileDialogProps) {
   const [pet, setPet] = useState<Pet>(initialPet);
-  const [mode, setMode] = useState<DialogMode>("view");
-  const modeRef = useRef<DialogMode>("view");
+  const initialMode: DialogMode = startInEditMode ? "edit" : "view";
+  const [mode, setMode] = useState<DialogMode>(initialMode);
+  const modeRef = useRef<DialogMode>(initialMode);
   const [form, setForm] = useState<EditForm>(() => formFromPet(initialPet));
   const [initialForm, setInitialForm] = useState<EditForm>(() =>
     formFromPet(initialPet),
@@ -178,7 +181,7 @@ export function PetProfileDialog({
       .then((response) => {
         if (!active) return;
         setPet(response.data);
-        if (modeRef.current === "view") {
+        if (modeRef.current === "view" || startInEditMode) {
           const nextForm = formFromPet(response.data);
           setForm(nextForm);
           setInitialForm(nextForm);
@@ -192,7 +195,7 @@ export function PetProfileDialog({
     return () => {
       active = false;
     };
-  }, [initialPet.id, open]);
+  }, [initialPet.id, open, startInEditMode]);
 
   const requestClose = () => {
     if (dirty) {
@@ -717,12 +720,14 @@ function PetDetails({
               title="Tiêm chủng"
               declared={pet.isVaccinated}
               verified={pet.vaccineVerified}
+              documentStatus={petDocument(pet, "VACCINE_RECORD")?.status}
             />
             <HealthCard
               icon={BadgeCheck}
               title="Phả hệ"
               declared={pet.hasPedigree}
               verified={pet.pedigreeVerified}
+              documentStatus={petDocument(pet, "PEDIGREE_CERT")?.status}
               detail={pet.pedigreeNumber || undefined}
             />
           </div>
@@ -1153,7 +1158,7 @@ function DocumentImagesEditor({
         : status === "REJECTED"
           ? "Bị từ chối — hãy thay ảnh và gửi lại"
           : status === "NEED_MORE_INFO"
-            ? "Cần bổ sung ảnh"
+            ? "Cần tải lại giấy tờ"
             : status === "PENDING"
               ? "Đang chờ duyệt"
               : "Chưa gửi xét duyệt";
@@ -1168,9 +1173,11 @@ function DocumentImagesEditor({
               "mt-1 text-xs font-medium",
               status === "APPROVED"
                 ? "text-emerald-600"
-                : status === "REJECTED" || status === "NEED_MORE_INFO"
+                : status === "REJECTED"
                   ? "text-destructive"
-                  : "text-muted-foreground",
+                  : status === "NEED_MORE_INFO"
+                    ? "text-slate-500"
+                    : "text-muted-foreground",
             )}
           >
             {statusLabel}
@@ -1204,7 +1211,10 @@ function DocumentImagesEditor({
               <img
                 src={url}
                 alt={`${title} ${index + 1}`}
-                className="size-full object-cover"
+                className={cn(
+                  "size-full object-cover",
+                  status !== "APPROVED" && "grayscale opacity-70",
+                )}
               />
             </button>
             {!verified && (
@@ -1316,14 +1326,17 @@ function HealthCard({
   title,
   declared,
   verified,
+  documentStatus,
   detail,
 }: {
   icon: typeof PawPrint;
   title: string;
   declared: boolean;
   verified: boolean;
+  documentStatus?: PetDocument["status"];
   detail?: string;
 }) {
+  const needsReupload = documentStatus === "NEED_MORE_INFO";
   return (
     <div className="rounded-xl border p-4">
       <div className="flex items-center gap-2">
@@ -1333,14 +1346,22 @@ function HealthCard({
       <p className="mt-2 text-sm font-semibold">
         {declared ? "Đã khai báo" : "Chưa khai báo"}
       </p>
-      {declared && (
+      {(declared || needsReupload) && (
         <p
           className={cn(
             "mt-1 text-xs font-bold",
-            verified ? "text-emerald-600" : "text-amber-600",
+            verified
+              ? "text-emerald-600"
+              : needsReupload
+                ? "text-slate-500"
+                : "text-amber-600",
           )}
         >
-          {verified ? "Đã xác minh" : "Đang chờ xác minh"}
+          {verified
+            ? "Đã xác minh"
+            : needsReupload
+              ? "Cần tải lại giấy tờ"
+              : "Đang chờ xác minh"}
         </p>
       )}
       {detail && (
