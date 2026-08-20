@@ -237,6 +237,7 @@ describe('MatchingService moderation', () => {
   let tx: any;
   let prisma: any;
   let service: MatchingService;
+  let notifications: { create: jest.Mock };
 
   beforeEach(() => {
     const match = {
@@ -285,10 +286,11 @@ describe('MatchingService moderation', () => {
       $transaction: jest.fn().mockImplementation((callback: (client: any) => unknown) => callback(tx)),
       match: { findUnique: jest.fn().mockResolvedValue(match) },
     };
+    notifications = { create: jest.fn().mockResolvedValue({ id: 'notification-1' }) };
     service = new MatchingService(
       prisma as PrismaService,
       {} as CloudinaryService,
-      {} as any,
+      notifications as any,
     );
   });
 
@@ -312,6 +314,15 @@ describe('MatchingService moderation', () => {
     expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ action: 'USER_CREATE_MATCHING_REPORT' }),
     }));
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        title: 'PetMatch đã tiếp nhận phản ánh',
+        targetUrl: '/notifications',
+        entityId: 'report-1',
+      }),
+      tx,
+    );
   });
 
   it('reports the other pet separately from its owner', async () => {

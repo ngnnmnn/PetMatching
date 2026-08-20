@@ -2,6 +2,7 @@ import {
   AccountStatus,
   ApprovalStatus,
   ComplaintAction,
+  ComplaintStatus,
   DocumentStatus,
   Species,
   UserRole,
@@ -104,6 +105,37 @@ export class ResolveComplaintDto {
   @IsOptional()
   @IsString()
   adminNote?: string;
+}
+
+const matchingReportResolutionStatuses = [
+  ComplaintStatus.RESOLVED,
+  ComplaintStatus.DISMISSED,
+  ComplaintStatus.INSUFFICIENT_EVIDENCE,
+] as const;
+
+export class ResolveMatchingReportDto {
+  @IsIn(matchingReportResolutionStatuses)
+  status!: (typeof matchingReportResolutionStatuses)[number];
+
+  @IsEnum(ComplaintAction)
+  action!: ComplaintAction;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  adminNote!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  resolutionMessage!: string;
+}
+
+const reportAbuseModerationActions = ['WARNING', 'BLOCK'] as const;
+
+export class ModerateReportAbuseDto {
+  @IsIn(reportAbuseModerationActions)
+  action!: (typeof reportAbuseModerationActions)[number];
 }
 
 export class CreateBreedRuleDto {

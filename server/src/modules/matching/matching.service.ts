@@ -627,6 +627,21 @@ export class MatchingService {
           },
         });
 
+        await this.notifications.create(
+          {
+            userId,
+            category: NotificationCategory.SYSTEM,
+            eventType: NotificationEventType.SYSTEM,
+            title: 'PetMatch đã tiếp nhận phản ánh',
+            content:
+              'Phản ánh của bạn đã được ghi nhận. PetMatch sẽ thông báo ngay khi có kết quả xử lý.',
+            targetUrl: '/notifications',
+            entityType: 'PET_REPORT',
+            entityId: report.id,
+          },
+          tx,
+        );
+
         return { success: true, report };
       });
     } catch (error) {

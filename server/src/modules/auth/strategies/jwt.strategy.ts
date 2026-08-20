@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AccountStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { getAccountSuspensionMessage } from '../../../common/account-suspension';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -47,7 +48,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (user.accountStatus === AccountStatus.SUSPENDED) {
       throw new UnauthorizedException({
         code: 'ACCOUNT_SUSPENDED',
-        message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.',
+        message: await getAccountSuspensionMessage(this.prisma, user.id),
       });
     }
 

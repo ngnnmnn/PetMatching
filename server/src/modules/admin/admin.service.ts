@@ -28,12 +28,19 @@ import {
   recognizedStoreRevenueWhere,
 } from '../../common/revenue.utils';
 import {
+  buildAccountSuspensionMessage,
+  formatMatchingReportReason,
+} from '../../common/matching-report-reason';
+import { REPORT_ABUSE_BLOCK_MESSAGE } from '../../common/account-suspension';
+import {
   GrantSpaManagerDto,
   CreateBreedRuleDto,
   HidePetDto,
+  ModerateReportAbuseDto,
   RevokeSpaManagerDto,
   RestorePetDto,
   ResolveComplaintDto,
+  ResolveMatchingReportDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
   UpdateUserRoleDto,
@@ -53,6 +60,21 @@ const ACTIONABLE_DOCUMENT_STATUSES: DocumentStatus[] = [
   DocumentStatus.REVIEWING,
   DocumentStatus.NEED_MORE_INFO,
 ];
+
+const OPEN_MATCHING_REPORT_STATUSES: ComplaintStatus[] = [
+  ComplaintStatus.PENDING,
+  ComplaintStatus.REVIEWING,
+];
+
+const MATCHING_REPORT_ACTIONS_BY_TARGET = {
+  USER: [ComplaintAction.WARNING, ComplaintAction.SUSPEND_ACCOUNT],
+  PET: [ComplaintAction.HIDE_CONTENT],
+} as const;
+
+const REPORT_SPAM_HIGH_FREQUENCY_24H = 3;
+const REPORT_SPAM_SUSPECTED_7D = 5;
+
+type AdminDb = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class AdminService {
@@ -102,7 +124,9 @@ export class AdminService {
         where: { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
       }),
       this.prisma.match.count(),
-      this.prisma.petReport.count({ where: { isResolved: false } }),
+      this.prisma.petReport.count({
+        where: { status: { in: OPEN_MATCHING_REPORT_STATUSES } },
+      }),
       this.prisma.store.count(),
       this.prisma.store.count({ where: { status: ApprovalStatus.ACTIVE } }),
       this.prisma.store.count({ where: { status: ApprovalStatus.PENDING } }),
@@ -164,7 +188,7 @@ export class AdminService {
           id: true,
           reason: true,
           targetType: true,
-          isResolved: true,
+          status: true,
           createdAt: true,
           reporter: { select: { name: true } },
           reportedUser: { select: { name: true } },
@@ -480,7 +504,9 @@ export class AdminService {
         orderBy: { createdAt: 'desc' },
         select: { metadata: true, createdAt: true },
       }),
-      this.prisma.petReport.count({ where: { petId: id, isResolved: false } }),
+      this.prisma.petReport.count({
+        where: { petId: id, status: { in: OPEN_MATCHING_REPORT_STATUSES } },
+      }),
     ]);
 
     return { ...pet, lastHideAction, unresolvedReportCount };
@@ -540,7 +566,9 @@ export class AdminService {
     }
 
     const [unresolvedReportCount, lastHideAction] = await Promise.all([
-      this.prisma.petReport.count({ where: { petId, isResolved: false } }),
+      this.prisma.petReport.count({
+        where: { petId, status: { in: OPEN_MATCHING_REPORT_STATUSES } },
+      }),
       this.prisma.auditLog.findFirst({
         where: { action: 'ADMIN_HIDE_PET', targetType: 'Pet', targetId: petId },
         orderBy: { createdAt: 'desc' },
@@ -685,16 +713,7 @@ export class AdminService {
       include: {
         reporter: { select: { id: true, name: true, email: true } },
         reportedUser: { select: { id: true, name: true, email: true } },
-        resolver: { select: { id: true, name: true } },
         pet: { select: { id: true, name: true, avatarUrl: true } },
-        match: {
-          select: {
-            id: true,
-            status: true,
-            pet1: { select: { id: true, name: true } },
-            pet2: { select: { id: true, name: true } },
-          },
-        },
       },
     });
   }
@@ -703,60 +722,138 @@ export class AdminService {
     const report = await this.prisma.petReport.findUnique({
       where: { id: reportId },
       include: {
-        reporter: { select: { id: true, name: true, email: true } },
+        reporter: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            accountStatus: true,
+          },
+        },
         reportedUser: { select: { id: true, name: true, email: true } },
         resolver: { select: { id: true, name: true } },
         pet: { select: { id: true, name: true, avatarUrl: true } },
-        match: {
-          include: {
-            pet1: {
-              select: {
-                id: true,
-                name: true,
-                owner: { select: { id: true, name: true } },
-              },
-            },
-            pet2: {
-              select: {
-                id: true,
-                name: true,
-                owner: { select: { id: true, name: true } },
-              },
-            },
-            messages: {
-              orderBy: { createdAt: 'desc' },
-              take: 100,
-              include: {
-                sender: { select: { id: true, name: true, avatarUrl: true } },
-              },
-            },
-          },
-        },
       },
     });
-    if (!report) throw new NotFoundException('Matching report not found.');
+    if (!report) throw new NotFoundException('Không tìm thấy phản ánh ghép đôi.');
 
-    if (report.match) {
-      report.match.messages.reverse();
-    }
-    return report;
+    const [messages, reporterActivity] = await Promise.all([
+      report.matchId
+        ? this.prisma.message.findMany({
+            where: {
+              matchId: report.matchId,
+              createdAt: { lte: report.createdAt },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 30,
+            include: {
+              sender: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          })
+        : Promise.resolve([]),
+      this.getMatchingReportReporterActivity(
+        this.prisma,
+        report.userId,
+      ),
+    ]);
+
+    return {
+      ...report,
+      match: report.matchId ? { messages: messages.reverse() } : null,
+      resolutionOptions: this.getMatchingReportResolutionOptions(
+        report.targetType,
+      ),
+      resolutionMessageTemplates:
+        this.getMatchingReportResolutionMessageTemplates(),
+      reporterActivity,
+    };
   }
 
-  async resolveMatchingReport(actor: AdminActor, reportId: string) {
-    const report = await this.prisma.$transaction(async (tx) => {
+  async startMatchingReportReview(actor: AdminActor, reportId: string) {
+    return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "pet_reports" WHERE "id" = ${reportId} FOR UPDATE`,
       );
       const current = await tx.petReport.findUnique({ where: { id: reportId } });
-      if (!current) throw new NotFoundException('Matching report not found.');
-      if (current.isResolved) {
-        throw new ConflictException('Matching report is already resolved.');
+      if (!current) {
+        throw new NotFoundException('Không tìm thấy phản ánh ghép đôi.');
       }
+
+      if (current.status === ComplaintStatus.REVIEWING) {
+        if (current.resolvedById && current.resolvedById !== actor.id) {
+          throw new ConflictException(
+            'Phản ánh đang được quản trị viên khác xem xét.',
+          );
+        }
+        return current;
+      }
+      if (current.status !== ComplaintStatus.PENDING) {
+        throw new ConflictException('Phản ánh không còn ở trạng thái chờ xử lý.');
+      }
+
+      return tx.petReport.update({
+        where: { id: reportId },
+        data: {
+          status: ComplaintStatus.REVIEWING,
+          reviewStartedAt: new Date(),
+          resolvedById: actor.id,
+        },
+      });
+    });
+  }
+
+  async resolveMatchingReport(
+    actor: AdminActor,
+    reportId: string,
+    dto: ResolveMatchingReportDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "pet_reports" WHERE "id" = ${reportId} FOR UPDATE`,
+      );
+      const current = await tx.petReport.findUnique({
+        where: { id: reportId },
+        include: { pet: { select: { name: true, status: true } } },
+      });
+      if (!current) {
+        throw new NotFoundException('Không tìm thấy phản ánh ghép đôi.');
+      }
+      if (!OPEN_MATCHING_REPORT_STATUSES.includes(current.status)) {
+        throw new ConflictException('Phản ánh đã có kết quả xử lý.');
+      }
+      if (
+        current.status === ComplaintStatus.REVIEWING &&
+        current.resolvedById &&
+        current.resolvedById !== actor.id
+      ) {
+        throw new ConflictException(
+          'Phản ánh đang được quản trị viên khác xem xét.',
+        );
+      }
+
+      const adminNote = dto.adminNote.trim();
+      const resolutionMessage = dto.resolutionMessage.trim();
+      if (!adminNote || !resolutionMessage) {
+        throw new BadRequestException(
+          'Ghi chú nội bộ và nội dung phản hồi không được để trống.',
+        );
+      }
+      this.validateMatchingReportResolution(
+        current.targetType,
+        dto.status,
+        dto.action,
+      );
+
+      await this.applyMatchingReportAction(tx, current, dto.action);
 
       const updated = await tx.petReport.update({
         where: { id: reportId },
         data: {
-          isResolved: true,
+          status: dto.status,
+          actionTaken: dto.action,
+          adminNote,
+          resolutionMessage,
+          reviewStartedAt: current.reviewStartedAt ?? new Date(),
           resolvedAt: new Date(),
           resolvedById: actor.id,
         },
@@ -767,6 +864,7 @@ export class AdminService {
           action: 'ADMIN_RESOLVE_MATCHING_REPORT',
           targetType: 'PetReport',
           targetId: reportId,
+          metadata: { status: dto.status, action: dto.action },
         },
       });
       await this.notifications.create(
@@ -774,16 +872,131 @@ export class AdminService {
           userId: current.userId,
           category: NotificationCategory.SYSTEM,
           eventType: NotificationEventType.MATCHING_REPORT_RESOLVED,
-          title: 'Báo cáo của bạn đã được xử lý',
-          content: 'Báo cáo ghép đôi bạn gửi đã được quản trị viên xem xét và xử lý.',
+          title: this.getMatchingReportNotificationTitle(dto.status),
+          content: resolutionMessage,
+          targetUrl: '/notifications',
           entityType: 'PET_REPORT',
+          entityId: reportId,
+          payload: { status: dto.status, action: dto.action },
+        },
+        tx,
+      );
+
+      await this.notifyMatchingReportSubject(tx, current, dto.action);
+      return updated;
+    });
+  }
+
+  async moderateMatchingReportReporter(
+    actor: AdminActor,
+    reportId: string,
+    dto: ModerateReportAbuseDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "pet_reports" WHERE "id" = ${reportId} FOR UPDATE`,
+      );
+      const report = await tx.petReport.findUnique({
+        where: { id: reportId },
+        include: {
+          reporter: {
+            select: {
+              id: true,
+              role: true,
+              accountStatus: true,
+            },
+          },
+        },
+      });
+      if (!report) {
+        throw new NotFoundException('Không tìm thấy phản ánh ghép đôi.');
+      }
+      if (report.reporter.role === UserRole.ADMIN) {
+        throw new BadRequestException(
+          'Không thể áp dụng biện pháp này cho tài khoản quản trị viên.',
+        );
+      }
+
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "users" WHERE "id" = ${report.userId} FOR UPDATE`,
+      );
+      const activity = await this.getMatchingReportReporterActivity(
+        tx,
+        report.userId,
+      );
+      const requiredLevel =
+        dto.action === 'WARNING' ? 'HIGH_FREQUENCY' : 'SUSPECTED_SPAM';
+      if (activity.level !== requiredLevel) {
+        throw new BadRequestException(
+          dto.action === 'WARNING'
+            ? 'Chỉ có thể gửi cảnh báo cho tài khoản đang ở mức cảnh báo vàng.'
+            : 'Chỉ có thể khóa tài khoản đang ở mức cảnh báo đỏ.',
+        );
+      }
+
+      if (dto.action === 'WARNING') {
+        await tx.auditLog.create({
+          data: {
+            actorId: actor.id,
+            action: 'ADMIN_WARN_REPORT_ABUSE',
+            targetType: 'User',
+            targetId: report.userId,
+            metadata: { reportId, activity },
+          },
+        });
+        await this.notifications.create(
+          {
+            userId: report.userId,
+            category: NotificationCategory.SYSTEM,
+            eventType: NotificationEventType.SYSTEM,
+            title: 'Cảnh báo về việc sử dụng tính năng phản ánh',
+            content:
+              'PetMatch phát hiện tài khoản của bạn có tần suất gửi phản ánh bất thường. Vui lòng chỉ phản ánh những hành vi thực sự vi phạm. Nếu tiếp tục lạm dụng, tài khoản của bạn có thể bị khóa.',
+            targetUrl: '/notifications',
+            entityType: 'REPORT_ABUSE_WARNING',
+            entityId: reportId,
+          },
+          tx,
+        );
+        return { success: true, action: dto.action };
+      }
+
+      if (report.reporter.accountStatus === AccountStatus.SUSPENDED) {
+        throw new ConflictException('Tài khoản này hiện đã bị khóa.');
+      }
+
+      await tx.user.update({
+        where: { id: report.userId },
+        data: { accountStatus: AccountStatus.SUSPENDED },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          action: 'ADMIN_BLOCK_REPORT_ABUSE',
+          targetType: 'User',
+          targetId: report.userId,
+          metadata: {
+            reportId,
+            reason: 'Lạm dụng tính năng phản ánh',
+            activity,
+          },
+        },
+      });
+      await this.notifications.create(
+        {
+          userId: report.userId,
+          category: NotificationCategory.SYSTEM,
+          eventType: NotificationEventType.SYSTEM,
+          title: 'Tài khoản đã bị khóa',
+          content: REPORT_ABUSE_BLOCK_MESSAGE,
+          targetUrl: '/notifications',
+          entityType: 'REPORT_ABUSE_BLOCK',
           entityId: reportId,
         },
         tx,
       );
-      return updated;
+      return { success: true, action: dto.action };
     });
-    return report;
   }
 
   getBreedRules(query: { species?: Species; active?: string; search?: string }) {
@@ -1245,6 +1458,203 @@ export class AdminService {
     if (action === ComplaintAction.DISMISS) return ComplaintStatus.DISMISSED;
     if (action === ComplaintAction.ESCALATE) return ComplaintStatus.ESCALATED;
     return ComplaintStatus.RESOLVED;
+  }
+
+  private async getMatchingReportReporterActivity(
+    db: AdminDb,
+    reporterId: string,
+    now = new Date(),
+  ) {
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const [reportsLast24Hours, reportsLast7Days] = await Promise.all([
+      db.petReport.count({
+        where: { userId: reporterId, createdAt: { gte: oneDayAgo } },
+      }),
+      db.petReport.count({
+        where: { userId: reporterId, createdAt: { gte: sevenDaysAgo } },
+      }),
+    ]);
+    const level =
+      reportsLast7Days >= REPORT_SPAM_SUSPECTED_7D
+        ? 'SUSPECTED_SPAM'
+        : reportsLast24Hours >= REPORT_SPAM_HIGH_FREQUENCY_24H
+          ? 'HIGH_FREQUENCY'
+          : 'NORMAL';
+    return {
+      reportsLast24Hours,
+      reportsLast7Days,
+      level,
+    };
+  }
+
+  private getMatchingReportResolutionOptions(targetType: string) {
+    const confirmedActions =
+      targetType === 'PET'
+        ? MATCHING_REPORT_ACTIONS_BY_TARGET.PET
+        : MATCHING_REPORT_ACTIONS_BY_TARGET.USER;
+    return {
+      [ComplaintStatus.RESOLVED]: confirmedActions,
+      [ComplaintStatus.DISMISSED]: [ComplaintAction.DISMISS],
+      [ComplaintStatus.INSUFFICIENT_EVIDENCE]: [ComplaintAction.RESOLVE],
+    };
+  }
+
+  private getMatchingReportResolutionMessageTemplates() {
+    return {
+      [ComplaintStatus.RESOLVED]: {
+        [ComplaintAction.WARNING]:
+          'Phản ánh của bạn đã được xác minh. PetMatch đã gửi cảnh cáo đến tài khoản bị phản ánh và yêu cầu người dùng tuân thủ quy tắc cộng đồng.',
+        [ComplaintAction.SUSPEND_ACCOUNT]:
+          'Phản ánh của bạn đã được xác minh. PetMatch đã tạm khóa tài khoản bị phản ánh để ngăn tài khoản tiếp tục sử dụng các tính năng của hệ thống.',
+        [ComplaintAction.HIDE_CONTENT]:
+          'Phản ánh của bạn đã được xác minh. PetMatch đã ẩn hồ sơ thú cưng bị phản ánh và ngừng khả năng tham gia ghép đôi của hồ sơ này.',
+      },
+      [ComplaintStatus.DISMISSED]: {
+        [ComplaintAction.DISMISS]:
+          'PetMatch đã xem xét phản ánh của bạn nhưng hiện không phát hiện nội dung vi phạm quy định. Phản ánh đã được đóng và không áp dụng biện pháp xử lý.',
+      },
+      [ComplaintStatus.INSUFFICIENT_EVIDENCE]: {
+        [ComplaintAction.RESOLVE]:
+          'PetMatch đã xem xét phản ánh nhưng chưa có đủ bằng chứng để áp dụng biện pháp xử lý. Thông tin vẫn được lưu để hỗ trợ các lần kiểm tra tiếp theo.',
+      },
+    };
+  }
+
+  private getMatchingReportNotificationTitle(status: ComplaintStatus) {
+    if (status === ComplaintStatus.RESOLVED) {
+      return 'Phản ánh của bạn đã được xác minh';
+    }
+    if (status === ComplaintStatus.DISMISSED) {
+      return 'Phản ánh của bạn đã có kết quả';
+    }
+    return 'Phản ánh của bạn chưa đủ bằng chứng';
+  }
+
+  private validateMatchingReportResolution(
+    targetType: string,
+    status: ComplaintStatus,
+    action: ComplaintAction,
+  ) {
+    if (status === ComplaintStatus.DISMISSED) {
+      if (action !== ComplaintAction.DISMISS) {
+        throw new BadRequestException(
+          'Kết luận không có vi phạm chỉ được phép đóng phản ánh.',
+        );
+      }
+      return;
+    }
+    if (status === ComplaintStatus.INSUFFICIENT_EVIDENCE) {
+      if (action !== ComplaintAction.RESOLVE) {
+        throw new BadRequestException(
+          'Không được áp dụng biện pháp khi chưa đủ bằng chứng.',
+        );
+      }
+      return;
+    }
+    if (status !== ComplaintStatus.RESOLVED) {
+      throw new BadRequestException('Kết luận xử lý không hợp lệ.');
+    }
+
+    const allowedActions =
+      targetType === 'PET'
+        ? MATCHING_REPORT_ACTIONS_BY_TARGET.PET
+        : MATCHING_REPORT_ACTIONS_BY_TARGET.USER;
+    if (!(allowedActions as readonly ComplaintAction[]).includes(action)) {
+      throw new BadRequestException(
+        'Biện pháp xử lý không phù hợp với đối tượng bị phản ánh.',
+      );
+    }
+  }
+
+  private async applyMatchingReportAction(
+    tx: Prisma.TransactionClient,
+    report: {
+      targetType: string;
+      reportedUserId: string | null;
+      petId: string;
+      pet: { status: PetStatus };
+    },
+    action: ComplaintAction,
+  ) {
+    if (action === ComplaintAction.HIDE_CONTENT) {
+      if (report.targetType !== 'PET') {
+        throw new BadRequestException(
+          'Chỉ có thể ẩn hồ sơ khi đối tượng bị phản ánh là thú cưng.',
+        );
+      }
+      if (report.pet.status === PetStatus.INACTIVE) {
+        throw new BadRequestException(
+          'Không thể ẩn hồ sơ đã được chủ sở hữu ngừng hoạt động.',
+        );
+      }
+      if (report.pet.status !== PetStatus.HIDDEN) {
+        await tx.pet.update({
+          where: { id: report.petId },
+          data: { status: PetStatus.HIDDEN, isAvailableForMatching: false },
+        });
+      }
+      return;
+    }
+
+    if (action === ComplaintAction.SUSPEND_ACCOUNT) {
+      if (report.targetType !== 'USER' || !report.reportedUserId) {
+        throw new BadRequestException(
+          'Không xác định được tài khoản cần tạm khóa.',
+        );
+      }
+      await tx.user.update({
+        where: { id: report.reportedUserId },
+        data: { accountStatus: AccountStatus.SUSPENDED },
+      });
+    }
+  }
+
+  private async notifyMatchingReportSubject(
+    tx: Prisma.TransactionClient,
+    report: {
+      id: string;
+      reportedUserId: string | null;
+      reason: string;
+      pet: { name: string };
+    },
+    action: ComplaintAction,
+  ) {
+    if (!report.reportedUserId) return;
+
+    const notification =
+      action === ComplaintAction.WARNING
+        ? {
+            title: 'Cảnh báo về hoạt động ghép đôi',
+            content: `Tài khoản của bạn đã nhận cảnh cáo do ${formatMatchingReportReason(report.reason)}. Vui lòng tuân thủ tiêu chuẩn cộng đồng PetMatch để tránh bị hạn chế hoặc tạm khóa tài khoản.`,
+            targetUrl: '/notifications',
+          }
+        : action === ComplaintAction.HIDE_CONTENT
+          ? {
+              title: 'Hồ sơ thú cưng đã bị tạm ẩn',
+              content: `Hồ sơ của ${report.pet.name} đã bị tạm ẩn khỏi tính năng ghép đôi để bảo đảm an toàn cộng đồng.`,
+              targetUrl: '/my-pets',
+            }
+          : action === ComplaintAction.SUSPEND_ACCOUNT
+            ? {
+                title: 'Tài khoản đã bị tạm khóa',
+                content: buildAccountSuspensionMessage(report.reason),
+                targetUrl: '/notifications',
+              }
+            : null;
+    if (!notification) return;
+
+    await this.notifications.create(
+      {
+        userId: report.reportedUserId,
+        category: NotificationCategory.SYSTEM,
+        eventType: NotificationEventType.MATCHING_REPORT_RESOLVED,
+        ...notification,
+        entityType: 'PET_REPORT_ACTION',
+        entityId: report.id,
+      },
+      tx,
+    );
   }
 
   private normalizeBreedRule(dto: CreateBreedRuleDto | UpdateBreedRuleDto) {
