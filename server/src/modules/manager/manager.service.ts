@@ -10,6 +10,7 @@ import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
 import { NotificationCategory, NotificationEventType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
 export class ManagerService {
@@ -604,7 +605,7 @@ export class ManagerService {
             category: NotificationCategory.ORDER,
             eventType: NotificationEventType.ORDER_STATUS_CHANGED,
             title: 'Đơn hàng đã cập nhật',
-            content: `Đơn hàng #${order.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${updatedOrder.status}.`,
+            content: `Đơn hàng #${order.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${ORDER_STATUS_LABELS[updatedOrder.status]}.`,
             targetUrl: `/orders?orderId=${order.id}`,
             entityType: 'ORDER',
             entityId: order.id,

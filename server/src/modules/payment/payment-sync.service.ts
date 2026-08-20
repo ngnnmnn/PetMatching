@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaymentService } from './payment.service';
 import { NotificationCategory, NotificationEventType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
 export class PaymentSyncService implements OnApplicationBootstrap {
@@ -100,7 +101,7 @@ export class PaymentSyncService implements OnApplicationBootstrap {
                   category: NotificationCategory.ORDER,
                   eventType: NotificationEventType.ORDER_STATUS_CHANGED,
                   title: 'Đơn hàng đã cập nhật',
-                  content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${updatedOrder.status}.`,
+                  content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${ORDER_STATUS_LABELS[updatedOrder.status]}.`,
                   targetUrl: `/orders?orderId=${updatedOrder.id}`,
                   entityType: 'ORDER',
                   entityId: updatedOrder.id,

@@ -40,13 +40,16 @@ api.interceptors.response.use(
       localStorage.removeItem("petmatch_last_activity");
       if (typeof window !== "undefined" && !isRedirectingToLogin) {
         isRedirectingToLogin = true;
+        const suspendedMessage =
+          error.response?.data?.message ||
+          "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.";
         if (errorCode === "ACCOUNT_SUSPENDED") {
-          toast.error("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+          toast.error(suspendedMessage);
         }
         sessionStorage.setItem(
           "auth_notice",
           errorCode === "ACCOUNT_SUSPENDED"
-            ? "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên."
+            ? suspendedMessage
             : "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
         );
         window.location.href = "/login";

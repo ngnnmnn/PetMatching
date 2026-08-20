@@ -9,6 +9,7 @@ import {
   isRecognizedSpaBooking,
 } from '../../common/revenue.utils';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SPA_BOOKING_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
 export class SpaService {
@@ -32,7 +33,7 @@ export class SpaService {
         title: eventType === NotificationEventType.SPA_BOOKING_CREATED
           ? 'Lịch Spa đã được tạo'
           : 'Lịch Spa đã cập nhật',
-        content: content ?? `Lịch Spa của ${booking.petName || 'thú cưng'} đã chuyển sang trạng thái ${booking.status}.`,
+        content: content ?? `Lịch Spa của ${booking.petName || 'thú cưng'} đã chuyển sang trạng thái ${SPA_BOOKING_STATUS_LABELS[booking.status]}.`,
         targetUrl: `/spa/bookings?bookingId=${booking.id}`,
         entityType: 'SPA_BOOKING',
         entityId: booking.id,

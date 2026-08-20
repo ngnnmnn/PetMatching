@@ -53,7 +53,7 @@ type DashboardData = {
       id: string;
       reason: string;
       targetType: string;
-      isResolved: boolean;
+      status: string;
       createdAt: string;
       reporter?: { name?: string };
       reportedUser?: { name?: string };
@@ -286,7 +286,7 @@ export default function AdminDashboardPage() {
           id: item.id,
           title: formatMatchingReportReason(item.reason),
           meta: `${item.reporter?.name ?? 'Người dùng'} → ${item.targetType === 'PET' ? (item.pet?.name ?? 'Thú cưng') : (item.reportedUser?.name ?? 'Người dùng')}`,
-          status: item.isResolved ? 'Đã xử lý' : 'Chờ xử lý',
+          status: formatStatus(item.status),
         }))} />
         </div>
       </section>
@@ -560,6 +560,7 @@ function formatStatus(status?: string) {
     CAT: 'Mèo',
     NONE: 'Chưa xác minh',
     PENDING: 'Đang chờ',
+    REVIEWING: 'Đang xem xét',
     VERIFIED: 'Đã xác minh',
     APPROVED: 'Đã duyệt',
     REJECTED: 'Đã từ chối',
@@ -571,8 +572,9 @@ function formatStatus(status?: string) {
     SPA: 'Spa',
     REVIEW: 'Đánh giá',
     RESOLVED: 'Đã xử lý',
-    DISMISSED: 'Đã bỏ qua',
-    ESCALATED: 'Đã chuyển cấp',
+    DISMISSED: 'Không phát hiện vi phạm',
+    INSUFFICIENT_EVIDENCE: 'Chưa đủ bằng chứng',
+    ESCALATED: 'Chuyển cấp xử lý',
   };
 
   return status ? statuses[status] ?? status : '-';

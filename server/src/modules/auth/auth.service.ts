@@ -20,6 +20,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { getAccountSuspensionMessage } from '../../common/account-suspension';
 
 type AuthUser = {
   id: string;
@@ -121,7 +122,7 @@ export class AuthService {
   async refreshAccessToken(userId: string) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new UnauthorizedException('User not found');
-    this.ensureAccountActive(user.accountStatus);
+    await this.ensureAccountActive(user);
 
     return {
       accessToken: this.signAccessToken(user),
@@ -193,9 +194,7 @@ export class AuthService {
       );
     }
 
-    if (user.accountStatus === AccountStatus.SUSPENDED) {
-      throw new UnauthorizedException('Tai khoan dang bi khoa.');
-    }
+    await this.ensureAccountActive(user);
 
     if (!user.isVerified) {
       await this.ensureOtpAccountNotLocked(user);
@@ -630,7 +629,7 @@ export class AuthService {
     );
 
     if (userByGoogleId) {
-      this.ensureAccountActive(userByGoogleId.accountStatus);
+      await this.ensureAccountActive(userByGoogleId);
       if (userByGoogleId.username && userByGoogleId.passwordHash) {
         return this.buildAuthResponse(
           userByGoogleId,
@@ -649,7 +648,7 @@ export class AuthService {
 
     const userByEmail = await this.usersService.findByEmail(email);
     if (userByEmail) {
-      this.ensureAccountActive(userByEmail.accountStatus);
+      await this.ensureAccountActive(userByEmail);
       if (userByEmail.googleId && userByEmail.googleId !== googleUser.sub) {
         throw new ConflictException(
           'Email này đã được liên kết với một tài khoản Google khác.',
@@ -800,10 +799,15 @@ export class AuthService {
     }
   }
 
-  private ensureAccountActive(accountStatus?: string) {
-    if (accountStatus === AccountStatus.SUSPENDED) {
-      throw new UnauthorizedException('Tài khoản đang bị khóa.');
-    }
+  private async ensureAccountActive(user: {
+    id: string;
+    accountStatus?: string;
+  }) {
+    if (user.accountStatus !== AccountStatus.SUSPENDED) return;
+    throw new UnauthorizedException({
+      code: 'ACCOUNT_SUSPENDED',
+      message: await getAccountSuspensionMessage(this.prisma, user.id),
+    });
   }
 
   async verify(token: string) {
@@ -813,9 +817,7 @@ export class AuthService {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
-      if (user.accountStatus === AccountStatus.SUSPENDED) {
-        throw new UnauthorizedException('Account suspended');
-      }
+      await this.ensureAccountActive(user);
       return {
         success: true,
         user: {
@@ -830,7 +832,8 @@ export class AuthService {
           isVerified: user.isVerified,
         },
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('Invalid token');
     }
   }

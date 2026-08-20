@@ -31,7 +31,9 @@ import {
   HidePetDto,
   RevokeSpaManagerDto,
   RestorePetDto,
+  ModerateReportAbuseDto,
   ResolveComplaintDto,
+  ResolveMatchingReportDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
   UpdateUserRoleDto,
@@ -225,8 +227,30 @@ export class AdminController {
   resolveMatchingReport(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
+    @Body() dto: ResolveMatchingReportDto,
   ) {
-    return this.adminService.resolveMatchingReport(request.user, id);
+    return this.adminService.resolveMatchingReport(request.user, id, dto);
+  }
+
+  @Patch('matching-reports/:id/review')
+  startMatchingReportReview(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.startMatchingReportReview(request.user, id);
+  }
+
+  @Patch('matching-reports/:id/reporter-moderation')
+  moderateMatchingReportReporter(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ModerateReportAbuseDto,
+  ) {
+    return this.adminService.moderateMatchingReportReporter(
+      request.user,
+      id,
+      dto,
+    );
   }
 
   @Get('stores')
