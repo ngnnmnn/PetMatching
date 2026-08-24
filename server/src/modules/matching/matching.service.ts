@@ -398,12 +398,27 @@ export class MatchingService {
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "matching_requests" WHERE "id" = ${requestId} FOR UPDATE`,
       );
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "pets" WHERE "id" = ${pet1Id} OR "id" = ${pet2Id} ORDER BY "id" FOR UPDATE`,
+      );
       const currentRequest = await tx.matchingRequest.findUnique({
         where: { id: requestId },
-        select: { status: true },
+        select: {
+          status: true,
+          femalePet: { select: { status: true } },
+          malePet: { select: { status: true } },
+        },
       });
       if (currentRequest?.status !== MatchingRequestStatus.PENDING) {
         throw new BadRequestException('Only pending requests can be updated.');
+      }
+      if (
+        currentRequest.femalePet.status !== PetStatus.ACTIVE ||
+        currentRequest.malePet.status !== PetStatus.ACTIVE
+      ) {
+        throw new BadRequestException(
+          'Không thể ghép đôi vì một thú cưng đang bị ẩn hoặc ngừng hoạt động.',
+        );
       }
       const updatedRequest = await tx.matchingRequest.update({
         where: { id: requestId },
@@ -948,8 +963,8 @@ export class MatchingService {
       },
       select: {
         id: true,
-        pet1: { select: { ownerId: true } },
-        pet2: { select: { ownerId: true } },
+        pet1: { select: { ownerId: true, status: true } },
+        pet2: { select: { ownerId: true, status: true } },
       },
     });
     if (!match) {
@@ -962,6 +977,7 @@ export class MatchingService {
       match.pet1.ownerId,
       match.pet2.ownerId,
     );
+    this.ensurePetsAllowChat(match);
     return match;
   }
 
@@ -976,6 +992,21 @@ export class MatchingService {
     if (!isParticipant || !allowsChat) {
       throw new NotFoundException(
         'Không tìm thấy match đang cho phép trò chuyện.',
+      );
+    }
+    this.ensurePetsAllowChat(match);
+  }
+
+  private ensurePetsAllowChat(match: {
+    pet1: { status: PetStatus };
+    pet2: { status: PetStatus };
+  }): void {
+    if (
+      match.pet1.status === PetStatus.HIDDEN ||
+      match.pet2.status === PetStatus.HIDDEN
+    ) {
+      throw new ForbiddenException(
+        'Phòng chat tạm khóa vì một thú cưng đang bị quản trị viên ẩn.',
       );
     }
   }

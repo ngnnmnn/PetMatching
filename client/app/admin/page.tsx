@@ -114,9 +114,9 @@ export default function AdminDashboardPage() {
     if (!data) return [];
     return [
       {
-        label: 'Xác minh thú cưng',
+        label: 'Giấy tờ thú cưng chờ duyệt',
         value: data.stats.pets.pendingVerification,
-        href: '/admin/pet-verifications',
+        href: '/admin/pets?verification=pending',
         tone: 'amber',
       },
       {
@@ -270,7 +270,7 @@ export default function AdminDashboardPage() {
           meta: `${item.email} - ${formatRole(item.role)}`,
           status: formatDate(item.createdAt),
         }))} />
-        <ActivityPanel icon={ClipboardCheck} title="Yêu cầu xác minh" href="/admin/pet-verifications" rows={data.recentActivities.petDocuments.map((item) => ({
+        <ActivityPanel icon={ClipboardCheck} title="Yêu cầu xác minh" href="/admin/pets?verification=pending" rows={data.recentActivities.petDocuments.map((item) => ({
           id: item.id,
           title: item.pet?.name ?? item.type,
           meta: formatStatus(item.type),

@@ -38,6 +38,7 @@ import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import type { PetStatus } from '@/lib/api/pets';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,7 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
+    status: PetStatus;
     owner: { name: string };
   };
   malePet: {
@@ -64,6 +66,7 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
+    status: PetStatus;
     owner?: { name: string };
   };
 };
@@ -110,6 +113,7 @@ type Match = {
     breed: string;
     gender: 'MALE' | 'FEMALE';
     avatarUrl?: string | null;
+    status: PetStatus;
     owner: { id: string; name: string };
   };
   pet2: {
@@ -118,6 +122,7 @@ type Match = {
     breed: string;
     gender: 'MALE' | 'FEMALE';
     avatarUrl?: string | null;
+    status: PetStatus;
     owner: { id: string; name: string };
   };
   messages?: Array<{
@@ -510,6 +515,9 @@ export default function MessagesPage() {
     return chatMessages[selectedMatch.id] || [];
   }, [selectedMatch, chatMessages]);
 
+  const chatModerated = selectedMatch?.pet1.status === 'HIDDEN' || selectedMatch?.pet2.status === 'HIDDEN';
+  const chatReadOnly = selectedMatch?.status === 'CANCELLED' || chatModerated;
+
   const currentUserOwnsPet1 = selectedMatch?.pet1.owner.id === currentUserId;
   const otherPet = selectedMatch
     ? (currentUserOwnsPet1 ? selectedMatch.pet2 : selectedMatch.pet1)
@@ -701,13 +709,14 @@ export default function MessagesPage() {
                         </h3>
                         <span className={cn(
                           'inline-flex items-center gap-1 text-[11px] font-bold',
-                          selectedMatch.status === 'CANCELLED' ? 'text-muted-foreground' : 'text-emerald-600',
+                          chatReadOnly ? 'text-muted-foreground' : 'text-emerald-600',
                         )}>
                           <span className={cn(
                             'size-2 rounded-full',
-                            selectedMatch.status === 'CANCELLED' ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
+                            chatReadOnly ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
                           )} />
-                          {selectedMatch.status === 'ACTIVE' && 'Ghép đôi thành công · Phối giống Active'}
+                          {selectedMatch.status === 'ACTIVE' && !chatModerated && 'Ghép đôi thành công · Phối giống Active'}
+                          {selectedMatch.status === 'ACTIVE' && chatModerated && 'Phòng chat tạm khóa · Chỉ đọc'}
                           {selectedMatch.status === 'CANCELLED' && 'Match đã kết thúc · Chỉ đọc'}
                         </span>
                       </div>
@@ -763,6 +772,11 @@ export default function MessagesPage() {
                         ? 'Bạn đã chặn người dùng này. Phòng chat hiện ở chế độ chỉ đọc.'
                         : 'Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.'}
                       {selectedMatch.endReason && <span className="ml-1">Lý do: {selectedMatch.endReason}</span>}
+                    </div>
+                  )}
+                  {selectedMatch.status === 'ACTIVE' && chatModerated && (
+                    <div className="shrink-0 border-b bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+                      Phòng chat tạm khóa vì một hồ sơ thú cưng hiện không khả dụng. Bạn vẫn có thể xem lịch sử trò chuyện.
                     </div>
                   )}
 
@@ -825,9 +839,11 @@ export default function MessagesPage() {
                   </div>
 
                   {/* Chat Input Bar */}
-                  {selectedMatch.status === 'CANCELLED' ? (
+                  {chatReadOnly ? (
                     <div className="shrink-0 border-t bg-muted/30 p-4 text-center text-xs font-bold text-muted-foreground">
-                      Phòng chat chỉ đọc
+                      {chatModerated
+                        ? 'Phòng chat chỉ đọc cho đến khi quản trị viên khôi phục hồ sơ.'
+                        : 'Phòng chat chỉ đọc'}
                     </div>
                   ) : (
                     <form onSubmit={handleSendMessage} className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-t bg-card p-4">
@@ -886,8 +902,10 @@ export default function MessagesPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {incomingRequests.map((req) => (
-                  <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                {incomingRequests.map((req) => {
+                  const matchingLocked = req.femalePet.status !== 'ACTIVE' || req.malePet.status !== 'ACTIVE';
+                  return (
+                    <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
                     <div className="flex items-start gap-4">
                       <img
                         src={req.femalePet.avatarUrl || '/placeholder.svg'}
@@ -913,16 +931,23 @@ export default function MessagesPage() {
                       </div>
                     )}
 
+                    {matchingLocked && (
+                      <p className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                        Yêu cầu tạm khóa vì một hồ sơ thú cưng không khả dụng.
+                      </p>
+                    )}
+
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <Button variant="outline" className="rounded-xl font-bold" onClick={() => respondRequest(req.id, 'reject')}>
                         <X className="mr-1 size-4" /> Từ chối
                       </Button>
-                      <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
+                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
                         <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
                       </Button>
                     </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )
           ) : (

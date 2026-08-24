@@ -1,5 +1,7 @@
 import api from "@/lib/axios";
 
+export type PetStatus = "ACTIVE" | "HIDDEN" | "INACTIVE";
+
 export type PetDocument = {
   id: string;
   type: "VACCINE_RECORD" | "PEDIGREE_CERT" | "HEALTH_CHECK";
@@ -41,7 +43,7 @@ export type Pet = {
   breedingFee?: number | null;
   shareLitterCount?: number | null;
   totalBreedings: number;
-  status: "ACTIVE" | "HIDDEN" | "INACTIVE";
+  status: PetStatus;
   createdAt: string;
   updatedAt: string;
 };

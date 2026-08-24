@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X } from 'lucide-react';
+import Image from 'next/image';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PawPrint, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Pagination,
   PaginationContent,
@@ -23,6 +27,7 @@ import {
   adminApi,
   ApprovalStatus,
   ComplaintAction,
+  DocumentStatus,
   HidePetReason,
   ModerateReportAbusePayload,
   ResolveMatchingReportPayload,
@@ -41,12 +46,8 @@ type PetModerationFlow = {
   pet: Row;
 };
 
-type PetDocumentReviewFlow = {
-  status: 'REJECTED' | 'NEED_MORE_INFO';
-  document: Row;
-};
-
 type ReuploadDocumentType = 'VACCINE_RECORD' | 'PEDIGREE_CERT';
+type PetVerificationFilter = 'ALL' | 'PENDING' | 'VERIFIED' | 'NEED_MORE_INFO' | 'NONE';
 
 const ADMIN_PAGE_SIZE = 10;
 
@@ -87,30 +88,9 @@ const sectionConfig: Record<string, {
   },
   pets: {
     title: 'Thú cưng',
-    description: 'Giám sát hồ sơ thú cưng trên toàn hệ thống và trạng thái hiển thị.',
+    description: 'Xem toàn bộ hồ sơ, giấy tờ xác minh và xử lý yêu cầu duyệt tại một nơi.',
     loader: adminApi.pets,
-    columns: [
-      { key: 'name', label: 'Thú cưng' },
-      { key: 'species', label: 'Loài' },
-      { key: 'breed', label: 'Giống' },
-      { key: 'owner', label: 'Chủ sở hữu', render: (row) => row.owner?.name ?? '-' },
-      { key: 'verificationBadge', label: 'Xác minh', render: (row) => formatStatus(row.verificationBadge) },
-      { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
-    ],
-  },
-  'pet-verifications': {
-    title: 'Xác minh thú cưng',
-    description: 'Kiểm tra giấy tờ người dùng tải lên và xác nhận hồ sơ thú cưng.',
-    loader: adminApi.petVerifications,
-    columns: [
-      { key: 'pet', label: 'Thú cưng', render: (row) => row.pet?.name ?? '-' },
-      { key: 'type', label: 'Loại giấy tờ', render: (row) => formatDocumentType(row.type) },
-      { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
-      { key: 'imageUrls', label: 'Tài liệu', render: (row) => renderDocumentLinks(row.imageUrls) },
-      { key: 'userNote', label: 'Ghi chú người dùng', render: (row) => row.userNote ?? '-' },
-      { key: 'reviewNote', label: 'Phản hồi Admin', render: (row) => row.reviewNote ?? '-' },
-      { key: 'createdAt', label: 'Ngày gửi', render: dateCell },
-    ],
+    columns: [],
   },
   stores: {
     title: 'Tổng quan cửa hàng',
@@ -206,7 +186,10 @@ const sectionConfig: Record<string, {
 
 export default function AdminSectionPage() {
   const params = useParams<{ section: string }>();
-  const section = params.section;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedSection = params.section;
+  const section = requestedSection === 'pet-verifications' ? 'pets' : requestedSection;
   const config = sectionConfig[section] ?? sectionConfig.reports;
   const hasActions = !readOnlySections.has(section);
   const [rows, setRows] = useState<Row[]>([]);
@@ -217,9 +200,12 @@ export default function AdminSectionPage() {
   const [complaintStatus, setComplaintStatus] = useState('PENDING');
   const [reportSearch, setReportSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [petVerificationFilter, setPetVerificationFilter] = useState<PetVerificationFilter>(
+    requestedSection === 'pet-verifications' || searchParams.get('verification') === 'pending' ? 'PENDING' : 'ALL',
+  );
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] = useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] = useState<PetModerationFlow | null>(null);
-  const [petDocumentReviewFlow, setPetDocumentReviewFlow] = useState<PetDocumentReviewFlow | null>(null);
+  const [petDetail, setPetDetail] = useState<Row | null>(null);
   const [matchingReportDetail, setMatchingReportDetail] = useState<Row | null>(null);
   const [matchingReportLoading, setMatchingReportLoading] = useState(false);
 
@@ -238,6 +224,12 @@ export default function AdminSectionPage() {
   }, [load]);
 
   useEffect(() => {
+    if (requestedSection === 'pet-verifications') {
+      router.replace('/admin/pets?verification=pending');
+    }
+  }, [requestedSection, router]);
+
+  useEffect(() => {
     if (section !== 'reports') return;
     const query = new URLSearchParams(window.location.search);
     const status = query.get('status');
@@ -248,6 +240,11 @@ export default function AdminSectionPage() {
   }, [section]);
 
   const visibleRows = useMemo(() => {
+    if (section === 'pets') {
+      return [...rows]
+        .filter((row) => petMatchesVerificationFilter(row, petVerificationFilter))
+        .sort((left, right) => Number(hasActionablePetDocument(right)) - Number(hasActionablePetDocument(left)));
+    }
     if (section !== 'reports') return rows;
     const normalizedSearch = reportSearch.trim().toLocaleLowerCase('vi');
     return rows.filter((row) =>
@@ -264,7 +261,7 @@ export default function AdminSectionPage() {
         formatMatchingReportReason(row.reason),
       ].some((value) => String(value ?? '').toLocaleLowerCase('vi').includes(normalizedSearch))),
     );
-  }, [complaintStatus, complaintTarget, reportSearch, rows, section]);
+  }, [complaintStatus, complaintTarget, petVerificationFilter, reportSearch, rows, section]);
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / ADMIN_PAGE_SIZE));
   const activePage = Math.min(currentPage, totalPages);
@@ -274,6 +271,13 @@ export default function AdminSectionPage() {
   );
 
   const titleStats = useMemo(() => {
+    if (section === 'pets') {
+      return {
+        total: rows.length,
+        active: rows.filter((row) => row.verificationBadge === 'VERIFIED').length,
+        pending: rows.filter(hasActionablePetDocument).length,
+      };
+    }
     if (section === 'system-profile') {
       const profile = rows[0];
       return {
@@ -414,7 +418,7 @@ export default function AdminSectionPage() {
           </div>
           <div className="grid grid-cols-3 gap-3 self-center">
             <MiniStat label={section === 'system-profile' ? 'Cơ sở' : section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : section === 'spa-services' ? 'Dịch vụ' : 'Tổng'} value={titleStats.total} />
-            <MiniStat label={section === 'system-profile' ? 'Đang hoạt động' : ['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : 'Hoạt động'} value={titleStats.active} />
+            <MiniStat label={section === 'system-profile' ? 'Đang hoạt động' : ['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : section === 'pets' ? 'Đã xác minh' : 'Hoạt động'} value={titleStats.active} />
             <MiniStat label={section === 'system-profile' || section === 'spa-services' ? 'Tạm ngừng' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
           </div>
         </div>
@@ -429,6 +433,21 @@ export default function AdminSectionPage() {
           <div className="p-6">
             <p className="font-black text-red-700">{error}</p>
           </div>
+        ) : section === 'pets' ? (
+          <PetManagementPanel
+            allPets={rows}
+            pets={paginatedRows}
+            filter={petVerificationFilter}
+            currentPage={activePage}
+            totalItems={visibleRows.length}
+            onFilterChange={(value) => {
+              setPetVerificationFilter(value);
+              setCurrentPage(1);
+              window.history.replaceState(null, '', value === 'PENDING' ? '/admin/pets?verification=pending' : '/admin/pets');
+            }}
+            onPageChange={setCurrentPage}
+            onInspect={setPetDetail}
+          />
         ) : section === 'users' ? (
           <UserManagementPanel
             users={rows}
@@ -497,8 +516,6 @@ export default function AdminSectionPage() {
                             busy={savingId === row.id}
                             onAction={(action, success) => runAction(row, action, success)}
                             onRoleChange={(nextRole) => handleRoleChange(row, nextRole)}
-                            onPetModeration={(mode) => setPetModerationFlow({ mode, pet: row })}
-                            onPetDocumentReview={(status) => setPetDocumentReviewFlow({ status, document: row })}
                             onInspectMatchingReport={() => inspectMatchingReport(row)}
                           />
                         </td>
@@ -519,7 +536,7 @@ export default function AdminSectionPage() {
               currentPage={activePage}
               totalItems={visibleRows.length}
               onPageChange={setCurrentPage}
-              itemLabel="phản ánh"
+              itemLabel={section === 'pets' ? 'thú cưng' : section === 'reports' ? 'phản ánh' : 'mục'}
             />
           </div>
         )}
@@ -548,13 +565,14 @@ export default function AdminSectionPage() {
         />
       )}
 
-      {petDocumentReviewFlow && (
-        <PetDocumentReviewDialog
-          flow={petDocumentReviewFlow}
-          onClose={() => setPetDocumentReviewFlow(null)}
-          onSuccess={() => {
-            setPetDocumentReviewFlow(null);
-            load();
+      {petDetail && (
+        <PetDetailDialog
+          pet={petDetail}
+          onClose={() => setPetDetail(null)}
+          onChanged={load}
+          onModerate={(mode) => {
+            setPetDetail(null);
+            setPetModerationFlow({ mode, pet: petDetail });
           }}
         />
       )}
@@ -1075,7 +1093,7 @@ function UserManagementPanel({
                     {user.isVerified ? 'Đã xác thực' : 'Chưa xác thực'}
                   </span>
                 </td>
-                <td className="px-4 py-4"><AccountStatusBadge status={user.accountStatus} /></td>
+                <td className="px-4 py-4"><StatusBadge status={user.accountStatus} /></td>
                 <td className="px-4 py-4 text-sm font-semibold text-[#64748B]">{dateCell(user)}</td>
                 <td className="px-4 py-4">
                   <ActionGroup
@@ -1084,7 +1102,6 @@ function UserManagementPanel({
                     busy={savingId === user.id}
                     onAction={(action, success) => onRunAction(user, action, success)}
                     onRoleChange={(role) => onRoleChange(user, role)}
-                    onPetModeration={() => undefined}
                   />
                 </td>
               </tr>
@@ -1130,10 +1147,124 @@ function RoleBadge({ role }: { role?: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${tones[role ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>{formatRole(role)}</span>;
 }
 
-function AccountStatusBadge({ status, label }: { status?: string; label?: ReactNode }) {
-  const tone = status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : status === 'SUSPENDED' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800';
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black ${tone}`}><span className="size-2 rounded-full bg-current opacity-70" />{label ?? formatStatus(status)}</span>;
+function StatusBadge({ status, label, compact = false }: { status?: string; label?: ReactNode; compact?: boolean }) {
+  const tones: Record<string, string> = {
+    ACTIVE: 'bg-emerald-50 text-emerald-700',
+    APPROVED: 'bg-emerald-50 text-emerald-700',
+    VERIFIED: 'bg-emerald-50 text-emerald-700',
+    PENDING: 'bg-amber-50 text-amber-800',
+    HIDDEN: 'bg-amber-50 text-amber-800',
+    REVIEWING: 'bg-sky-50 text-sky-700',
+    NEED_MORE_INFO: 'bg-orange-50 text-orange-700',
+    REJECTED: 'bg-red-50 text-red-700',
+    SUSPENDED: 'bg-red-50 text-red-700',
+    INACTIVE: 'bg-slate-100 text-slate-600',
+    NONE: 'bg-slate-100 text-slate-600',
+  };
+  return (
+    <Badge
+      variant="secondary"
+      title={typeof label === 'string' ? label : formatStatus(status)}
+      className={`max-w-full rounded-full border-0 font-black ${compact ? 'gap-1 px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'} ${tones[status ?? 'NONE'] ?? tones.NONE}`}
+    >
+      <span className={`${compact ? 'size-1.5' : 'size-2'} rounded-full bg-current opacity-70`} />
+      <span className="truncate">{label ?? formatStatus(status)}</span>
+    </Badge>
+  );
 }
+
+function hasActionablePetDocument(pet: Row) {
+  return Boolean(pet.documents?.some((document: Row) => ['PENDING', 'REVIEWING'].includes(document.status)));
+}
+
+function petMatchesVerificationFilter(pet: Row, filter: PetVerificationFilter) {
+  if (filter === 'ALL') return true;
+  if (filter === 'PENDING') return hasActionablePetDocument(pet);
+  if (filter === 'VERIFIED') return pet.verificationBadge === 'VERIFIED';
+  if (filter === 'NEED_MORE_INFO') return Boolean(pet.documents?.some((document: Row) => document.status === 'NEED_MORE_INFO'));
+  return !pet.documents?.length;
+}
+
+function renderPetIdentity(row: Row) {
+  return (
+    <div className="flex items-center gap-3 whitespace-normal">
+      <span className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted/30">
+        {row.avatarUrl
+          ? <Image src={row.avatarUrl} alt={row.name ?? 'Thú cưng'} fill sizes="48px" unoptimized className="object-cover" />
+          : <PawPrint className="size-5 text-muted-foreground/70" />}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate font-black text-foreground" title={row.name}>
+          {row.name ?? '-'}
+        </span>
+        <span className="mt-1 block truncate text-[10px] font-bold uppercase text-muted-foreground">
+          #{String(row.id ?? '').slice(-6).toUpperCase()}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function renderPetProfileSummary(row: Row) {
+  const breed = row.breed ?? '-';
+  return (
+    <div className="min-w-0 whitespace-normal">
+      <p className="truncate font-black text-foreground">
+        {formatSpecies(row.species)} · {formatGender(row.gender)}
+      </p>
+      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground" title={breed}>{breed}</p>
+    </div>
+  );
+}
+
+function renderPetOwner(row: Row) {
+  return (
+    <div className="min-w-0 whitespace-normal">
+      <p className="truncate font-black text-foreground">{row.owner?.name ?? '-'}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground" title={row.owner?.email}>{row.owner?.email ?? '-'}</p>
+    </div>
+  );
+}
+
+function renderPetDocumentSummary(row: Row) {
+  const documents: Row[] = row.documents ?? [];
+  if (!documents.length) return <StatusBadge status="NONE" />;
+  return (
+    <div className="grid min-w-0 gap-1.5 whitespace-normal">
+      {documents.slice(0, 2).map((document) => (
+        <div key={document.id} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-background px-2.5 py-1.5">
+          <span className="line-clamp-2 min-w-0 flex-1 text-[11px] font-bold leading-4 text-foreground" title={formatDocumentType(document.type)}>
+            {formatDocumentType(document.type)}
+          </span>
+          <StatusBadge status={document.status} compact />
+        </div>
+      ))}
+      {documents.length > 2 && <span className="text-xs font-bold text-muted-foreground">+{documents.length - 2} giấy tờ khác</span>}
+    </div>
+  );
+}
+
+function PetVerificationSummaryBadge({ pet }: { pet: Row }) {
+  const documents: Row[] = pet.documents ?? [];
+  const pendingCount = documents.filter((document) => ['PENDING', 'REVIEWING'].includes(document.status)).length;
+  const needMoreInfoCount = documents.filter((document) => document.status === 'NEED_MORE_INFO').length;
+  const rejectedCount = documents.filter((document) => document.status === 'REJECTED').length;
+
+  if (pendingCount) {
+    return <StatusBadge status="PENDING" label={`Chờ duyệt · ${pendingCount}`} />;
+  }
+  if (needMoreInfoCount) {
+    return <StatusBadge status="NEED_MORE_INFO" label={`Cần bổ sung · ${needMoreInfoCount}`} />;
+  }
+  if (pet.verificationBadge === 'VERIFIED') {
+    return <StatusBadge status="VERIFIED" />;
+  }
+  if (rejectedCount) {
+    return <StatusBadge status="REJECTED" label={`Từ chối · ${rejectedCount}`} />;
+  }
+  return <StatusBadge status="NONE" />;
+}
+
 
 function getInitials(name?: string) {
   if (!name?.trim()) return 'U';
@@ -2070,8 +2201,6 @@ function ActionGroup({
   busy,
   onAction,
   onRoleChange,
-  onPetModeration,
-  onPetDocumentReview,
   onInspectMatchingReport,
 }: {
   section: string;
@@ -2079,8 +2208,6 @@ function ActionGroup({
   busy: boolean;
   onAction: (action: () => Promise<unknown>, success: string) => void;
   onRoleChange: (role: AdminRole) => void;
-  onPetModeration: (mode: 'HIDE' | 'RESTORE') => void;
-  onPetDocumentReview?: (status: 'REJECTED' | 'NEED_MORE_INFO') => void;
   onInspectMatchingReport?: () => void;
 }) {
   if (busy) {
@@ -2114,30 +2241,6 @@ function ActionGroup({
             {accountStatusOptions.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}
           </select>
         </label>
-      </div>
-    );
-  }
-
-  if (section === 'pet-verifications') {
-    return (
-      <div className="flex justify-end gap-2">
-        <IconButton label="Duyệt" icon={CheckCircle2} onClick={() => onAction(() => adminApi.reviewPetVerification(row.id, 'APPROVED'), 'Đã duyệt giấy tờ thú cưng.')} />
-        <IconButton label="Yêu cầu bổ sung" icon={ShieldAlert} onClick={() => onPetDocumentReview?.('NEED_MORE_INFO')} />
-        <IconButton label="Từ chối" icon={XCircle} onClick={() => onPetDocumentReview?.('REJECTED')} />
-      </div>
-    );
-  }
-
-  if (section === 'pets') {
-    if (row.status === 'INACTIVE') {
-      return <span className="block text-right text-xs font-black text-[#64748B]">Chủ sở hữu đã ngừng</span>;
-    }
-
-    return (
-      <div className="flex justify-end">
-        {row.status === 'HIDDEN'
-          ? <IconButton label="Khôi phục" icon={Eye} onClick={() => onPetModeration('RESTORE')} />
-          : <IconButton label="Ẩn" icon={EyeOff} onClick={() => onPetModeration('HIDE')} />}
       </div>
     );
   }
@@ -2397,10 +2500,6 @@ function normalizeRows(section: string, data: Row[] | Row): Row[] {
     return data.length ? [data[0]] : [];
   }
 
-  if (section === 'pet-verifications' && Array.isArray(data)) {
-    return data.filter((row) => ['PENDING', 'REVIEWING', 'NEED_MORE_INFO'].includes(row.status));
-  }
-
   return Array.isArray(data) ? data : [];
 }
 
@@ -2433,82 +2532,403 @@ function formatComplaintTarget(target?: string) {
   return target ? labels[target] ?? target : '-';
 }
 
-function PetDocumentReviewDialog({
-  flow,
-  onClose,
-  onSuccess,
+function PetVerificationFilters({
+  rows,
+  value,
+  onChange,
 }: {
-  flow: PetDocumentReviewFlow;
-  onClose: () => void;
-  onSuccess: () => void;
+  rows: Row[];
+  value: PetVerificationFilter;
+  onChange: (value: PetVerificationFilter) => void;
 }) {
-  const [reviewNote, setReviewNote] = useState('');
+  const options: Array<{ value: PetVerificationFilter; label: string; count: number }> = [
+    { value: 'ALL', label: 'Tất cả', count: rows.length },
+    { value: 'PENDING', label: 'Chờ duyệt', count: rows.filter(hasActionablePetDocument).length },
+    { value: 'VERIFIED', label: 'Đã xác minh', count: rows.filter((row) => row.verificationBadge === 'VERIFIED').length },
+    { value: 'NEED_MORE_INFO', label: 'Cần bổ sung', count: rows.filter((row) => row.documents?.some((document: Row) => document.status === 'NEED_MORE_INFO')).length },
+    { value: 'NONE', label: 'Chưa có giấy tờ', count: rows.filter((row) => !row.documents?.length).length },
+  ];
+
+  return (
+    <div className="border-b bg-muted/20 px-5 py-4">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Lọc thú cưng theo trạng thái xác minh">
+        {options.map((option) => (
+          <Button
+            key={option.value}
+            type="button"
+            role="tab"
+            aria-selected={value === option.value}
+            onClick={() => onChange(option.value)}
+            size="sm"
+            variant={value === option.value ? 'default' : 'outline'}
+            className="rounded-lg text-xs font-black"
+          >
+            {option.label}
+            <Badge
+              variant="secondary"
+              className={`border-0 px-1.5 py-0 text-[10px] ${value === option.value ? 'bg-white/20 text-white' : 'bg-muted text-muted-foreground'}`}
+            >
+              {option.count}
+            </Badge>
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PetManagementPanel({
+  allPets,
+  pets,
+  filter,
+  currentPage,
+  totalItems,
+  onFilterChange,
+  onPageChange,
+  onInspect,
+}: {
+  allPets: Row[];
+  pets: Row[];
+  filter: PetVerificationFilter;
+  currentPage: number;
+  totalItems: number;
+  onFilterChange: (value: PetVerificationFilter) => void;
+  onPageChange: (page: number) => void;
+  onInspect: (pet: Row) => void;
+}) {
+  return (
+    <div>
+      <PetVerificationFilters rows={allPets} value={filter} onChange={onFilterChange} />
+      <Table className="w-full table-fixed">
+        <TableHeader className="bg-muted/35">
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[17%] px-4 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Thú cưng</TableHead>
+            <TableHead className="w-[12%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Thông tin</TableHead>
+            <TableHead className="w-[17%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Chủ sở hữu</TableHead>
+            <TableHead className="w-[19%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Giấy tờ</TableHead>
+            <TableHead className="w-[12%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Xác minh</TableHead>
+            <TableHead className="w-[11%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Trạng thái</TableHead>
+            <TableHead className="w-[12%] px-4 text-right text-[11px] font-black uppercase tracking-wider text-muted-foreground">Thao tác</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pets.map((pet) => (
+            <TableRow key={pet.id} className="group">
+              <TableCell className="px-4 py-4 whitespace-normal">{renderPetIdentity(pet)}</TableCell>
+              <TableCell className="px-3 py-4 whitespace-normal">{renderPetProfileSummary(pet)}</TableCell>
+              <TableCell className="px-3 py-4 whitespace-normal">{renderPetOwner(pet)}</TableCell>
+              <TableCell className="px-3 py-4 whitespace-normal">{renderPetDocumentSummary(pet)}</TableCell>
+              <TableCell className="px-3 py-4 whitespace-normal"><PetVerificationSummaryBadge pet={pet} /></TableCell>
+              <TableCell className="px-3 py-4 whitespace-normal"><StatusBadge status={pet.status} label={formatStatus(pet.status)} /></TableCell>
+              <TableCell className="px-4 py-4 text-right">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={hasActionablePetDocument(pet) ? 'default' : 'outline'}
+                  onClick={() => onInspect(pet)}
+                  aria-label={hasActionablePetDocument(pet) ? `Xem và duyệt hồ sơ ${pet.name}` : `Xem chi tiết hồ sơ ${pet.name}`}
+                  className="w-full max-w-[132px] rounded-lg px-2 text-xs font-black"
+                >
+                  <Eye className="size-4" />
+                  <span className="hidden lg:inline">{hasActionablePetDocument(pet) ? 'Xem & duyệt' : 'Chi tiết'}</span>
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {!pets.length && (
+            <TableRow>
+              <TableCell colSpan={7} className="h-40 text-center whitespace-normal text-sm font-semibold text-muted-foreground">
+                Không có thú cưng phù hợp với bộ lọc này.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+      <AdminPagination currentPage={currentPage} totalItems={totalItems} onPageChange={onPageChange} itemLabel="thú cưng" />
+    </div>
+  );
+}
+
+function PetDetailDialog({
+  pet,
+  onClose,
+  onChanged,
+  onModerate,
+}: {
+  pet: Row;
+  onClose: () => void;
+  onChanged: () => void;
+  onModerate: (mode: 'HIDE' | 'RESTORE') => void;
+}) {
+  const [detail, setDetail] = useState<Row | null>(null);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const isRejected = flow.status === 'REJECTED';
+  const [reviewIntent, setReviewIntent] = useState<{ documentId: string; status: DocumentStatus } | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const loadDetail = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await adminApi.pet(pet.id);
+      setDetail(response.data);
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
+      setError(message ?? 'Không thể tải chi tiết hồ sơ thú cưng.');
+    } finally {
+      setLoading(false);
+    }
+  }, [pet.id]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void loadDetail(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadDetail]);
+
+  const beginReview = (documentId: string, status: DocumentStatus) => {
+    setReviewIntent({ documentId, status });
+    setReviewNote('');
+    setError('');
+  };
+
+  const submitReview = async () => {
+    if (!reviewIntent) return;
     const normalizedNote = reviewNote.trim();
-    if (!normalizedNote) {
-      setError(isRejected ? 'Vui lòng nhập lý do từ chối.' : 'Vui lòng ghi rõ thông tin cần bổ sung.');
+    if (reviewIntent.status !== 'APPROVED' && !normalizedNote) {
+      setError(reviewIntent.status === 'REJECTED' ? 'Vui lòng nhập lý do từ chối.' : 'Vui lòng ghi rõ thông tin cần bổ sung.');
       return;
     }
 
     setSaving(true);
     setError('');
     try {
-      await adminApi.reviewPetVerification(flow.document.id, flow.status, normalizedNote);
-      toast.success(isRejected ? 'Đã từ chối giấy tờ thú cưng.' : 'Đã yêu cầu bổ sung thông tin.');
-      onSuccess();
+      await adminApi.reviewPetDocument(reviewIntent.documentId, reviewIntent.status, normalizedNote || undefined);
+      toast.success(
+        reviewIntent.status === 'APPROVED'
+          ? 'Đã duyệt giấy tờ thú cưng.'
+          : reviewIntent.status === 'REJECTED'
+            ? 'Đã từ chối giấy tờ thú cưng.'
+            : 'Đã yêu cầu bổ sung thông tin.',
+      );
+      setReviewIntent(null);
+      setReviewNote('');
+      await loadDetail();
+      onChanged();
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })
-        .response?.data?.message;
+      const message = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
       setError(message ?? 'Không thể cập nhật kết quả xác minh.');
     } finally {
       setSaving(false);
     }
   };
 
+  const profileImages = detail
+    ? Array.from(new Set([detail.avatarUrl, ...(detail.gallery ?? [])].filter(Boolean))) as string[]
+    : [];
+  const documents: Row[] = detail?.documents ?? [];
+
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isRejected ? 'Từ chối giấy tờ' : 'Yêu cầu bổ sung giấy tờ'}</DialogTitle>
-          <DialogDescription>
-            {flow.document.pet?.name ?? 'Thú cưng'} · {formatDocumentType(flow.document.type)}
-          </DialogDescription>
+      <DialogContent className="grid max-h-[92vh] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-5xl">
+        <DialogHeader className="border-b border-[#E5EAF0] px-6 py-5 pr-14 text-left">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Chi tiết hồ sơ thú cưng</p>
+              <DialogTitle className="mt-1 text-2xl">{detail?.name ?? pet.name}</DialogTitle>
+              <DialogDescription className="mt-1">
+                Xem đầy đủ thông tin và giấy tờ trước khi đưa ra quyết định.
+              </DialogDescription>
+            </div>
+            {detail && detail.status !== 'INACTIVE' && (
+              <button
+                type="button"
+                onClick={() => onModerate(detail.status === 'HIDDEN' ? 'RESTORE' : 'HIDE')}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#475569] transition hover:border-primary hover:text-primary"
+              >
+                {detail.status === 'HIDDEN' ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                {detail.status === 'HIDDEN' ? 'Khôi phục hồ sơ' : 'Ẩn hồ sơ'}
+              </button>
+            )}
+          </div>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={submit}>
-          <label className="grid gap-2 text-sm font-black text-[#172033]">
-            {isRejected ? 'Lý do từ chối' : 'Thông tin cần bổ sung'} <span className="text-red-600">*</span>
-            <textarea
-              autoFocus
-              required
-              maxLength={1000}
-              rows={5}
-              value={reviewNote}
-              onChange={(event) => setReviewNote(event.target.value)}
-              placeholder={isRejected ? 'Nêu rõ lý do giấy tờ không được chấp nhận...' : 'Nêu rõ giấy tờ hoặc thông tin người dùng cần bổ sung...'}
-              className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
-            />
-          </label>
-          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-[#64748B]">
-            <span>{error && <span className="text-red-700">{error}</span>}</span>
-            <span>{reviewNote.length}/1000</span>
+
+        {loading ? (
+          <div className="flex min-h-80 items-center justify-center"><Loader2 className="size-8 animate-spin text-primary" /></div>
+        ) : detail ? (
+          <div className="grid min-h-0 gap-6 overflow-x-hidden overflow-y-auto p-6">
+            <section className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+              <div>
+                <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-[#D8E0EA] bg-[#F4F7FA]">
+                  {profileImages[0] ? (
+                    <button type="button" onClick={() => setViewingImageUrl(profileImages[0])} className="relative size-full">
+                      <Image src={profileImages[0]} alt={detail.name} fill sizes="240px" unoptimized className="object-cover" />
+                    </button>
+                  ) : <PawPrint className="size-16 text-[#94A3B8]" />}
+                </div>
+                {profileImages.length > 1 && (
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {profileImages.slice(1, 5).map((url, index) => (
+                      <button key={url} type="button" onClick={() => setViewingImageUrl(url)} className="relative aspect-square overflow-hidden rounded-lg border border-[#D8E0EA]">
+                        <Image src={url} alt={`${detail.name} ${index + 2}`} fill sizes="52px" unoptimized className="object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid content-start gap-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <PetDetailField label="Loài" value={formatSpecies(detail.species)} />
+                  <PetDetailField label="Giống" value={detail.breed} />
+                  <PetDetailField label="Giới tính" value={formatGender(detail.gender)} />
+                  <PetDetailField label="Ngày sinh" value={formatDateValue(detail.birthday)} />
+                  <PetDetailField label="Cân nặng" value={detail.weight != null ? `${detail.weight} kg` : '-'} />
+                  <PetDetailField label="Khu vực" value={[detail.ward, detail.district, detail.location].filter(Boolean).join(', ') || '-'} />
+                </div>
+                <div className="rounded-xl border border-[#D8E0EA] bg-[#F7F9FB] p-4">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-[#64748B]">Chủ sở hữu</p>
+                  <p className="mt-2 font-black text-[#172033]">{detail.owner?.name ?? '-'}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#64748B]">{detail.owner?.email ?? '-'}</p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-2.5">
+                      <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-[#64748B]">Tài khoản chủ</p>
+                      <StatusBadge status={detail.owner?.accountStatus} label={formatStatus(detail.owner?.accountStatus)} />
+                    </div>
+                    <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-2.5">
+                      <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-[#64748B]">Hồ sơ thú cưng</p>
+                      <StatusBadge status={detail.status} label={formatStatus(detail.status)} />
+                    </div>
+                    <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-2.5">
+                      <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-[#64748B]">Xác minh giấy tờ</p>
+                      <StatusBadge status={detail.verificationBadge} label={formatStatus(detail.verificationBadge)} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-wider text-primary">Giấy tờ xác minh</p>
+                  <h3 className="mt-1 text-lg font-black text-[#172033]">{documents.length} giấy tờ trong hồ sơ</h3>
+                </div>
+                <span className="text-xs font-bold text-[#64748B]">
+                  {documents.filter((document) => ['PENDING', 'REVIEWING'].includes(document.status)).length} giấy tờ đang chờ duyệt
+                </span>
+              </div>
+
+              {documents.length ? (
+                <div className="grid gap-3">
+                  {documents.map((document) => {
+                    const canReview = ['PENDING', 'REVIEWING'].includes(document.status);
+                    const activeReview = reviewIntent?.documentId === document.id ? reviewIntent : null;
+                    return (
+                      <article key={document.id} className="rounded-xl border border-[#D8E0EA] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-black text-[#172033]">{document.title || formatDocumentType(document.type)}</h4>
+                              <StatusBadge status={document.status} />
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-[#64748B]">Gửi ngày {formatDateValue(document.createdAt)}</p>
+                          </div>
+                          {canReview && (
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => beginReview(document.id, 'APPROVED')} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700">
+                                <CheckCircle2 className="size-4" /> Duyệt
+                              </button>
+                              <button type="button" onClick={() => beginReview(document.id, 'NEED_MORE_INFO')} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-800 hover:bg-amber-100">
+                                <ShieldAlert className="size-4" /> Yêu cầu bổ sung
+                              </button>
+                              <button type="button" onClick={() => beginReview(document.id, 'REJECTED')} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 text-xs font-black text-red-700 hover:bg-red-100">
+                                <XCircle className="size-4" /> Từ chối
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {activeReview && (
+                          <div className={`mt-3 rounded-lg border px-3 py-2.5 ${activeReview.status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50/70' : activeReview.status === 'REJECTED' ? 'border-red-200 bg-red-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-black text-[#172033]">
+                                  {activeReview.status === 'APPROVED'
+                                    ? 'Xác nhận duyệt giấy tờ này?'
+                                    : activeReview.status === 'REJECTED'
+                                      ? 'Nhập lý do từ chối giấy tờ này'
+                                      : 'Nhập thông tin người dùng cần bổ sung'}
+                                </p>
+                                <p className="mt-0.5 truncate text-xs font-semibold text-[#64748B]" title={document.title || formatDocumentType(document.type)}>
+                                  {document.title || formatDocumentType(document.type)} · {detail.name}
+                                </p>
+                                {activeReview.status !== 'APPROVED' && (
+                                  <textarea
+                                    autoFocus
+                                    maxLength={1000}
+                                    rows={2}
+                                    value={reviewNote}
+                                    onChange={(event) => setReviewNote(event.target.value)}
+                                    placeholder={activeReview.status === 'REJECTED' ? 'Nêu rõ lý do từ chối...' : 'Nêu rõ nội dung cần bổ sung...'}
+                                    className="mt-2 w-full resize-none rounded-lg border border-[#D8E0EA] bg-white p-2.5 text-sm font-semibold outline-none focus:border-primary focus:ring-4 focus:ring-primary/10"
+                                  />
+                                )}
+                                {error && <p className="mt-1.5 text-xs font-bold text-red-700">{error}</p>}
+                              </div>
+                              <div className="flex shrink-0 gap-2">
+                                <button type="button" onClick={() => { setReviewIntent(null); setError(''); }} disabled={saving} className="rounded-lg border border-[#D8E0EA] bg-white px-3 py-2 text-xs font-black text-[#475569] disabled:opacity-50">
+                                  Hủy
+                                </button>
+                                <button type="button" onClick={submitReview} disabled={saving || (activeReview.status !== 'APPROVED' && !reviewNote.trim())} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black text-white disabled:opacity-50 ${activeReview.status === 'REJECTED' ? 'bg-red-600' : activeReview.status === 'NEED_MORE_INFO' ? 'bg-amber-600' : 'bg-emerald-600'}`}>
+                                  {saving && <Loader2 className="size-3.5 animate-spin" />}
+                                  {activeReview.status === 'APPROVED' ? 'Xác nhận' : activeReview.status === 'REJECTED' ? 'Từ chối' : 'Gửi yêu cầu'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-4">
+                          <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-[#64748B]">
+                            Ảnh giấy tờ người dùng đã gửi
+                          </p>
+                          <DocumentImageGallery imageUrls={document.imageUrls ?? []} documentTitle={document.title || formatDocumentType(document.type)} />
+                        </div>
+                        <div className="mt-4 grid gap-2 rounded-lg bg-[#F8FAFC] p-3 text-sm font-semibold text-[#475569]">
+                          <p><span className="font-black text-[#172033]">Ghi chú người dùng:</span> {document.userNote || '-'}</p>
+                          {document.reviewNote && <p><span className="font-black text-[#172033]">Phản hồi Admin:</span> {document.reviewNote}</p>}
+                          {document.reviewerName && <p className="text-xs">Xử lý bởi {document.reviewerName} · {formatDateValue(document.reviewedAt)}</p>}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center text-sm font-semibold text-[#64748B]">
+                  Thú cưng này chưa gửi giấy tờ xác minh.
+                </div>
+              )}
+            </section>
+
+            {error && !reviewIntent && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
           </div>
-          <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-[#D8E0EA] px-4 py-2 text-sm font-black text-[#475569] disabled:opacity-50">
-              Hủy
-            </button>
-            <button type="submit" disabled={saving || !reviewNote.trim()} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-black text-white disabled:opacity-50 ${isRejected ? 'bg-red-600' : 'bg-primary'}`}>
-              {saving && <Loader2 className="size-4 animate-spin" />}
-              {isRejected ? 'Xác nhận từ chối' : 'Gửi yêu cầu bổ sung'}
-            </button>
-          </div>
-        </form>
+        ) : (
+          <div className="p-6"><p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</p></div>
+        )}
       </DialogContent>
+      <ImageLightbox imageUrl={viewingImageUrl} alt={`Ảnh của ${detail?.name ?? pet.name}`} onClose={() => setViewingImageUrl(null)} />
     </Dialog>
+  );
+}
+
+function PetDetailField({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-[#D8E0EA] bg-white p-3">
+      <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">{label}</p>
+      <div className="mt-1 text-sm font-black text-[#172033]">{value}</div>
+    </div>
   );
 }
 
@@ -2526,7 +2946,7 @@ function formatMatchingReportReason(reason?: string) {
 
 function renderAdminCell(column: { key: string; render?: (row: Row) => ReactNode }, row: Row) {
   if (column.key === 'status' || column.key === 'accountStatus') {
-    return <AccountStatusBadge status={row[column.key]} label={column.render?.(row)} />;
+    return <StatusBadge status={row[column.key]} label={column.render?.(row)} />;
   }
   if (column.key === 'role') return <RoleBadge role={row.role} />;
   return column.render ? column.render(row) : renderValue(row[column.key]);
@@ -2635,6 +3055,24 @@ function formatDocumentType(type?: string) {
   return type ? types[type] ?? type : '-';
 }
 
+function formatSpecies(species?: string) {
+  if (species === 'DOG') return 'Chó';
+  if (species === 'CAT') return 'Mèo';
+  return species ?? '-';
+}
+
+function formatGender(gender?: string) {
+  if (gender === 'MALE') return 'Đực';
+  if (gender === 'FEMALE') return 'Cái';
+  return gender ?? '-';
+}
+
+function formatDateValue(value?: string | Date | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('vi-VN');
+}
+
 function formatPetModerationReason(reason?: string) {
   const reasons: Record<string, string> = {
     CONTENT_VIOLATION: 'Nội dung hoặc hình ảnh vi phạm',
@@ -2652,11 +3090,6 @@ function formatPetModerationReason(reason?: string) {
   return reason ? reasons[reason] ?? reason : '-';
 }
 
-function renderDocumentLinks(imageUrls?: string[]) {
-  if (!imageUrls?.length) return '-';
-  return <DocumentImageLinks imageUrls={imageUrls} />;
-}
-
 function StatusField({ label, value, onChange }: { label: string; value: ApprovalStatus; onChange: (value: string) => void }) {
   return (
     <label className="grid gap-2 text-sm font-black text-[#172033]">
@@ -2669,23 +3102,44 @@ function StatusField({ label, value, onChange }: { label: string; value: Approva
   );
 }
 
-function DocumentImageLinks({ imageUrls }: { imageUrls: string[] }) {
+function DocumentImageGallery({ imageUrls, documentTitle }: { imageUrls: string[]; documentTitle: string }) {
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+
+  if (!imageUrls.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+        Người dùng chưa tải ảnh cho giấy tờ này.
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {imageUrls.map((url, index) => (
           <button
             type="button"
             key={`${url.slice(0, 24)}-${index}`}
             onClick={() => setViewingImageUrl(url)}
-            className="rounded-lg border border-[#D8E0EA] px-2.5 py-1 text-xs font-black text-primary transition hover:border-primary hover:bg-primary/10"
+            aria-label={`Phóng to trang ${index + 1} của ${documentTitle}`}
+            title="Bấm để phóng to"
+            className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-[#D8E0EA] bg-[#F4F7FA] shadow-sm transition hover:border-primary hover:shadow-md focus:outline-none focus:ring-4 focus:ring-primary/15"
           >
-            Ảnh {index + 1}
+            <Image
+              src={url}
+              alt={`${documentTitle} - trang ${index + 1}`}
+              fill
+              sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 220px"
+              unoptimized
+              className="object-contain p-1 transition duration-200 group-hover:scale-[1.02]"
+            />
+            <span className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white opacity-80 shadow transition group-hover:opacity-100">
+              <ZoomIn className="size-4" />
+            </span>
           </button>
         ))}
       </div>
-      <ImageLightbox imageUrl={viewingImageUrl} alt="Tài liệu xác minh thú cưng" onClose={() => setViewingImageUrl(null)} />
+      <ImageLightbox imageUrl={viewingImageUrl} alt={documentTitle} onClose={() => setViewingImageUrl(null)} />
     </>
   );
 }

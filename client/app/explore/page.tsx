@@ -2,46 +2,24 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  AlertTriangle,
-  BadgeCheck,
   Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Coins,
-  Crown,
-  Filter,
   Grid,
   Heart,
-  ImageIcon,
   Inbox,
   Info,
   Layers,
-  MapPin,
-  MessageCircle,
-  MessageSquare,
-  Paperclip,
   PawPrint,
-  RotateCcw,
   Search,
-  Send,
-  Settings2,
-  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
-  Syringe,
-  ToggleLeft,
-  ToggleRight,
-  Weight,
   X,
-  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import AppHeader from '@/components/layout/AppHeader';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import type { PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -70,7 +48,7 @@ type Pet = {
   pedigreeNumber?: string | null;
   pedigreeVerified: boolean;
   vaccineVerified: boolean;
-  isAvailableForMatching: boolean;
+  status: PetStatus;
   breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
   breedingFee?: number | null;
   shareLitterCount?: number | null;
@@ -96,6 +74,7 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
+    status: PetStatus;
     owner: { name: string };
   };
   malePet: {
@@ -103,38 +82,11 @@ type MatchingRequest = {
     name: string;
     breed: string;
     avatarUrl?: string | null;
+    status: PetStatus;
     breedingOption?: string;
     breedingFee?: number | null;
     owner?: { name: string };
   };
-};
-
-type Match = {
-  id: string;
-  compatibilityScore: number;
-  createdAt: string;
-  pet1: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner: { name: string };
-  };
-  pet2: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner: { name: string };
-  };
-};
-
-type MatchMessage = {
-  id: string;
-  content: string;
-  senderId: string;
-  createdAt: string;
-  sender: { id: string; name: string; avatarUrl?: string | null };
 };
 
 type FilterState = {
@@ -165,23 +117,12 @@ const initialFilters: FilterState = {
   sortBy: 'RECOMMENDED',
 };
 
-const REASON_LABELS: Record<string, { label: string; icon: typeof Sparkles; color: string }> = {
-  same_breed:             { label: 'Cùng giống',           icon: Crown,       color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  breed_compatible:       { label: 'Giống tương thích',    icon: Zap,         color: 'text-violet-600 bg-violet-50 border-violet-200' },
-  both_pedigree:          { label: 'Cả hai có phả hệ',    icon: Crown,       color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  both_pedigree_verified: { label: 'Phả hệ xác minh',  icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  both_vaccine_verified:  { label: 'Vaccine xác minh',  icon: Syringe,     color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  same_location:          { label: 'Cùng khu vực',        icon: MapPin,      color: 'text-teal-600 bg-teal-50 border-teal-200' },
-  similar_weight:         { label: 'Cân nặng tương đồng', icon: Weight,      color: 'text-slate-600 bg-slate-50 border-slate-200' },
-};
-
 // =============================================================
 // Main Unified Matching Hub Page
 // =============================================================
 
 export default function UnifiedMatchingHubPage() {
-  // Navigation Tabs: EXPLORE (Discovery), REQUESTS (Manage Requests), CHAT (Direct Matches & Messages), SETUP (Male Setup)
-  const [activeTab, setActiveTab] = useState<'EXPLORE' | 'REQUESTS' | 'CHAT' | 'SETUP'>('EXPLORE');
+  const [activeTab, setActiveTab] = useState<'EXPLORE' | 'REQUESTS'>('EXPLORE');
   const [viewMode, setViewMode] = useState<'SWIPE' | 'GRID'>('SWIPE');
 
   // User & Pet States
@@ -194,10 +135,8 @@ export default function UnifiedMatchingHubPage() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [currentCandidateIndex, setCurrentCandidateIndex] = useState(0);
 
-  // Requests & Matches Data
+  // Requests Data
   const [incomingRequests, setIncomingRequests] = useState<MatchingRequest[]>([]);
-  const [outgoingRequests, setOutgoingRequests] = useState<MatchingRequest[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
   const [requestsTab, setRequestsTab] = useState<'INCOMING' | 'OUTGOING'>('INCOMING');
 
   // Filter Drawer & Modals State
@@ -208,25 +147,6 @@ export default function UnifiedMatchingHubPage() {
   const [requestNote, setRequestNote] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
 
-  // Celebration Match Popup
-  const [celebrativeMatch, setCelebrativeMatch] = useState<Match | null>(null);
-
-  // Chat Window State
-  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
-  const [inputText, setInputText] = useState('');
-  const [chatMessages, setChatMessages] = useState<Record<string, MatchMessage[]>>({});
-  const [currentUserId, setCurrentUserId] = useState('');
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [sendingMessage, setSendingMessage] = useState(false);
-
-  // Male Pet Setup State
-  const [isAvailable, setIsAvailable] = useState(false);
-  const [breedingOption, setBreedingOption] = useState<'CASH' | 'SHARE_LITTER' | 'NEGOTIATE'>('NEGOTIATE');
-  const [breedingFee, setBreedingFee] = useState('');
-  const [shareLitterCount, setShareLitterCount] = useState('1');
-  const [personalityNote, setPersonalityNote] = useState('');
-  const [savingSetup, setSavingSetup] = useState(false);
-
   // Derived selected pet
   const selectedPet = useMemo(() => myPets.find((p) => p.id === selectedPetId), [myPets, selectedPetId]);
   const isSelectedFemale = selectedPet?.gender === 'FEMALE';
@@ -234,11 +154,10 @@ export default function UnifiedMatchingHubPage() {
 
   // Load My Pets & Prefetch initial candidates
   useEffect(() => {
-    setLoadingPets(true);
     api
       .get<Pet[]>('/pets/my')
       .then(async (res) => {
-        const pets = res.data || [];
+        const pets = (res.data || []).filter((pet) => pet.status === 'ACTIVE');
         setMyPets(pets);
         if (pets.length > 0) {
           const firstPet = pets[0];
@@ -261,18 +180,6 @@ export default function UnifiedMatchingHubPage() {
       .catch(() => toast.error('Không tải được danh sách thú cưng.'))
       .finally(() => setLoadingPets(false));
   }, []);
-
-  // When selected pet changes, adapt defaults
-  useEffect(() => {
-    if (!selectedPet) return;
-    if (selectedPet.gender === 'MALE') {
-      setIsAvailable(selectedPet.isAvailableForMatching);
-      setBreedingOption(selectedPet.breedingOption || 'NEGOTIATE');
-      setBreedingFee(selectedPet.breedingFee ? String(selectedPet.breedingFee) : '');
-      setShareLitterCount(selectedPet.shareLitterCount ? String(selectedPet.shareLitterCount) : '1');
-      setPersonalityNote(selectedPet.personality || '');
-    }
-  }, [selectedPet]);
 
   // Load Candidates for female pet
   const handleSelectPet = useCallback(
@@ -306,58 +213,15 @@ export default function UnifiedMatchingHubPage() {
     [filters],
   );
 
-  const fetchCandidates = useCallback(() => {
-    if (!selectedPet) return;
-    handleSelectPet(selectedPet);
-  }, [selectedPet, handleSelectPet]);
-
-  useEffect(() => {
-    if (selectedPetId && isSelectedFemale && candidates.length === 0 && !loadingCandidates) {
-      fetchCandidates();
-    }
-  }, [selectedPetId, isSelectedFemale, fetchCandidates]);
-
-  // Load Requests & Matches
-  const loadRequestsAndMatches = useCallback(() => {
-    Promise.all([
-      api.get<MatchingRequest[]>('/matching/requests/incoming'),
-      api.get<Match[]>('/matching/matches'),
-    ])
-      .then(([reqRes, matchRes]) => {
-        setIncomingRequests(reqRes.data || []);
-        setMatches(matchRes.data || []);
-        if (matchRes.data && matchRes.data.length > 0 && !selectedMatch) {
-          setSelectedMatch(matchRes.data[0]);
-        }
-      })
+  const loadIncomingRequests = useCallback(() => {
+    api.get<MatchingRequest[]>('/matching/requests/incoming')
+      .then((res) => setIncomingRequests(res.data || []))
       .catch(() => {});
-  }, [selectedMatch]);
-
-  useEffect(() => {
-    loadRequestsAndMatches();
-  }, [loadRequestsAndMatches]);
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (!storedUser) return;
-    try {
-      setCurrentUserId((JSON.parse(storedUser) as { id?: string }).id || '');
-    } catch {
-      setCurrentUserId('');
-    }
   }, []);
 
   useEffect(() => {
-    if (!selectedMatch) return;
-    const matchId = selectedMatch.id;
-    setLoadingMessages(true);
-    const loadMessages = (showError = false) => api.get<MatchMessage[]>(`/matching/matches/${matchId}/messages`)
-      .then((res) => setChatMessages((prev) => ({ ...prev, [matchId]: res.data || [] })))
-      .catch(() => { if (showError) toast.error('Không tải được lịch sử trò chuyện.'); });
-    loadMessages(true).finally(() => setLoadingMessages(false));
-    const intervalId = window.setInterval(() => loadMessages(), 5000);
-    return () => window.clearInterval(intervalId);
-  }, [selectedMatch]);
+    loadIncomingRequests();
+  }, [loadIncomingRequests]);
 
   // Actions
   const handlePass = useCallback(async (candidateId: string) => {
@@ -395,58 +259,15 @@ export default function UnifiedMatchingHubPage() {
 
   const handleRespondRequest = async (id: string, action: 'accept' | 'reject') => {
     try {
-      const res = await api.post(`/matching/requests/${id}/${action}`);
+      await api.post(`/matching/requests/${id}/${action}`);
       if (action === 'accept') {
         toast.success('🎉 Đã chấp nhận yêu cầu và tạo Match thành công!');
-        if (res.data?.match) setCelebrativeMatch(res.data.match);
       } else {
         toast.success('Đã từ chối yêu cầu.');
       }
-      loadRequestsAndMatches();
+      loadIncomingRequests();
     } catch {
       toast.error('Không thể xử lý yêu cầu.');
-    }
-  };
-
-  const handleSaveSetup = async () => {
-    if (!selectedPetId) return;
-    setSavingSetup(true);
-    try {
-      await api.patch(`/pets/${selectedPetId}/availability`, {
-        isAvailableForMatching: isAvailable,
-        breedingOption,
-        breedingFee: breedingOption === 'CASH' ? Number(breedingFee) || 0 : undefined,
-        shareLitterCount: breedingOption === 'SHARE_LITTER' ? Number(shareLitterCount) || 1 : undefined,
-        personality: personalityNote.trim() || undefined,
-      });
-      toast.success('Đã lưu cấu hình phối giống thành công!');
-      // Reload my pets
-      const res = await api.get<Pet[]>('/pets/my');
-      setMyPets(res.data || []);
-    } catch {
-      toast.error('Không thể lưu cấu hình.');
-    } finally {
-      setSavingSetup(false);
-    }
-  };
-
-  const handleSendMessage = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    const input = form.querySelector('input');
-    const content = input?.value.trim() || inputText.trim();
-    if (!selectedMatch || !content || sendingMessage) return;
-    const matchId = selectedMatch.id;
-    setSendingMessage(true);
-    try {
-      const res = await api.post<MatchMessage>(`/matching/matches/${matchId}/messages`, { content });
-      setChatMessages((prev) => ({ ...prev, [matchId]: [...(prev[matchId] || []), res.data] }));
-      setInputText('');
-      form.reset();
-    } catch {
-      toast.error('Không thể gửi tin nhắn. Vui lòng thử lại.');
-    } finally {
-      setSendingMessage(false);
     }
   };
 
@@ -747,14 +568,15 @@ export default function UnifiedMatchingHubPage() {
                 icon={<Inbox className="size-10" />}
                 title="Chưa có yêu cầu ghép đôi mới nào"
                 description="Khi các thú cưng cái gửi lời mời phối giống cho bé đực của bạn, yêu cầu sẽ xuất hiện tại đây."
-                actionHref="#"
+                actionHref="/my-pets"
                 actionLabel="Cấu hình pet đực ngay"
-                onActionClick={() => setActiveTab('SETUP')}
               />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {incomingRequests.map((req) => (
-                  <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                {incomingRequests.map((req) => {
+                  const matchingLocked = req.femalePet.status !== 'ACTIVE' || req.malePet.status !== 'ACTIVE';
+                  return (
+                    <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
                     <div className="flex items-start gap-4">
                       <img src={req.femalePet.avatarUrl || '/placeholder.svg'} alt={req.femalePet.name} className="size-16 rounded-2xl object-cover border" />
                       <div className="flex-1 min-w-0">
@@ -764,16 +586,22 @@ export default function UnifiedMatchingHubPage() {
                       </div>
                     </div>
                     {req.note && <div className="rounded-xl border bg-muted/40 p-3 text-xs italic text-muted-foreground">&ldquo;{req.note}&rdquo;</div>}
+                    {matchingLocked && (
+                      <p className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                        Yêu cầu tạm khóa vì một hồ sơ thú cưng không khả dụng.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <Button variant="outline" className="rounded-xl font-bold" onClick={() => handleRespondRequest(req.id, 'reject')}>
                         <X className="mr-1 size-4" /> Từ chối
                       </Button>
-                      <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => handleRespondRequest(req.id, 'accept')}>
+                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => handleRespondRequest(req.id, 'accept')}>
                         <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
                       </Button>
                     </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )
           ) : (
@@ -785,92 +613,6 @@ export default function UnifiedMatchingHubPage() {
           )}
         </section>
       )}
-
-      {/* ================= TAB 3: DIRECT MATCH CHAT ================= */}
-      {activeTab === 'CHAT' && (
-        <section className="container mx-auto flex-1 px-4 py-6">
-          {matches.length === 0 ? (
-            <EmptyState
-              icon={<Heart className="size-10" />}
-              title="Chưa có cặp đôi ghép thành công nào"
-              description="Sau khi yêu cầu ghép đôi được chấp nhận, phòng chat trực tiếp giữa 2 chủ nuôi sẽ tự động kích hoạt."
-              actionHref="#"
-              actionLabel="Khám phá bạn đời ngay"
-              onActionClick={() => setActiveTab('EXPLORE')}
-            />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[680px] rounded-3xl border bg-card overflow-hidden shadow-xl">
-              {/* Left matches list */}
-              <div className="lg:col-span-4 border-r flex flex-col bg-muted/20">
-                <div className="p-4 border-b">
-                  <h3 className="font-extrabold text-sm">Cặp đôi thành công ({matches.length})</h3>
-                </div>
-                <div className="flex-1 overflow-y-auto divide-y">
-                  {matches.map((m) => {
-                    const isSelected = selectedMatch?.id === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setSelectedMatch(m)}
-                        className={cn('w-full p-3.5 text-left flex items-center gap-3 transition-all hover:bg-muted/50', isSelected && 'bg-primary/10 border-l-4 border-primary')}
-                      >
-                        <div className="flex -space-x-3 shrink-0">
-                          <img src={m.pet1.avatarUrl || '/placeholder.svg'} alt={m.pet1.name} className="size-10 rounded-full border-2 border-background object-cover" />
-                          <img src={m.pet2.avatarUrl || '/placeholder.svg'} alt={m.pet2.name} className="size-10 rounded-full border-2 border-background object-cover" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-extrabold text-xs truncate">{m.pet1.name} ❤️ {m.pet2.name}</h4>
-                          <p className="text-[10px] text-muted-foreground truncate">{m.pet1.breed} & {m.pet2.breed}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Chat window */}
-              {selectedMatch && (
-                <div className="lg:col-span-8 flex flex-col h-full bg-card">
-                  <div className="flex items-center justify-between border-b p-4 bg-muted/10">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-black text-sm">{selectedMatch.pet1.name} & {selectedMatch.pet2.name}</h3>
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded">Active Match</span>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                    <div className="rounded-2xl border bg-primary/5 p-3 text-center text-xs font-bold text-primary">
-                      🎉 Hai bên đã ghép đôi thành công! Hãy trao đổi về thời gian và địa điểm phối giống.
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                    {loadingMessages && <p className="py-4 text-center text-xs text-muted-foreground">Đang tải lịch sử trò chuyện...</p>}
-                    {!loadingMessages && (chatMessages[selectedMatch.id] || []).length === 0 && (
-                      <p className="py-4 text-center text-xs text-muted-foreground">Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.</p>
-                    )}
-                    {(chatMessages[selectedMatch.id] || []).map((message) => (
-                      <div key={message.id} className={cn('flex flex-col', message.senderId === currentUserId ? 'items-end' : 'items-start')}>
-                        <span className="px-1 text-[10px] font-bold text-muted-foreground">
-                          {message.senderId === currentUserId ? 'Bạn' : message.sender.name} · {new Date(message.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <div className={cn('mt-1 max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2 text-sm', message.senderId === currentUserId ? 'bg-primary text-primary-foreground rounded-tr-none' : 'border bg-card rounded-tl-none')}>
-                          {message.content}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <form onSubmit={handleSendMessage} className="p-4 border-t flex gap-2">
-                    <Input placeholder="Nhập tin nhắn..." className="rounded-xl" />
-                    <Button className="rounded-xl font-bold shadow-md shadow-primary/20">Gửi</Button>
-                  </form>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-
 
       {/* ================= ADVANCED FILTER DRAWER ================= */}
       <AnimatePresence>
@@ -912,7 +654,7 @@ export default function UnifiedMatchingHubPage() {
                 </div>
               </div>
               <div className="p-4 border-t">
-                <Button className="w-full rounded-xl font-bold py-6" onClick={() => { setIsFilterOpen(false); fetchCandidates(); }}>Áp dụng bộ lọc</Button>
+                <Button className="w-full rounded-xl font-bold py-6" onClick={() => { setIsFilterOpen(false); if (selectedPet) handleSelectPet(selectedPet); }}>Áp dụng bộ lọc</Button>
               </div>
             </motion.div>
           </div>

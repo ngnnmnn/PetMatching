@@ -98,7 +98,7 @@ export class PetsService {
         verificationBadge: documents.length
           ? VerificationBadge.PENDING
           : VerificationBadge.NONE,
-        status: dto.status ?? PetStatus.ACTIVE,
+        status: PetStatus.ACTIVE,
         isAvailableForMatching: false,
         documents: documents.length ? { create: documents } : undefined,
       },
@@ -396,12 +396,22 @@ export class PetsService {
       if (pet.ownerId !== userId) {
         throw new ForbiddenException('You do not own this pet.');
       }
+      if (pet.status === PetStatus.HIDDEN) {
+        throw new ForbiddenException(
+          'Thú cưng đang bị quản trị viên ẩn do vi phạm.',
+        );
+      }
+      if (dto.status === PetStatus.HIDDEN) {
+        throw new ForbiddenException(
+          'Bạn không có quyền đặt trạng thái ẩn của quản trị viên.',
+        );
+      }
 
       const nextStatus = dto.status ?? pet.status;
       const isMatchingAvailable =
-        nextStatus === PetStatus.HIDDEN
-          ? false
-          : (dto.isAvailableForMatching ?? pet.isAvailableForMatching);
+        nextStatus === PetStatus.ACTIVE
+          ? (dto.isAvailableForMatching ?? pet.isAvailableForMatching)
+          : false;
 
       if (pet.gender !== Gender.MALE && isMatchingAvailable) {
         throw new BadRequestException(

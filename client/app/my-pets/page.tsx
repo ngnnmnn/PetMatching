@@ -356,7 +356,11 @@ export default function MyPetsPage() {
                   {/* Matching availability indicator / Status */}
                   {pet.status === "HIDDEN" ? (
                     <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
-                      🔴 Đã tạm ẩn
+                      🔒 Bị quản trị viên ẩn
+                    </span>
+                  ) : pet.status === "INACTIVE" ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                      Đã tự ẩn
                     </span>
                   ) : pet.gender === "MALE" ? (
                     <span
@@ -400,7 +404,9 @@ export default function MyPetsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
-                          pet.vaccineVerified
+                          pet.documents.some(
+                            (document) => document.type === "VACCINE_RECORD" && document.status === "APPROVED",
+                          )
                             ? "border-blue-200 bg-blue-50 text-blue-700"
                             : "border-gray-300 bg-white text-gray-600",
                         )}
@@ -413,7 +419,9 @@ export default function MyPetsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
-                          pet.pedigreeVerified
+                          pet.documents.some(
+                            (document) => document.type === "PEDIGREE_CERT" && document.status === "APPROVED",
+                          )
                             ? "border-amber-200 bg-amber-50 text-amber-700"
                             : "border-gray-300 bg-white text-gray-600",
                         )}
@@ -447,11 +455,22 @@ export default function MyPetsPage() {
                         <Button
                           className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
                           onClick={() => openSetupModal(pet)}
+                          disabled={pet.status !== "ACTIVE"}
                         >
                           <Settings2 className="size-4" />
-                          {pet.isAvailableForMatching
+                          {pet.status !== "ACTIVE"
+                            ? "Không thể ghép đôi"
+                            : pet.isAvailableForMatching
                             ? "Cấu hình Ghép đôi"
                             : "Bật ghép đôi"}
+                        </Button>
+                      ) : pet.status !== "ACTIVE" ? (
+                        <Button
+                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold text-xs"
+                          disabled
+                        >
+                          <Heart className="size-4" />
+                          Không thể ghép đôi
                         </Button>
                       ) : (
                         <Button

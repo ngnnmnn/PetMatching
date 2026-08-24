@@ -386,7 +386,7 @@ export function PetProfileDialog({
 
   const toggleStatus = async () => {
     const nextStatus: Pet["status"] =
-      pet.status === "HIDDEN" ? "ACTIVE" : "HIDDEN";
+      pet.status === "INACTIVE" ? "ACTIVE" : "INACTIVE";
 
     try {
       const response = await petsApi.updateAvailability(pet.id, {
@@ -398,7 +398,7 @@ export function PetProfileDialog({
       setInitialForm(nextForm);
       onPetUpdated(response.data);
       toast.success(
-        nextStatus === "HIDDEN"
+        nextStatus === "INACTIVE"
           ? `Đã ẩn hồ sơ của ${pet.name}.`
           : `Đã hiện lại hồ sơ của ${pet.name}.`,
       );
@@ -446,7 +446,7 @@ export function PetProfileDialog({
               </div>
 
               <div className="flex shrink-0 items-center gap-1">
-                {mode === "view" && (
+                {mode === "view" && pet.status !== "HIDDEN" && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -463,16 +463,16 @@ export function PetProfileDialog({
                     >
                       <DropdownMenuItem
                         variant={
-                          pet.status === "HIDDEN" ? "default" : "destructive"
+                          pet.status === "INACTIVE" ? "default" : "destructive"
                         }
                         onSelect={() => setStatusConfirmOpen(true)}
                       >
-                        {pet.status === "HIDDEN" ? (
+                        {pet.status === "INACTIVE" ? (
                           <Eye className="size-4" />
                         ) : (
                           <EyeOff className="size-4" />
                         )}
-                        {pet.status === "HIDDEN"
+                        {pet.status === "INACTIVE"
                           ? "Hiện lại hồ sơ"
                           : "Ẩn hồ sơ"}
                       </DropdownMenuItem>
@@ -554,12 +554,12 @@ export function PetProfileDialog({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pet.status === "HIDDEN"
+              {pet.status === "INACTIVE"
                 ? "Hiện lại hồ sơ?"
                 : "Ẩn hồ sơ thú cưng?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pet.status === "HIDDEN"
+              {pet.status === "INACTIVE"
                 ? `Hồ sơ của ${pet.name} sẽ xuất hiện trở lại. Trạng thái sẵn sàng ghép đôi vẫn được giữ ở chế độ tắt.`
                 : `Hồ sơ của ${pet.name} sẽ không xuất hiện trong kết quả khám phá và không nhận yêu cầu ghép đôi mới. Bạn vẫn có thể xem, chỉnh sửa và hiện lại sau.`}
             </AlertDialogDescription>
@@ -569,11 +569,11 @@ export function PetProfileDialog({
             <AlertDialogAction
               onClick={toggleStatus}
               className={cn(
-                pet.status !== "HIDDEN" &&
+                pet.status !== "INACTIVE" &&
                   "bg-destructive text-white hover:bg-destructive/90",
               )}
             >
-              {pet.status === "HIDDEN" ? "Hiện lại hồ sơ" : "Ẩn hồ sơ"}
+              {pet.status === "INACTIVE" ? "Hiện lại hồ sơ" : "Ẩn hồ sơ"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -632,6 +632,8 @@ function PetDetails({
   const address = [pet.ward, pet.district, pet.location]
     .filter(Boolean)
     .join(", ");
+  const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
+  const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
 
   return (
     <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
@@ -680,6 +682,14 @@ function PetDetails({
       </div>
 
       <div className="min-w-0 space-y-5">
+        {pet.status === "HIDDEN" && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <p className="font-black">Hồ sơ bị quản trị viên ẩn</p>
+            <p className="mt-1 font-medium">
+              Thú cưng đang tạm dừng hiển thị công khai, ghép đôi và gửi tin nhắn do vi phạm tiêu chuẩn cộng đồng. Chỉ quản trị viên có thể khôi phục hồ sơ.
+            </p>
+          </div>
+        )}
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-3xl font-black">{pet.name}</h2>
@@ -719,15 +729,15 @@ function PetDetails({
               icon={Syringe}
               title="Tiêm chủng"
               declared={pet.isVaccinated}
-              verified={pet.vaccineVerified}
-              documentStatus={petDocument(pet, "VACCINE_RECORD")?.status}
+              verified={vaccineDocument?.status === "APPROVED"}
+              documentStatus={vaccineDocument?.status}
             />
             <HealthCard
               icon={BadgeCheck}
               title="Phả hệ"
               declared={pet.hasPedigree}
-              verified={pet.pedigreeVerified}
-              documentStatus={petDocument(pet, "PEDIGREE_CERT")?.status}
+              verified={pedigreeDocument?.status === "APPROVED"}
+              documentStatus={pedigreeDocument?.status}
               detail={pet.pedigreeNumber || undefined}
             />
           </div>
@@ -795,6 +805,8 @@ function PetEditForm({
   ) => void;
   onPreviewImage: (url: string) => void;
 }) {
+  const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
+  const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
   const update = <Key extends keyof EditForm>(key: Key, value: EditForm[Key]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
@@ -1022,7 +1034,7 @@ function PetEditForm({
             <Switch
               id="edit-vaccinated"
               checked={form.isVaccinated}
-              disabled={pet.vaccineVerified}
+              disabled={vaccineDocument?.status === "APPROVED"}
               onCheckedChange={(checked) => {
                 update("isVaccinated", checked);
                 if (!checked) update("vaccineDocumentUrls", []);
@@ -1041,7 +1053,7 @@ function PetEditForm({
             <Switch
               id="edit-pedigree"
               checked={form.hasPedigree}
-              disabled={pet.pedigreeVerified}
+              disabled={pedigreeDocument?.status === "APPROVED"}
               onCheckedChange={(checked) => {
                 update("hasPedigree", checked);
                 if (!checked) {
@@ -1055,8 +1067,8 @@ function PetEditForm({
             <DocumentImagesEditor
               title="Ảnh sổ tiêm phòng"
               urls={form.vaccineDocumentUrls}
-              document={petDocument(pet, "VACCINE_RECORD")}
-              verified={pet.vaccineVerified}
+              document={vaccineDocument}
+              verified={vaccineDocument?.status === "APPROVED"}
               uploading={uploading}
               onPreviewImage={onPreviewImage}
               onRemove={(index) =>
@@ -1082,7 +1094,7 @@ function PetEditForm({
                 <Input
                   value={form.pedigreeNumber}
                   maxLength={100}
-                  disabled={pet.pedigreeVerified}
+                  disabled={pedigreeDocument?.status === "APPROVED"}
                   onChange={(event) =>
                     update("pedigreeNumber", event.target.value)
                   }
@@ -1091,8 +1103,8 @@ function PetEditForm({
               <DocumentImagesEditor
                 title="Ảnh giấy chứng nhận phả hệ"
                 urls={form.pedigreeDocumentUrls}
-                document={petDocument(pet, "PEDIGREE_CERT")}
-                verified={pet.pedigreeVerified}
+                document={pedigreeDocument}
+                verified={pedigreeDocument?.status === "APPROVED"}
                 uploading={uploading}
                 onPreviewImage={onPreviewImage}
                 onRemove={(index) =>
@@ -1376,10 +1388,10 @@ function HealthCard({
 function StatusBadge({ status }: { status: Pet["status"] }) {
   const label =
     status === "HIDDEN"
-      ? "Đang ẩn"
+      ? "Bị quản trị viên ẩn"
       : status === "ACTIVE"
         ? "Hoạt động"
-        : "Không hoạt động";
+        : "Đã tự ẩn";
   return (
     <span
       className={cn(
