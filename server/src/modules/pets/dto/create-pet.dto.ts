@@ -8,7 +8,7 @@ import {
   IsUrl,
   MaxLength,
 } from 'class-validator';
-import { BreedingOption, Gender, PetStatus, Species } from '@prisma/client';
+import { BreedingOption, Gender, Species } from '@prisma/client';
 
 export class CreatePetDto {
   @IsString()
@@ -102,8 +102,4 @@ export class CreatePetDto {
   @IsOptional()
   @IsNumber()
   breedingFee?: number;
-
-  @IsOptional()
-  @IsEnum(PetStatus)
-  status?: PetStatus;
 }

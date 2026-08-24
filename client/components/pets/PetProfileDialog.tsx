@@ -386,7 +386,7 @@ export function PetProfileDialog({
 
   const toggleStatus = async () => {
     const nextStatus: Pet["status"] =
-      pet.status === "HIDDEN" ? "ACTIVE" : "HIDDEN";
+      pet.status === "INACTIVE" ? "ACTIVE" : "INACTIVE";
 
     try {
       const response = await petsApi.updateAvailability(pet.id, {
@@ -398,7 +398,7 @@ export function PetProfileDialog({
       setInitialForm(nextForm);
       onPetUpdated(response.data);
       toast.success(
-        nextStatus === "HIDDEN"
+        nextStatus === "INACTIVE"
           ? `Đã ẩn hồ sơ của ${pet.name}.`
           : `Đã hiện lại hồ sơ của ${pet.name}.`,
       );
@@ -446,7 +446,7 @@ export function PetProfileDialog({
               </div>
 
               <div className="flex shrink-0 items-center gap-1">
-                {mode === "view" && (
+                {mode === "view" && pet.status !== "HIDDEN" && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -463,16 +463,16 @@ export function PetProfileDialog({
                     >
                       <DropdownMenuItem
                         variant={
-                          pet.status === "HIDDEN" ? "default" : "destructive"
+                          pet.status === "INACTIVE" ? "default" : "destructive"
                         }
                         onSelect={() => setStatusConfirmOpen(true)}
                       >
-                        {pet.status === "HIDDEN" ? (
+                        {pet.status === "INACTIVE" ? (
                           <Eye className="size-4" />
                         ) : (
                           <EyeOff className="size-4" />
                         )}
-                        {pet.status === "HIDDEN"
+                        {pet.status === "INACTIVE"
                           ? "Hiện lại hồ sơ"
                           : "Ẩn hồ sơ"}
                       </DropdownMenuItem>
@@ -554,12 +554,12 @@ export function PetProfileDialog({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pet.status === "HIDDEN"
+              {pet.status === "INACTIVE"
                 ? "Hiện lại hồ sơ?"
                 : "Ẩn hồ sơ thú cưng?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pet.status === "HIDDEN"
+              {pet.status === "INACTIVE"
                 ? `Hồ sơ của ${pet.name} sẽ xuất hiện trở lại. Trạng thái sẵn sàng ghép đôi vẫn được giữ ở chế độ tắt.`
                 : `Hồ sơ của ${pet.name} sẽ không xuất hiện trong kết quả khám phá và không nhận yêu cầu ghép đôi mới. Bạn vẫn có thể xem, chỉnh sửa và hiện lại sau.`}
             </AlertDialogDescription>
@@ -569,11 +569,11 @@ export function PetProfileDialog({
             <AlertDialogAction
               onClick={toggleStatus}
               className={cn(
-                pet.status !== "HIDDEN" &&
+                pet.status !== "INACTIVE" &&
                   "bg-destructive text-white hover:bg-destructive/90",
               )}
             >
-              {pet.status === "HIDDEN" ? "Hiện lại hồ sơ" : "Ẩn hồ sơ"}
+              {pet.status === "INACTIVE" ? "Hiện lại hồ sơ" : "Ẩn hồ sơ"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -680,6 +680,14 @@ function PetDetails({
       </div>
 
       <div className="min-w-0 space-y-5">
+        {pet.status === "HIDDEN" && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <p className="font-black">Hồ sơ bị quản trị viên ẩn</p>
+            <p className="mt-1 font-medium">
+              Thú cưng đang tạm dừng hiển thị công khai, ghép đôi và gửi tin nhắn do vi phạm tiêu chuẩn cộng đồng. Chỉ quản trị viên có thể khôi phục hồ sơ.
+            </p>
+          </div>
+        )}
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-3xl font-black">{pet.name}</h2>
@@ -1376,10 +1384,10 @@ function HealthCard({
 function StatusBadge({ status }: { status: Pet["status"] }) {
   const label =
     status === "HIDDEN"
-      ? "Đang ẩn"
+      ? "Bị quản trị viên ẩn"
       : status === "ACTIVE"
         ? "Hoạt động"
-        : "Không hoạt động";
+        : "Đã tự ẩn";
   return (
     <span
       className={cn(

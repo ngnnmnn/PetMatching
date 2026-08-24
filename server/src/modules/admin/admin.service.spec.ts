@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import {
+  AccountStatus,
   ComplaintAction,
   ComplaintStatus,
   DocumentStatus,
@@ -211,31 +212,35 @@ describe('AdminService matching reports', () => {
     expect(notifications.create).not.toHaveBeenCalled();
   });
 
-  it('hides a reported pet and notifies its owner without exposing the reporter', async () => {
-    tx.petReport.findUnique.mockResolvedValue({
-      ...openReport(),
-      targetType: 'PET',
-    });
+  it.each([PetStatus.ACTIVE, PetStatus.INACTIVE])(
+    'hides a reported %s pet and notifies its owner without exposing the reporter',
+    async (petStatus) => {
+      tx.petReport.findUnique.mockResolvedValue({
+        ...openReport(),
+        targetType: 'PET',
+        pet: { ...openReport().pet, status: petStatus },
+      });
 
-    await service.resolveMatchingReport({ id: 'admin-1' }, 'report-1', {
-      status: ComplaintStatus.RESOLVED,
-      action: ComplaintAction.HIDE_CONTENT,
-      adminNote: 'Hồ sơ có thông tin vi phạm.',
-      resolutionMessage: 'Phản ánh đã được xác minh.',
-    });
+      await service.resolveMatchingReport({ id: 'admin-1' }, 'report-1', {
+        status: ComplaintStatus.RESOLVED,
+        action: ComplaintAction.HIDE_CONTENT,
+        adminNote: 'Hồ sơ có thông tin vi phạm.',
+        resolutionMessage: 'Phản ánh đã được xác minh.',
+      });
 
-    expect(tx.pet.update).toHaveBeenCalledWith({
-      where: { id: 'pet-1' },
-      data: { status: PetStatus.HIDDEN, isAvailableForMatching: false },
-    });
-    expect(notifications.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'reported-1',
-        content: expect.not.stringContaining('reporter-1'),
-      }),
-      tx,
-    );
-  });
+      expect(tx.pet.update).toHaveBeenCalledWith({
+        where: { id: 'pet-1' },
+        data: { status: PetStatus.HIDDEN, isAvailableForMatching: false },
+      });
+      expect(notifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'reported-1',
+          content: expect.not.stringContaining('reporter-1'),
+        }),
+        tx,
+      );
+    },
+  );
 
   it('requests new pet documents, disables matching and removes old images', async () => {
     tx.petReport.findUnique.mockResolvedValue({
@@ -389,6 +394,96 @@ describe('AdminService matching reports', () => {
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(notifications.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminService pet visibility moderation', () => {
+  const notifications = { create: jest.fn() };
+  const cloudinary = { destroyByUrl: jest.fn() };
+
+  it('hides an inactive pet and disables matching', async () => {
+    const tx = {
+      pet: {
+        update: jest.fn().mockResolvedValue({
+          id: 'pet-1',
+          status: PetStatus.HIDDEN,
+          isAvailableForMatching: false,
+        }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    };
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'pet-1',
+          status: PetStatus.INACTIVE,
+          isAvailableForMatching: false,
+        }),
+      },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    };
+    const service = new AdminService(
+      prisma as unknown as PrismaService,
+      notifications as any,
+      cloudinary as any,
+    );
+
+    await service.hidePet({ id: 'admin-1' }, 'pet-1', {
+      reason: 'CONTENT_VIOLATION',
+    });
+
+    expect(tx.pet.update).toHaveBeenCalledWith({
+      where: { id: 'pet-1' },
+      data: { status: PetStatus.HIDDEN, isAvailableForMatching: false },
+    });
+  });
+
+  it('restores an admin-hidden pet without automatically enabling matching', async () => {
+    const tx = {
+      pet: {
+        update: jest.fn().mockResolvedValue({
+          id: 'pet-1',
+          status: PetStatus.ACTIVE,
+          isAvailableForMatching: false,
+        }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    };
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'pet-1',
+          status: PetStatus.HIDDEN,
+          isAvailableForMatching: false,
+          owner: { accountStatus: AccountStatus.ACTIVE },
+        }),
+      },
+      petReport: { count: jest.fn().mockResolvedValue(0) },
+      auditLog: {
+        findFirst: jest.fn().mockResolvedValue({
+          metadata: { reason: 'CONTENT_VIOLATION' },
+        }),
+      },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    };
+    const service = new AdminService(
+      prisma as unknown as PrismaService,
+      notifications as any,
+      cloudinary as any,
+    );
+
+    await service.restorePet({ id: 'admin-1' }, 'pet-1', {
+      reason: 'ADMIN_REVIEW',
+    });
+
+    expect(tx.pet.update).toHaveBeenCalledWith({
+      where: { id: 'pet-1' },
+      data: { status: PetStatus.ACTIVE, isAvailableForMatching: false },
+    });
   });
 });
 

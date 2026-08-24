@@ -523,10 +523,6 @@ export class AdminService {
     if (currentPet.status === PetStatus.HIDDEN) {
       throw new BadRequestException('Hồ sơ thú cưng đã được ẩn trước đó.');
     }
-    if (currentPet.status === PetStatus.INACTIVE) {
-      throw new BadRequestException('Không thể ẩn hồ sơ đã được chủ sở hữu ngừng hoạt động.');
-    }
-
     return this.prisma.$transaction(async (tx) => {
       const pet = await tx.pet.update({
         where: { id: petId },
@@ -1692,11 +1688,6 @@ export class AdminService {
       if (report.targetType !== 'PET') {
         throw new BadRequestException(
           'Chỉ có thể ẩn hồ sơ khi đối tượng bị phản ánh là thú cưng.',
-        );
-      }
-      if (report.pet.status === PetStatus.INACTIVE) {
-        throw new BadRequestException(
-          'Không thể ẩn hồ sơ đã được chủ sở hữu ngừng hoạt động.',
         );
       }
       if (report.pet.status !== PetStatus.HIDDEN) {
