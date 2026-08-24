@@ -459,7 +459,10 @@ export class SpaService {
 
       const updated = await tx.spaBooking.update({
         where: { id: bookingId },
-        data: { status: SpaBookingStatus.CANCELLED },
+        data: {
+          status: SpaBookingStatus.CANCELLED,
+          cancelReason: 'Khách hàng đã chủ động hủy lịch hẹn',
+        },
         include: { payment: true },
       });
       await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
@@ -494,6 +497,8 @@ export class SpaService {
             name: true,
             description: true,
             price: true,
+            durationMin: true,
+            durationMax: true,
           },
         },
         user: {
@@ -1593,6 +1598,17 @@ export class SpaService {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
     }
 
+    const allowedAssignStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+    ];
+    if (!allowedAssignStatuses.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ có thể phân công khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+      );
+    }
+
     const staff = await this.prisma.spaStaff.findFirst({
       where: {
         OR: [{ userId: newStaffId }, { id: newStaffId }],
@@ -2091,6 +2107,69 @@ export class SpaService {
     });
   }
 
+  async managerCancelBooking(managerId: string, bookingId: string, reason: string) {
+    const cancelReason = reason?.trim();
+    if (!cancelReason) {
+      throw new BadRequestException('Vui lòng nhập lý do hủy lịch hẹn.');
+    }
+
+    const booking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+      include: { payment: true, service: true },
+    });
+    if (!booking) {
+      throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    const branch = await this.prisma.addressSpa.findFirst({
+      where: { id: booking.addressSpaId!, managerId },
+    });
+    if (!branch) {
+      throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
+    }
+
+    const allowedStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+    ];
+    if (!allowedStatuses.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ có thể hủy lịch khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (booking.payment && booking.payment.status !== PaymentStatus.PAID) {
+        await tx.payment.update({
+          where: { id: booking.payment.id },
+          data: { status: PaymentStatus.CANCELLED },
+        });
+      }
+
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: SpaBookingStatus.CANCELLED,
+          cancelReason: cancelReason,
+        },
+        include: { payment: true, service: true },
+      });
+
+      const serviceName = booking.service?.name || 'dịch vụ';
+      const notificationContent = `Lịch hẹn Spa (${serviceName}) của bạn đã bị hủy bởi quản lý. Lý do: ${cancelReason}`;
+
+      await this.notifyBooking(
+        tx,
+        updated,
+        NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+        notificationContent,
+      );
+
+      return updated;
+    });
+  }
+
   async getAvailableStaffForBooking(managerId: string, bookingId: string) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
@@ -2106,6 +2185,17 @@ export class SpaService {
     });
     if (!branch) {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
+    }
+
+    const allowedAssignStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+    ];
+    if (!allowedAssignStatuses.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ có thể xem nhân viên rảnh khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+      );
     }
 
     const staffs = await this.prisma.spaStaff.findMany({
@@ -2171,6 +2261,17 @@ export class SpaService {
     });
     if (!branch) {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
+    }
+
+    const allowedAssignStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+    ];
+    if (!allowedAssignStatuses.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ có thể phân công khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+      );
     }
 
     const staff = await this.prisma.spaStaff.findFirst({

@@ -531,6 +531,7 @@ model SpaBooking {
   timeEndReal           DateTime?
   completionDiffMinutes Int?
   rescheduleCount       Int              @default(0)
+  cancelReason          String?
   note                  String?
   petConditionAfter     String?
   photoAfter            String?

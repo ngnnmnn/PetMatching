@@ -289,6 +289,7 @@ export interface SpaBookingType {
   timeEndReal?: string | null;
   completionDiffMinutes?: number | null;
   rescheduleCount?: number;
+  cancelReason?: string | null;
   note: string | null;
   petConditionAfter?: string | null;
   photoAfter?: string | null;

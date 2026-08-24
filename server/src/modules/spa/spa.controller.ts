@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, RescheduleBookingDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerCancelBookingDto, RescheduleBookingDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -262,6 +262,16 @@ export class SpaController {
   @Patch('manager/bookings/:id/confirm')
   confirmBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.confirmBooking(req.user.id, bookingId);
+  }
+
+  @UseGuards(JwtAuthGuard, SpaManagerGuard)
+  @Patch('manager/bookings/:id/cancel')
+  managerCancelBooking(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: ManagerCancelBookingDto,
+  ) {
+    return this.spaService.managerCancelBooking(req.user.id, bookingId, dto.reason);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)

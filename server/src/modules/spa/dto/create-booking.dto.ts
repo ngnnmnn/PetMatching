@@ -78,6 +78,12 @@ export class ManagerRescheduleDto {
   scheduledAt: string;
 }
 
+export class ManagerCancelBookingDto {
+  @IsNotEmpty({ message: 'Vui lòng nhập lý do hủy lịch hẹn.' })
+  @IsString()
+  reason: string;
+}
+
 export class RescheduleBookingDto {
   @IsNotEmpty()
   @IsDateString()

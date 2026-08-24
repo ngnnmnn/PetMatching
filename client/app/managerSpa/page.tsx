@@ -78,6 +78,11 @@ function SpaManagerConsoleContent() {
   const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
   const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
 
+  // Cancellation states
+  const [cancelBookingTarget, setCancelBookingTarget] = useState<any | null>(null);
+  const [cancelReason, setCancelReason] = useState<string>('');
+  const [cancelLoading, setCancelLoading] = useState<boolean>(false);
+
   // Helper to resolve subServices for any booking in Manager view
   const getManagerBookingSubServices = (b: any) => {
     if (!b) return [];
@@ -530,6 +535,30 @@ function SpaManagerConsoleContent() {
       refreshData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Lỗi khi xác nhận lịch hẹn.');
+    }
+  };
+
+  const handleManagerCancelBooking = async () => {
+    if (!cancelBookingTarget) return;
+    const reasonTrimmed = cancelReason.trim();
+    if (!reasonTrimmed) {
+      toast.error('Vui lòng nhập lý do hủy lịch hẹn.');
+      return;
+    }
+    setCancelLoading(true);
+    try {
+      await spaApi.cancelManagerBooking(cancelBookingTarget.id, reasonTrimmed);
+      toast.success('Hủy lịch hẹn thành công! Đã gửi thông báo kèm lý do đến khách hàng.');
+      setCancelBookingTarget(null);
+      setCancelReason('');
+      if (selectedBookingDetail?.id === cancelBookingTarget.id) {
+        setSelectedBookingDetail(null);
+      }
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi hủy lịch hẹn.');
+    } finally {
+      setCancelLoading(false);
     }
   };
 
@@ -1698,7 +1727,7 @@ function SpaManagerConsoleContent() {
             <div className="space-y-6 animate-fadeIn">
               <div>
                 <h2 className="text-xl font-black text-gray-900">Danh sách tất cả lịch hẹn</h2>
-                <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên và áp dụng giảm giá trễ hẹn 10%.</p>
+                <p className="text-sm font-semibold text-gray-500">Quản lý, đổi lịch hẹn, phân công nhân viên.</p>
               </div>
 
               {/* Filters Toolbar */}
@@ -1932,7 +1961,7 @@ function SpaManagerConsoleContent() {
                                     );
                                   })()}
                                   {b.discountAmount ? (
-                                    <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
+                                    <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10%</span>
                                   ) : null}
                                 </td>
                                 <td className="px-6 py-4 font-semibold text-xs text-gray-700">
@@ -1953,16 +1982,28 @@ function SpaManagerConsoleContent() {
                                     </button>
 
                                     {b.status === 'PENDING' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleConfirmBooking(b.id)}
-                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                      >
-                                        ✓ Xác nhận
-                                      </button>
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleConfirmBooking(b.id)}
+                                          className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                        >
+                                          ✓ Xác nhận
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setCancelBookingTarget(b);
+                                            setCancelReason('');
+                                          }}
+                                          className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                        >
+                                          ✕ Hủy
+                                        </button>
+                                      </div>
                                     )}
 
-                                    {(b.status === 'CONFIRMED' || (b.status === 'CHECK_IN' && !b.staffId)) && (
+                                    {b.status === 'CONFIRMED' && !b.staffId && (
                                       <button
                                         type="button"
                                         onClick={() => setSelectedBookingDetail(b)}
@@ -1972,28 +2013,33 @@ function SpaManagerConsoleContent() {
                                       </button>
                                     )}
 
-                                    {canReschedule && (
-                                      <button
-                                        onClick={() => {
-                                          setRescheduleBooking(b);
-                                          setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-                                          setSelectedRescheduleSlot('');
-                                        }}
-                                        className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                      >
-                                        <Calendar className="size-3.5" /> Đổi lịch
-                                      </button>
-                                    )}
+                                    <div className="flex items-center gap-1" >
+                                      {['CONFIRMED', 'ASSIGNED'].includes(b.status) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setCancelBookingTarget(b);
+                                            setCancelReason('');
+                                          }}
+                                          className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                        >
+                                          ✕ Hủy lịch
+                                        </button>
+                                      )}
 
-                                    {isLateOfferable && (
-                                      <button
-                                        onClick={() => handleApplyLateDiscount(b.id)}
-                                        className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
-                                        title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
-                                      >
-                                        🎁 Giảm 10%
-                                      </button>
-                                    )}
+                                      {canReschedule && (
+                                        <button
+                                          onClick={() => {
+                                            setRescheduleBooking(b);
+                                            setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                                            setSelectedRescheduleSlot('');
+                                          }}
+                                          className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                        >
+                                          <Calendar className="size-3.5" /> Đổi lịch
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
@@ -2359,16 +2405,101 @@ function SpaManagerConsoleContent() {
                   setAssignConfirmBooking(null);
                   setAssignConfirmStaff(null);
                 }}
-                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
+                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
               >
                 Hủy
               </button>
               <button
                 disabled={assigningLoading}
                 onClick={handleAssignStaff}
-                className="px-4 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017]"
+                className="px-4 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer"
               >
                 {assigningLoading ? 'Đang giao...' : 'Đồng ý'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CANCEL BOOKING POPUP MODAL */}
+      {cancelBookingTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => {
+                setCancelBookingTarget(null);
+                setCancelReason('');
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 cursor-pointer"
+            >
+              <X className="size-5" />
+            </button>
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-red-100 text-red-600 rounded-xl">
+                  <X className="size-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-black text-gray-900">Hủy xác nhận / Hủy lịch hẹn</h3>
+                  <p className="text-xs text-gray-500 font-semibold">
+                    Mã đơn: #{cancelBookingTarget.id.slice(-8).toUpperCase()}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5 text-xs text-gray-700">
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-medium">Khách hàng:</span>
+                <span className="font-bold text-gray-900">{cancelBookingTarget.user?.name || 'Khách hàng'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-medium">Thú cưng:</span>
+                <span className="font-bold text-gray-900">{cancelBookingTarget.petName || 'Bé cưng'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-medium">Dịch vụ:</span>
+                <span className="font-bold text-gray-900">{cancelBookingTarget.service?.name || 'Dịch vụ Spa'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-medium">Thời gian hẹn:</span>
+                <span className="font-bold text-gray-900">{new Date(cancelBookingTarget.scheduledAt).toLocaleString('vi-VN')}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-black uppercase text-gray-700">
+                Lý do hủy lịch hẹn <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Nhập lý do hủy (ví dụ: Chi nhánh quá tải, kỹ thuật viên bận đột xuất, không liên hệ được khách...)"
+                className="w-full rounded-xl border border-gray-300 p-3 text-xs focus:border-red-500 focus:ring-1 focus:ring-red-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                disabled={cancelLoading}
+                onClick={() => {
+                  setCancelBookingTarget(null);
+                  setCancelReason('');
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                disabled={cancelLoading || !cancelReason.trim()}
+                onClick={handleManagerCancelBooking}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl font-black text-xs shadow-sm transition cursor-pointer"
+              >
+                {cancelLoading ? 'Đang xử lý...' : 'Xác nhận hủy lịch'}
               </button>
             </div>
           </div>
@@ -2792,45 +2923,75 @@ function SpaManagerConsoleContent() {
             </div>
 
             {/* Staff Assignment Section inside Modal */}
-            <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2 text-xs">
-              <span className="font-extrabold text-gray-800 block text-[10px] uppercase">Nhân viên phụ trách:</span>
-              {selectedBookingDetail.staff ? (
-                <div className="flex items-center gap-2 font-bold text-gray-900 bg-white p-2 rounded-lg border">
-                  <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
-                    {selectedBookingDetail.staff.name.slice(0, 1)}
-                  </span>
-                  <div>
-                    <p>{selectedBookingDetail.staff.name}</p>
-                    <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
-                  </div>
+            {selectedBookingDetail.status === 'CANCELLED' ? (
+              <div className="p-3.5 bg-red-50/80 border border-red-200 rounded-xl space-y-1.5 text-xs">
+                <div className="flex items-center gap-1.5 text-red-700 font-extrabold">
+                  <span>✕ Lịch hẹn đã bị hủy</span>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-amber-800 font-bold italic text-[11px]">⚠️ Đơn chưa được phân công nhân viên phụ trách ca làm.</p>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedAssignStaffMap[selectedBookingDetail.id] || ''}
-                      onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
-                      className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
-                    >
-                      <option value="">
-                        {(availableStaffsMap[selectedBookingDetail.id] || []).length === 0
-                          ? '-- Không có nhân viên rảnh ca làm này --'
-                          : '-- Chọn nhân viên chưa có ca làm --'}
-                      </option>
-                      {(availableStaffsMap[selectedBookingDetail.id] || []).map((st: any) => (
-                        <option key={st.id} value={st.id}>
-                          👤 {st.name} ({st.email || 'NV Rảnh'})
+                {selectedBookingDetail.cancelReason && (
+                  <p className="text-gray-700 text-xs">
+                    <span className="font-bold text-gray-900">Lý do hủy:</span> {selectedBookingDetail.cancelReason}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2 text-xs">
+                <span className="font-extrabold text-gray-800 block text-[10px] uppercase">Nhân viên phụ trách:</span>
+                {selectedBookingDetail.staff ? (
+                  <div className="flex items-center gap-2 font-bold text-gray-900 bg-white p-2 rounded-lg border">
+                    <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
+                      {selectedBookingDetail.staff.name.slice(0, 1)}
+                    </span>
+                    <div>
+                      <p>{selectedBookingDetail.staff.name}</p>
+                      <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
+                    </div>
+                  </div>
+                ) : ['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) ? (
+                  <div className="space-y-2">
+                    <p className="text-amber-800 font-bold italic text-[11px]">⚠️ Đơn chưa được phân công nhân viên phụ trách ca làm.</p>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedAssignStaffMap[selectedBookingDetail.id] || ''}
+                        onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
+                        className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
+                      >
+                        <option value="">
+                          {(availableStaffsMap[selectedBookingDetail.id] || []).length === 0
+                            ? '-- Không có nhân viên rảnh ca làm này --'
+                            : '-- Chọn nhân viên chưa có ca làm --'}
                         </option>
-                      ))}
-                    </select>
+                        {(availableStaffsMap[selectedBookingDetail.id] || []).map((st: any) => (
+                          <option key={st.id} value={st.id}>
+                            👤 {st.name} ({st.email || 'NV Rảnh'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <p className="text-gray-500 italic text-[11px]">Không thể phân công nhân viên cho lịch hẹn ở trạng thái này.</p>
+                )}
+              </div>
+            )}
 
             {/* Modal Actions */}
             <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t">
+              {['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = selectedBookingDetail;
+                    setSelectedBookingDetail(null);
+                    setCancelBookingTarget(b);
+                    setCancelReason('');
+                  }}
+                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-black text-xs h-9 px-3 rounded-lg shadow-2xs transition cursor-pointer"
+                >
+                  ✕ Hủy lịch hẹn
+                </button>
+              )}
+
               {selectedBookingDetail.status === 'PENDING' && (
                 <button
                   type="button"

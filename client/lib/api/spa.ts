@@ -79,6 +79,8 @@ export const spaApi = {
   getManagerStaffPerformance: (branchId: string, filter?: string) =>
     api.get<any[]>(`/spa/manager/staff-performance?branchId=${branchId}${filter ? `&filter=${filter}` : ''}`),
   confirmBooking: (id: string) => api.patch<any>(`/spa/manager/bookings/${id}/confirm`),
+  cancelManagerBooking: (id: string, reason: string) =>
+    api.patch<any>(`/spa/manager/bookings/${id}/cancel`, { reason }),
   getAvailableStaffForBooking: (id: string) => api.get<any[]>(`/spa/manager/bookings/${id}/available-staff`),
   assignStaff: (id: string, staffId: string) => api.patch<any>(`/spa/manager/bookings/${id}/assign`, { staffId }),
   getManagerStaffs: (branchId: string) => api.get<any[]>(`/spa/manager/staffs?branchId=${branchId}`),

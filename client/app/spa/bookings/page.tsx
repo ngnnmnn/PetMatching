@@ -799,6 +799,21 @@ export default function SpaHistory() {
                 </div>
               </div>
 
+              {/* CANCELLATION INFO */}
+              {selectedBooking.status === 'CANCELLED' && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-red-700 font-extrabold text-xs">
+                    <X className="size-4" />
+                    <span>Lịch hẹn này đã bị hủy</span>
+                  </div>
+                  {selectedBooking.cancelReason && (
+                    <p className="text-xs text-red-950 leading-relaxed font-semibold">
+                      <span className="font-bold text-red-900">Lý do:</span> {selectedBooking.cancelReason}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* CUSTOMER NOTE */}
               {selectedBooking.note && (
                 <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">

@@ -412,14 +412,36 @@ export default function SpaStaff() {
     }
   };
 
-  const formatTimeSlot = (dateStr: string) => {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '00:00 - 00:00';
+  const formatTimeSlot = (bookingOrDate: any) => {
+    if (!bookingOrDate) return '00:00 – 00:00';
 
-    const startHour = d.getHours();
-    const endHour = startHour + 1;
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${pad(startHour)}:00 – ${pad(endHour)}:00`;
+    const formatHHmm = (d: Date) => {
+      const hh = d.getHours().toString().padStart(2, '0');
+      const mm = d.getMinutes().toString().padStart(2, '0');
+      return `${hh}:${mm}`;
+    };
+
+    if (typeof bookingOrDate === 'object') {
+      const start = new Date(bookingOrDate.timeStartExpected || bookingOrDate.scheduledAt);
+      if (isNaN(start.getTime())) return '00:00 – 00:00';
+
+      let end: Date;
+      if (bookingOrDate.timeEndExpected) {
+        end = new Date(bookingOrDate.timeEndExpected);
+      } else {
+        const subList = getBookingSubServices(bookingOrDate);
+        const mainDur = bookingOrDate.service?.durationMin || bookingOrDate.service?.durationMax || 30;
+        const subDur = subList.reduce((sum: number, s: any) => sum + (s.durationMin || s.durationMax || 15), 0);
+        const totalDur = mainDur + subDur;
+        end = new Date(start.getTime() + totalDur * 60 * 1000);
+      }
+
+      return `${formatHHmm(start)} – ${formatHHmm(end)}`;
+    }
+
+    const d = new Date(bookingOrDate);
+    if (isNaN(d.getTime())) return '00:00 – 00:00';
+    return formatHHmm(d);
   };
 
   const formatDateVietnamese = (dateStr: string) => {
@@ -668,7 +690,7 @@ export default function SpaStaff() {
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-gray-800">
-                                📅 {formatDateVietnamese(b.scheduledAt.split('T')[0])} ({formatTimeSlot(b.scheduledAt)})
+                                📅 {formatDateVietnamese(b.scheduledAt.split('T')[0])} ({formatTimeSlot(b)})
                               </span>
                               <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border">
                                 #{b.id.slice(-6).toUpperCase()}
@@ -777,7 +799,7 @@ export default function SpaStaff() {
                     <div className="flex items-center gap-2.5">
                       <Clock className="size-4 text-purple-600 shrink-0" />
                       <span className="font-extrabold text-sm text-gray-800">
-                        {formatTimeSlot(booking.scheduledAt)}
+                        {formatTimeSlot(booking)}
                       </span>
                       <span className="text-[10px] text-gray-400 font-bold px-2 py-0.5 bg-gray-50 rounded border">
                         ID: #{booking.id.slice(-6).toUpperCase()}
