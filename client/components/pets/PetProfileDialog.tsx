@@ -632,6 +632,8 @@ function PetDetails({
   const address = [pet.ward, pet.district, pet.location]
     .filter(Boolean)
     .join(", ");
+  const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
+  const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
 
   return (
     <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
@@ -727,15 +729,15 @@ function PetDetails({
               icon={Syringe}
               title="Tiêm chủng"
               declared={pet.isVaccinated}
-              verified={pet.vaccineVerified}
-              documentStatus={petDocument(pet, "VACCINE_RECORD")?.status}
+              verified={vaccineDocument?.status === "APPROVED"}
+              documentStatus={vaccineDocument?.status}
             />
             <HealthCard
               icon={BadgeCheck}
               title="Phả hệ"
               declared={pet.hasPedigree}
-              verified={pet.pedigreeVerified}
-              documentStatus={petDocument(pet, "PEDIGREE_CERT")?.status}
+              verified={pedigreeDocument?.status === "APPROVED"}
+              documentStatus={pedigreeDocument?.status}
               detail={pet.pedigreeNumber || undefined}
             />
           </div>
@@ -803,6 +805,8 @@ function PetEditForm({
   ) => void;
   onPreviewImage: (url: string) => void;
 }) {
+  const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
+  const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
   const update = <Key extends keyof EditForm>(key: Key, value: EditForm[Key]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
@@ -1030,7 +1034,7 @@ function PetEditForm({
             <Switch
               id="edit-vaccinated"
               checked={form.isVaccinated}
-              disabled={pet.vaccineVerified}
+              disabled={vaccineDocument?.status === "APPROVED"}
               onCheckedChange={(checked) => {
                 update("isVaccinated", checked);
                 if (!checked) update("vaccineDocumentUrls", []);
@@ -1049,7 +1053,7 @@ function PetEditForm({
             <Switch
               id="edit-pedigree"
               checked={form.hasPedigree}
-              disabled={pet.pedigreeVerified}
+              disabled={pedigreeDocument?.status === "APPROVED"}
               onCheckedChange={(checked) => {
                 update("hasPedigree", checked);
                 if (!checked) {
@@ -1063,8 +1067,8 @@ function PetEditForm({
             <DocumentImagesEditor
               title="Ảnh sổ tiêm phòng"
               urls={form.vaccineDocumentUrls}
-              document={petDocument(pet, "VACCINE_RECORD")}
-              verified={pet.vaccineVerified}
+              document={vaccineDocument}
+              verified={vaccineDocument?.status === "APPROVED"}
               uploading={uploading}
               onPreviewImage={onPreviewImage}
               onRemove={(index) =>
@@ -1090,7 +1094,7 @@ function PetEditForm({
                 <Input
                   value={form.pedigreeNumber}
                   maxLength={100}
-                  disabled={pet.pedigreeVerified}
+                  disabled={pedigreeDocument?.status === "APPROVED"}
                   onChange={(event) =>
                     update("pedigreeNumber", event.target.value)
                   }
@@ -1099,8 +1103,8 @@ function PetEditForm({
               <DocumentImagesEditor
                 title="Ảnh giấy chứng nhận phả hệ"
                 urls={form.pedigreeDocumentUrls}
-                document={petDocument(pet, "PEDIGREE_CERT")}
-                verified={pet.pedigreeVerified}
+                document={pedigreeDocument}
+                verified={pedigreeDocument?.status === "APPROVED"}
                 uploading={uploading}
                 onPreviewImage={onPreviewImage}
                 onRemove={(index) =>

@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import {
   Activity,
-  ClipboardCheck,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -32,7 +31,6 @@ const navGroups = [
     label: 'Ghép đôi',
     items: [
       { label: 'Thú cưng', href: '/admin/pets', icon: PawPrint },
-      { label: 'Xác minh thú cưng', href: '/admin/pet-verifications', icon: ClipboardCheck },
       { label: 'Quy tắc giống', href: '/admin/breed-rules', icon: SlidersHorizontal },
       { label: 'Kiểm duyệt ghép đôi', href: '/admin/reports', icon: ShieldCheck },
     ],

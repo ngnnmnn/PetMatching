@@ -16,7 +16,6 @@ import {
   ApprovalStatus,
   ComplaintStatus,
   ComplaintType,
-  DocumentStatus,
   PetStatus,
   Species,
   UserRole,
@@ -132,11 +131,6 @@ export class AdminController {
     @Body() dto: RestorePetDto,
   ) {
     return this.adminService.restorePet(request.user, id, dto);
-  }
-
-  @Get('pet-verifications')
-  getPetDocuments(@Query('status') status?: DocumentStatus) {
-    return this.adminService.getPetDocuments({ status });
   }
 
   @Patch('pet-verifications/:id/review')

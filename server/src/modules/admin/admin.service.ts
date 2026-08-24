@@ -484,6 +484,15 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: {
         owner: { select: { id: true, name: true, email: true, accountStatus: true } },
+        documents: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            createdAt: true,
+          },
+        },
         _count: { select: { documents: true, sentMatchingRequests: true, receivedMatchingRequests: true } },
       },
     });
@@ -609,27 +618,6 @@ export class AdminService {
       });
 
       return restoredPet;
-    });
-  }
-
-  getPetDocuments(query: { status?: DocumentStatus }) {
-    return this.prisma.petDocument.findMany({
-      where: query.status
-        ? { status: query.status }
-        : { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        pet: {
-          select: {
-            id: true,
-            name: true,
-            species: true,
-            breed: true,
-            verificationBadge: true,
-            owner: { select: { id: true, name: true, email: true } },
-          },
-        },
-      },
     });
   }
 

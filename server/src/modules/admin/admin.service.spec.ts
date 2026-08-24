@@ -6,6 +6,7 @@ import {
   DocumentStatus,
   DocumentType,
   PetStatus,
+  VerificationBadge,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminService } from './admin.service';
@@ -559,6 +560,32 @@ describe('AdminService pet document review', () => {
         { status: DocumentStatus.APPROVED },
       ),
     ).resolves.toEqual({ id: 'document-1' });
+  });
+
+  it.each([
+    [DocumentType.VACCINE_RECORD, true, false],
+    [DocumentType.PEDIGREE_CERT, false, true],
+  ])('only verifies the approved %s document type', async (documentType, vaccineVerified, pedigreeVerified) => {
+    prisma.petDocument.count
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(documentType === DocumentType.VACCINE_RECORD ? 1 : 0)
+      .mockResolvedValueOnce(documentType === DocumentType.PEDIGREE_CERT ? 1 : 0);
+
+    await service.reviewPetDocument(
+      { id: 'admin-1', name: 'Admin' },
+      'document-1',
+      { status: DocumentStatus.APPROVED },
+    );
+
+    expect(prisma.pet.update).toHaveBeenCalledWith({
+      where: { id: 'pet-1' },
+      data: {
+        verificationBadge: VerificationBadge.VERIFIED,
+        vaccineVerified,
+        pedigreeVerified,
+      },
+    });
   });
 });
 

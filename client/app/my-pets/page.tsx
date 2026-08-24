@@ -404,7 +404,9 @@ export default function MyPetsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
-                          pet.vaccineVerified
+                          pet.documents.some(
+                            (document) => document.type === "VACCINE_RECORD" && document.status === "APPROVED",
+                          )
                             ? "border-blue-200 bg-blue-50 text-blue-700"
                             : "border-gray-300 bg-white text-gray-600",
                         )}
@@ -417,7 +419,9 @@ export default function MyPetsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
-                          pet.pedigreeVerified
+                          pet.documents.some(
+                            (document) => document.type === "PEDIGREE_CERT" && document.status === "APPROVED",
+                          )
                             ? "border-amber-200 bg-amber-50 text-amber-700"
                             : "border-gray-300 bg-white text-gray-600",
                         )}
