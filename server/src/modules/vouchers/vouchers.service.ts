@@ -45,8 +45,8 @@ export class VouchersService {
 
     let discountAmount = 0;
     if (voucher.type === 'FREE_SHIP') {
-      // 100% freeship if value === 100 or 0, else max freeship value
-      discountAmount = (voucher.value === 100 || voucher.value === 0) ? 1000000 : (voucher.value || 0);
+      // FREE_SHIP applies to shipping fee on client, discountAmount for subtotal is 0
+      discountAmount = 0;
     } else if (voucher.type === 'PERCENTAGE') {
       let calc = (totalAmount * voucher.value) / 100;
       if (voucher.maxDiscountAmount && calc > voucher.maxDiscountAmount) {

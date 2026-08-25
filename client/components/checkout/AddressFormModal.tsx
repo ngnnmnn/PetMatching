@@ -113,7 +113,7 @@ function CustomSelect({
         className="w-full flex items-center justify-between rounded-xl border border-[var(--border-color)] px-3 py-2.5 text-sm bg-[#FCFCFA] text-left focus:outline-none focus:border-primary disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed transition hover:border-gray-400"
       >
         <span className={`truncate ${!selectedOption ? 'text-gray-400' : 'text-[var(--text-main)] font-semibold'}`}>
-          {loading ? 'Đang tải GHN...' : selectedOption ? selectedOption.label : placeholder}
+          {loading ? 'Đang tải danh sách...' : selectedOption ? selectedOption.label : placeholder}
         </span>
         <ChevronDown className={`size-4 text-gray-400 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -205,6 +205,9 @@ interface AddressFormModalProps {
   currentShippingFee?: number;
 }
 
+const HANOI_PROVINCE_ID = 1;
+const HANOI_PROVINCE_NAME = 'Thành phố Hà Nội';
+
 export default function AddressFormModal({
   isOpen,
   onClose,
@@ -235,21 +238,16 @@ export default function AddressFormModal({
   const [saveAddressToDb, setSaveAddressToDb] = useState(true);
   const [setAsDefault, setSetAsDefault] = useState(false);
 
-  // GHN Address Data
-  const [provinces, setProvinces] = useState<Province[]>([]);
-  const [districts, setDistricts] = useState<District[]>([]);
+  // GHN Address Data (Fixed to Hanoi)
   const [wards, setWards] = useState<Ward[]>([]);
 
-  const [provinceId, setProvinceId] = useState<number | undefined>(initialData?.provinceId);
-  const [districtId, setDistrictId] = useState<number | undefined>(initialData?.districtId);
+  const [provinceId, setProvinceId] = useState<number>(HANOI_PROVINCE_ID);
+  const [provinceName, setProvinceName] = useState<string>(HANOI_PROVINCE_NAME);
+  const [districtId, setDistrictId] = useState<number | undefined>(initialData?.districtId || 1);
+  const [districtName, setDistrictName] = useState<string>(initialData?.district || 'Hà Nội');
   const [wardCode, setWardCode] = useState<string | undefined>(initialData?.wardCode);
+  const [wardName, setWardName] = useState<string>(initialData?.ward || '');
 
-  const [provinceName, setProvinceName] = useState('');
-  const [districtName, setDistrictName] = useState('');
-  const [wardName, setWardName] = useState('');
-
-  const [loadingProvinces, setLoadingProvinces] = useState(false);
-  const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [loadingWards, setLoadingWards] = useState(false);
 
   // Fee calculation state
@@ -268,151 +266,34 @@ export default function AddressFormModal({
         setReceiverName(initialData?.receiverName || '');
         setReceiverPhone(initialData?.receiverPhone || '');
         setDetail(initialData?.detail || '');
-        setProvinceName(initialData?.province || '');
-        setDistrictName(initialData?.district || '');
+        setProvinceName(HANOI_PROVINCE_NAME);
+        setDistrictName(initialData?.district || 'Hà Nội');
         setWardName(initialData?.ward || '');
 
-        setProvinceId(initialData?.provinceId);
-        setDistrictId(initialData?.districtId);
+        setProvinceId(HANOI_PROVINCE_ID);
+        setDistrictId(initialData?.districtId || 1);
         setWardCode(initialData?.wardCode);
       }
-
-      setDistricts([]);
-      setWards([]);
     }
   }, [initialData, isOpen, savedAddresses]);
 
-  // Live Shipping Fee Calculation
+  // Live Shipping Fee Calculation (Fixed 30k)
   useEffect(() => {
-    if (!showShippingFee || !districtId || !wardCode) {
+    if (!showShippingFee) {
       setCalculatedShippingFee(null);
       return;
     }
+    setCalculatedShippingFee(30000);
+  }, [showShippingFee]);
 
-    const fetchFee = async () => {
-      setCalculatingFee(true);
-      try {
-        const res = await fetch(`${apiBaseUrl}/shipping/calculate-fee`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            toDistrictId: Number(districtId),
-            toWardCode: String(wardCode),
-          }),
-        });
-        const data = await res.json();
-        if (data && typeof data.total === 'number') {
-          setCalculatedShippingFee(data.total);
-        } else {
-          setCalculatedShippingFee(null);
-        }
-      } catch (err) {
-        console.error('Failed to calculate shipping fee', err);
-        setCalculatedShippingFee(null);
-      } finally {
-        setCalculatingFee(false);
-      }
-    };
-
-    fetchFee();
-  }, [showShippingFee, districtId, wardCode, apiBaseUrl]);
-
-  // Fetch GHN Provinces
+  // Fetch Wards for Hanoi (province_id = 1) when modal is open
   useEffect(() => {
     if (!isOpen) return;
-
-    const fetchProvinces = async () => {
-      setLoadingProvinces(true);
-      try {
-        const res = await fetch(`${apiBaseUrl}/shipping/provinces`);
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : [];
-        setProvinces(list);
-
-        if (initialData?.province && !initialData?.provinceId) {
-          const cleanInit = cleanAddressName(initialData.province, 'province');
-          let match = list.find((p: Province) => cleanAddressName(p.provinceName, 'province') === cleanInit);
-          if (!match) {
-            match = list.find((p: Province) => {
-              const apiName = removeDiacritics(p.provinceName).toLowerCase();
-              const initName = removeDiacritics(initialData.province!).toLowerCase();
-              return apiName.includes(initName) || initName.includes(apiName);
-            });
-          }
-          if (match) {
-            setProvinceId(match.provinceId);
-            setProvinceName(match.provinceName);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load GHN provinces', err);
-        setProvinces([]);
-      } finally {
-        setLoadingProvinces(false);
-      }
-    };
-
-    fetchProvinces();
-  }, [isOpen, initialData?.province, apiBaseUrl]);
-
-  // Fetch GHN Districts when provinceId changes
-  useEffect(() => {
-    if (!provinceId) {
-      setDistricts([]);
-      setWards([]);
-      setDistrictId(undefined);
-      setWardCode(undefined);
-      return;
-    }
-
-    const fetchDistricts = async () => {
-      setLoadingDistricts(true);
-      try {
-        const res = await fetch(`${apiBaseUrl}/shipping/districts?province_id=${provinceId}`);
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : [];
-        setDistricts(list);
-        setWards([]);
-        setWardCode(undefined);
-
-        if (initialData?.district && !initialData?.districtId) {
-          const cleanInit = cleanAddressName(initialData.district, 'district');
-          let match = list.find((d: District) => cleanAddressName(d.districtName, 'district') === cleanInit);
-          if (!match) {
-            match = list.find((d: District) => {
-              const apiName = removeDiacritics(d.districtName).toLowerCase();
-              const initName = removeDiacritics(initialData.district!).toLowerCase();
-              return apiName.includes(initName) || initName.includes(apiName);
-            });
-          }
-          if (match) {
-            setDistrictId(match.districtId);
-            setDistrictName(match.districtName);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load GHN districts', err);
-        setDistricts([]);
-      } finally {
-        setLoadingDistricts(false);
-      }
-    };
-
-    fetchDistricts();
-  }, [provinceId, initialData?.district, apiBaseUrl]);
-
-  // Fetch GHN Wards when districtId changes
-  useEffect(() => {
-    if (!districtId) {
-      setWards([]);
-      setWardCode(undefined);
-      return;
-    }
 
     const fetchWards = async () => {
       setLoadingWards(true);
       try {
-        const res = await fetch(`${apiBaseUrl}/shipping/wards?district_id=${districtId}`);
+        const res = await fetch(`${apiBaseUrl}/shipping/wards?province_id=${HANOI_PROVINCE_ID}`);
         const data = await res.json();
         const list = Array.isArray(data) ? data : [];
         setWards(list);
@@ -433,7 +314,7 @@ export default function AddressFormModal({
           }
         }
       } catch (err) {
-        console.error('Failed to load GHN wards', err);
+        console.error('Failed to load Hanoi wards', err);
         setWards([]);
       } finally {
         setLoadingWards(false);
@@ -441,37 +322,19 @@ export default function AddressFormModal({
     };
 
     fetchWards();
-  }, [districtId, initialData?.ward, apiBaseUrl]);
+  }, [isOpen, initialData?.ward, apiBaseUrl]);
 
   const handleSelectSavedAddress = (addr: any) => {
     setSelectedSavedAddressId(addr.id);
     setReceiverName(addr.receiverName || addr.name || '');
     setReceiverPhone(addr.phone || addr.receiverPhone || '');
     setDetail(addr.detail || '');
-    setProvinceName(addr.province || '');
-    setDistrictName(addr.district || '');
+    setProvinceName(HANOI_PROVINCE_NAME);
+    setDistrictName(addr.district || 'Hà Nội');
     setWardName(addr.ward || '');
-    setProvinceId(addr.provinceId || undefined);
-    setDistrictId(addr.districtId || undefined);
+    setProvinceId(HANOI_PROVINCE_ID);
+    setDistrictId(addr.districtId || 1);
     setWardCode(addr.wardCode || undefined);
-  };
-
-  const handleProvinceSelect = (val: string | number, label: string) => {
-    const pId = Number(val);
-    setProvinceId(pId);
-    setProvinceName(label);
-    setDistrictId(undefined);
-    setDistrictName('');
-    setWardCode(undefined);
-    setWardName('');
-  };
-
-  const handleDistrictSelect = (val: string | number, label: string) => {
-    const dId = Number(val);
-    setDistrictId(dId);
-    setDistrictName(label);
-    setWardCode(undefined);
-    setWardName('');
   };
 
   const handleWardSelect = (val: string | number, label: string) => {
@@ -481,13 +344,13 @@ export default function AddressFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!receiverName.trim() || !receiverPhone.trim() || !detail.trim() || !provinceName || !districtName || !wardName) {
+    if (!receiverName.trim() || !receiverPhone.trim() || !detail.trim() || !wardName) {
       toast.error('Vui lòng chọn hoặc điền đầy đủ các thông tin địa chỉ.');
       return;
     }
 
-    if (!provinceId || !districtId || !wardCode) {
-      toast.error('Vui lòng chọn địa chỉ Tỉnh/Thành, Quận/Huyện, và Phường/Xã từ hệ thống GHN để tính phí ship.');
+    if (!wardCode) {
+      toast.error('Vui lòng chọn Phường/Xã từ hệ thống.');
       return;
     }
 
@@ -500,12 +363,12 @@ export default function AddressFormModal({
     onSubmit({
       receiverName: receiverName.trim(),
       receiverPhone: receiverPhone.trim(),
-      provinceName,
-      districtName,
+      provinceName: HANOI_PROVINCE_NAME,
+      districtName: districtName || wardName,
       wardName,
       detail: detail.trim(),
-      provinceId,
-      districtId,
+      provinceId: HANOI_PROVINCE_ID,
+      districtId: districtId || Number(wardCode),
       wardCode,
       saveAddressToDb,
       setAsDefault,
@@ -518,16 +381,6 @@ export default function AddressFormModal({
       onClose();
     }
   };
-
-  const provinceOptions: CustomSelectOption[] = provinces.map((p) => ({
-    value: p.provinceId,
-    label: p.provinceName,
-  }));
-
-  const districtOptions: CustomSelectOption[] = districts.map((d) => ({
-    value: d.districtId,
-    label: d.districtName,
-  }));
 
   const wardOptions: CustomSelectOption[] = wards.map((w) => ({
     value: w.wardCode,
@@ -674,38 +527,33 @@ export default function AddressFormModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Custom Province Select */}
-                <CustomSelect
-                  label="Tỉnh / Thành"
-                  placeholder="Chọn Tỉnh/Thành"
-                  options={provinceOptions}
-                  value={provinceId}
-                  onChange={handleProvinceSelect}
-                  loading={loadingProvinces}
-                  required
-                />
+              <div className="rounded-xl bg-teal-50/70 border border-[#0F766E]/20 p-3 text-xs font-semibold text-[#0F766E] flex items-center gap-2">
+                <MapPin className="size-4 shrink-0" />
+                <span>📍 Hệ thống hiện tại chỉ áp dụng giao hàng cho các khu vực thuộc <strong>Thành phố Hà Nội</strong>.</span>
+              </div>
 
-                {/* Custom District Select */}
-                <CustomSelect
-                  label="Quận / Huyện"
-                  placeholder="Chọn Quận/Huyện"
-                  options={districtOptions}
-                  value={districtId}
-                  onChange={handleDistrictSelect}
-                  disabled={!provinceId}
-                  loading={loadingDistricts}
-                  required
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Fixed Province/City Input */}
+                <div>
+                  <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1.5 h-4 flex items-center">
+                    Tỉnh / Thành phố <span className="text-red-500 ml-0.5">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    disabled
+                    value={HANOI_PROVINCE_NAME}
+                    className="w-full rounded-xl border border-[var(--border-color)] px-3 py-2.5 text-sm bg-gray-100 text-gray-700 font-bold cursor-not-allowed"
+                  />
+                </div>
 
                 {/* Custom Ward Select */}
                 <CustomSelect
-                  label="Phường / Xã"
-                  placeholder="Chọn Phường/Xã"
+                  label="Phường / Xã (Hà Nội)"
+                  placeholder="Chọn Phường/Xã..."
                   options={wardOptions}
                   value={wardCode}
                   onChange={handleWardSelect}
-                  disabled={!districtId}
                   loading={loadingWards}
                   required
                 />

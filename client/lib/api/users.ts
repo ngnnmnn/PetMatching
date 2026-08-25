@@ -51,6 +51,6 @@ export const usersApi = {
   lookupBankName: (bankCode: string, accountNumber: string) =>
     api.post<{ accountName: string }>('/users/bank-lookup', { bankCode, accountNumber }),
   applyVoucher: (code: string, totalAmount: number) =>
-    api.post<{ success: boolean; code: string; type: string; value: number; message: string }>('/vouchers/apply', { code, totalAmount }),
+    api.post<{ success: boolean; code: string; type: string; value: number; discountAmount?: number; message: string }>('/vouchers/apply', { code, totalAmount }),
 };
 

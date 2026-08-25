@@ -16,14 +16,16 @@ import {
   ShieldCheck,
   RotateCcw,
   X,
-  Tag
+  Tag,
+  Ticket,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
 import { useCart } from '@/context/CartContext';
 import { usersApi } from '@/lib/api/users';
 import { Address } from '@/types';
-import { PayOSQRModal, PayOSQRData, ShippingAddressSelector } from '@/components/checkout';
+import { PayOSQRModal, PayOSQRData, ShippingAddressSelector, VoucherModal } from '@/components/checkout';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 function formatCurrency(value: number) {
@@ -58,6 +60,7 @@ function CheckoutPageContent() {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [appliedVoucher, setAppliedVoucher] = useState<any | null>(null);
+  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
 
   // Addresses from DB
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
@@ -221,30 +224,19 @@ function CheckoutPageContent() {
     }
   }, [searchParams]);
 
-  const handleApplyPromoCode = async (e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent) => {
+  const handleApplyPromoCode = async (
+    e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent,
+    targetCode?: string,
+  ) => {
     if (e) e.preventDefault();
-    if (!promoCode.trim()) return;
+    const code = (targetCode || promoCode).trim().toUpperCase();
+    if (!code) return;
 
-    const code = promoCode.trim().toUpperCase();
-    if (code === 'PETMATCH10') {
-      setDiscountPercent(10);
-      setDiscountAmount(0);
-      setAppliedVoucher(null);
-      setAppliedCode(code);
-      toast.success('Áp dụng mã PETMATCH10 thành công! Giảm 10% tổng hóa đơn.');
-      setPromoCode('');
-      return;
-    } 
-    
-    if (code === 'HELLOWORLD') {
-      setDiscountPercent(0);
-      setDiscountAmount(50000);
-      setAppliedVoucher(null);
-      setAppliedCode(code);
-      toast.success('Áp dụng mã HELLOWORLD thành công! Giảm 50.000đ.');
-      setPromoCode('');
-      return;
-    }
+    // Reset current applied voucher first (1 voucher per order rule)
+    setDiscountPercent(0);
+    setDiscountAmount(0);
+    setAppliedVoucher(null);
+    setAppliedCode('');
 
     try {
       const response = await usersApi.applyVoucher(code, checkoutTotal);
@@ -252,13 +244,21 @@ function CheckoutPageContent() {
         const voucher = response.data;
         setAppliedVoucher(voucher);
         setAppliedCode(voucher.code);
-        setDiscountPercent(0);
-        setDiscountAmount(0);
+        if (voucher.type === 'PERCENTAGE') {
+          setDiscountPercent(voucher.value);
+          setDiscountAmount(voucher.discountAmount || 0);
+        } else if (voucher.type === 'FIXED') {
+          setDiscountPercent(0);
+          setDiscountAmount(voucher.discountAmount || voucher.value);
+        } else {
+          setDiscountPercent(0);
+          setDiscountAmount(voucher.discountAmount || 0);
+        }
         toast.success(voucher.message || 'Áp dụng mã giảm giá thành công!');
       }
     } catch (err: any) {
       console.error('Failed to apply voucher', err);
-      const errMsg = err.response?.data?.message || 'Mã giảm giá không hợp lệ hoặc đã hết hạn.';
+      const errMsg = err.response?.data?.message || 'Mã giảm giá không hợp lệ hoặc chưa đủ điều kiện.';
       toast.error(errMsg);
     }
     setPromoCode('');
@@ -355,10 +355,24 @@ function CheckoutPageContent() {
 
   const hasItems = !!directCheckoutItem || selectedItemIds.length > 0;
   const baseShippingFee = (hasItems && checkoutTotal > 500000) ? 0 : calculatedShippingFee;
-  const isFreeShip = appliedVoucher?.type === 'FREE_SHIP';
-  const shippingFee = isFreeShip ? 0 : baseShippingFee;
-  const discountVal = (checkoutTotal * discountPercent) / 100 + discountAmount + (isFreeShip ? baseShippingFee : 0);
-  const finalTotal = Math.max(0, checkoutTotal + baseShippingFee - discountVal);
+
+  let freeShipDiscount = 0;
+  if (appliedVoucher?.type === 'FREE_SHIP') {
+    const val = appliedVoucher.value;
+    if (val === 100 || val === 0 || !val) {
+      freeShipDiscount = baseShippingFee;
+    } else {
+      freeShipDiscount = Math.min(baseShippingFee, val);
+    }
+  }
+
+  const shippingFee = Math.max(0, baseShippingFee - freeShipDiscount);
+  const productDiscount = appliedVoucher?.type === 'FREE_SHIP'
+    ? 0
+    : Math.min(checkoutTotal, (checkoutTotal * discountPercent) / 100 + discountAmount);
+
+  const totalDiscount = appliedVoucher?.type === 'FREE_SHIP' ? freeShipDiscount : productDiscount;
+  const finalTotal = Math.max(0, checkoutTotal - productDiscount + shippingFee);
 
   const loadAddresses = async () => {
     try {
@@ -617,9 +631,7 @@ function CheckoutPageContent() {
 
       // Create Order in DB
       const res = await usersApi.createOrder({
-        totalAmount: appliedVoucher
-          ? Number(finalTotal) + Number(discountVal)
-          : Number(finalTotal),
+        totalAmount: Number(checkoutTotal),
         shippingFee: Number(baseShippingFee),
         shippingAddress: finalAddress,
         districtId: targetDistrictId,
@@ -871,60 +883,71 @@ function CheckoutPageContent() {
             <div className="lg:col-span-4 space-y-6">
 
               {/* Promo Code Box */}
-              <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-extrabold text-[var(--text-main)] mb-3 flex items-center gap-2">
-                  <Tag className="size-4 text-primary" />
-                  Mã giảm giá
-                </h3>
+              <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-extrabold text-[var(--text-main)] flex items-center gap-2">
+                    <Tag className="size-4 text-[#0F766E]" />
+                    Mã giảm giá / Voucher
+                  </h3>
+                  <span className="text-[10px] font-bold text-gray-400">Tối đa 1 mã/đơn</span>
+                </div>
+
                 {appliedCode ? (
-                  <div className="flex items-center justify-between rounded-xl bg-green-50 border border-green-200 p-3.5">
-                    <div className="flex items-center gap-2">
-                      <div className="size-2 rounded-full bg-green-500 shrink-0" />
+                  <div className="flex items-center justify-between rounded-xl bg-teal-50/80 border border-[#0F766E]/30 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-2.5">
+                      <div className="size-8 rounded-lg bg-[#0F766E]/10 flex items-center justify-center text-[#0F766E] font-black shrink-0">
+                        <Ticket className="size-4" />
+                      </div>
                       <div>
-                        <span className="text-sm font-extrabold text-green-800">Đã áp dụng: {appliedCode}</span>
-                        <p className="text-[11px] text-green-700 font-semibold mt-0.5">
-                          {discountPercent > 0 ? `Giảm ${discountPercent}% tổng đơn hàng` : `Giảm ${formatCurrency(discountAmount)}`}
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-[#0F766E] font-mono">{appliedCode}</span>
+                          <span className="text-[10px] font-extrabold bg-[#0F766E] text-white px-1.5 py-0.5 rounded">
+                            Đã áp dụng
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 font-semibold mt-0.5">
+                          {appliedVoucher?.type === 'FREE_SHIP'
+                            ? 'Miễn phí vận chuyển 100%'
+                            : discountPercent > 0
+                              ? `Giảm ${discountPercent}% tổng hóa đơn`
+                              : `Giảm ${formatCurrency(discountAmount || appliedVoucher?.discountAmount || 0)}`}
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleRemovePromo}
-                      className="text-xs font-bold text-red-600 hover:text-red-800 hover:underline"
-                    >
-                      Hủy bỏ
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsVoucherModalOpen(true)}
+                        className="text-xs font-bold text-[#0F766E] hover:underline cursor-pointer"
+                      >
+                        Đổi mã
+                      </button>
+                      <span className="text-gray-300">•</span>
+                      <button
+                        type="button"
+                        onClick={handleRemovePromo}
+                        className="text-xs font-bold text-red-600 hover:text-red-800 hover:underline cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Nhập mã (Ví dụ: PETMATCH10, HELLOWORLD)"
-                      value={promoCode}
-                      onChange={(e) => setPromoCode(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleApplyPromoCode(e);
-                        }
-                      }}
-                      className="flex-1 rounded-xl border border-[var(--border-color)] px-4 py-2 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => handleApplyPromoCode(e)}
-                      className="rounded-xl bg-[#0F766E] px-5 py-2 text-sm font-extrabold text-white hover:bg-[#115E59] transition cursor-pointer"
-                    >
-                      Áp dụng
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsVoucherModalOpen(true)}
+                    className="w-full flex items-center justify-between rounded-xl border border-dashed border-[#0F766E]/40 bg-[#0F766E]/5 px-4 py-3 text-left transition hover:bg-[#0F766E]/10 group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Ticket className="size-5 text-[#0F766E]" />
+                      <div>
+                        <p className="text-sm font-black text-[#0F766E]">Chọn hoặc nhập mã Voucher</p>
+                        <p className="text-[11px] text-gray-500 font-medium">Xem các mã giảm giá & freeship khả dụng</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="size-4 text-[#0F766E] group-hover:translate-x-0.5 transition-transform" />
+                  </button>
                 )}
-                <div className="mt-2.5 flex flex-wrap gap-2 text-[10px] text-[var(--text-muted)] font-semibold">
-                  <span>Mã gợi ý:</span>
-                  <button type="button" onClick={() => setPromoCode('PETMATCH10')} className="underline text-[#0F766E] hover:text-[#115E59] cursor-pointer">PETMATCH10 (Giảm 10%)</button>
-                  <span>|</span>
-                  <button type="button" onClick={() => setPromoCode('HELLOWORLD')} className="underline text-[#0F766E] hover:text-[#115E59] cursor-pointer">HELLOWORLD (Giảm 50k)</button>
-                </div>
               </div>
 
               {/* Order Items Summary */}
@@ -1019,13 +1042,13 @@ function CheckoutPageContent() {
                     </span>
                   </div>
                   {appliedCode && (
-                    <div className="flex justify-between text-green-600 animate-in fade-in duration-200">
+                    <div className="flex justify-between text-[#0F766E] font-bold animate-in fade-in duration-200">
                       <span>
                         {appliedVoucher?.type === 'FREE_SHIP' 
                           ? `Miễn phí vận chuyển (${appliedCode})` 
                           : `Giảm giá (${appliedCode})`}
                       </span>
-                      <span>-{formatCurrency(discountVal)}</span>
+                      <span>-{formatCurrency(totalDiscount)}</span>
                     </div>
                   )}
 
@@ -1143,6 +1166,15 @@ function CheckoutPageContent() {
         onSuccess={handleQRPaymentSuccess}
         onCancelOrder={handleCancelQROrder}
         qrData={payOSQRData}
+      />
+
+      {/* Voucher Selection Modal */}
+      <VoucherModal
+        isOpen={isVoucherModalOpen}
+        onClose={() => setIsVoucherModalOpen(false)}
+        onSelectVoucher={(code) => handleApplyPromoCode(undefined, code)}
+        currentAppliedCode={appliedCode}
+        subtotal={checkoutTotal}
       />
     </main>
   );

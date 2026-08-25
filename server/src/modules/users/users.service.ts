@@ -536,56 +536,6 @@ export class UsersService {
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {
-    // 0. Kiểm tra địa chỉ giao hàng hợp lệ trực tiếp với GHN (Kiểm tra xem phường/xã có bị khóa giao nhận hay không)
-    if (dto.districtId && dto.wardCode) {
-      const ghnToken =
-        process.env.GHN_TOKEN || '8205e68a-8a8e-11f1-a973-aee5264794df';
-      const ghnBaseUrl =
-        process.env.GHN_API_URL ||
-        'https://online-gateway.ghn.vn/shiip/public-api';
-      try {
-        const response = await fetch(
-          `${ghnBaseUrl}/master-data/ward?district_id=${dto.districtId}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Token: ghnToken,
-            },
-            body: JSON.stringify({ district_id: Number(dto.districtId) }),
-          },
-        );
-        const data = await response.json();
-        if (data.code === 200 && data.data) {
-          const ward = data.data.find(
-            (w: any) => String(w.WardCode) === String(dto.wardCode),
-          );
-          if (!ward) {
-            throw new BadRequestException(
-              'Phường/Xã không tồn tại trên hệ thống giao nhận của GHN.',
-            );
-          }
-          // Kiểm tra trạng thái hoạt động (Status === 1) và quyền giao nhận (Config.To.LockType)
-          const isStatusInactive = Number(ward.Status) !== 1;
-          const isLockTypeActive =
-            ward.Config?.To?.LockType === 1 ||
-            ward.Config?.To?.LockType === '1' ||
-            ward.Config?.To?.LockType === 'locked';
-          const isLocked = isStatusInactive || isLockTypeActive;
-
-          if (isLocked) {
-            throw new BadRequestException(
-              `GHN tạm ngưng hỗ trợ giao hàng ở phường/xã này: ${ward.WardName} - Dự kiến mở lại ngày Chưa xác định.`,
-            );
-          }
-        }
-      } catch (err) {
-        if (err instanceof BadRequestException) {
-          throw err;
-        }
-        console.error('GHN pre-order address validation failed:', err.message);
-      }
-    }
 
     const payosItems: { name: string; quantity: number; price: number }[] = [];
     const paymentMethod = dto.paymentMethod === 'QR' ? 'QR' : 'COD';
@@ -988,21 +938,7 @@ export class UsersService {
       );
     }
 
-    let newShippingFee = Number(order.shippingFee || 0);
-
-    if (data.districtId && data.wardCode) {
-      try {
-        const feeRes = await this.shippingService.calculateShippingFee({
-          toDistrictId: Number(data.districtId),
-          toWardCode: String(data.wardCode),
-        });
-        if (feeRes && typeof feeRes.total === 'number') {
-          newShippingFee = feeRes.total;
-        }
-      } catch (err) {
-        console.error('Failed to recalculate shipping fee on address update:', err);
-      }
-    }
+    let newShippingFee = 30000;
 
     const oldShippingFee = Number(order.shippingFee || 0);
     const newTotalAmount = Math.max(
