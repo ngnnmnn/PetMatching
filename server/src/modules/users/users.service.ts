@@ -849,6 +849,23 @@ export class UsersService {
         }
       }
 
+      // Restore voucher usedCount if order used a voucher
+      if (order.voucherCode) {
+        const voucher = await tx.voucher.findUnique({
+          where: { code: order.voucherCode },
+        });
+        if (voucher && voucher.usedCount > 0) {
+          await tx.voucher.update({
+            where: { id: voucher.id },
+            data: {
+              usedCount: {
+                decrement: 1,
+              },
+            },
+          });
+        }
+      }
+
       // Đơn hàng QR hay COD đều chuyển sang CANCELLED thay vì delete
       if (order.payment) {
         await tx.payment.update({
@@ -908,6 +925,23 @@ export class UsersService {
             data: {
               stock: {
                 increment: item.quantity,
+              },
+            },
+          });
+        }
+      }
+
+      // Restore voucher usedCount if order used a voucher
+      if (order.voucherCode) {
+        const voucher = await tx.voucher.findUnique({
+          where: { code: order.voucherCode },
+        });
+        if (voucher && voucher.usedCount > 0) {
+          await tx.voucher.update({
+            where: { id: voucher.id },
+            data: {
+              usedCount: {
+                decrement: 1,
               },
             },
           });

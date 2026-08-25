@@ -506,6 +506,23 @@ export class ManagerService {
             });
           }
         }
+
+        // Restore voucher usedCount if order used a voucher
+        if (order.voucherCode) {
+          const voucher = await tx.voucher.findUnique({
+            where: { code: order.voucherCode },
+          });
+          if (voucher && voucher.usedCount > 0) {
+            await tx.voucher.update({
+              where: { id: voucher.id },
+              data: {
+                usedCount: {
+                  decrement: 1,
+                },
+              },
+            });
+          }
+        }
       }
       // If transition FROM CANCELLED to something else
       else if (order.status === 'CANCELLED' && status !== 'CANCELLED') {
