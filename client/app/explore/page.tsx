@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Grid,
   Heart,
   Inbox,
@@ -19,6 +22,12 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import AppHeader from '@/components/layout/AppHeader';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -392,7 +401,7 @@ export default function UnifiedMatchingHubPage() {
                   type="button"
                   onClick={() => setViewMode('SWIPE')}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer',
                     viewMode === 'SWIPE' ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -402,7 +411,7 @@ export default function UnifiedMatchingHubPage() {
                   type="button"
                   onClick={() => setViewMode('GRID')}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer',
                     viewMode === 'GRID' ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -414,7 +423,13 @@ export default function UnifiedMatchingHubPage() {
 
           {/* SMART PET SELECTOR */}
           {!loadingPets && myPets.length > 0 && (
-            <div className="mt-6 pt-4 border-t flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
+            <div
+              className="mt-6 pt-4 border-t flex items-center gap-3 overflow-x-auto pb-3"
+              style={{
+                scrollbarWidth: 'thin',
+                WebkitOverflowScrolling: 'touch',
+              }}
+            >
               <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground shrink-0">
                 Chọn thú cưng:
               </span>
@@ -426,34 +441,44 @@ export default function UnifiedMatchingHubPage() {
                     type="button"
                     onClick={() => handleSelectPet(pet)}
                     className={cn(
-                      'flex items-center gap-2.5 rounded-2xl border-2 px-3.5 py-2 text-left transition-all shrink-0',
+                      'flex items-center gap-2.5 rounded-2xl border-2 px-3.5 py-2 text-left transition-all shrink-0 cursor-pointer',
                       isSelected
                         ? pet.gender === 'FEMALE'
-                          ? 'border-primary bg-primary/10 shadow-sm'
-                          : 'border-blue-500 bg-blue-50/50 shadow-sm'
+                          ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/20'
+                          : 'border-blue-500 bg-blue-50/70 shadow-sm ring-2 ring-blue-500/20'
                         : 'border-border bg-card hover:bg-muted/50',
                     )}
                   >
                     <img
                       src={pet.avatarUrl || pet.gallery?.[0] || '/placeholder.svg'}
                       alt={pet.name}
-                      className="size-full max-w-8 max-h-8 rounded-full object-cover border"
+                      className="size-8 rounded-full object-cover border"
                     />
                     <div className="min-w-0 text-xs">
                       <div className="flex items-center gap-1">
-                        <span className="font-extrabold truncate">{pet.name}</span>
-                        <span className={cn('font-black text-[10px]', pet.gender === 'MALE' ? 'text-blue-600' : 'text-pink-600')}>
+                        <span className="font-extrabold truncate max-w-[120px]">{pet.name}</span>
+                        <span
+                          className={cn(
+                            'font-black text-[10px]',
+                            pet.gender === 'MALE' ? 'text-blue-600' : 'text-pink-600',
+                          )}
+                        >
                           {pet.gender === 'MALE' ? '♂' : '♀'}
                         </span>
                       </div>
-                      <p className="text-[10px] text-muted-foreground truncate">{pet.breed}</p>
+                      <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{pet.breed}</p>
                     </div>
                   </button>
                 );
               })}
-              <Button size="sm" variant="ghost" className="rounded-2xl text-xs font-bold shrink-0 gap-1" asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-2xl text-xs font-bold shrink-0 gap-1 text-primary hover:bg-primary/10"
+                asChild
+              >
                 <Link href="/my-pets/new">
-                  <PawPrint className="size-3.5 text-primary" /> + Tạo bé mới
+                  <PawPrint className="size-3.5" /> + Tạo bé mới
                 </Link>
               </Button>
             </div>
