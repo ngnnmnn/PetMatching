@@ -25,6 +25,7 @@ export function HanoiWardSelect({
 }: HanoiWardSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
+  const listRef = React.useRef<HTMLDivElement>(null)
 
   const filteredWards = React.useMemo(() => {
     return searchHanoiWards(searchTerm)
@@ -34,6 +35,30 @@ export function HanoiWardSelect({
     if (!value) return null
     return HANOI_WARDS.find((w) => w.name.toLowerCase() === value.toLowerCase()) || null
   }, [value])
+
+  // Xử lý cuộn chuột giữa (wheel) mượt mà kể cả khi mở trong Modal/Dialog
+  React.useEffect(() => {
+    if (!open) return
+    const el = listRef.current
+    if (!el) return
+
+    const onNativeWheel = (e: WheelEvent) => {
+      e.stopPropagation()
+      el.scrollTop += e.deltaY
+    }
+
+    el.addEventListener("wheel", onNativeWheel, { passive: false })
+    return () => {
+      el.removeEventListener("wheel", onNativeWheel)
+    }
+  }, [open, filteredWards])
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    if (listRef.current) {
+      listRef.current.scrollTop += e.deltaY
+    }
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -59,7 +84,12 @@ export function HanoiWardSelect({
           <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[320px] sm:w-[400px] p-0 rounded-2xl shadow-2xl" align="start">
+      <PopoverContent
+        className="w-[320px] sm:w-[400px] p-0 rounded-2xl shadow-2xl z-50 bg-popover"
+        align="start"
+        data-scroll-lock-scrollable
+        onWheel={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center border-b px-3 py-2">
           <Search className="mr-2 size-4 shrink-0 text-muted-foreground" />
           <Input
@@ -71,7 +101,13 @@ export function HanoiWardSelect({
           />
         </div>
 
-        <div className="max-h-64 overflow-y-auto p-1 text-sm">
+        <div
+          ref={listRef}
+          onWheel={handleWheel}
+          data-scroll-lock-scrollable
+          className="max-h-64 overflow-y-auto p-1 text-sm overscroll-contain"
+          style={{ scrollbarWidth: "thin" }}
+        >
           {filteredWards.length === 0 ? (
             <div className="p-4 text-center text-xs text-muted-foreground">
               Không tìm thấy Phường / Xã nào phù hợp tại Hà Nội.
@@ -99,7 +135,7 @@ export function HanoiWardSelect({
                       TP. Hà Nội · ({ward.lat.toFixed(4)}, {ward.lng.toFixed(4)})
                     </span>
                   </div>
-                  {isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                  {isSelected && <Check className="size-4 text-primary shrink-0" />}
                 </button>
               )
             })
