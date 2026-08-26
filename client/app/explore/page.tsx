@@ -22,6 +22,11 @@ import { Button } from '@/components/ui/button';
 import type { PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { CompatibilityBreakdown } from '@/components/matching/compatibility-breakdown';
+import {
+  PetPublicProfileDialog,
+  type PetWithOwner,
+} from '@/components/pets/PetPublicProfileDialog';
 
 // =============================================================
 // Types
@@ -48,6 +53,7 @@ type Pet = {
   pedigreeNumber?: string | null;
   pedigreeVerified: boolean;
   vaccineVerified: boolean;
+  verificationBadge: 'NONE' | 'PENDING' | 'VERIFIED';
   status: PetStatus;
   breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
   breedingFee?: number | null;
@@ -56,6 +62,11 @@ type Pet = {
   matchReasons?: string[];
   breedWarnings?: string[];
   breedInfo?: {
+    offspringName: string | null;
+    warningNote: string | null;
+    isCompatible: boolean;
+  };
+  crossBreeding?: {
     offspringName: string | null;
     warningNote: string | null;
     isCompatible: boolean;
@@ -69,24 +80,8 @@ type MatchingRequest = {
   note?: string | null;
   createdAt: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
-  femalePet: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    status: PetStatus;
-    owner: { name: string };
-  };
-  malePet: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    status: PetStatus;
-    breedingOption?: string;
-    breedingFee?: number | null;
-    owner?: { name: string };
-  };
+  femalePet: PetWithOwner;
+  malePet: PetWithOwner;
 };
 
 type FilterState = {
@@ -143,14 +138,45 @@ export default function UnifiedMatchingHubPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [selectedCandidateDetail, setSelectedCandidateDetail] = useState<Pet | null>(null);
+  const [autoExpandCompatibility, setAutoExpandCompatibility] = useState(false);
   const [requestingPet, setRequestingPet] = useState<Pet | null>(null);
   const [requestNote, setRequestNote] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
+  const [viewingPetProfile, setViewingPetProfile] = useState<{
+    pet: PetWithOwner;
+    requestNote?: string | null;
+    requestId?: string;
+    matchingLocked?: boolean;
+  } | null>(null);
 
-  // Derived selected pet
+  // Derived selected pet & Breeding Eligibility
   const selectedPet = useMemo(() => myPets.find((p) => p.id === selectedPetId), [myPets, selectedPetId]);
   const isSelectedFemale = selectedPet?.gender === 'FEMALE';
   const isSelectedMale = selectedPet?.gender === 'MALE';
+
+  const getPetAgeMonths = (birthdayStr?: string) => {
+    if (!birthdayStr) return 0;
+    const birthday = new Date(birthdayStr);
+    const now = new Date();
+    let months = (now.getFullYear() - birthday.getFullYear()) * 12 + now.getMonth() - birthday.getMonth();
+    if (now.getDate() < birthday.getDate()) months -= 1;
+    return Math.max(0, months);
+  };
+
+  const isSelectedPetUnderage = useMemo(() => {
+    if (!selectedPet) return false;
+    const minMonths = selectedPet.species === 'CAT' ? 8 : 12;
+    return getPetAgeMonths(selectedPet.birthday) < minMonths;
+  }, [selectedPet]);
+
+  const selectedPetEligibleDate = useMemo(() => {
+    if (!selectedPet) return '';
+    const minMonths = selectedPet.species === 'CAT' ? 8 : 12;
+    const birthday = new Date(selectedPet.birthday);
+    const eligibleDate = new Date(birthday);
+    eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
+    return eligibleDate.toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
+  }, [selectedPet]);
 
   // Load My Pets & Prefetch initial candidates
   useEffect(() => {
@@ -238,6 +264,10 @@ export default function UnifiedMatchingHubPage() {
 
   const handleSendRequestSubmit = async () => {
     if (!selectedPetId || !requestingPet) return;
+    if (isSelectedPetUnderage) {
+      toast.error(`Bé ${selectedPet?.name} chưa đủ tuổi phối giống (cần tối thiểu ${selectedPet?.species === 'CAT' ? 8 : 12} tháng tuổi). Dự kiến mở vào Tháng ${selectedPetEligibleDate}.`);
+      return;
+    }
     setSendingRequest(true);
     try {
       await api.post('/matching/requests', {
@@ -455,17 +485,39 @@ export default function UnifiedMatchingHubPage() {
             </div>
           ) : (
             <>
+              {/* Underage Notice Banner for Selected Female Pet */}
+              {selectedPet && isSelectedPetUnderage && (
+                <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30 flex items-start gap-3 shadow-xs">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                    🌱
+                  </div>
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-extrabold text-blue-900 dark:text-blue-100">
+                        Bé {selectedPet.name} đang trong giai đoạn phát triển ({getPetAgeMonths(selectedPet.birthday)} tháng tuổi)
+                      </h3>
+                      <span className="rounded-full bg-blue-200/80 dark:bg-blue-800 text-blue-900 dark:text-blue-100 px-2.5 py-0.5 text-[11px] font-black">
+                        Dự kiến mở ghép đôi: Tháng {selectedPetEligibleDate}
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-700 dark:text-blue-300/90 leading-relaxed">
+                      Theo chuẩn thú y, {selectedPet.species === 'CAT' ? 'mèo' : 'chó'} cần tối thiểu {selectedPet.species === 'CAT' ? 8 : 12} tháng tuổi để đảm bảo an toàn sinh sản. Bạn hiện tại có thể xem trước danh sách các ứng viên phù hợp!
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Quick Filter Bar */}
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-xl font-bold gap-2 border-2"
-                onClick={() => setIsFilterOpen(true)}
-              >
-                <SlidersHorizontal className="size-4 text-primary" /> Bộ lọc nâng cao
-              </Button>
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl font-bold gap-2 border-2"
+                    onClick={() => setIsFilterOpen(true)}
+                  >
+                    <SlidersHorizontal className="size-4 text-primary" /> Bộ lọc nâng cao
+                  </Button>
 
             </div>
 
@@ -510,7 +562,14 @@ export default function UnifiedMatchingHubPage() {
                     setCurrentCandidateIndex((prev) => prev + 1);
                   }}
                   onRequestOpen={() => setRequestingPet(currentSwipeCandidate)}
-                  onViewDetail={() => setSelectedCandidateDetail(currentSwipeCandidate)}
+                  onViewDetail={() => {
+                    setAutoExpandCompatibility(false);
+                    setSelectedCandidateDetail(currentSwipeCandidate);
+                  }}
+                  onViewScoreDetail={() => {
+                    setAutoExpandCompatibility(true);
+                    setSelectedCandidateDetail(currentSwipeCandidate);
+                  }}
                 />
               )}
             </div>
@@ -526,7 +585,14 @@ export default function UnifiedMatchingHubPage() {
                   getAge={getAge}
                   onPass={() => handlePass(pet.id)}
                   onRequestOpen={() => setRequestingPet(pet)}
-                  onViewDetail={() => setSelectedCandidateDetail(pet)}
+                  onViewDetail={() => {
+                    setAutoExpandCompatibility(false);
+                    setSelectedCandidateDetail(pet);
+                  }}
+                  onViewScoreDetail={() => {
+                    setAutoExpandCompatibility(true);
+                    setSelectedCandidateDetail(pet);
+                  }}
                 />
               ))}
             </div>
@@ -575,14 +641,57 @@ export default function UnifiedMatchingHubPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {incomingRequests.map((req) => {
                   const matchingLocked = req.femalePet.status !== 'ACTIVE' || req.malePet.status !== 'ACTIVE';
+                  const femaleImage = req.femalePet.avatarUrl || req.femalePet.gallery?.[0] || '/placeholder.svg';
                   return (
-                    <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                    <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4 hover:border-primary/40 transition-all">
                     <div className="flex items-start gap-4">
-                      <img src={req.femalePet.avatarUrl || '/placeholder.svg'} alt={req.femalePet.name} className="size-16 rounded-2xl object-cover border" />
+                      <button
+                        type="button"
+                        onClick={() => setViewingPetProfile({
+                          pet: req.femalePet,
+                          requestNote: req.note,
+                          requestId: req.id,
+                          matchingLocked,
+                        })}
+                        className="group relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-2xl border bg-muted"
+                        title="Bấm để xem chi tiết hồ sơ bé cái"
+                      >
+                        <img src={femaleImage} alt={req.femalePet.name} className="size-full object-cover transition-transform group-hover:scale-110" />
+                      </button>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-extrabold text-base">{req.femalePet.name} ({req.femalePet.breed})</h3>
-                        <p className="text-xs text-muted-foreground">Chủ sở hữu: <span className="text-foreground font-semibold">{req.femalePet.owner.name}</span></p>
-                        <p className="mt-1 text-xs font-bold text-primary">Muốn phối với bé đực: {req.malePet.name}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.femalePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              matchingLocked,
+                            })}
+                            className="text-left group cursor-pointer truncate"
+                          >
+                            <h3 className="font-extrabold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
+                              {req.femalePet.name}
+                              <span className="text-xs font-bold text-pink-600 shrink-0">(♀)</span>
+                            </h3>
+                          </button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.femalePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              matchingLocked,
+                            })}
+                            className="rounded-xl text-xs font-bold h-8 shrink-0 hover:bg-primary/10 hover:text-primary"
+                          >
+                            Xem hồ sơ
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">Chủ sở hữu: <span className="text-foreground font-semibold">{req.femalePet.owner?.name}</span></p>
+                        <p className="mt-1 text-xs font-bold text-primary truncate">Muốn phối với bé đực: {req.malePet.name}</p>
                       </div>
                     </div>
                     {req.note && <div className="rounded-xl border bg-muted/40 p-3 text-xs italic text-muted-foreground">&ldquo;{req.note}&rdquo;</div>}
@@ -626,17 +735,23 @@ export default function UnifiedMatchingHubPage() {
               <div className="p-6 overflow-y-auto space-y-6 flex-1">
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn quốc)'}
+                    Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn Hà Nội)'}
                   </label>
                   <input
                     type="range"
                     min="0"
-                    max="2000"
-                    step="25"
+                    max="50"
+                    step="5"
                     value={filters.distanceRadius}
                     onChange={(e) => setFilters({ ...filters, distanceRadius: Number(e.target.value) })}
                     className="w-full accent-primary"
                   />
+                  <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
+                    <span>Gần nhất</span>
+                    <span>15 km</span>
+                    <span>30 km</span>
+                    <span>Toàn Hà Nội</span>
+                  </div>
                 </div>
                 <div className="space-y-2 pt-4 border-t">
                   <label className="flex items-center justify-between text-xs font-bold cursor-pointer">
@@ -734,6 +849,43 @@ export default function UnifiedMatchingHubPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Compatibility Breakdown Section (Collapsible Accordion) */}
+                {selectedPet && (
+                  <CompatibilityBreakdown
+                    key={`${selectedCandidateDetail.id}-${autoExpandCompatibility}`}
+                    defaultExpanded={autoExpandCompatibility}
+                    myPet={{
+                      name: selectedPet.name,
+                      breed: selectedPet.breed,
+                      gender: selectedPet.gender,
+                      weight: selectedPet.weight,
+                      location: selectedPet.location,
+                      ward: selectedPet.ward,
+                      hasPedigree: selectedPet.hasPedigree,
+                      pedigreeVerified: selectedPet.pedigreeVerified,
+                      isVaccinated: selectedPet.isVaccinated,
+                      vaccineVerified: selectedPet.vaccineVerified,
+                    }}
+                    candidatePet={{
+                      name: selectedCandidateDetail.name,
+                      breed: selectedCandidateDetail.breed,
+                      gender: selectedCandidateDetail.gender,
+                      weight: selectedCandidateDetail.weight,
+                      location: selectedCandidateDetail.location,
+                      ward: selectedCandidateDetail.ward,
+                      hasPedigree: selectedCandidateDetail.hasPedigree,
+                      pedigreeVerified: selectedCandidateDetail.pedigreeVerified,
+                      isVaccinated: selectedCandidateDetail.isVaccinated,
+                      vaccineVerified: selectedCandidateDetail.vaccineVerified,
+                      distanceKm: selectedCandidateDetail.distanceKm,
+                      compatibilityScore: selectedCandidateDetail.compatibilityScore,
+                      matchReasons: selectedCandidateDetail.matchReasons,
+                      breedWarnings: selectedCandidateDetail.breedWarnings,
+                      breedInfo: selectedCandidateDetail.breedInfo,
+                    }}
+                  />
+                )}
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -850,6 +1002,24 @@ export default function UnifiedMatchingHubPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {viewingPetProfile && (
+        <PetPublicProfileDialog
+          pet={viewingPetProfile.pet}
+          open={Boolean(viewingPetProfile)}
+          onClose={() => setViewingPetProfile(null)}
+          requestNote={viewingPetProfile.requestNote}
+          requestAction={
+            viewingPetProfile.requestId
+              ? {
+                  onAccept: () => handleRespondRequest(viewingPetProfile.requestId!, 'accept'),
+                  onReject: () => handleRespondRequest(viewingPetProfile.requestId!, 'reject'),
+                  acceptDisabled: viewingPetProfile.matchingLocked,
+                }
+              : undefined
+          }
+        />
+      )}
     </main>
   );
 }
@@ -864,12 +1034,14 @@ function SwipeCardContainer({
   onPass,
   onRequestOpen,
   onViewDetail,
+  onViewScoreDetail,
 }: {
   pet: Pet;
   getAge: (b: string) => string;
   onPass: () => void;
   onRequestOpen: () => void;
   onViewDetail: () => void;
+  onViewScoreDetail?: () => void;
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
@@ -892,7 +1064,7 @@ function SwipeCardContainer({
       className="relative overflow-hidden rounded-3xl border bg-card shadow-2xl cursor-grab active:cursor-grabbing touch-none select-none"
     >
       {/* Aspect 4/5 tall photo */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-muted" onClick={onViewDetail}>
+      <div className="relative aspect-[4/5] overflow-hidden bg-muted cursor-pointer" onClick={onViewDetail}>
         <img
           src={pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'}
           alt={pet.name}
@@ -902,10 +1074,19 @@ function SwipeCardContainer({
 
         {/* Top Badges */}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-end">
-          <div className="flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md">
-            <Sparkles className="mr-1 size-4 text-primary" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onViewScoreDetail) onViewScoreDetail();
+              else onViewDetail();
+            }}
+            className="flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md hover:bg-black/80 transition-all cursor-pointer group hover:scale-105"
+            title="Bấm để xem phân tích chi tiết độ phù hợp"
+          >
+            <Sparkles className="mr-1.5 size-4 text-primary group-hover:rotate-12 transition-transform" />
             <span className="text-xs font-black text-primary">{pet.compatibilityScore || 95}% Phù hợp</span>
-          </div>
+          </button>
         </div>
 
         {/* Bottom Content Overlay */}
@@ -915,12 +1096,12 @@ function SwipeCardContainer({
             <span className="text-lg font-bold text-white/90">{getAge(pet.birthday)}</span>
           </div>
           <p className="text-sm font-semibold text-white/90">
-            {pet.breed} · {pet.district ? `${pet.district}, ${pet.location}` : pet.location}
+            {pet.breed} · {pet.ward || pet.location}
           </p>
 
           <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
             <span className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow">
-              📍 Cách {pet.distanceKm ?? 5} km
+              📍 {pet.distanceKm != null && pet.distanceKm <= 1 ? `Cùng khu vực (${pet.distanceKm} km)` : `Cách ${pet.distanceKm ?? 5} km`}
             </span>
             <span className="rounded-lg bg-black/40 px-2.5 py-1 backdrop-blur-md">
               ⚖️ {pet.weight} kg
@@ -979,20 +1160,30 @@ function CandidateCardGrid({
   onPass,
   onRequestOpen,
   onViewDetail,
+  onViewScoreDetail,
 }: {
   pet: Pet;
   getAge: (b: string) => string;
   onPass: () => void;
   onRequestOpen: () => void;
   onViewDetail: () => void;
+  onViewScoreDetail?: () => void;
 }) {
   return (
     <article className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative aspect-[4/3] overflow-hidden bg-muted cursor-pointer" onClick={onViewDetail}>
         <img src={pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'} alt={pet.name} className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-        <div className="absolute right-3 top-3 bg-black/60 backdrop-blur-md rounded-xl px-2.5 py-1 text-xs font-black text-primary">
-          {pet.compatibilityScore || 95}%
+        <div
+          className="absolute right-3 top-3 bg-black/60 backdrop-blur-md rounded-xl px-2.5 py-1 text-xs font-black text-primary hover:scale-105 transition-transform cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onViewScoreDetail) onViewScoreDetail();
+            else onViewDetail();
+          }}
+          title="Bấm để xem phân tích chi tiết độ phù hợp"
+        >
+          ✨ {pet.compatibilityScore || 95}%
         </div>
         <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
           <h2 className="text-xl font-black">{pet.name}</h2>
@@ -1001,7 +1192,7 @@ function CandidateCardGrid({
       </div>
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-          <span className="font-semibold text-foreground">📍 {pet.district ? `${pet.district}, ${pet.location}` : pet.location} ({pet.distanceKm ?? 5} km)</span>
+          <span className="font-semibold text-foreground">📍 {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km`})</span>
           <span>⚖️ {pet.weight} kg</span>
         </div>
         <div className="grid grid-cols-2 gap-2 pt-1">

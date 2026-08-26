@@ -30,6 +30,7 @@ import {
 } from './dto/report-match.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { getProvinceCoords } from './province-coordinates';
+import { getHanoiWardCoords } from './hanoi-wards';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -204,48 +205,35 @@ export class MatchingService {
       );
 
       let distanceKm = 10;
-      const femaleLat = femalePet.latitude;
-      const femaleLng = femalePet.longitude;
-      const candLat = candidate.latitude;
-      const candLng = candidate.longitude;
+      let femaleLat = femalePet.latitude;
+      let femaleLng = femalePet.longitude;
+      let candLat = candidate.latitude;
+      let candLng = candidate.longitude;
 
-      const isSameLocation =
-        femalePet.location &&
-        candidate.location &&
-        femalePet.location.trim().toLowerCase() === candidate.location.trim().toLowerCase();
+      // Tra cứu fallback theo Phường Hà Nội nếu thiếu toạ độ GPS
+      if (femaleLat == null || femaleLng == null) {
+        const fWardCoords = getHanoiWardCoords(femalePet.ward || femalePet.location);
+        femaleLat = fWardCoords.lat;
+        femaleLng = fWardCoords.lng;
+      }
+      if (candLat == null || candLng == null) {
+        const cWardCoords = getHanoiWardCoords(candidate.ward || candidate.location);
+        candLat = cWardCoords.lat;
+        candLng = cWardCoords.lng;
+      }
 
-      const isSameDistrict =
-        isSameLocation &&
-        femalePet.district &&
-        candidate.district &&
-        femalePet.district.trim().toLowerCase() === candidate.district.trim().toLowerCase();
+      // Kiểm tra cùng Phường / Xã
+      const isSameWard =
+        femalePet.ward &&
+        candidate.ward &&
+        femalePet.ward.trim().toLowerCase() === candidate.ward.trim().toLowerCase();
 
-      if (femaleLat != null && femaleLng != null && candLat != null && candLng != null) {
+      if (isSameWard) {
+        distanceKm = 0.8;
+      } else if (femaleLat != null && femaleLng != null && candLat != null && candLng != null) {
         distanceKm = calculateHaversineDistance(femaleLat, femaleLng, candLat, candLng);
-      } else if (isSameDistrict) {
-        distanceKm = 3.5;
-      } else if (isSameLocation) {
-        distanceKm = 12.0;
       } else {
-        const fCoords =
-          femaleLat != null && femaleLng != null
-            ? { lat: femaleLat, lng: femaleLng }
-            : getProvinceCoords(femalePet.location);
-        const cCoords =
-          candLat != null && candLng != null
-            ? { lat: candLat, lng: candLng }
-            : getProvinceCoords(candidate.location);
-
-        if (fCoords && cCoords) {
-          distanceKm = calculateHaversineDistance(
-            fCoords.lat,
-            fCoords.lng,
-            cCoords.lat,
-            cCoords.lng,
-          );
-        } else {
-          distanceKm = 250.0;
-        }
+        distanceKm = 5.0;
       }
 
       return {
@@ -1367,11 +1355,13 @@ export class MatchingService {
       femalePet: {
         include: {
           owner: { select: { id: true, name: true, avatarUrl: true } },
+          documents: true,
         },
       },
       malePet: {
         include: {
           owner: { select: { id: true, name: true, avatarUrl: true } },
+          documents: true,
         },
       },
     } satisfies Prisma.MatchingRequestInclude;

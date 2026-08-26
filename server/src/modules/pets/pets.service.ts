@@ -52,6 +52,11 @@ export class PetsService {
     if (Number.isNaN(birthday.getTime())) {
       throw new BadRequestException('Birthday is invalid.');
     }
+    if (!dto.avatarUrl && (!dto.gallery || dto.gallery.length === 0)) {
+      throw new BadRequestException(
+        'Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.',
+      );
+    }
     const documents = [];
     if (dto.isVaccinated) {
       documents.push({
@@ -140,6 +145,16 @@ export class PetsService {
           if (birthday.getTime() > Date.now()) {
             throw new BadRequestException('Birthday cannot be in the future.');
           }
+        }
+
+        const nextAvatarUrl =
+          dto.avatarUrl !== undefined ? dto.avatarUrl : pet.avatarUrl;
+        const nextGallery =
+          dto.gallery !== undefined ? dto.gallery : pet.gallery;
+        if (!nextAvatarUrl && (!nextGallery || nextGallery.length === 0)) {
+          throw new BadRequestException(
+            'Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.',
+          );
         }
 
         const nextGender = dto.gender ?? pet.gender;

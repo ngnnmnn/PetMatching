@@ -19,12 +19,14 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Info,
   Loader2,
   MapPin,
   MoreVertical,
   PawPrint,
   Scale,
   ShieldCheck,
+  Sparkles,
   Syringe,
   X,
 } from "lucide-react";
@@ -74,6 +76,8 @@ import {
   type UpdatePetPayload,
 } from "@/lib/api/pets";
 import { cn } from "@/lib/utils";
+import { HanoiWardSelect } from "@/components/hanoi-ward-select";
+import { getHanoiWardCoords } from "@/lib/hanoi-wards";
 
 type DialogMode = "view" | "edit";
 
@@ -324,7 +328,10 @@ export function PetProfileDialog({
     if (!Number.isFinite(weight) || weight < 0.1 || weight > 200) {
       return "Cân nặng phải nằm trong khoảng 0,1–200 kg.";
     }
-    if (!form.location.trim()) return "Vui lòng nhập tỉnh hoặc thành phố.";
+    if (!form.location.trim() && !form.ward.trim()) return "Vui lòng chọn Phường / Xã tại Hà Nội.";
+    if (!form.avatarUrl && (!form.gallery || form.gallery.length === 0)) {
+      return "Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.";
+    }
     if (form.personality.length > 500) return "Tính cách tối đa 500 ký tự.";
     return null;
   };
@@ -337,6 +344,8 @@ export function PetProfileDialog({
       return;
     }
 
+    const wardCoords = getHanoiWardCoords(form.ward);
+
     const payload: UpdatePetPayload = {
       name: form.name.trim(),
       species: form.species,
@@ -344,9 +353,11 @@ export function PetProfileDialog({
       gender: form.gender,
       birthday: form.birthday,
       weight: Number(form.weight),
-      location: form.location.trim(),
-      district: form.district.trim() || null,
-      ward: form.ward.trim() || null,
+      location: "Hà Nội",
+      district: null,
+      ward: form.ward.trim() || "Phường Hoàn Kiếm",
+      latitude: wardCoords.lat,
+      longitude: wardCoords.lng,
       personality: form.personality.trim() || null,
       isVaccinated: form.isVaccinated,
       hasPedigree: form.hasPedigree,
@@ -635,6 +646,17 @@ function PetDetails({
   const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
   const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
 
+  const minMonths = pet.species === "CAT" ? 8 : 12;
+  const birthday = new Date(pet.birthday);
+  const now = new Date();
+  let ageMonths = (now.getFullYear() - birthday.getFullYear()) * 12 + now.getMonth() - birthday.getMonth();
+  if (now.getDate() < birthday.getDate()) ageMonths -= 1;
+  ageMonths = Math.max(0, ageMonths);
+  const isUnderage = ageMonths < minMonths;
+  const eligibleDate = new Date(birthday);
+  eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
+  const eligibleDateStr = eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" });
+
   return (
     <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
       <div className="space-y-4">
@@ -694,12 +716,38 @@ function PetDetails({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-3xl font-black">{pet.name}</h2>
             <StatusBadge status={pet.status} />
+            {isUnderage ? (
+              <span className="rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 px-2.5 py-1 text-xs font-black">
+                🌱 Đang lớn ({ageMonths} tháng)
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 px-2.5 py-1 text-xs font-black">
+                ✨ Đủ tuổi phối giống
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm font-semibold text-muted-foreground">
             {pet.breed} · {pet.species === "DOG" ? "Chó" : "Mèo"} ·{" "}
             {pet.gender === "MALE" ? "Đực" : "Cái"}
           </p>
         </div>
+
+        {isUnderage ? (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/30 text-xs text-blue-800 dark:text-blue-200 flex items-start gap-2.5">
+            <Info className="size-4 shrink-0 text-blue-600 mt-0.5" />
+            <div>
+              <p className="font-extrabold">Độ tuổi an toàn sinh sản</p>
+              <p className="mt-0.5 text-blue-700/90 dark:text-blue-300/90 font-medium">
+                Bé chưa đạt tuổi phối giống tối thiểu ({minMonths} tháng). Tính năng tìm bạn đời sẽ tự động sẵn sàng vào <strong>Tháng {eligibleDateStr}</strong>.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/60 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2 font-bold">
+            <Sparkles className="size-4 text-emerald-600 shrink-0" />
+            <span>Đủ điều kiện tham gia ghép đôi ({breedingSummary(pet)})</span>
+          </div>
+        )}
 
         <section className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2">
           <DetailItem
@@ -993,29 +1041,19 @@ function PetEditForm({
       </section>
 
       <section>
-        <SectionTitle icon={MapPin} title="Địa chỉ" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Tỉnh / Thành phố" required>
-            <Input
-              value={form.location}
-              maxLength={200}
-              onChange={(event) => update("location", event.target.value)}
-            />
-          </Field>
-          <Field label="Quận / Huyện">
-            <Input
-              value={form.district}
-              maxLength={100}
-              onChange={(event) => update("district", event.target.value)}
-            />
-          </Field>
-          <Field label="Phường / Xã">
-            <Input
-              value={form.ward}
-              maxLength={100}
-              onChange={(event) => update("ward", event.target.value)}
-            />
-          </Field>
+        <SectionTitle icon={MapPin} title="Địa chỉ & Khu vực tại Hà Nội" />
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">
+            Phường / Xã nơi bé đang ở (Hệ thống tự động cập nhật toạ độ GPS)
+          </Label>
+          <HanoiWardSelect
+            value={form.ward || form.location}
+            onChange={(ward) => {
+              update("location", "Hà Nội");
+              update("district", "");
+              update("ward", ward.name);
+            }}
+          />
         </div>
       </section>
 
