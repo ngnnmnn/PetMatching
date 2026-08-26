@@ -206,16 +206,14 @@ export class MatchingService {
       const latest = latestByMalePetId.get(candidate.id);
       if (!latest) return true;
 
-      // 2. Yêu cầu đang PENDING (đang chờ duyệt) hoặc ACCEPTED (đã ghép đôi) -> Không hiển thị lại
-      if (
-        latest.status === MatchingRequestStatus.PENDING ||
-        latest.status === MatchingRequestStatus.ACCEPTED
-      ) {
+      // 2. Yêu cầu đang PENDING (đang chờ duyệt) -> Không hiển thị lại
+      if (latest.status === MatchingRequestStatus.PENDING) {
         return false;
       }
 
-      // 3. Đối với yêu cầu REJECTED hoặc PASSED: Chỉ hiển thị lại nếu một trong 2 pet có cập nhật hồ sơ sau thời điểm phản hồi
-      const requestTimestamp = latest.respondedAt || latest.createdAt;
+      // 3. Đối với yêu cầu REJECTED, PASSED, CANCELLED hoặc ACCEPTED cũ đã kết thúc match:
+      // Chỉ hiển thị lại nếu một trong 2 pet có cập nhật hồ sơ sau thời điểm phản hồi / kết thúc match
+      const requestTimestamp = latest.respondedAt || latest.updatedAt || latest.createdAt;
       const latestProfileUpdate =
         femalePet.updatedAt > candidate.updatedAt
           ? femalePet.updatedAt
@@ -838,6 +836,19 @@ export class MatchingService {
       await tx.pet.updateMany({
         where: { id: { in: [match.pet1Id, match.pet2Id] } },
         data: { updatedAt: endedAt },
+      });
+      await tx.matchingRequest.updateMany({
+        where: {
+          OR: [
+            { femalePetId: match.pet1Id, malePetId: match.pet2Id },
+            { femalePetId: match.pet2Id, malePetId: match.pet1Id },
+          ],
+          status: MatchingRequestStatus.ACCEPTED,
+        },
+        data: {
+          status: MatchingRequestStatus.CANCELLED,
+          updatedAt: endedAt,
+        },
       });
       await tx.auditLog.create({
         data: {
