@@ -317,8 +317,8 @@ describe('MatchingService accepting requests', () => {
   };
 
   const setupAcceptRequest = (
-    femaleStatus = PetStatus.ACTIVE,
-    maleStatus = PetStatus.ACTIVE,
+    femaleStatus: PetStatus = PetStatus.ACTIVE,
+    maleStatus: PetStatus = PetStatus.ACTIVE,
   ) => {
     const request = {
       id: 'request-1',

@@ -156,21 +156,41 @@ export class MatchingService {
       take: 100,
     });
 
-    const history = await this.prisma.matchingRequest.findMany({
-      where: {
-        femalePetId: femalePet.id,
-        malePetId: { in: candidates.map((candidate) => candidate.id) },
-        status: {
-          in: [
-            MatchingRequestStatus.PENDING,
-            MatchingRequestStatus.ACCEPTED,
-            MatchingRequestStatus.REJECTED,
-            MatchingRequestStatus.PASSED,
+    const candidateIds = candidates.map((candidate) => candidate.id);
+
+    const [history, activeMatches] = await Promise.all([
+      this.prisma.matchingRequest.findMany({
+        where: {
+          femalePetId: femalePet.id,
+          malePetId: { in: candidateIds },
+          status: {
+            in: [
+              MatchingRequestStatus.PENDING,
+              MatchingRequestStatus.ACCEPTED,
+              MatchingRequestStatus.REJECTED,
+              MatchingRequestStatus.PASSED,
+            ],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.match.findMany({
+        where: {
+          status: MatchStatus.ACTIVE,
+          OR: [
+            { pet1Id: femalePet.id, pet2Id: { in: candidateIds } },
+            { pet2Id: femalePet.id, pet1Id: { in: candidateIds } },
           ],
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        select: { pet1Id: true, pet2Id: true },
+      }),
+    ]);
+
+    const activeMatchedPetIds = new Set(
+      activeMatches
+        .flatMap((m) => [m.pet1Id, m.pet2Id])
+        .filter((id) => id !== femalePet.id),
+    );
 
     const latestByMalePetId = new Map(
       history.map((item) => [item.malePetId, item]),
@@ -178,15 +198,30 @@ export class MatchingService {
 
     // Filter candidates và tính compatibility score (async)
     const eligibleCandidates = candidates.filter((candidate) => {
+      // 1. Nếu đang có Match ACTIVE (phòng chat đang hoạt động) -> Chặn tuyệt đối
+      if (activeMatchedPetIds.has(candidate.id)) {
+        return false;
+      }
+
       const latest = latestByMalePetId.get(candidate.id);
       if (!latest) return true;
 
+      // 2. Yêu cầu đang PENDING (đang chờ duyệt) hoặc ACCEPTED (đã ghép đôi) -> Không hiển thị lại
+      if (
+        latest.status === MatchingRequestStatus.PENDING ||
+        latest.status === MatchingRequestStatus.ACCEPTED
+      ) {
+        return false;
+      }
+
+      // 3. Đối với yêu cầu REJECTED hoặc PASSED: Chỉ hiển thị lại nếu một trong 2 pet có cập nhật hồ sơ sau thời điểm phản hồi
+      const requestTimestamp = latest.respondedAt || latest.createdAt;
       const latestProfileUpdate =
         femalePet.updatedAt > candidate.updatedAt
           ? femalePet.updatedAt
           : candidate.updatedAt;
 
-      return latest.createdAt < latestProfileUpdate;
+      return requestTimestamp < latestProfileUpdate;
     });
 
     // Batch fetch breed rules để tránh N+1 DB query lên Supabase
