@@ -181,21 +181,31 @@ function ShopPageContent() {
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any | null>(null);
   const [showPetRow, setShowPetRow] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoadingPets, setIsLoadingPets] = useState(false);
   const { addToCart } = useCart();
 
   // Load user pets list
   const loadUserPets = useCallback(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    setIsLoggedIn(!!token);
     if (token) {
+      setIsLoadingPets(true);
       api.get('/pets/my')
         .then((res) => {
           if (res.data) {
-            setPets(res.data);
+            setPets(Array.isArray(res.data) ? res.data : []);
           }
         })
         .catch((err) => {
           console.error('Failed to load pets in shop', err);
+        })
+        .finally(() => {
+          setIsLoadingPets(false);
         });
+    } else {
+      setPets([]);
+      setIsLoadingPets(false);
     }
   }, []);
 
@@ -203,19 +213,22 @@ function ShopPageContent() {
     loadUserPets();
   }, [loadUserPets]);
 
-  // Listen to auth changes (e.g. logout) to clear pet filter immediately
+  // Listen to auth changes (e.g. logout/login) to clear or update pet filter
   useEffect(() => {
     const handleAuthChange = () => {
       const token = localStorage.getItem('accessToken');
+      setIsLoggedIn(!!token);
       if (!token) {
         setSelectedPet(null);
         localStorage.removeItem('petmatch_shop_selected_pet');
         setPets([]);
+      } else {
+        loadUserPets();
       }
     };
     window.addEventListener('auth-change', handleAuthChange);
     return () => window.removeEventListener('auth-change', handleAuthChange);
-  }, []);
+  }, [loadUserPets]);
 
   // Restore selected pet filter on mount (only if user is logged in)
   useEffect(() => {
@@ -544,25 +557,35 @@ function ShopPageContent() {
                       Chọn thú cưng của bạn để nhận đề xuất kích cỡ:
                     </span>
                     
-                    {pets.length === 0 ? (
+                    {isLoadingPets ? (
                       <div className="flex items-center gap-3 bg-slate-50 dark:bg-zinc-950 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800 text-xs font-bold text-[var(--text-muted)]">
+                        <Loader2 className="size-4 animate-spin text-orange-500" />
+                        <span>Đang tải danh sách thú cưng của bạn...</span>
+                      </div>
+                    ) : !isLoggedIn ? (
+                      <div className="flex items-center gap-3 bg-amber-50/60 dark:bg-zinc-950 p-4 rounded-2xl border border-amber-200/70 dark:border-zinc-800 text-xs font-bold text-amber-900 dark:text-amber-200">
                         <span>🐶🐱</span>
-                        <span>Bạn chưa có hồ sơ thú cưng hoặc chưa đăng nhập.</span>
+                        <span>Bạn chưa đăng nhập. Vui lòng đăng nhập để chọn thú cưng và nhận gợi ý phù hợp.</span>
                         <button
                           onClick={() => {
                             router.push('/login');
                           }}
-                          className="ml-auto px-3.5 py-1.5 rounded-xl bg-orange-500 text-white text-[11px] font-black transition cursor-pointer"
+                          className="ml-auto px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-black transition cursor-pointer shadow-xs shrink-0"
                         >
                           Đăng nhập
                         </button>
+                      </div>
+                    ) : pets.length === 0 ? (
+                      <div className="flex items-center gap-3 bg-orange-50/50 dark:bg-zinc-950 p-4 rounded-2xl border border-orange-200/60 dark:border-zinc-800 text-xs font-bold text-orange-900 dark:text-orange-200">
+                        <span>🐶🐱</span>
+                        <span>Tài khoản của bạn chưa có hồ sơ thú cưng nào. Hãy tạo hồ sơ để nhận đề xuất sản phẩm & kích cỡ phù hợp!</span>
                         <button
                           onClick={() => {
                             router.push('/my-pets/new');
                           }}
-                          className="px-3.5 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-[var(--text-main)] text-[11px] font-black transition cursor-pointer"
+                          className="ml-auto px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-black transition cursor-pointer shadow-xs shrink-0"
                         >
-                          Tạo hồ sơ
+                          + Tạo hồ sơ thú cưng
                         </button>
                       </div>
                     ) : (

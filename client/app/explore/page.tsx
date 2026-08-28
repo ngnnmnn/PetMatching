@@ -1,49 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
-  AlertTriangle,
-  BadgeCheck,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  Coins,
-  Crown,
-  Filter,
   Grid,
   Heart,
-  ImageIcon,
   Inbox,
   Info,
   Layers,
-  MapPin,
-  MessageCircle,
-  MessageSquare,
-  Paperclip,
   PawPrint,
-  RotateCcw,
   Search,
-  Send,
-  Settings2,
-  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
-  Syringe,
-  ToggleLeft,
-  ToggleRight,
-  Weight,
   X,
-  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import AppHeader from '@/components/layout/AppHeader';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import type { PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { CompatibilityBreakdown } from '@/components/matching/compatibility-breakdown';
+import {
+  PetPublicProfileDialog,
+  type PetWithOwner,
+} from '@/components/pets/PetPublicProfileDialog';
 
 // =============================================================
 // Types
@@ -70,7 +62,8 @@ type Pet = {
   pedigreeNumber?: string | null;
   pedigreeVerified: boolean;
   vaccineVerified: boolean;
-  isAvailableForMatching: boolean;
+  verificationBadge: 'NONE' | 'PENDING' | 'VERIFIED';
+  status: PetStatus;
   breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
   breedingFee?: number | null;
   shareLitterCount?: number | null;
@@ -78,6 +71,11 @@ type Pet = {
   matchReasons?: string[];
   breedWarnings?: string[];
   breedInfo?: {
+    offspringName: string | null;
+    warningNote: string | null;
+    isCompatible: boolean;
+  };
+  crossBreeding?: {
     offspringName: string | null;
     warningNote: string | null;
     isCompatible: boolean;
@@ -91,50 +89,8 @@ type MatchingRequest = {
   note?: string | null;
   createdAt: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
-  femalePet: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner: { name: string };
-  };
-  malePet: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    breedingOption?: string;
-    breedingFee?: number | null;
-    owner?: { name: string };
-  };
-};
-
-type Match = {
-  id: string;
-  compatibilityScore: number;
-  createdAt: string;
-  pet1: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner: { name: string };
-  };
-  pet2: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner: { name: string };
-  };
-};
-
-type MatchMessage = {
-  id: string;
-  content: string;
-  senderId: string;
-  createdAt: string;
-  sender: { id: string; name: string; avatarUrl?: string | null };
+  femalePet: PetWithOwner;
+  malePet: PetWithOwner;
 };
 
 type FilterState = {
@@ -165,23 +121,12 @@ const initialFilters: FilterState = {
   sortBy: 'RECOMMENDED',
 };
 
-const REASON_LABELS: Record<string, { label: string; icon: typeof Sparkles; color: string }> = {
-  same_breed:             { label: 'Cùng giống',           icon: Crown,       color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  breed_compatible:       { label: 'Giống tương thích',    icon: Zap,         color: 'text-violet-600 bg-violet-50 border-violet-200' },
-  both_pedigree:          { label: 'Cả hai có phả hệ',    icon: Crown,       color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  both_pedigree_verified: { label: 'Phả hệ xác minh',  icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  both_vaccine_verified:  { label: 'Vaccine xác minh',  icon: Syringe,     color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  same_location:          { label: 'Cùng khu vực',        icon: MapPin,      color: 'text-teal-600 bg-teal-50 border-teal-200' },
-  similar_weight:         { label: 'Cân nặng tương đồng', icon: Weight,      color: 'text-slate-600 bg-slate-50 border-slate-200' },
-};
-
 // =============================================================
 // Main Unified Matching Hub Page
 // =============================================================
 
 export default function UnifiedMatchingHubPage() {
-  // Navigation Tabs: EXPLORE (Discovery), REQUESTS (Manage Requests), CHAT (Direct Matches & Messages), SETUP (Male Setup)
-  const [activeTab, setActiveTab] = useState<'EXPLORE' | 'REQUESTS' | 'CHAT' | 'SETUP'>('EXPLORE');
+  const [activeTab, setActiveTab] = useState<'EXPLORE' | 'REQUESTS'>('EXPLORE');
   const [viewMode, setViewMode] = useState<'SWIPE' | 'GRID'>('SWIPE');
 
   // User & Pet States
@@ -194,51 +139,60 @@ export default function UnifiedMatchingHubPage() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [currentCandidateIndex, setCurrentCandidateIndex] = useState(0);
 
-  // Requests & Matches Data
+  // Requests Data
   const [incomingRequests, setIncomingRequests] = useState<MatchingRequest[]>([]);
-  const [outgoingRequests, setOutgoingRequests] = useState<MatchingRequest[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
   const [requestsTab, setRequestsTab] = useState<'INCOMING' | 'OUTGOING'>('INCOMING');
 
   // Filter Drawer & Modals State
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [selectedCandidateDetail, setSelectedCandidateDetail] = useState<Pet | null>(null);
+  const [autoExpandCompatibility, setAutoExpandCompatibility] = useState(false);
   const [requestingPet, setRequestingPet] = useState<Pet | null>(null);
   const [requestNote, setRequestNote] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
+  const [viewingPetProfile, setViewingPetProfile] = useState<{
+    pet: PetWithOwner;
+    requestNote?: string | null;
+    requestId?: string;
+    matchingLocked?: boolean;
+  } | null>(null);
 
-  // Celebration Match Popup
-  const [celebrativeMatch, setCelebrativeMatch] = useState<Match | null>(null);
-
-  // Chat Window State
-  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
-  const [inputText, setInputText] = useState('');
-  const [chatMessages, setChatMessages] = useState<Record<string, MatchMessage[]>>({});
-  const [currentUserId, setCurrentUserId] = useState('');
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [sendingMessage, setSendingMessage] = useState(false);
-
-  // Male Pet Setup State
-  const [isAvailable, setIsAvailable] = useState(false);
-  const [breedingOption, setBreedingOption] = useState<'CASH' | 'SHARE_LITTER' | 'NEGOTIATE'>('NEGOTIATE');
-  const [breedingFee, setBreedingFee] = useState('');
-  const [shareLitterCount, setShareLitterCount] = useState('1');
-  const [personalityNote, setPersonalityNote] = useState('');
-  const [savingSetup, setSavingSetup] = useState(false);
-
-  // Derived selected pet
+  // Derived selected pet & Breeding Eligibility
   const selectedPet = useMemo(() => myPets.find((p) => p.id === selectedPetId), [myPets, selectedPetId]);
   const isSelectedFemale = selectedPet?.gender === 'FEMALE';
   const isSelectedMale = selectedPet?.gender === 'MALE';
 
+  const getPetAgeMonths = (birthdayStr?: string) => {
+    if (!birthdayStr) return 0;
+    const birthday = new Date(birthdayStr);
+    const now = new Date();
+    let months = (now.getFullYear() - birthday.getFullYear()) * 12 + now.getMonth() - birthday.getMonth();
+    if (now.getDate() < birthday.getDate()) months -= 1;
+    return Math.max(0, months);
+  };
+
+  const isSelectedPetUnderage = useMemo(() => {
+    if (!selectedPet) return false;
+    const minMonths = selectedPet.species === 'CAT' ? 8 : 12;
+    return getPetAgeMonths(selectedPet.birthday) < minMonths;
+  }, [selectedPet]);
+
+  const selectedPetEligibleDate = useMemo(() => {
+    if (!selectedPet) return '';
+    const minMonths = selectedPet.species === 'CAT' ? 8 : 12;
+    const birthday = new Date(selectedPet.birthday);
+    const eligibleDate = new Date(birthday);
+    eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
+    return eligibleDate.toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
+  }, [selectedPet]);
+
   // Load My Pets & Prefetch initial candidates
   useEffect(() => {
-    setLoadingPets(true);
     api
       .get<Pet[]>('/pets/my')
       .then(async (res) => {
-        const pets = res.data || [];
+        const pets = (res.data || []).filter((pet) => pet.status === 'ACTIVE');
         setMyPets(pets);
         if (pets.length > 0) {
           const firstPet = pets[0];
@@ -261,18 +215,6 @@ export default function UnifiedMatchingHubPage() {
       .catch(() => toast.error('Không tải được danh sách thú cưng.'))
       .finally(() => setLoadingPets(false));
   }, []);
-
-  // When selected pet changes, adapt defaults
-  useEffect(() => {
-    if (!selectedPet) return;
-    if (selectedPet.gender === 'MALE') {
-      setIsAvailable(selectedPet.isAvailableForMatching);
-      setBreedingOption(selectedPet.breedingOption || 'NEGOTIATE');
-      setBreedingFee(selectedPet.breedingFee ? String(selectedPet.breedingFee) : '');
-      setShareLitterCount(selectedPet.shareLitterCount ? String(selectedPet.shareLitterCount) : '1');
-      setPersonalityNote(selectedPet.personality || '');
-    }
-  }, [selectedPet]);
 
   // Load Candidates for female pet
   const handleSelectPet = useCallback(
@@ -306,58 +248,15 @@ export default function UnifiedMatchingHubPage() {
     [filters],
   );
 
-  const fetchCandidates = useCallback(() => {
-    if (!selectedPet) return;
-    handleSelectPet(selectedPet);
-  }, [selectedPet, handleSelectPet]);
-
-  useEffect(() => {
-    if (selectedPetId && isSelectedFemale && candidates.length === 0 && !loadingCandidates) {
-      fetchCandidates();
-    }
-  }, [selectedPetId, isSelectedFemale, fetchCandidates]);
-
-  // Load Requests & Matches
-  const loadRequestsAndMatches = useCallback(() => {
-    Promise.all([
-      api.get<MatchingRequest[]>('/matching/requests/incoming'),
-      api.get<Match[]>('/matching/matches'),
-    ])
-      .then(([reqRes, matchRes]) => {
-        setIncomingRequests(reqRes.data || []);
-        setMatches(matchRes.data || []);
-        if (matchRes.data && matchRes.data.length > 0 && !selectedMatch) {
-          setSelectedMatch(matchRes.data[0]);
-        }
-      })
+  const loadIncomingRequests = useCallback(() => {
+    api.get<MatchingRequest[]>('/matching/requests/incoming')
+      .then((res) => setIncomingRequests(res.data || []))
       .catch(() => {});
-  }, [selectedMatch]);
-
-  useEffect(() => {
-    loadRequestsAndMatches();
-  }, [loadRequestsAndMatches]);
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (!storedUser) return;
-    try {
-      setCurrentUserId((JSON.parse(storedUser) as { id?: string }).id || '');
-    } catch {
-      setCurrentUserId('');
-    }
   }, []);
 
   useEffect(() => {
-    if (!selectedMatch) return;
-    const matchId = selectedMatch.id;
-    setLoadingMessages(true);
-    const loadMessages = (showError = false) => api.get<MatchMessage[]>(`/matching/matches/${matchId}/messages`)
-      .then((res) => setChatMessages((prev) => ({ ...prev, [matchId]: res.data || [] })))
-      .catch(() => { if (showError) toast.error('Không tải được lịch sử trò chuyện.'); });
-    loadMessages(true).finally(() => setLoadingMessages(false));
-    const intervalId = window.setInterval(() => loadMessages(), 5000);
-    return () => window.clearInterval(intervalId);
-  }, [selectedMatch]);
+    loadIncomingRequests();
+  }, [loadIncomingRequests]);
 
   // Actions
   const handlePass = useCallback(async (candidateId: string) => {
@@ -374,6 +273,10 @@ export default function UnifiedMatchingHubPage() {
 
   const handleSendRequestSubmit = async () => {
     if (!selectedPetId || !requestingPet) return;
+    if (isSelectedPetUnderage) {
+      toast.error(`Bé ${selectedPet?.name} chưa đủ tuổi phối giống (cần tối thiểu ${selectedPet?.species === 'CAT' ? 8 : 12} tháng tuổi). Dự kiến mở vào Tháng ${selectedPetEligibleDate}.`);
+      return;
+    }
     setSendingRequest(true);
     try {
       await api.post('/matching/requests', {
@@ -395,58 +298,15 @@ export default function UnifiedMatchingHubPage() {
 
   const handleRespondRequest = async (id: string, action: 'accept' | 'reject') => {
     try {
-      const res = await api.post(`/matching/requests/${id}/${action}`);
+      await api.post(`/matching/requests/${id}/${action}`);
       if (action === 'accept') {
         toast.success('🎉 Đã chấp nhận yêu cầu và tạo Match thành công!');
-        if (res.data?.match) setCelebrativeMatch(res.data.match);
       } else {
         toast.success('Đã từ chối yêu cầu.');
       }
-      loadRequestsAndMatches();
+      loadIncomingRequests();
     } catch {
       toast.error('Không thể xử lý yêu cầu.');
-    }
-  };
-
-  const handleSaveSetup = async () => {
-    if (!selectedPetId) return;
-    setSavingSetup(true);
-    try {
-      await api.patch(`/pets/${selectedPetId}/availability`, {
-        isAvailableForMatching: isAvailable,
-        breedingOption,
-        breedingFee: breedingOption === 'CASH' ? Number(breedingFee) || 0 : undefined,
-        shareLitterCount: breedingOption === 'SHARE_LITTER' ? Number(shareLitterCount) || 1 : undefined,
-        personality: personalityNote.trim() || undefined,
-      });
-      toast.success('Đã lưu cấu hình phối giống thành công!');
-      // Reload my pets
-      const res = await api.get<Pet[]>('/pets/my');
-      setMyPets(res.data || []);
-    } catch {
-      toast.error('Không thể lưu cấu hình.');
-    } finally {
-      setSavingSetup(false);
-    }
-  };
-
-  const handleSendMessage = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    const input = form.querySelector('input');
-    const content = input?.value.trim() || inputText.trim();
-    if (!selectedMatch || !content || sendingMessage) return;
-    const matchId = selectedMatch.id;
-    setSendingMessage(true);
-    try {
-      const res = await api.post<MatchMessage>(`/matching/matches/${matchId}/messages`, { content });
-      setChatMessages((prev) => ({ ...prev, [matchId]: [...(prev[matchId] || []), res.data] }));
-      setInputText('');
-      form.reset();
-    } catch {
-      toast.error('Không thể gửi tin nhắn. Vui lòng thử lại.');
-    } finally {
-      setSendingMessage(false);
     }
   };
 
@@ -541,7 +401,7 @@ export default function UnifiedMatchingHubPage() {
                   type="button"
                   onClick={() => setViewMode('SWIPE')}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer',
                     viewMode === 'SWIPE' ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -551,7 +411,7 @@ export default function UnifiedMatchingHubPage() {
                   type="button"
                   onClick={() => setViewMode('GRID')}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer',
                     viewMode === 'GRID' ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -563,7 +423,13 @@ export default function UnifiedMatchingHubPage() {
 
           {/* SMART PET SELECTOR */}
           {!loadingPets && myPets.length > 0 && (
-            <div className="mt-6 pt-4 border-t flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
+            <div
+              className="mt-6 pt-4 border-t flex items-center gap-3 overflow-x-auto pb-3"
+              style={{
+                scrollbarWidth: 'thin',
+                WebkitOverflowScrolling: 'touch',
+              }}
+            >
               <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground shrink-0">
                 Chọn thú cưng:
               </span>
@@ -575,34 +441,44 @@ export default function UnifiedMatchingHubPage() {
                     type="button"
                     onClick={() => handleSelectPet(pet)}
                     className={cn(
-                      'flex items-center gap-2.5 rounded-2xl border-2 px-3.5 py-2 text-left transition-all shrink-0',
+                      'flex items-center gap-2.5 rounded-2xl border-2 px-3.5 py-2 text-left transition-all shrink-0 cursor-pointer',
                       isSelected
                         ? pet.gender === 'FEMALE'
-                          ? 'border-primary bg-primary/10 shadow-sm'
-                          : 'border-blue-500 bg-blue-50/50 shadow-sm'
+                          ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/20'
+                          : 'border-blue-500 bg-blue-50/70 shadow-sm ring-2 ring-blue-500/20'
                         : 'border-border bg-card hover:bg-muted/50',
                     )}
                   >
                     <img
                       src={pet.avatarUrl || pet.gallery?.[0] || '/placeholder.svg'}
                       alt={pet.name}
-                      className="size-full max-w-8 max-h-8 rounded-full object-cover border"
+                      className="size-8 rounded-full object-cover border"
                     />
                     <div className="min-w-0 text-xs">
                       <div className="flex items-center gap-1">
-                        <span className="font-extrabold truncate">{pet.name}</span>
-                        <span className={cn('font-black text-[10px]', pet.gender === 'MALE' ? 'text-blue-600' : 'text-pink-600')}>
+                        <span className="font-extrabold truncate max-w-[120px]">{pet.name}</span>
+                        <span
+                          className={cn(
+                            'font-black text-[10px]',
+                            pet.gender === 'MALE' ? 'text-blue-600' : 'text-pink-600',
+                          )}
+                        >
                           {pet.gender === 'MALE' ? '♂' : '♀'}
                         </span>
                       </div>
-                      <p className="text-[10px] text-muted-foreground truncate">{pet.breed}</p>
+                      <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{pet.breed}</p>
                     </div>
                   </button>
                 );
               })}
-              <Button size="sm" variant="ghost" className="rounded-2xl text-xs font-bold shrink-0 gap-1" asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-2xl text-xs font-bold shrink-0 gap-1 text-primary hover:bg-primary/10"
+                asChild
+              >
                 <Link href="/my-pets/new">
-                  <PawPrint className="size-3.5 text-primary" /> + Tạo bé mới
+                  <PawPrint className="size-3.5" /> + Tạo bé mới
                 </Link>
               </Button>
             </div>
@@ -634,17 +510,39 @@ export default function UnifiedMatchingHubPage() {
             </div>
           ) : (
             <>
+              {/* Underage Notice Banner for Selected Female Pet */}
+              {selectedPet && isSelectedPetUnderage && (
+                <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30 flex items-start gap-3 shadow-xs">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                    🌱
+                  </div>
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-extrabold text-blue-900 dark:text-blue-100">
+                        Bé {selectedPet.name} đang trong giai đoạn phát triển ({getPetAgeMonths(selectedPet.birthday)} tháng tuổi)
+                      </h3>
+                      <span className="rounded-full bg-blue-200/80 dark:bg-blue-800 text-blue-900 dark:text-blue-100 px-2.5 py-0.5 text-[11px] font-black">
+                        Dự kiến mở ghép đôi: Tháng {selectedPetEligibleDate}
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-700 dark:text-blue-300/90 leading-relaxed">
+                      Theo chuẩn thú y, {selectedPet.species === 'CAT' ? 'mèo' : 'chó'} cần tối thiểu {selectedPet.species === 'CAT' ? 8 : 12} tháng tuổi để đảm bảo an toàn sinh sản. Bạn hiện tại có thể xem trước danh sách các ứng viên phù hợp!
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Quick Filter Bar */}
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-xl font-bold gap-2 border-2"
-                onClick={() => setIsFilterOpen(true)}
-              >
-                <SlidersHorizontal className="size-4 text-primary" /> Bộ lọc nâng cao
-              </Button>
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl font-bold gap-2 border-2"
+                    onClick={() => setIsFilterOpen(true)}
+                  >
+                    <SlidersHorizontal className="size-4 text-primary" /> Bộ lọc nâng cao
+                  </Button>
 
             </div>
 
@@ -689,7 +587,14 @@ export default function UnifiedMatchingHubPage() {
                     setCurrentCandidateIndex((prev) => prev + 1);
                   }}
                   onRequestOpen={() => setRequestingPet(currentSwipeCandidate)}
-                  onViewDetail={() => setSelectedCandidateDetail(currentSwipeCandidate)}
+                  onViewDetail={() => {
+                    setAutoExpandCompatibility(false);
+                    setSelectedCandidateDetail(currentSwipeCandidate);
+                  }}
+                  onViewScoreDetail={() => {
+                    setAutoExpandCompatibility(true);
+                    setSelectedCandidateDetail(currentSwipeCandidate);
+                  }}
                 />
               )}
             </div>
@@ -705,7 +610,14 @@ export default function UnifiedMatchingHubPage() {
                   getAge={getAge}
                   onPass={() => handlePass(pet.id)}
                   onRequestOpen={() => setRequestingPet(pet)}
-                  onViewDetail={() => setSelectedCandidateDetail(pet)}
+                  onViewDetail={() => {
+                    setAutoExpandCompatibility(false);
+                    setSelectedCandidateDetail(pet);
+                  }}
+                  onViewScoreDetail={() => {
+                    setAutoExpandCompatibility(true);
+                    setSelectedCandidateDetail(pet);
+                  }}
                 />
               ))}
             </div>
@@ -747,33 +659,83 @@ export default function UnifiedMatchingHubPage() {
                 icon={<Inbox className="size-10" />}
                 title="Chưa có yêu cầu ghép đôi mới nào"
                 description="Khi các thú cưng cái gửi lời mời phối giống cho bé đực của bạn, yêu cầu sẽ xuất hiện tại đây."
-                actionHref="#"
+                actionHref="/my-pets"
                 actionLabel="Cấu hình pet đực ngay"
-                onActionClick={() => setActiveTab('SETUP')}
               />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {incomingRequests.map((req) => (
-                  <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                {incomingRequests.map((req) => {
+                  const matchingLocked = req.femalePet.status !== 'ACTIVE' || req.malePet.status !== 'ACTIVE';
+                  const femaleImage = req.femalePet.avatarUrl || req.femalePet.gallery?.[0] || '/placeholder.svg';
+                  return (
+                    <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4 hover:border-primary/40 transition-all">
                     <div className="flex items-start gap-4">
-                      <img src={req.femalePet.avatarUrl || '/placeholder.svg'} alt={req.femalePet.name} className="size-16 rounded-2xl object-cover border" />
+                      <button
+                        type="button"
+                        onClick={() => setViewingPetProfile({
+                          pet: req.femalePet,
+                          requestNote: req.note,
+                          requestId: req.id,
+                          matchingLocked,
+                        })}
+                        className="group relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-2xl border bg-muted"
+                        title="Bấm để xem chi tiết hồ sơ bé cái"
+                      >
+                        <img src={femaleImage} alt={req.femalePet.name} className="size-full object-cover transition-transform group-hover:scale-110" />
+                      </button>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-extrabold text-base">{req.femalePet.name} ({req.femalePet.breed})</h3>
-                        <p className="text-xs text-muted-foreground">Chủ sở hữu: <span className="text-foreground font-semibold">{req.femalePet.owner.name}</span></p>
-                        <p className="mt-1 text-xs font-bold text-primary">Muốn phối với bé đực: {req.malePet.name}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.femalePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              matchingLocked,
+                            })}
+                            className="text-left group cursor-pointer truncate"
+                          >
+                            <h3 className="font-extrabold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
+                              {req.femalePet.name}
+                              <span className="text-xs font-bold text-pink-600 shrink-0">(♀)</span>
+                            </h3>
+                          </button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.femalePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              matchingLocked,
+                            })}
+                            className="rounded-xl text-xs font-bold h-8 shrink-0 hover:bg-primary/10 hover:text-primary"
+                          >
+                            Xem hồ sơ
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">Chủ sở hữu: <span className="text-foreground font-semibold">{req.femalePet.owner?.name}</span></p>
+                        <p className="mt-1 text-xs font-bold text-primary truncate">Muốn phối với bé đực: {req.malePet.name}</p>
                       </div>
                     </div>
                     {req.note && <div className="rounded-xl border bg-muted/40 p-3 text-xs italic text-muted-foreground">&ldquo;{req.note}&rdquo;</div>}
+                    {matchingLocked && (
+                      <p className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                        Yêu cầu tạm khóa vì một hồ sơ thú cưng không khả dụng.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <Button variant="outline" className="rounded-xl font-bold" onClick={() => handleRespondRequest(req.id, 'reject')}>
                         <X className="mr-1 size-4" /> Từ chối
                       </Button>
-                      <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => handleRespondRequest(req.id, 'accept')}>
+                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => handleRespondRequest(req.id, 'accept')}>
                         <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
                       </Button>
                     </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )
           ) : (
@@ -785,92 +747,6 @@ export default function UnifiedMatchingHubPage() {
           )}
         </section>
       )}
-
-      {/* ================= TAB 3: DIRECT MATCH CHAT ================= */}
-      {activeTab === 'CHAT' && (
-        <section className="container mx-auto flex-1 px-4 py-6">
-          {matches.length === 0 ? (
-            <EmptyState
-              icon={<Heart className="size-10" />}
-              title="Chưa có cặp đôi ghép thành công nào"
-              description="Sau khi yêu cầu ghép đôi được chấp nhận, phòng chat trực tiếp giữa 2 chủ nuôi sẽ tự động kích hoạt."
-              actionHref="#"
-              actionLabel="Khám phá bạn đời ngay"
-              onActionClick={() => setActiveTab('EXPLORE')}
-            />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[680px] rounded-3xl border bg-card overflow-hidden shadow-xl">
-              {/* Left matches list */}
-              <div className="lg:col-span-4 border-r flex flex-col bg-muted/20">
-                <div className="p-4 border-b">
-                  <h3 className="font-extrabold text-sm">Cặp đôi thành công ({matches.length})</h3>
-                </div>
-                <div className="flex-1 overflow-y-auto divide-y">
-                  {matches.map((m) => {
-                    const isSelected = selectedMatch?.id === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setSelectedMatch(m)}
-                        className={cn('w-full p-3.5 text-left flex items-center gap-3 transition-all hover:bg-muted/50', isSelected && 'bg-primary/10 border-l-4 border-primary')}
-                      >
-                        <div className="flex -space-x-3 shrink-0">
-                          <img src={m.pet1.avatarUrl || '/placeholder.svg'} alt={m.pet1.name} className="size-10 rounded-full border-2 border-background object-cover" />
-                          <img src={m.pet2.avatarUrl || '/placeholder.svg'} alt={m.pet2.name} className="size-10 rounded-full border-2 border-background object-cover" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-extrabold text-xs truncate">{m.pet1.name} ❤️ {m.pet2.name}</h4>
-                          <p className="text-[10px] text-muted-foreground truncate">{m.pet1.breed} & {m.pet2.breed}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Chat window */}
-              {selectedMatch && (
-                <div className="lg:col-span-8 flex flex-col h-full bg-card">
-                  <div className="flex items-center justify-between border-b p-4 bg-muted/10">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-black text-sm">{selectedMatch.pet1.name} & {selectedMatch.pet2.name}</h3>
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded">Active Match</span>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                    <div className="rounded-2xl border bg-primary/5 p-3 text-center text-xs font-bold text-primary">
-                      🎉 Hai bên đã ghép đôi thành công! Hãy trao đổi về thời gian và địa điểm phối giống.
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                    {loadingMessages && <p className="py-4 text-center text-xs text-muted-foreground">Đang tải lịch sử trò chuyện...</p>}
-                    {!loadingMessages && (chatMessages[selectedMatch.id] || []).length === 0 && (
-                      <p className="py-4 text-center text-xs text-muted-foreground">Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.</p>
-                    )}
-                    {(chatMessages[selectedMatch.id] || []).map((message) => (
-                      <div key={message.id} className={cn('flex flex-col', message.senderId === currentUserId ? 'items-end' : 'items-start')}>
-                        <span className="px-1 text-[10px] font-bold text-muted-foreground">
-                          {message.senderId === currentUserId ? 'Bạn' : message.sender.name} · {new Date(message.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <div className={cn('mt-1 max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2 text-sm', message.senderId === currentUserId ? 'bg-primary text-primary-foreground rounded-tr-none' : 'border bg-card rounded-tl-none')}>
-                          {message.content}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <form onSubmit={handleSendMessage} className="p-4 border-t flex gap-2">
-                    <Input placeholder="Nhập tin nhắn..." className="rounded-xl" />
-                    <Button className="rounded-xl font-bold shadow-md shadow-primary/20">Gửi</Button>
-                  </form>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-
 
       {/* ================= ADVANCED FILTER DRAWER ================= */}
       <AnimatePresence>
@@ -884,17 +760,23 @@ export default function UnifiedMatchingHubPage() {
               <div className="p-6 overflow-y-auto space-y-6 flex-1">
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn quốc)'}
+                    Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn Hà Nội)'}
                   </label>
                   <input
                     type="range"
                     min="0"
-                    max="2000"
-                    step="25"
+                    max="50"
+                    step="5"
                     value={filters.distanceRadius}
                     onChange={(e) => setFilters({ ...filters, distanceRadius: Number(e.target.value) })}
                     className="w-full accent-primary"
                   />
+                  <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
+                    <span>Gần nhất</span>
+                    <span>15 km</span>
+                    <span>30 km</span>
+                    <span>Toàn Hà Nội</span>
+                  </div>
                 </div>
                 <div className="space-y-2 pt-4 border-t">
                   <label className="flex items-center justify-between text-xs font-bold cursor-pointer">
@@ -912,7 +794,7 @@ export default function UnifiedMatchingHubPage() {
                 </div>
               </div>
               <div className="p-4 border-t">
-                <Button className="w-full rounded-xl font-bold py-6" onClick={() => { setIsFilterOpen(false); fetchCandidates(); }}>Áp dụng bộ lọc</Button>
+                <Button className="w-full rounded-xl font-bold py-6" onClick={() => { setIsFilterOpen(false); if (selectedPet) handleSelectPet(selectedPet); }}>Áp dụng bộ lọc</Button>
               </div>
             </motion.div>
           </div>
@@ -992,6 +874,43 @@ export default function UnifiedMatchingHubPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Compatibility Breakdown Section (Collapsible Accordion) */}
+                {selectedPet && (
+                  <CompatibilityBreakdown
+                    key={`${selectedCandidateDetail.id}-${autoExpandCompatibility}`}
+                    defaultExpanded={autoExpandCompatibility}
+                    myPet={{
+                      name: selectedPet.name,
+                      breed: selectedPet.breed,
+                      gender: selectedPet.gender,
+                      weight: selectedPet.weight,
+                      location: selectedPet.location,
+                      ward: selectedPet.ward,
+                      hasPedigree: selectedPet.hasPedigree,
+                      pedigreeVerified: selectedPet.pedigreeVerified,
+                      isVaccinated: selectedPet.isVaccinated,
+                      vaccineVerified: selectedPet.vaccineVerified,
+                    }}
+                    candidatePet={{
+                      name: selectedCandidateDetail.name,
+                      breed: selectedCandidateDetail.breed,
+                      gender: selectedCandidateDetail.gender,
+                      weight: selectedCandidateDetail.weight,
+                      location: selectedCandidateDetail.location,
+                      ward: selectedCandidateDetail.ward,
+                      hasPedigree: selectedCandidateDetail.hasPedigree,
+                      pedigreeVerified: selectedCandidateDetail.pedigreeVerified,
+                      isVaccinated: selectedCandidateDetail.isVaccinated,
+                      vaccineVerified: selectedCandidateDetail.vaccineVerified,
+                      distanceKm: selectedCandidateDetail.distanceKm,
+                      compatibilityScore: selectedCandidateDetail.compatibilityScore,
+                      matchReasons: selectedCandidateDetail.matchReasons,
+                      breedWarnings: selectedCandidateDetail.breedWarnings,
+                      breedInfo: selectedCandidateDetail.breedInfo,
+                    }}
+                  />
+                )}
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1108,6 +1027,24 @@ export default function UnifiedMatchingHubPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {viewingPetProfile && (
+        <PetPublicProfileDialog
+          pet={viewingPetProfile.pet}
+          open={Boolean(viewingPetProfile)}
+          onClose={() => setViewingPetProfile(null)}
+          requestNote={viewingPetProfile.requestNote}
+          requestAction={
+            viewingPetProfile.requestId
+              ? {
+                  onAccept: () => handleRespondRequest(viewingPetProfile.requestId!, 'accept'),
+                  onReject: () => handleRespondRequest(viewingPetProfile.requestId!, 'reject'),
+                  acceptDisabled: viewingPetProfile.matchingLocked,
+                }
+              : undefined
+          }
+        />
+      )}
     </main>
   );
 }
@@ -1122,12 +1059,14 @@ function SwipeCardContainer({
   onPass,
   onRequestOpen,
   onViewDetail,
+  onViewScoreDetail,
 }: {
   pet: Pet;
   getAge: (b: string) => string;
   onPass: () => void;
   onRequestOpen: () => void;
   onViewDetail: () => void;
+  onViewScoreDetail?: () => void;
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
@@ -1150,7 +1089,7 @@ function SwipeCardContainer({
       className="relative overflow-hidden rounded-3xl border bg-card shadow-2xl cursor-grab active:cursor-grabbing touch-none select-none"
     >
       {/* Aspect 4/5 tall photo */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-muted" onClick={onViewDetail}>
+      <div className="relative aspect-[4/5] overflow-hidden bg-muted cursor-pointer" onClick={onViewDetail}>
         <img
           src={pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'}
           alt={pet.name}
@@ -1160,10 +1099,19 @@ function SwipeCardContainer({
 
         {/* Top Badges */}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-end">
-          <div className="flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md">
-            <Sparkles className="mr-1 size-4 text-primary" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onViewScoreDetail) onViewScoreDetail();
+              else onViewDetail();
+            }}
+            className="flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md hover:bg-black/80 transition-all cursor-pointer group hover:scale-105"
+            title="Bấm để xem phân tích chi tiết độ phù hợp"
+          >
+            <Sparkles className="mr-1.5 size-4 text-primary group-hover:rotate-12 transition-transform" />
             <span className="text-xs font-black text-primary">{pet.compatibilityScore || 95}% Phù hợp</span>
-          </div>
+          </button>
         </div>
 
         {/* Bottom Content Overlay */}
@@ -1173,12 +1121,12 @@ function SwipeCardContainer({
             <span className="text-lg font-bold text-white/90">{getAge(pet.birthday)}</span>
           </div>
           <p className="text-sm font-semibold text-white/90">
-            {pet.breed} · {pet.district ? `${pet.district}, ${pet.location}` : pet.location}
+            {pet.breed} · {pet.ward || pet.location}
           </p>
 
           <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
             <span className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow">
-              📍 Cách {pet.distanceKm ?? 5} km
+              📍 {pet.distanceKm != null && pet.distanceKm <= 1 ? `Cùng khu vực (${pet.distanceKm} km)` : `Cách ${pet.distanceKm ?? 5} km`}
             </span>
             <span className="rounded-lg bg-black/40 px-2.5 py-1 backdrop-blur-md">
               ⚖️ {pet.weight} kg
@@ -1237,20 +1185,30 @@ function CandidateCardGrid({
   onPass,
   onRequestOpen,
   onViewDetail,
+  onViewScoreDetail,
 }: {
   pet: Pet;
   getAge: (b: string) => string;
   onPass: () => void;
   onRequestOpen: () => void;
   onViewDetail: () => void;
+  onViewScoreDetail?: () => void;
 }) {
   return (
     <article className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative aspect-[4/3] overflow-hidden bg-muted cursor-pointer" onClick={onViewDetail}>
         <img src={pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'} alt={pet.name} className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-        <div className="absolute right-3 top-3 bg-black/60 backdrop-blur-md rounded-xl px-2.5 py-1 text-xs font-black text-primary">
-          {pet.compatibilityScore || 95}%
+        <div
+          className="absolute right-3 top-3 bg-black/60 backdrop-blur-md rounded-xl px-2.5 py-1 text-xs font-black text-primary hover:scale-105 transition-transform cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onViewScoreDetail) onViewScoreDetail();
+            else onViewDetail();
+          }}
+          title="Bấm để xem phân tích chi tiết độ phù hợp"
+        >
+          ✨ {pet.compatibilityScore || 95}%
         </div>
         <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
           <h2 className="text-xl font-black">{pet.name}</h2>
@@ -1259,7 +1217,7 @@ function CandidateCardGrid({
       </div>
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-          <span className="font-semibold text-foreground">📍 {pet.district ? `${pet.district}, ${pet.location}` : pet.location} ({pet.distanceKm ?? 5} km)</span>
+          <span className="font-semibold text-foreground">📍 {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km`})</span>
           <span>⚖️ {pet.weight} kg</span>
         </div>
         <div className="grid grid-cols-2 gap-2 pt-1">

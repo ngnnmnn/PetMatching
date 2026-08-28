@@ -4,9 +4,16 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { MatchStatus } from '@prisma/client';
+import {
+  Gender,
+  MatchingRequestStatus,
+  MatchStatus,
+  PetStatus,
+  Species,
+} from '@prisma/client';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { MatchingService } from './matching.service';
 
 type TransactionMock = {
@@ -46,11 +53,13 @@ describe('MatchingService chat', () => {
     pet1: {
       id: 'pet-1',
       ownerId: userId,
+      status: PetStatus.ACTIVE,
       owner: { id: userId, name: 'User 1', email: 'user1@example.com' },
     },
     pet2: {
       id: 'pet-2',
       ownerId: 'user-2',
+      status: PetStatus.ACTIVE,
       owner: {
         id: 'user-2',
         name: 'User 2',
@@ -87,8 +96,8 @@ describe('MatchingService chat', () => {
       match: {
         findFirst: jest.fn().mockResolvedValue({
           id: matchId,
-          pet1: { ownerId: userId },
-          pet2: { ownerId: 'user-2' },
+          pet1: { ownerId: userId, status: PetStatus.ACTIVE },
+          pet2: { ownerId: 'user-2', status: PetStatus.ACTIVE },
         }),
       },
       message: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -147,6 +156,44 @@ describe('MatchingService chat', () => {
     expect(transaction.message.create).not.toHaveBeenCalled();
   });
 
+  it('does not save text when a pet is hidden during moderation', async () => {
+    transaction.match.findUnique.mockResolvedValue({
+      ...createMatch(),
+      pet2: { ...createMatch().pet2, status: PetStatus.HIDDEN },
+    });
+
+    await expect(
+      service.sendMessage(userId, matchId, 'hello'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(transaction.message.create).not.toHaveBeenCalled();
+  });
+
+  it('allows chat again after the hidden pet is restored', async () => {
+    prisma.match.findFirst.mockResolvedValueOnce({
+      id: matchId,
+      pet1: { ownerId: userId, status: PetStatus.HIDDEN },
+      pet2: { ownerId: 'user-2', status: PetStatus.ACTIVE },
+    });
+
+    await expect(
+      service.sendMessage(userId, matchId, 'blocked'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(transaction.message.create).not.toHaveBeenCalled();
+
+    prisma.match.findFirst.mockResolvedValueOnce({
+      id: matchId,
+      pet1: { ownerId: userId, status: PetStatus.ACTIVE },
+      pet2: { ownerId: 'user-2', status: PetStatus.ACTIVE },
+    });
+    await service.sendMessage(userId, matchId, 'restored');
+
+    expect(transaction.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { matchId, senderId: userId, content: 'restored' },
+      }),
+    );
+  });
+
   it('saves a Cloudinary URL after locking an active match', async () => {
     await service.sendImageMessage(userId, matchId, {
       buffer: Buffer.from('image'),
@@ -181,6 +228,22 @@ describe('MatchingService chat', () => {
         mimetype: 'image/png',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
+    expect(transaction.message.create).not.toHaveBeenCalled();
+    expect(cloudinary.destroyByUrl).toHaveBeenCalledWith(imageUrl);
+  });
+
+  it('removes an uploaded image if a pet is hidden during upload', async () => {
+    transaction.match.findUnique.mockResolvedValue({
+      ...createMatch(),
+      pet1: { ...createMatch().pet1, status: PetStatus.HIDDEN },
+    });
+
+    await expect(
+      service.sendImageMessage(userId, matchId, {
+        buffer: Buffer.from('image'),
+        mimetype: 'image/png',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(transaction.message.create).not.toHaveBeenCalled();
     expect(cloudinary.destroyByUrl).toHaveBeenCalledWith(imageUrl);
   });
@@ -227,6 +290,182 @@ describe('MatchingService chat', () => {
       service.getMessages('other-user', matchId),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.message.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchingService accepting requests', () => {
+  const femalePet = {
+    id: 'female-1',
+    ownerId: 'female-owner',
+    name: 'Luna',
+    species: Species.DOG,
+    breed: 'Poodle',
+    gender: Gender.FEMALE,
+    status: PetStatus.ACTIVE,
+    location: 'HCM',
+    weight: 5,
+    hasPedigree: false,
+    vaccineVerified: false,
+    pedigreeVerified: false,
+  };
+  const malePet = {
+    ...femalePet,
+    id: 'male-1',
+    ownerId: 'male-owner',
+    name: 'Milo',
+    gender: Gender.MALE,
+  };
+
+  const setupAcceptRequest = (
+    femaleStatus: PetStatus = PetStatus.ACTIVE,
+    maleStatus: PetStatus = PetStatus.ACTIVE,
+  ) => {
+    const request = {
+      id: 'request-1',
+      requesterId: femalePet.ownerId,
+      femalePetId: femalePet.id,
+      malePetId: malePet.id,
+      status: MatchingRequestStatus.PENDING,
+      femalePet,
+      malePet,
+    };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      userBlock: { findFirst: jest.fn().mockResolvedValue(null) },
+      matchingRequest: {
+        findUnique: jest.fn().mockResolvedValue({
+          status: MatchingRequestStatus.PENDING,
+          femalePet: { status: femaleStatus },
+          malePet: { status: maleStatus },
+        }),
+        update: jest.fn().mockResolvedValue({
+          ...request,
+          status: MatchingRequestStatus.ACCEPTED,
+        }),
+      },
+      match: { upsert: jest.fn().mockResolvedValue({ id: 'match-1' }) },
+    };
+    const prisma = {
+      matchingRequest: { findUnique: jest.fn().mockResolvedValue(request) },
+      breedRule: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (client: typeof tx) => unknown) =>
+          callback(tx),
+        ),
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {
+        create: jest.fn().mockResolvedValue({ id: 'notification-1' }),
+      } as unknown as NotificationsService,
+    );
+    return { request, service, tx };
+  };
+
+  it('accepts a pending request when both pets remain active', async () => {
+    const { request, service, tx } = setupAcceptRequest();
+
+    await expect(
+      service.acceptRequest(malePet.ownerId, request.id),
+    ).resolves.toMatchObject({ success: true, match: { id: 'match-1' } });
+    expect(tx.matchingRequest.update).toHaveBeenCalledTimes(1);
+    expect(tx.match.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not accept a pending request when a pet is no longer active', async () => {
+    const { request, service, tx } = setupAcceptRequest(PetStatus.HIDDEN);
+
+    await expect(
+      service.acceptRequest(malePet.ownerId, request.id),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.matchingRequest.update).not.toHaveBeenCalled();
+    expect(tx.match.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchingService pet eligibility', () => {
+  const activeFemale = {
+    id: 'female-1',
+    ownerId: 'owner-1',
+    name: 'Luna',
+    species: Species.DOG,
+    breed: 'Poodle',
+    gender: Gender.FEMALE,
+    birthday: new Date('2020-01-01'),
+    status: PetStatus.ACTIVE,
+    location: 'HCM',
+    weight: 5,
+  };
+  const activeMale = {
+    ...activeFemale,
+    id: 'male-1',
+    ownerId: 'owner-2',
+    name: 'Milo',
+    gender: Gender.MALE,
+    isAvailableForMatching: true,
+  };
+
+  it('only queries active male pets that enabled matching', async () => {
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue(activeFemale),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      breedRule: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as NotificationsService,
+    );
+
+    await service.getCandidates(activeFemale.ownerId, {
+      femalePetId: activeFemale.id,
+    });
+
+    expect(prisma.pet.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          gender: Gender.MALE,
+          status: PetStatus.ACTIVE,
+          isAvailableForMatching: true,
+        }),
+      }),
+    );
+  });
+
+  it('does not create a new request when the male pet is admin-hidden', async () => {
+    const prisma = {
+      pet: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(activeFemale)
+          .mockResolvedValueOnce({
+            ...activeMale,
+            status: PetStatus.HIDDEN,
+            isAvailableForMatching: false,
+          }),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as NotificationsService,
+    );
+
+    await expect(
+      service.createRequest(activeFemale.ownerId, {
+        femalePetId: activeFemale.id,
+        malePetId: activeMale.id,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

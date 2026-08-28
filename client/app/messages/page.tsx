@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Eye,
   Heart,
   ImageIcon,
   Inbox,
@@ -38,6 +39,7 @@ import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import type { PetStatus } from '@/lib/api/pets';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,26 +48,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import {
+  PetPublicProfileDialog,
+  type PetWithOwner,
+} from '@/components/pets/PetPublicProfileDialog';
 
 type MatchingRequest = {
   id: string;
   note?: string | null;
   createdAt: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
-  femalePet: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner: { name: string };
-  };
-  malePet: {
-    id: string;
-    name: string;
-    breed: string;
-    avatarUrl?: string | null;
-    owner?: { name: string };
-  };
+  femalePet: PetWithOwner;
+  malePet: PetWithOwner;
 };
 
 type ReportTargetType = 'USER' | 'PET';
@@ -110,6 +104,7 @@ type Match = {
     breed: string;
     gender: 'MALE' | 'FEMALE';
     avatarUrl?: string | null;
+    status: PetStatus;
     owner: { id: string; name: string };
   };
   pet2: {
@@ -118,6 +113,7 @@ type Match = {
     breed: string;
     gender: 'MALE' | 'FEMALE';
     avatarUrl?: string | null;
+    status: PetStatus;
     owner: { id: string; name: string };
   };
   messages?: Array<{
@@ -179,6 +175,13 @@ export default function MessagesPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  const [viewingPetProfile, setViewingPetProfile] = useState<{
+    pet: PetWithOwner;
+    requestNote?: string | null;
+    requestId?: string;
+    isIncoming?: boolean;
+    matchingLocked?: boolean;
+  } | null>(null);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
@@ -510,6 +513,9 @@ export default function MessagesPage() {
     return chatMessages[selectedMatch.id] || [];
   }, [selectedMatch, chatMessages]);
 
+  const chatModerated = selectedMatch?.pet1.status === 'HIDDEN' || selectedMatch?.pet2.status === 'HIDDEN';
+  const chatReadOnly = selectedMatch?.status === 'CANCELLED' || chatModerated;
+
   const currentUserOwnsPet1 = selectedMatch?.pet1.owner.id === currentUserId;
   const otherPet = selectedMatch
     ? (currentUserOwnsPet1 ? selectedMatch.pet2 : selectedMatch.pet1)
@@ -701,13 +707,14 @@ export default function MessagesPage() {
                         </h3>
                         <span className={cn(
                           'inline-flex items-center gap-1 text-[11px] font-bold',
-                          selectedMatch.status === 'CANCELLED' ? 'text-muted-foreground' : 'text-emerald-600',
+                          chatReadOnly ? 'text-muted-foreground' : 'text-emerald-600',
                         )}>
                           <span className={cn(
                             'size-2 rounded-full',
-                            selectedMatch.status === 'CANCELLED' ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
+                            chatReadOnly ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
                           )} />
-                          {selectedMatch.status === 'ACTIVE' && 'Ghép đôi thành công · Phối giống Active'}
+                          {selectedMatch.status === 'ACTIVE' && !chatModerated && 'Ghép đôi thành công · Phối giống Active'}
+                          {selectedMatch.status === 'ACTIVE' && chatModerated && 'Phòng chat tạm khóa · Chỉ đọc'}
                           {selectedMatch.status === 'CANCELLED' && 'Match đã kết thúc · Chỉ đọc'}
                         </span>
                       </div>
@@ -763,6 +770,11 @@ export default function MessagesPage() {
                         ? 'Bạn đã chặn người dùng này. Phòng chat hiện ở chế độ chỉ đọc.'
                         : 'Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.'}
                       {selectedMatch.endReason && <span className="ml-1">Lý do: {selectedMatch.endReason}</span>}
+                    </div>
+                  )}
+                  {selectedMatch.status === 'ACTIVE' && chatModerated && (
+                    <div className="shrink-0 border-b bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+                      Phòng chat tạm khóa vì một hồ sơ thú cưng hiện không khả dụng. Bạn vẫn có thể xem lịch sử trò chuyện.
                     </div>
                   )}
 
@@ -825,9 +837,11 @@ export default function MessagesPage() {
                   </div>
 
                   {/* Chat Input Bar */}
-                  {selectedMatch.status === 'CANCELLED' ? (
+                  {chatReadOnly ? (
                     <div className="shrink-0 border-t bg-muted/30 p-4 text-center text-xs font-bold text-muted-foreground">
-                      Phòng chat chỉ đọc
+                      {chatModerated
+                        ? 'Phòng chat chỉ đọc cho đến khi quản trị viên khôi phục hồ sơ.'
+                        : 'Phòng chat chỉ đọc'}
                     </div>
                   ) : (
                     <form onSubmit={handleSendMessage} className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-t bg-card p-4">
@@ -875,7 +889,7 @@ export default function MessagesPage() {
           )
         ) : (
           /* ================= TAB 2: INCOMING REQUESTS ================= */
-          activeTab === 'INCOMING' ? (
+            activeTab === 'INCOMING' ? (
             incomingRequests.length === 0 ? (
               <div className="py-20 text-center">
                 <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -886,22 +900,74 @@ export default function MessagesPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {incomingRequests.map((req) => (
-                  <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                {incomingRequests.map((req) => {
+                  const matchingLocked = req.femalePet.status !== 'ACTIVE' || req.malePet.status !== 'ACTIVE';
+                  const femaleImage = req.femalePet.avatarUrl || req.femalePet.gallery?.[0] || '/placeholder.svg';
+                  return (
+                    <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4 hover:border-primary/40 transition-all">
                     <div className="flex items-start gap-4">
-                      <img
-                        src={req.femalePet.avatarUrl || '/placeholder.svg'}
-                        alt={req.femalePet.name}
-                        className="size-16 rounded-2xl object-cover border"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-extrabold text-lg truncate">{req.femalePet.name}</h3>
+                      <button
+                        type="button"
+                        onClick={() => setViewingPetProfile({
+                          pet: req.femalePet,
+                          requestNote: req.note,
+                          requestId: req.id,
+                          isIncoming: true,
+                          matchingLocked,
+                        })}
+                        className="group relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-2xl border bg-muted"
+                        title="Bấm để xem chi tiết hồ sơ bé cái"
+                      >
+                        <img
+                          src={femaleImage}
+                          alt={req.femalePet.name}
+                          className="size-full object-cover transition-transform group-hover:scale-110"
+                        />
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                          <Eye className="size-5" />
                         </div>
-                        <p className="text-xs text-muted-foreground font-semibold">
-                          Giống: {req.femalePet.breed} · Chủ sở hữu: <span className="text-foreground">{req.femalePet.owner.name}</span>
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.femalePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              isIncoming: true,
+                              matchingLocked,
+                            })}
+                            className="text-left group cursor-pointer truncate"
+                          >
+                            <h3 className="font-extrabold text-lg text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
+                              {req.femalePet.name}
+                              <span className="text-xs font-bold text-pink-600 shrink-0">(♀)</span>
+                            </h3>
+                          </button>
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.femalePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              isIncoming: true,
+                              matchingLocked,
+                            })}
+                            className="rounded-xl text-xs font-bold gap-1 h-8 shrink-0 hover:bg-primary/10 hover:text-primary"
+                          >
+                            <Eye className="size-3.5 text-primary" /> Xem hồ sơ
+                          </Button>
+                        </div>
+
+                        <p className="text-xs text-muted-foreground font-semibold mt-0.5 truncate">
+                          Giống: {req.femalePet.breed} · Chủ: <span className="text-foreground">{req.femalePet.owner?.name}</span>
                         </p>
-                        <p className="mt-1 text-xs font-bold text-primary">
+                        <p className="mt-1 text-xs font-bold text-primary truncate">
                           Muốn ghép đôi với bé đực: {req.malePet.name}
                         </p>
                       </div>
@@ -913,16 +979,23 @@ export default function MessagesPage() {
                       </div>
                     )}
 
+                    {matchingLocked && (
+                      <p className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                        Yêu cầu tạm khóa vì một hồ sơ thú cưng không khả dụng.
+                      </p>
+                    )}
+
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <Button variant="outline" className="rounded-xl font-bold" onClick={() => respondRequest(req.id, 'reject')}>
                         <X className="mr-1 size-4" /> Từ chối
                       </Button>
-                      <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
+                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
                         <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
                       </Button>
                     </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )
           ) : (
@@ -940,17 +1013,49 @@ export default function MessagesPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {outgoingRequests.map((req) => (
-                  <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+                {outgoingRequests.map((req) => {
+                  const maleImage = req.malePet.avatarUrl || req.malePet.gallery?.[0] || '/placeholder.svg';
+                  return (
+                  <article key={req.id} className="overflow-hidden rounded-2xl border bg-card p-5 shadow-sm space-y-4 hover:border-primary/40 transition-all">
                     <div className="flex items-start gap-4">
-                      <img
-                        src={req.malePet.avatarUrl || '/placeholder.svg'}
-                        alt={req.malePet.name}
-                        className="size-16 rounded-2xl object-cover border"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setViewingPetProfile({
+                          pet: req.malePet,
+                          requestNote: req.note,
+                          requestId: req.id,
+                          isIncoming: false,
+                        })}
+                        className="group relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-2xl border bg-muted"
+                        title="Bấm để xem chi tiết hồ sơ bé đực"
+                      >
+                        <img
+                          src={maleImage}
+                          alt={req.malePet.name}
+                          className="size-full object-cover transition-transform group-hover:scale-110"
+                        />
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                          <Eye className="size-5" />
+                        </div>
+                      </button>
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <h3 className="font-extrabold text-lg truncate">Gửi tới bé đực: {req.malePet.name}</h3>
+                          <button
+                            type="button"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.malePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              isIncoming: false,
+                            })}
+                            className="text-left group cursor-pointer truncate"
+                          >
+                            <h3 className="font-extrabold text-lg text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
+                              Gửi tới: {req.malePet.name}
+                              <span className="text-xs font-bold text-blue-600 shrink-0">(♂)</span>
+                            </h3>
+                          </button>
                           <span
                             className={cn(
                               'px-2.5 py-1 rounded-full text-xs font-black shrink-0',
@@ -966,12 +1071,28 @@ export default function MessagesPage() {
                             {req.status === 'CANCELLED' && 'Đã hủy'}
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground font-semibold">
-                          Giống: {req.malePet.breed} {req.malePet.owner?.name ? `· Chủ sở hữu: ${req.malePet.owner.name}` : ''}
+                        <p className="text-xs text-muted-foreground font-semibold mt-0.5 truncate">
+                          Giống: {req.malePet.breed} {req.malePet.owner?.name ? `· Chủ: ${req.malePet.owner.name}` : ''}
                         </p>
-                        <p className="mt-1 text-xs font-bold text-pink-600">
-                          Bé cái của bạn: {req.femalePet.name} ({req.femalePet.breed})
-                        </p>
+                        <div className="flex items-center justify-between gap-2 mt-1">
+                          <p className="text-xs font-bold text-pink-600 truncate">
+                            Bé cái của bạn: {req.femalePet.name} ({req.femalePet.breed})
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setViewingPetProfile({
+                              pet: req.malePet,
+                              requestNote: req.note,
+                              requestId: req.id,
+                              isIncoming: false,
+                            })}
+                            className="h-7 text-xs font-bold text-primary hover:bg-primary/10 px-2"
+                          >
+                            Xem hồ sơ bé
+                          </Button>
+                        </div>
                       </div>
                     </div>
 
@@ -985,7 +1106,8 @@ export default function MessagesPage() {
                       <span>Gửi ngày: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</span>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             )
           )
@@ -1098,6 +1220,24 @@ export default function MessagesPage() {
         alt="Ảnh trong cuộc trò chuyện"
         onClose={() => setViewingImageUrl(null)}
       />
+
+      {viewingPetProfile && (
+        <PetPublicProfileDialog
+          pet={viewingPetProfile.pet}
+          open={Boolean(viewingPetProfile)}
+          onClose={() => setViewingPetProfile(null)}
+          requestNote={viewingPetProfile.requestNote}
+          requestAction={
+            viewingPetProfile.isIncoming && viewingPetProfile.requestId
+              ? {
+                  onAccept: () => respondRequest(viewingPetProfile.requestId!, 'accept'),
+                  onReject: () => respondRequest(viewingPetProfile.requestId!, 'reject'),
+                  acceptDisabled: viewingPetProfile.matchingLocked,
+                }
+              : undefined
+          }
+        />
+      )}
     </main>
   );
 }

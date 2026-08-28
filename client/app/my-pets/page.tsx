@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Eye,
   Heart,
+  Info,
   PawPrint,
   Plus,
   Settings2,
@@ -30,6 +31,20 @@ type RecommendedProduct = Product & {
   matchedVariants: ProductVariant[];
   selectedVariant: ProductVariant | null;
 };
+
+function getPetBreedingStatus(pet: Pet) {
+  const minMonths = pet.species === "CAT" ? 8 : 12;
+  const birthday = new Date(pet.birthday);
+  const now = new Date();
+  let months = (now.getFullYear() - birthday.getFullYear()) * 12 + now.getMonth() - birthday.getMonth();
+  if (now.getDate() < birthday.getDate()) months -= 1;
+  months = Math.max(0, months);
+  const isUnderage = months < minMonths;
+  const eligibleDate = new Date(birthday);
+  eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
+  const eligibleDateStr = eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" });
+  return { isUnderage, months, minMonths, eligibleDateStr };
+}
 
 export default function MyPetsPage() {
   const [pets, setPets] = useState<Pet[]>([]);
@@ -317,7 +332,15 @@ export default function MyPetsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {pets.map((pet) => (
+            {pets.map((pet) => {
+              const {
+                isUnderage,
+                months: ageMonths,
+                minMonths,
+                eligibleDateStr,
+              } = getPetBreedingStatus(pet);
+
+              return (
               <article
                 key={pet.id}
                 className={cn(
@@ -356,7 +379,15 @@ export default function MyPetsPage() {
                   {/* Matching availability indicator / Status */}
                   {pet.status === "HIDDEN" ? (
                     <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
-                      🔴 Đã tạm ẩn
+                      🔒 Bị quản trị viên ẩn
+                    </span>
+                  ) : pet.status === "INACTIVE" ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                      Đã tự ẩn
+                    </span>
+                  ) : isUnderage ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-blue-600/90 backdrop-blur-md px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                      🌱 Đang lớn ({ageMonths} th)
                     </span>
                   ) : pet.gender === "MALE" ? (
                     <span
@@ -379,7 +410,11 @@ export default function MyPetsPage() {
                         ? "Sẵn sàng phối"
                         : "Tắt ghép đôi"}
                     </span>
-                  ) : null}
+                  ) : (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-emerald-600/90 backdrop-blur-md px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                      ✨ Đủ tuổi ghép đôi
+                    </span>
+                  )}
 
                   {/* Bottom title */}
                   <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
@@ -396,11 +431,18 @@ export default function MyPetsPage() {
                 <div className="flex flex-1 flex-col p-4">
                   {/* Badges */}
                   <div className="flex min-h-6 flex-wrap content-start gap-1.5 text-xs">
+                    {isUnderage && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300 px-2 py-0.5 font-bold">
+                        🌱 Đang phát triển ({ageMonths}/{minMonths} th)
+                      </span>
+                    )}
                     {pet.isVaccinated && (
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
-                          pet.vaccineVerified
+                          pet.documents.some(
+                            (document) => document.type === "VACCINE_RECORD" && document.status === "APPROVED",
+                          )
                             ? "border-blue-200 bg-blue-50 text-blue-700"
                             : "border-gray-300 bg-white text-gray-600",
                         )}
@@ -413,7 +455,9 @@ export default function MyPetsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
-                          pet.pedigreeVerified
+                          pet.documents.some(
+                            (document) => document.type === "PEDIGREE_CERT" && document.status === "APPROVED",
+                          )
                             ? "border-amber-200 bg-amber-50 text-amber-700"
                             : "border-gray-300 bg-white text-gray-600",
                         )}
@@ -425,7 +469,7 @@ export default function MyPetsPage() {
                   </div>
 
                   {/* Breeding option preview for male */}
-                  {pet.gender === "MALE" && pet.isAvailableForMatching && (
+                  {pet.gender === "MALE" && pet.isAvailableForMatching && !isUnderage && (
                     <div className="mt-3 min-h-[54px] rounded-xl border bg-primary/5 p-3 text-xs space-y-1">
                       <span className="font-bold text-primary uppercase tracking-wider text-[10px]">
                         Hình thức phối giống:
@@ -444,14 +488,46 @@ export default function MyPetsPage() {
                   <div className="mt-auto space-y-2 pt-4">
                     <div className="flex gap-2">
                       {pet.gender === "MALE" ? (
+                        isUnderage ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => setSelectedDetailPetId(pet.id)}
+                            className="h-10 flex-1 gap-1.5 rounded-xl font-bold border-blue-200 bg-blue-50/60 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-xs shadow-xs"
+                            title="Bé chưa đủ tuổi phối giống"
+                          >
+                            🌱 Đang lớn (T{eligibleDateStr})
+                          </Button>
+                        ) : (
+                          <Button
+                            className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
+                            onClick={() => openSetupModal(pet)}
+                            disabled={pet.status !== "ACTIVE"}
+                          >
+                            <Settings2 className="size-4" />
+                            {pet.status !== "ACTIVE"
+                              ? "Không thể ghép đôi"
+                              : pet.isAvailableForMatching
+                              ? "Cấu hình Ghép đôi"
+                              : "Bật ghép đôi"}
+                          </Button>
+                        )
+                      ) : pet.status !== "ACTIVE" ? (
                         <Button
-                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
-                          onClick={() => openSetupModal(pet)}
+                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold text-xs"
+                          disabled
                         >
-                          <Settings2 className="size-4" />
-                          {pet.isAvailableForMatching
-                            ? "Cấu hình Ghép đôi"
-                            : "Bật ghép đôi"}
+                          <Heart className="size-4" />
+                          Không thể ghép đôi
+                        </Button>
+                      ) : isUnderage ? (
+                        <Button
+                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold border-blue-200 bg-blue-50/60 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-xs shadow-xs"
+                          asChild
+                        >
+                          <Link href="/explore">
+                            <Heart className="size-4" />
+                            Xem trước ứng viên
+                          </Link>
                         </Button>
                       ) : (
                         <Button
@@ -488,7 +564,8 @@ export default function MyPetsPage() {
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -540,6 +617,25 @@ export default function MyPetsPage() {
                 </Button>
               </div>
 
+              {/* Underage Notice if applicable */}
+              {(() => {
+                const setupStatus = selectedSetupPet ? getPetBreedingStatus(selectedSetupPet) : null;
+                if (!setupStatus?.isUnderage) return null;
+                return (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30 flex items-start gap-3">
+                    <Info className="size-5 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-black text-blue-900 dark:text-blue-200">
+                        Bé chưa đạt tuổi phối giống an toàn ({setupStatus.months}/{setupStatus.minMonths} tháng)
+                      </h4>
+                      <p className="text-xs text-blue-700/90 dark:text-blue-300/90 leading-relaxed">
+                        Theo chuẩn thú y, bé cần tối thiểu {setupStatus.minMonths} tháng tuổi. Tính năng sẵn sàng ghép đôi sẽ tự động mở vào <strong>Tháng {setupStatus.eligibleDateStr}</strong>!
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Main Toggle Hero Card */}
               <div
                 className={cn(
@@ -562,9 +658,13 @@ export default function MyPetsPage() {
                   </div>
                   <button
                     type="button"
+                    disabled={Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)}
                     onClick={() => setIsAvailable(!isAvailable)}
                     className={cn(
-                      "relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      "relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)
+                        ? "cursor-not-allowed opacity-50 bg-gray-200 dark:bg-gray-800"
+                        : "cursor-pointer",
                       isAvailable ? "bg-emerald-500" : "bg-gray-300",
                     )}
                   >

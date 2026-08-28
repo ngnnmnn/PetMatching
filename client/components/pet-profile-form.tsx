@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, Plus, Upload, X } from "lucide-react"
+import { Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, Info, Plus, Sparkles, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -14,6 +14,7 @@ import api from "@/lib/axios"
 import { breedingOptions, catBreeds, dogBreeds, provinces } from "@/lib/pet-options"
 import { cn } from "@/lib/utils"
 import { uploadImages, type UploadPurpose } from "@/lib/api/uploads"
+import { HanoiWardSelect } from "@/components/hanoi-ward-select"
 
 interface PetProfileFormProps {
   onComplete?: () => void
@@ -44,72 +45,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [submitError, setSubmitError] = useState("")
 
-  // Location state (GHN 3-tier address selection)
-  const [provincesList, setProvincesList] = useState<{ provinceId: number; provinceName: string }[]>([])
-  const [districtsList, setDistrictsList] = useState<{ districtId: number; districtName: string }[]>([])
-  const [wardsList, setWardsList] = useState<{ wardCode: string; wardName: string }[]>([])
-
-  const [provinceId, setProvinceId] = useState<number | undefined>()
-  const [provinceName, setProvinceName] = useState<string>("")
-  const [districtId, setDistrictId] = useState<number | undefined>()
-  const [districtName, setDistrictName] = useState<string>("")
-  const [wardCode, setWardCode] = useState<string | undefined>()
-  const [wardName, setWardName] = useState<string>("")
-
-  const [loadingProvinces, setLoadingProvinces] = useState(false)
-  const [loadingDistricts, setLoadingDistricts] = useState(false)
-  const [loadingWards, setLoadingWards] = useState(false)
-
-  // Fetch Provinces
-  useEffect(() => {
-    setLoadingProvinces(true)
-    api
-      .get<{ provinceId: number; provinceName: string }[]>('/shipping/provinces')
-      .then((res) => {
-        if (Array.isArray(res.data)) setProvincesList(res.data)
-      })
-      .catch(() => setProvincesList([]))
-      .finally(() => setLoadingProvinces(false))
-  }, [])
-
-  // Fetch Districts when provinceId changes
-  useEffect(() => {
-    if (!provinceId) {
-      setDistrictsList([])
-      setWardsList([])
-      setDistrictId(undefined)
-      setDistrictName("")
-      setWardCode(undefined)
-      setWardName("")
-      return
-    }
-    setLoadingDistricts(true)
-    api
-      .get<{ districtId: number; districtName: string }[]>(`/shipping/districts?province_id=${provinceId}`)
-      .then((res) => {
-        if (Array.isArray(res.data)) setDistrictsList(res.data)
-      })
-      .catch(() => setDistrictsList([]))
-      .finally(() => setLoadingDistricts(false))
-  }, [provinceId])
-
-  // Fetch Wards when districtId changes
-  useEffect(() => {
-    if (!districtId) {
-      setWardsList([])
-      setWardCode(undefined)
-      setWardName("")
-      return
-    }
-    setLoadingWards(true)
-    api
-      .get<{ wardCode: string; wardName: string }[]>(`/shipping/wards?district_id=${districtId}`)
-      .then((res) => {
-        if (Array.isArray(res.data)) setWardsList(res.data)
-      })
-      .catch(() => setWardsList([]))
-      .finally(() => setLoadingWards(false))
-  }, [districtId])
+  // Location state (Hà Nội Wards)
+  const [selectedWard, setSelectedWard] = useState<{ name: string; lat: number; lng: number } | null>({
+    name: 'Phường Hoàn Kiếm',
+    lat: 21.0285,
+    lng: 105.8542,
+  })
 
   const [dbBreeds, setDbBreeds] = useState<string[]>([])
   const [isCustomBreed, setIsCustomBreed] = useState(false)
@@ -194,10 +135,29 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     return remainingMonths === 0 ? `${years} tuổi` : `${years} tuổi ${remainingMonths} tháng`
   }
 
+  const getAgeInMonths = () => {
+    if (!formData.birthday) return null
+    const birthday = new Date(formData.birthday)
+    const now = new Date()
+    return (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth())
+  }
+
+  const minBreedingAgeMonths = formData.species === "cat" ? 8 : 12
+  const currentAgeMonths = getAgeInMonths()
+  const isUnderage = currentAgeMonths !== null && currentAgeMonths < minBreedingAgeMonths
+
+  const getEligibleDate = () => {
+    if (!formData.birthday) return ""
+    const birthday = new Date(formData.birthday)
+    const eligibleDate = new Date(birthday)
+    eligibleDate.setMonth(eligibleDate.getMonth() + minBreedingAgeMonths)
+    return eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" })
+  }
+
   const canProceed = () => {
     if (step === 1) {
       const breedValid = isCustomBreed ? customBreedInput.trim().length > 0 : !!formData.breed
-      return formData.name && formData.species && breedValid && formData.gender
+      return formData.name.trim().length > 0 && formData.species && breedValid && formData.gender && !!avatar
     }
     if (step === 2) {
       const isBirthdayValid = formData.birthday
@@ -206,13 +166,19 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       const isWeightValid = formData.weight
         ? Number(formData.weight) > 0 && Number(formData.weight) <= 150
         : false;
-      return isBirthdayValid && isWeightValid && (provinceName || formData.location)
+      return isBirthdayValid && isWeightValid && !!selectedWard
     }
     return true
   }
 
   const handleSubmit = async () => {
     if (isSubmitting || isUploading) return
+
+    if (!avatar && gallery.length === 0) {
+      setSubmitError("Vui lòng tải lên ít nhất 1 ảnh đại diện của bé.")
+      setStep(1)
+      return
+    }
 
     if (formData.isVaccinated && !vaccinePhoto) {
       setSubmitError("Vui lòng tải ảnh sổ tiêm phòng để gửi xác minh.")
@@ -238,29 +204,10 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     setIsSubmitting(true)
     setSubmitError("")
 
-    // Geocoding query via Nominatim OpenStreetMap API
-    let latitude: number | undefined
-    let longitude: number | undefined
-
-    const finalLocation = provinceName || formData.location || "TP. Hồ Chí Minh"
-
-    if (provinceName) {
-      try {
-        const fullAddressQuery = [wardName, districtName, provinceName, 'Việt Nam']
-          .filter(Boolean)
-          .join(', ')
-        const geoRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddressQuery)}&limit=1`,
-        )
-        const geoData = await geoRes.json()
-        if (Array.isArray(geoData) && geoData.length > 0) {
-          latitude = parseFloat(geoData[0].lat)
-          longitude = parseFloat(geoData[0].lon)
-        }
-      } catch (err) {
-        console.warn("Geocoding failed, proceeding with location string", err)
-      }
-    }
+    const finalLocation = "Hà Nội"
+    const finalWard = selectedWard?.name || "Phường Hoàn Kiếm"
+    const latitude = selectedWard?.lat ?? 21.0285
+    const longitude = selectedWard?.lng ?? 105.8542
 
     try {
       await api.post("/pets", {
@@ -271,8 +218,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         birthday: formData.birthday,
         weight: Number(formData.weight),
         location: finalLocation,
-        district: districtName || undefined,
-        ward: wardName || undefined,
+        district: undefined,
+        ward: finalWard,
         latitude,
         longitude,
         avatarUrl: avatar || undefined,
@@ -331,20 +278,20 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
             <div className="space-y-6">
               <h2 className="mb-6 text-center text-2xl font-bold">Thông tin cơ bản</h2>
 
-              <div className="flex justify-center">
+              <div className="flex flex-col items-center justify-center space-y-2">
                 <label className="group relative cursor-pointer">
                   <div
                     className={cn(
-                      "flex size-32 items-center justify-center overflow-hidden rounded-full border-4 border-dashed border-primary/30 transition-all group-hover:border-primary/60",
-                      avatar && "border-solid border-primary",
+                      "flex size-32 items-center justify-center overflow-hidden rounded-full border-4 border-dashed transition-all group-hover:border-primary/60",
+                      avatar ? "border-solid border-primary" : "border-primary/40 bg-muted/30",
                     )}
                   >
                     {avatar ? (
                       <img src={avatar} alt="Ảnh đại diện thú cưng" className="size-full object-cover" />
                     ) : (
                       <div className="text-center text-muted-foreground">
-                        <Camera className="mx-auto mb-1 size-8" />
-                        <span className="text-xs">Tải ảnh</span>
+                        <Camera className="mx-auto mb-1 size-8 text-primary/70" />
+                        <span className="text-xs font-bold text-foreground">Tải ảnh</span>
                       </div>
                     )}
                   </div>
@@ -353,6 +300,16 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   </div>
                   <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={isUploading} onChange={(event) => handleImageUpload(event, setAvatar, "pet-avatar")} />
                 </label>
+                <div className="text-center">
+                  <span className="text-xs font-bold text-foreground">
+                    Ảnh đại diện của bé <span className="text-destructive">*</span>
+                  </span>
+                  {!avatar && (
+                    <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 mt-0.5">
+                      Bắt buộc tối thiểu 1 ảnh chân dung rõ nét
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -487,11 +444,21 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     <span className="whitespace-nowrap text-sm font-medium text-primary">{calculateAge()}</span>
                   )}
                 </div>
-                {formData.birthday && new Date(formData.birthday) > new Date() && (
-                  <p className="text-xs font-semibold text-destructive mt-1">Ngày sinh không được vượt quá ngày hiện tại.</p>
+                {formData.birthday && isUnderage && currentAgeMonths !== null && (
+                  <div className="mt-2.5 rounded-2xl border border-blue-200 bg-blue-50/80 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/30 space-y-1">
+                    <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300 font-extrabold text-xs">
+                      <Info className="size-4 shrink-0" />
+                      <span>Thông tin độ tuổi &amp; Chuẩn an toàn sinh sản</span>
+                    </div>
+                    <p className="text-xs text-blue-700 dark:text-blue-300/90 leading-relaxed">
+                      Bé hiện tại đang <strong className="font-black text-blue-900 dark:text-blue-100">{calculateAge()}</strong> (chưa đạt độ tuổi phối giống an toàn: {formData.species === "cat" ? "Mèo từ 8 tháng" : "Chó từ 12 tháng"}). Hồ sơ của bé vẫn được tạo bình thường để lưu sổ tiêm và đặt lịch Spa. Tính năng Ghép đôi sẽ tự động kích hoạt vào <strong className="font-black text-blue-900 dark:text-blue-100">Tháng {getEligibleDate()}</strong>!
+                    </p>
+                  </div>
                 )}
-                {formData.birthday && new Date(formData.birthday) <= new Date() && (new Date().getTime() - new Date(formData.birthday).getTime()) / (1000 * 60 * 60 * 24 * 365) > 30 && (
-                  <p className="text-xs font-semibold text-destructive mt-1">Thú cưng không thể quá 30 tuổi. Vui lòng kiểm tra lại.</p>
+                {formData.birthday && !isUnderage && (
+                  <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                    <Sparkles className="size-3.5" /> Bé đã đạt độ tuổi trưởng thành, đủ điều kiện tham gia ghép đôi phối giống.
+                  </p>
                 )}
               </div>
 
@@ -518,86 +485,17 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 )}
               </div>
 
-              <div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
-                <Label className="font-extrabold text-sm">Địa chỉ & Khu vực của bé *</Label>
-
-                {/* 1. Tỉnh / Thành phố */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="province" className="text-xs text-muted-foreground font-semibold">Tỉnh / Thành phố</Label>
-                  <Select
-                    value={provinceId ? String(provinceId) : ""}
-                    onValueChange={(val) => {
-                      const id = Number(val)
-                      setProvinceId(id)
-                      const found = provincesList.find((p) => p.provinceId === id)
-                      setProvinceName(found ? found.provinceName : "")
-                      setFormData({ ...formData, location: found ? found.provinceName : "" })
-                    }}
-                    disabled={loadingProvinces}
-                  >
-                    <SelectTrigger className="rounded-xl font-bold">
-                      <SelectValue placeholder={loadingProvinces ? "Đang tải Tỉnh/Thành..." : "Chọn Tỉnh / Thành phố"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {provincesList.map((p) => (
-                        <SelectItem key={p.provinceId} value={String(p.provinceId)}>
-                          {p.provinceName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="space-y-3 rounded-2xl border bg-muted/20 p-4">
+                <div className="space-y-1">
+                  <Label className="font-extrabold text-sm">Địa chỉ & Khu vực của bé tại Hà Nội *</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Chọn Phường / Xã nơi bé đang ở để hệ thống tự động xác định toạ độ và đề xuất ghép đôi gần nhất.
+                  </p>
                 </div>
-
-                {/* 2. Quận / Huyện */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="district" className="text-xs text-muted-foreground font-semibold">Quận / Huyện</Label>
-                  <Select
-                    value={districtId ? String(districtId) : ""}
-                    onValueChange={(val) => {
-                      const id = Number(val)
-                      setDistrictId(id)
-                      const found = districtsList.find((d) => d.districtId === id)
-                      setDistrictName(found ? found.districtName : "")
-                    }}
-                    disabled={!provinceId || loadingDistricts}
-                  >
-                    <SelectTrigger className="rounded-xl font-bold">
-                      <SelectValue placeholder={!provinceId ? "Vui lòng chọn Tỉnh/Thành trước" : loadingDistricts ? "Đang tải Quận/Huyện..." : "Chọn Quận / Huyện"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {districtsList.map((d) => (
-                        <SelectItem key={d.districtId} value={String(d.districtId)}>
-                          {d.districtName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* 3. Phường / Xã */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="ward" className="text-xs text-muted-foreground font-semibold">Phường / Xã</Label>
-                  <Select
-                    value={wardCode || ""}
-                    onValueChange={(val) => {
-                      setWardCode(val)
-                      const found = wardsList.find((w) => w.wardCode === val)
-                      setWardName(found ? found.wardName : "")
-                    }}
-                    disabled={!districtId || loadingWards}
-                  >
-                    <SelectTrigger className="rounded-xl font-bold">
-                      <SelectValue placeholder={!districtId ? "Vui lòng chọn Quận/Huyện trước" : loadingWards ? "Đang tải Phường/Xã..." : "Chọn Phường / Xã"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {wardsList.map((w) => (
-                        <SelectItem key={w.wardCode} value={w.wardCode}>
-                          {w.wardName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <HanoiWardSelect
+                  value={selectedWard?.name}
+                  onChange={(ward) => setSelectedWard(ward)}
+                />
               </div>
 
               <div className="space-y-4 rounded-xl bg-muted/50 p-4">
@@ -705,38 +603,50 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               </div>
 
               {formData.gender === "male" && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="breedingOption">Hình thức phối giống mong muốn</Label>
-                    <Select value={formData.breedingOption} onValueChange={(value) => setFormData({ ...formData, breedingOption: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Chọn hình thức" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {breedingOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {formData.breedingOption === "cash" && (
-                    <div className="space-y-2">
-                      <Label htmlFor="breedingPrice">Số tiền (VNĐ)</Label>
-                      <Input
-                        id="breedingPrice"
-                        type="number"
-                        min="0"
-                        step="100000"
-                        placeholder="Ví dụ: 5000000"
-                        value={formData.breedingPrice}
-                        onChange={(event) => setFormData({ ...formData, breedingPrice: event.target.value })}
-                      />
+                isUnderage ? (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/40 dark:bg-blue-950/20 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-black text-blue-800 dark:text-blue-300">
+                      <Sparkles className="size-4 text-blue-600" />
+                      <span>Cấu hình Phối giống Tự động (Tạm hoãn do bé còn nhỏ)</span>
                     </div>
-                  )}
-                </>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Bé hiện tại đang <strong>{calculateAge()}</strong> (dưới {minBreedingAgeMonths} tháng tuổi), bạn chưa cần cài đặt chi phí phối giống. Khi bé đủ tuổi (dự kiến Tháng <strong>{getEligibleDate()}</strong>), bạn có thể cập nhật yêu cầu phối giống bất kỳ lúc nào.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="breedingOption">Hình thức phối giống mong muốn</Label>
+                      <Select value={formData.breedingOption} onValueChange={(value) => setFormData({ ...formData, breedingOption: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Chọn hình thức" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {breedingOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {formData.breedingOption === "cash" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="breedingPrice">Số tiền (VNĐ)</Label>
+                        <Input
+                          id="breedingPrice"
+                          type="number"
+                          min="0"
+                          step="100000"
+                          placeholder="Ví dụ: 5000000"
+                          value={formData.breedingPrice}
+                          onChange={(event) => setFormData({ ...formData, breedingPrice: event.target.value })}
+                        />
+                      </div>
+                    )}
+                  </>
+                )
               )}
             </div>
           )}

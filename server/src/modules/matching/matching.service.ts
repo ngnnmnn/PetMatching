@@ -30,6 +30,7 @@ import {
 } from './dto/report-match.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { getProvinceCoords } from './province-coordinates';
+import { getHanoiWardCoords } from './hanoi-wards';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -155,21 +156,41 @@ export class MatchingService {
       take: 100,
     });
 
-    const history = await this.prisma.matchingRequest.findMany({
-      where: {
-        femalePetId: femalePet.id,
-        malePetId: { in: candidates.map((candidate) => candidate.id) },
-        status: {
-          in: [
-            MatchingRequestStatus.PENDING,
-            MatchingRequestStatus.ACCEPTED,
-            MatchingRequestStatus.REJECTED,
-            MatchingRequestStatus.PASSED,
+    const candidateIds = candidates.map((candidate) => candidate.id);
+
+    const [history, activeMatches] = await Promise.all([
+      this.prisma.matchingRequest.findMany({
+        where: {
+          femalePetId: femalePet.id,
+          malePetId: { in: candidateIds },
+          status: {
+            in: [
+              MatchingRequestStatus.PENDING,
+              MatchingRequestStatus.ACCEPTED,
+              MatchingRequestStatus.REJECTED,
+              MatchingRequestStatus.PASSED,
+            ],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.match.findMany({
+        where: {
+          status: MatchStatus.ACTIVE,
+          OR: [
+            { pet1Id: femalePet.id, pet2Id: { in: candidateIds } },
+            { pet2Id: femalePet.id, pet1Id: { in: candidateIds } },
           ],
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        select: { pet1Id: true, pet2Id: true },
+      }),
+    ]);
+
+    const activeMatchedPetIds = new Set(
+      activeMatches
+        .flatMap((m) => [m.pet1Id, m.pet2Id])
+        .filter((id) => id !== femalePet.id),
+    );
 
     const latestByMalePetId = new Map(
       history.map((item) => [item.malePetId, item]),
@@ -177,15 +198,28 @@ export class MatchingService {
 
     // Filter candidates và tính compatibility score (async)
     const eligibleCandidates = candidates.filter((candidate) => {
+      // 1. Nếu đang có Match ACTIVE (phòng chat đang hoạt động) -> Chặn tuyệt đối
+      if (activeMatchedPetIds.has(candidate.id)) {
+        return false;
+      }
+
       const latest = latestByMalePetId.get(candidate.id);
       if (!latest) return true;
 
+      // 2. Yêu cầu đang PENDING (đang chờ duyệt) -> Không hiển thị lại
+      if (latest.status === MatchingRequestStatus.PENDING) {
+        return false;
+      }
+
+      // 3. Đối với yêu cầu REJECTED, PASSED, CANCELLED hoặc ACCEPTED cũ đã kết thúc match:
+      // Chỉ hiển thị lại nếu một trong 2 pet có cập nhật hồ sơ sau thời điểm phản hồi / kết thúc match
+      const requestTimestamp = latest.respondedAt || latest.updatedAt || latest.createdAt;
       const latestProfileUpdate =
         femalePet.updatedAt > candidate.updatedAt
           ? femalePet.updatedAt
           : candidate.updatedAt;
 
-      return latest.createdAt < latestProfileUpdate;
+      return requestTimestamp < latestProfileUpdate;
     });
 
     // Batch fetch breed rules để tránh N+1 DB query lên Supabase
@@ -204,48 +238,35 @@ export class MatchingService {
       );
 
       let distanceKm = 10;
-      const femaleLat = femalePet.latitude;
-      const femaleLng = femalePet.longitude;
-      const candLat = candidate.latitude;
-      const candLng = candidate.longitude;
+      let femaleLat = femalePet.latitude;
+      let femaleLng = femalePet.longitude;
+      let candLat = candidate.latitude;
+      let candLng = candidate.longitude;
 
-      const isSameLocation =
-        femalePet.location &&
-        candidate.location &&
-        femalePet.location.trim().toLowerCase() === candidate.location.trim().toLowerCase();
+      // Tra cứu fallback theo Phường Hà Nội nếu thiếu toạ độ GPS
+      if (femaleLat == null || femaleLng == null) {
+        const fWardCoords = getHanoiWardCoords(femalePet.ward || femalePet.location);
+        femaleLat = fWardCoords.lat;
+        femaleLng = fWardCoords.lng;
+      }
+      if (candLat == null || candLng == null) {
+        const cWardCoords = getHanoiWardCoords(candidate.ward || candidate.location);
+        candLat = cWardCoords.lat;
+        candLng = cWardCoords.lng;
+      }
 
-      const isSameDistrict =
-        isSameLocation &&
-        femalePet.district &&
-        candidate.district &&
-        femalePet.district.trim().toLowerCase() === candidate.district.trim().toLowerCase();
+      // Kiểm tra cùng Phường / Xã
+      const isSameWard =
+        femalePet.ward &&
+        candidate.ward &&
+        femalePet.ward.trim().toLowerCase() === candidate.ward.trim().toLowerCase();
 
-      if (femaleLat != null && femaleLng != null && candLat != null && candLng != null) {
+      if (isSameWard) {
+        distanceKm = 0.8;
+      } else if (femaleLat != null && femaleLng != null && candLat != null && candLng != null) {
         distanceKm = calculateHaversineDistance(femaleLat, femaleLng, candLat, candLng);
-      } else if (isSameDistrict) {
-        distanceKm = 3.5;
-      } else if (isSameLocation) {
-        distanceKm = 12.0;
       } else {
-        const fCoords =
-          femaleLat != null && femaleLng != null
-            ? { lat: femaleLat, lng: femaleLng }
-            : getProvinceCoords(femalePet.location);
-        const cCoords =
-          candLat != null && candLng != null
-            ? { lat: candLat, lng: candLng }
-            : getProvinceCoords(candidate.location);
-
-        if (fCoords && cCoords) {
-          distanceKm = calculateHaversineDistance(
-            fCoords.lat,
-            fCoords.lng,
-            cCoords.lat,
-            cCoords.lng,
-          );
-        } else {
-          distanceKm = 250.0;
-        }
+        distanceKm = 5.0;
       }
 
       return {
@@ -398,12 +419,27 @@ export class MatchingService {
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "matching_requests" WHERE "id" = ${requestId} FOR UPDATE`,
       );
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "pets" WHERE "id" = ${pet1Id} OR "id" = ${pet2Id} ORDER BY "id" FOR UPDATE`,
+      );
       const currentRequest = await tx.matchingRequest.findUnique({
         where: { id: requestId },
-        select: { status: true },
+        select: {
+          status: true,
+          femalePet: { select: { status: true } },
+          malePet: { select: { status: true } },
+        },
       });
       if (currentRequest?.status !== MatchingRequestStatus.PENDING) {
         throw new BadRequestException('Only pending requests can be updated.');
+      }
+      if (
+        currentRequest.femalePet.status !== PetStatus.ACTIVE ||
+        currentRequest.malePet.status !== PetStatus.ACTIVE
+      ) {
+        throw new BadRequestException(
+          'Không thể ghép đôi vì một thú cưng đang bị ẩn hoặc ngừng hoạt động.',
+        );
       }
       const updatedRequest = await tx.matchingRequest.update({
         where: { id: requestId },
@@ -801,6 +837,19 @@ export class MatchingService {
         where: { id: { in: [match.pet1Id, match.pet2Id] } },
         data: { updatedAt: endedAt },
       });
+      await tx.matchingRequest.updateMany({
+        where: {
+          OR: [
+            { femalePetId: match.pet1Id, malePetId: match.pet2Id },
+            { femalePetId: match.pet2Id, malePetId: match.pet1Id },
+          ],
+          status: MatchingRequestStatus.ACCEPTED,
+        },
+        data: {
+          status: MatchingRequestStatus.CANCELLED,
+          updatedAt: endedAt,
+        },
+      });
       await tx.auditLog.create({
         data: {
           actorId: userId,
@@ -948,8 +997,8 @@ export class MatchingService {
       },
       select: {
         id: true,
-        pet1: { select: { ownerId: true } },
-        pet2: { select: { ownerId: true } },
+        pet1: { select: { ownerId: true, status: true } },
+        pet2: { select: { ownerId: true, status: true } },
       },
     });
     if (!match) {
@@ -962,6 +1011,7 @@ export class MatchingService {
       match.pet1.ownerId,
       match.pet2.ownerId,
     );
+    this.ensurePetsAllowChat(match);
     return match;
   }
 
@@ -976,6 +1026,21 @@ export class MatchingService {
     if (!isParticipant || !allowsChat) {
       throw new NotFoundException(
         'Không tìm thấy match đang cho phép trò chuyện.',
+      );
+    }
+    this.ensurePetsAllowChat(match);
+  }
+
+  private ensurePetsAllowChat(match: {
+    pet1: { status: PetStatus };
+    pet2: { status: PetStatus };
+  }): void {
+    if (
+      match.pet1.status === PetStatus.HIDDEN ||
+      match.pet2.status === PetStatus.HIDDEN
+    ) {
+      throw new ForbiddenException(
+        'Phòng chat tạm khóa vì một thú cưng đang bị quản trị viên ẩn.',
       );
     }
   }
@@ -1336,11 +1401,13 @@ export class MatchingService {
       femalePet: {
         include: {
           owner: { select: { id: true, name: true, avatarUrl: true } },
+          documents: true,
         },
       },
       malePet: {
         include: {
           owner: { select: { id: true, name: true, avatarUrl: true } },
+          documents: true,
         },
       },
     } satisfies Prisma.MatchingRequestInclude;

@@ -27,8 +27,12 @@ export class ShippingController {
   }
 
   @Get('wards')
-  async getWards(@Query('district_id') districtId: string) {
-    return this.shippingService.getWards(Number(districtId));
+  async getWards(
+    @Query('district_id') districtId?: string,
+    @Query('province_id') provinceId?: string,
+  ) {
+    const targetId = Number(provinceId || districtId || 0);
+    return this.shippingService.getWards(targetId);
   }
 
   @Post('calculate-fee')

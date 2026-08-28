@@ -40,6 +40,7 @@ type TransactionMock = {
 
 describe('PetsService profile details and updates', () => {
   let detailFindUnique: jest.MockedFunction<FindPet>;
+  let createPet: jest.Mock;
   let transactionPetFindUnique: jest.MockedFunction<FindPet>;
   let transactionPetUpdate: jest.MockedFunction<UpdatePet>;
   let tx: TransactionMock;
@@ -90,6 +91,9 @@ describe('PetsService profile details and updates', () => {
   beforeEach(() => {
     detailFindUnique = jest.fn() as jest.MockedFunction<FindPet>;
     detailFindUnique.mockResolvedValue(pet);
+    createPet = jest.fn().mockImplementation(({ data }) =>
+      Promise.resolve({ ...pet, ...data, documents: [] }),
+    );
     transactionPetFindUnique = jest.fn() as jest.MockedFunction<FindPet>;
     transactionPetFindUnique.mockResolvedValue(pet);
     const updateImplementation: UpdatePet = ({ data }) =>
@@ -110,7 +114,7 @@ describe('PetsService profile details and updates', () => {
       },
     };
     const prisma = {
-      pet: { findUnique: detailFindUnique },
+      pet: { findUnique: detailFindUnique, create: createPet },
       $transaction: jest
         .fn()
         .mockImplementation((callback: (client: TransactionMock) => unknown) =>
@@ -129,6 +133,27 @@ describe('PetsService profile details and updates', () => {
 
     expect(result).toMatchObject({ id: 'pet-1', name: 'Milo' });
     expect(result).not.toHaveProperty('ownerId');
+  });
+
+  it('always creates a new pet as active with matching disabled', async () => {
+    await service.createPet('owner-1', {
+      name: 'Milo',
+      species: Species.DOG,
+      breed: 'Poodle',
+      gender: Gender.MALE,
+      birthday: '2024-01-01',
+      weight: 5,
+      location: 'TP. Hồ Chí Minh',
+    });
+
+    expect(createPet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: PetStatus.ACTIVE,
+          isAvailableForMatching: false,
+        }),
+      }),
+    );
   });
 
   it('rejects a missing pet detail', async () => {
@@ -222,6 +247,80 @@ describe('PetsService profile details and updates', () => {
         isAvailableForMatching: true,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('uses INACTIVE when an owner hides a pet and disables matching', async () => {
+    await service.updateAvailability('owner-1', pet.id, {
+      status: PetStatus.INACTIVE,
+    });
+
+    expect(transactionPetUpdate.mock.calls[0]?.[0].data).toMatchObject({
+      status: PetStatus.INACTIVE,
+      isAvailableForMatching: false,
+    });
+  });
+
+  it('lets an owner restore an inactive pet without enabling matching', async () => {
+    transactionPetFindUnique.mockResolvedValue({
+      ...pet,
+      status: PetStatus.INACTIVE,
+      isAvailableForMatching: false,
+    });
+
+    await service.updateAvailability('owner-1', pet.id, {
+      status: PetStatus.ACTIVE,
+    });
+
+    expect(transactionPetUpdate.mock.calls[0]?.[0].data).toMatchObject({
+      status: PetStatus.ACTIVE,
+      isAvailableForMatching: false,
+    });
+  });
+
+  it('lets an owner turn matching off without hiding an active pet', async () => {
+    await service.updateAvailability('owner-1', pet.id, {
+      isAvailableForMatching: false,
+    });
+
+    expect(transactionPetUpdate.mock.calls[0]?.[0].data).toMatchObject({
+      status: PetStatus.ACTIVE,
+      isAvailableForMatching: false,
+    });
+  });
+
+  it('lets an eligible active male pet enable matching', async () => {
+    await service.updateAvailability('owner-1', pet.id, {
+      isAvailableForMatching: true,
+    });
+
+    expect(transactionPetUpdate.mock.calls[0]?.[0].data).toMatchObject({
+      status: PetStatus.ACTIVE,
+      isAvailableForMatching: true,
+    });
+  });
+
+  it('does not allow an owner to set the admin-only HIDDEN status', async () => {
+    await expect(
+      service.updateAvailability('owner-1', pet.id, {
+        status: PetStatus.HIDDEN,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not allow an owner to restore an admin-hidden pet', async () => {
+    transactionPetFindUnique.mockResolvedValue({
+      ...pet,
+      status: PetStatus.HIDDEN,
+      isAvailableForMatching: false,
+    });
+
+    await expect(
+      service.updateAvailability('owner-1', pet.id, {
+        status: PetStatus.ACTIVE,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(transactionPetUpdate).not.toHaveBeenCalled();
   });
 

@@ -52,6 +52,11 @@ export class PetsService {
     if (Number.isNaN(birthday.getTime())) {
       throw new BadRequestException('Birthday is invalid.');
     }
+    if (!dto.avatarUrl && (!dto.gallery || dto.gallery.length === 0)) {
+      throw new BadRequestException(
+        'Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.',
+      );
+    }
     const documents = [];
     if (dto.isVaccinated) {
       documents.push({
@@ -98,7 +103,7 @@ export class PetsService {
         verificationBadge: documents.length
           ? VerificationBadge.PENDING
           : VerificationBadge.NONE,
-        status: dto.status ?? PetStatus.ACTIVE,
+        status: PetStatus.ACTIVE,
         isAvailableForMatching: false,
         documents: documents.length ? { create: documents } : undefined,
       },
@@ -140,6 +145,16 @@ export class PetsService {
           if (birthday.getTime() > Date.now()) {
             throw new BadRequestException('Birthday cannot be in the future.');
           }
+        }
+
+        const nextAvatarUrl =
+          dto.avatarUrl !== undefined ? dto.avatarUrl : pet.avatarUrl;
+        const nextGallery =
+          dto.gallery !== undefined ? dto.gallery : pet.gallery;
+        if (!nextAvatarUrl && (!nextGallery || nextGallery.length === 0)) {
+          throw new BadRequestException(
+            'Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.',
+          );
         }
 
         const nextGender = dto.gender ?? pet.gender;
@@ -396,12 +411,22 @@ export class PetsService {
       if (pet.ownerId !== userId) {
         throw new ForbiddenException('You do not own this pet.');
       }
+      if (pet.status === PetStatus.HIDDEN) {
+        throw new ForbiddenException(
+          'Thú cưng đang bị quản trị viên ẩn do vi phạm.',
+        );
+      }
+      if (dto.status === PetStatus.HIDDEN) {
+        throw new ForbiddenException(
+          'Bạn không có quyền đặt trạng thái ẩn của quản trị viên.',
+        );
+      }
 
       const nextStatus = dto.status ?? pet.status;
       const isMatchingAvailable =
-        nextStatus === PetStatus.HIDDEN
-          ? false
-          : (dto.isAvailableForMatching ?? pet.isAvailableForMatching);
+        nextStatus === PetStatus.ACTIVE
+          ? (dto.isAvailableForMatching ?? pet.isAvailableForMatching)
+          : false;
 
       if (pet.gender !== Gender.MALE && isMatchingAvailable) {
         throw new BadRequestException(

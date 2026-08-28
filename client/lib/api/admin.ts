@@ -105,8 +105,7 @@ export const adminApi = {
     api.patch(`/admin/pets/${id}/hide`, { reason, note }),
   restorePet: (id: string, reason: RestorePetReason, note?: string) =>
     api.patch(`/admin/pets/${id}/restore`, { reason, note }),
-  petVerifications: () => api.get('/admin/pet-verifications'),
-  reviewPetVerification: (id: string, status: DocumentStatus, reviewNote?: string) =>
+  reviewPetDocument: (id: string, status: DocumentStatus, reviewNote?: string) =>
     api.patch(`/admin/pet-verifications/${id}/review`, { status, reviewNote }),
   matchingReports: () => api.get('/admin/matching-reports'),
   matchingReport: (id: string) => api.get(`/admin/matching-reports/${id}`),
