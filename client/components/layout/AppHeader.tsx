@@ -87,9 +87,7 @@ export default function AppHeader({ sectionLabel = 'Trang chủ' }: AppHeaderPro
 
         {/* Điều hướng chính thống nhất trên mọi màn hình dành cho người dùng. */}
         <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-2.5 rounded-2xl border border-[#EFEAE2] bg-[#FAF9F6] p-1.5 shadow-xs md:flex">
-            <MotionLink
-              layoutId="header-nav-shop"
-              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            <Link
               href="/shop"
               onClick={() => {
                 localStorage.removeItem('petmatch_shop_selected_pet');
@@ -99,16 +97,14 @@ export default function AppHeader({ sectionLabel = 'Trang chủ' }: AppHeaderPro
             >
               <Store className="size-4 text-white" />
               Cửa hàng
-            </MotionLink>
-            <MotionLink
-              layoutId="header-nav-spa"
-              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            </Link>
+            <Link
               href="/spa"
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black bg-[#16A34A] hover:bg-[#15803D] text-white transition active:scale-95 shadow-xs border border-transparent"
             >
               <Scissors className="size-4 text-white" />
               Spa & Làm đẹp
-            </MotionLink>
+            </Link>
             <div
               className="relative"
               onMouseEnter={() => setMatchingMenuOpen(true)}

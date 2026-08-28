@@ -89,6 +89,12 @@ export const spaApi = {
   toggleStaffStatus: (id: string) => api.patch<any>(`/spa/manager/staffs/${id}/toggle-status`),
   getManagerFeedbacks: (branchId?: string) =>
     api.get<any[]>(`/spa/manager/feedbacks${branchId ? `?branchId=${branchId}` : ''}`),
-  getAvailability: (branchId: string, date: string, durationMin?: number) =>
-    api.get<any[]>(`/spa/availability?branchId=${branchId}&date=${date}${durationMin ? `&durationMin=${durationMin}` : ''}`),
+  getAvailability: (branchId: string, date: string, durationMin?: number, petId?: string) => {
+    const params = new URLSearchParams();
+    if (branchId) params.append('branchId', branchId);
+    if (date) params.append('date', date);
+    if (durationMin) params.append('durationMin', durationMin.toString());
+    if (petId) params.append('petId', petId);
+    return api.get<any[]>(`/spa/availability?${params.toString()}`);
+  },
 };

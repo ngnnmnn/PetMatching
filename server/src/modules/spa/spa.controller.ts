@@ -323,7 +323,13 @@ export class SpaController {
     @Query('branchId') branchId: string,
     @Query('date') dateStr: string,
     @Query('durationMin') durationMin?: string,
+    @Query('petId') petId?: string,
   ) {
-    return this.spaService.getAvailability(branchId, dateStr, durationMin ? Number(durationMin) : 30);
+    return this.spaService.getAvailability(
+      branchId,
+      dateStr,
+      durationMin ? Number(durationMin) : 30,
+      petId,
+    );
   }
 }

@@ -204,10 +204,8 @@ export class SpaService {
     const timeStartExpected = bookingTime;
     const timeEndExpected = new Date(bookingTime.getTime() + totalDurationMinutes * 60 * 1000);
 
-    // Validate operating hours: 09:00 - 18:00
-    const startHour = bookingTime.getHours();
-    const startMin = bookingTime.getMinutes();
-    const startMinsFromMidnight = startHour * 60 + startMin;
+    // Validate operating hours: 09:00 - 18:00 (Vietnam timezone)
+    const { startMins: startMinsFromMidnight } = getVietnamTimeMinutes(bookingTime);
     const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
 
     const isValidOperatingHours = startMinsFromMidnight >= 9 * 60 && endMinsFromMidnight <= 18 * 60;
@@ -216,6 +214,46 @@ export class SpaService {
       throw new BadRequestException(
         `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
       );
+    }
+
+    // Check pet schedule conflict if petId is provided
+    if (validPetId) {
+      const petOverlappingBookings = await this.prisma.spaBooking.findMany({
+        where: {
+          petId: validPetId,
+          status: {
+            in: [
+              SpaBookingStatus.PENDING,
+              SpaBookingStatus.CONFIRMED,
+              SpaBookingStatus.ASSIGNED,
+              SpaBookingStatus.IN_PROGRESS,
+              SpaBookingStatus.CHECK_IN,
+              SpaBookingStatus.LATE,
+              SpaBookingStatus.ARRIVED,
+            ],
+          },
+          scheduledAt: {
+            gte: new Date(timeStartExpected.getTime() - 24 * 60 * 60 * 1000),
+            lte: new Date(timeEndExpected.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          service: { select: { durationMin: true, durationMax: true } },
+        },
+      });
+
+      const isPetBusy = petOverlappingBookings.some((b) => {
+        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        return bStart < timeEndExpected && bEnd > timeStartExpected;
+      });
+
+      if (isPetBusy) {
+        throw new BadRequestException(
+          'Thú cưng này đã có lịch hẹn Spa khác trùng trong khoảng thời gian này. Vui lòng chọn khung giờ khác.',
+        );
+      }
     }
 
     if (validAddressSpaId) {
@@ -1728,10 +1766,8 @@ export class SpaService {
       : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const startHour = newStart.getHours();
-    const startMin = newStart.getMinutes();
+    const { startMins: startMinsFromMidnight } = getVietnamTimeMinutes(newStart);
     const totalDurationMinutes = Math.round(durationMs / (60 * 1000));
-    const startMinsFromMidnight = startHour * 60 + startMin;
     const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
 
     if (startMinsFromMidnight < 9 * 60 || endMinsFromMidnight > 18 * 60) {
@@ -1884,10 +1920,8 @@ export class SpaService {
         : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const startHour = newStart.getHours();
-    const startMin = newStart.getMinutes();
+    const { startMins: startMinsFromMidnight } = getVietnamTimeMinutes(newStart);
     const totalDurationMinutes = Math.round(durationMs / (60 * 1000));
-    const startMinsFromMidnight = startHour * 60 + startMin;
     const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
 
     if (startMinsFromMidnight < 9 * 60 || endMinsFromMidnight > 18 * 60) {
@@ -2591,7 +2625,7 @@ export class SpaService {
     }));
   }
 
-  async getAvailability(branchId: string, dateStr: string, durationMin: number = 30) {
+  async getAvailability(branchId: string, dateStr: string, durationMin: number = 30, petId?: string) {
     await this.autoUpdateBookingStatuses();
 
     const staffs = await this.prisma.spaStaff.findMany({
@@ -2603,9 +2637,9 @@ export class SpaService {
       },
     });
 
-    const targetDate = new Date(dateStr);
-    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-    const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+    const normalizedDateStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const startOfDay = new Date(`${normalizedDateStr}T00:00:00+07:00`);
+    const endOfDay = new Date(`${normalizedDateStr}T23:59:59.999+07:00`);
 
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
@@ -2633,6 +2667,45 @@ export class SpaService {
       },
     });
 
+    let petBookings: any[] = [];
+    if (petId) {
+      const petRecord = this.prisma.pet ? await this.prisma.pet.findUnique({
+        where: { id: petId },
+        select: { id: true, name: true, ownerId: true },
+      }) : null;
+
+      const orConditions: any[] = [{ petId }];
+      if (petRecord) {
+        orConditions.push({ userId: petRecord.ownerId, petName: petRecord.name });
+      }
+
+      petBookings = await this.prisma.spaBooking.findMany({
+        where: {
+          OR: orConditions,
+          status: {
+            in: [
+              SpaBookingStatus.PENDING,
+              SpaBookingStatus.CONFIRMED,
+              SpaBookingStatus.ASSIGNED,
+              SpaBookingStatus.IN_PROGRESS,
+              SpaBookingStatus.CHECK_IN,
+              SpaBookingStatus.LATE,
+              SpaBookingStatus.ARRIVED,
+            ],
+          },
+          scheduledAt: {
+            gte: new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000),
+            lte: new Date(endOfDay.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          service: {
+            select: { durationMin: true, durationMax: true },
+          },
+        },
+      });
+    }
+
     const timeSlots = [
       '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
       '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
@@ -2654,15 +2727,7 @@ export class SpaService {
         continue;
       }
 
-      const slotStart = new Date(
-        targetDate.getFullYear(),
-        targetDate.getMonth(),
-        targetDate.getDate(),
-        hours,
-        minutes,
-        0,
-        0,
-      );
+      const slotStart = new Date(`${normalizedDateStr}T${timeStr}:00+07:00`);
       const slotEnd = new Date(slotStart.getTime() + durationMin * 60 * 1000);
 
       // Bookings overlapping with this time slot
@@ -2690,12 +2755,21 @@ export class SpaService {
         }
       }
 
+      // Check if pet is busy during this slot
+      const isPetBusy = petBookings.some((b) => {
+        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        return bStart < slotEnd && bEnd > slotStart;
+      });
+
       const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
       const availableStaffs = freeStaffs.slice(0, remainingSlots);
 
       result.push({
         time: timeStr,
-        isAvailable: remainingSlots > 0,
+        isAvailable: remainingSlots > 0 && !isPetBusy,
+        isPetBusy,
         remainingSlots,
         availableStaffs,
       });
@@ -2763,3 +2837,18 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
   }
   return false;
 }
+
+function getVietnamTimeMinutes(date: Date): { startMins: number; hours: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(date);
+
+  const rawH = Number(parts.find((p) => p.type === 'hour')?.value || 0);
+  const hours = rawH === 24 ? 0 : rawH;
+  const minutes = Number(parts.find((p) => p.type === 'minute')?.value || 0);
+  return { startMins: hours * 60 + minutes, hours, minutes };
+}
+

@@ -290,12 +290,7 @@ function SpaBookingWizard() {
     const currentMins = now.getHours() * 60 + now.getMinutes();
 
     return availableSlots.filter((slot) => {
-      // 1. Hide slot if no staff is available during this window
-      if (!slot.isAvailable || slot.remainingSlots <= 0 || !slot.availableStaffs || slot.availableStaffs.length === 0) {
-        return false;
-      }
-
-      // 2. Hide slot if start time < 09:00 or completion time exceeds 18:00
+      // 1. Hide slot if start time < 09:00 or completion time exceeds 18:00
       const [h, m] = slot.time.split(':').map(Number);
       const startMins = h * 60 + m;
       const endMins = startMins + totalDurationMinutes;
@@ -303,7 +298,7 @@ function SpaBookingWizard() {
         return false;
       }
 
-      // 3. If selected date is TODAY, only display time slots at or after current time (hour & minute)
+      // 2. If selected date is TODAY, only display time slots at or after current time (hour & minute)
       if (isToday && startMins < currentMins) {
         return false;
       }
@@ -312,10 +307,10 @@ function SpaBookingWizard() {
     });
   }, [availableSlots, totalDurationMinutes, bookingDate]);
 
-  // Auto-deselect selected booking time if it is no longer valid/available
+  // Auto-deselect selected booking time if it is no longer valid/available/free
   useEffect(() => {
     if (bookingTime) {
-      const isValid = filteredValidSlots.some((s) => s.time === bookingTime);
+      const isValid = filteredValidSlots.some((s) => s.time === bookingTime && s.isAvailable && !s.isPetBusy);
       if (!isValid) {
         setBookingTime('');
       }
@@ -327,7 +322,7 @@ function SpaBookingWizard() {
       if (!selectedAddressSpaId || !bookingDate || (!selectedMainServiceId && selectedSubServiceIds.length === 0)) return;
       setLoadingSlots(true);
       try {
-        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, totalDurationMinutes);
+        const res = await spaApi.getAvailability(selectedAddressSpaId, bookingDate, totalDurationMinutes, selectedPetId || undefined);
         setAvailableSlots(res.data || []);
       } catch (err) {
         console.error('Failed to fetch available slots', err);
@@ -336,7 +331,7 @@ function SpaBookingWizard() {
       }
     };
     fetchSlots();
-  }, [bookingDate, selectedAddressSpaId, totalDurationMinutes]);
+  }, [bookingDate, selectedAddressSpaId, totalDurationMinutes, selectedPetId]);
 
   // Fetch initial data
   useEffect(() => {
@@ -426,16 +421,23 @@ function SpaBookingWizard() {
       }
     }
     setStep((s) => s + 1);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handlePrevStep = () => {
     setStep((s) => s - 1);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleSubmitBooking = async () => {
+    if (submitting) return;
     setSubmitting(true);
     try {
-      const scheduledAt = new Date(`${bookingDate}T${bookingTime}:00`).toISOString();
+      const scheduledAt = `${bookingDate}T${bookingTime}:00+07:00`;
 
       await spaApi.createBooking({
         addressSpaId: selectedAddressSpaId,
@@ -454,7 +456,6 @@ function SpaBookingWizard() {
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Có lỗi xảy ra khi đặt lịch. Vui lòng thử lại.';
       toast.error(msg);
-    } finally {
       setSubmitting(false);
     }
   };
@@ -816,29 +817,73 @@ function SpaBookingWizard() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {filteredValidSlots.map((slot) => {
                           const isSelected = bookingTime === slot.time;
-                          const hasChuyen = slot.isAvailable;
+                          const isPetBusy = !!slot.isPetBusy;
+                          const isShopFull = !slot.isAvailable && !isPetBusy;
+                          const isSelectable = slot.isAvailable && !isPetBusy;
+
+                          const tooltipTitle = isPetBusy
+                            ? `Bé ${activePet?.name ? `"${activePet.name}"` : 'của bạn'} đã có lịch hẹn Spa khác trùng trong khung giờ này (${slot.time}).`
+                            : isShopFull
+                              ? `Khung giờ ${slot.time} đã kín lịch (tất cả nhân viên Spa đều có lịch hẹn).`
+                              : `Khung giờ ${slot.time} khả dụng (${slot.remainingSlots} nhân viên rảnh).`;
+
                           return (
-                            <button
-                              key={slot.time}
-                              type="button"
-                              disabled={!hasChuyen}
-                              onClick={() => setBookingTime(slot.time)}
-                              className={`py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${!hasChuyen
-                                  ? 'bg-gray-50 border-gray-150 text-gray-300 cursor-not-allowed'
-                                  : isSelected
-                                    ? 'bg-primary border-primary text-white shadow-md font-bold'
-                                    : 'bg-white border-gray-250 text-gray-700 hover:border-primary'
+                            <div key={slot.time} className="relative group">
+                              <button
+                                type="button"
+                                disabled={!isSelectable}
+                                title={tooltipTitle}
+                                onClick={() => isSelectable && setBookingTime(slot.time)}
+                                className={`w-full py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center ${
+                                  isPetBusy
+                                    ? 'bg-gray-900 border-gray-800 text-gray-400 cursor-not-allowed shadow-inner'
+                                    : isShopFull
+                                      ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                      : isSelected
+                                        ? 'bg-primary border-primary text-white shadow-md font-bold cursor-pointer scale-105'
+                                        : 'bg-white border-gray-250 text-gray-700 hover:border-primary cursor-pointer'
                                 }`}
-                            >
-                              <span className="text-sm font-black">{slot.time}</span>
-                              {hasChuyen ? (
-                                <span className={`text-[9px] mt-0.5 font-semibold ${isSelected ? 'text-white/80' : 'text-gray-450'}`}>
-                                  {slot.remainingSlots} nhân viên rảnh
-                                </span>
-                              ) : (
-                                <span className="text-[9px] mt-0.5 font-semibold text-gray-300">Đã kín lịch</span>
+                              >
+                                <span className={`text-sm font-black ${isPetBusy ? 'text-gray-200' : ''}`}>{slot.time}</span>
+                                {isPetBusy ? (
+                                  <span className="text-[9px] mt-0.5 font-bold text-amber-400">
+                                    🐾 Bé bận lịch
+                                  </span>
+                                ) : isShopFull ? (
+                                  <span className="text-[9px] mt-0.5 font-semibold text-gray-400">
+                                    Đã kín lịch
+                                  </span>
+                                ) : (
+                                  <span className={`text-[9px] mt-0.5 font-semibold ${isSelected ? 'text-white/90 font-bold' : 'text-gray-500'}`}>
+                                    {slot.remainingSlots} nhân viên rảnh
+                                  </span>
+                                )}
+                              </button>
+
+                              {/* Visual Tooltip on Hover for disabled slots */}
+                              {!isSelectable && (
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-30 pointer-events-none w-52 text-center animate-in fade-in zoom-in-95 duration-150">
+                                  <div className="bg-gray-950/95 text-white text-[11px] font-medium py-2 px-3 rounded-xl shadow-2xl border border-gray-700 leading-snug backdrop-blur-xs">
+                                    {isPetBusy ? (
+                                      <>
+                                        <span className="text-amber-300 font-black block mb-0.5 flex items-center justify-center gap-1">
+                                          ⚠️ Trùng lịch thú cưng
+                                        </span>
+                                        Bé {activePet?.name ? <strong className="text-white">"{activePet.name}"</strong> : 'của bạn'} đã có lịch hẹn Spa khác trong khoảng thời gian này ({slot.time}).
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-rose-300 font-black block mb-0.5 flex items-center justify-center gap-1">
+                                          ⚠️ Đã kín lịch
+                                        </span>
+                                        Tất cả nhân viên Spa đều đã kín lịch hẹn trong khung giờ này.
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="w-2.5 h-2.5 bg-gray-950 rotate-45 -mt-1 border-r border-b border-gray-700" />
+                                </div>
                               )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>

@@ -296,9 +296,122 @@ describe('SpaService manager dashboard revenue', () => {
         service.createBooking('user-1', {
           addressSpaId: 'branch-1',
           mainServiceId: 'service-1',
-          scheduledAt: '2028-08-20T10:00:00',
+          scheduledAt: '2028-08-20T10:00:00+07:00',
         }),
       ).rejects.toThrow('Khung giờ này tại chi nhánh đã kín lịch');
+    });
+
+    it('rejects createBooking when pet has an overlapping booking in that time slot', async () => {
+      const activeBookings = [
+        {
+          id: 'b-pet-1',
+          petId: 'pet-1',
+          status: SpaBookingStatus.CONFIRMED,
+          scheduledAt: new Date('2028-08-20T09:00:00+07:00'),
+          timeStartExpected: new Date('2028-08-20T09:00:00+07:00'),
+          timeEndExpected: new Date('2028-08-20T12:00:00+07:00'),
+          service: { durationMin: 180, durationMax: 180 },
+        },
+      ];
+
+      const prisma = {
+        user: { findUnique: jest.fn().mockResolvedValue({ id: 'user-1' }) },
+        pet: { findUnique: jest.fn().mockResolvedValue({ id: 'pet-1' }) },
+        addressSpa: { findUnique: jest.fn().mockResolvedValue({ id: 'branch-1' }) },
+        spaService: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'service-1',
+            price: 100_000,
+            durationMin: 60,
+            durationMax: 60,
+            isActive: true,
+          }),
+        },
+        spaStaff: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'staff-1', userId: 'user-staff-1', addressSpaId: 'branch-1', status: 'ACTIVE' },
+          ]),
+        },
+        spaBooking: {
+          findMany: jest.fn().mockResolvedValue(activeBookings),
+        },
+      };
+
+      const service = new SpaService(
+        prisma as unknown as PrismaService,
+        {} as PaymentService,
+        {} as any,
+      );
+
+      await expect(
+        service.createBooking('user-1', {
+          petId: 'pet-1',
+          addressSpaId: 'branch-1',
+          mainServiceId: 'service-1',
+          scheduledAt: '2028-08-20T10:00:00+07:00',
+        }),
+      ).rejects.toThrow('Thú cưng này đã có lịch hẹn Spa khác trùng');
+    });
+
+    it('marks slots as isPetBusy in getAvailability when pet has existing booking', async () => {
+      const activePetBookings = [
+        {
+          id: 'b-pet-1',
+          petId: 'pet-1',
+          status: SpaBookingStatus.CONFIRMED,
+          scheduledAt: new Date('2026-08-20T09:00:00+07:00'),
+          timeStartExpected: new Date('2026-08-20T09:00:00+07:00'),
+          timeEndExpected: new Date('2026-08-20T12:00:00+07:00'),
+          service: { durationMin: 180, durationMax: 180 },
+        },
+      ];
+
+      const prisma = {
+        spaStaff: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'staff-rec-1',
+              userId: 'user-staff-1',
+              addressSpaId: 'branch-1',
+              status: 'ACTIVE',
+              user: { id: 'user-staff-1', name: 'Nhân viên 1', email: 's1@spa.local', avatarUrl: null },
+            },
+          ]),
+        },
+        spaBooking: {
+          findMany: jest.fn().mockImplementation(({ where }) => {
+            if (where.petId === 'pet-1' || (where.OR && where.OR.some((c: any) => c.petId === 'pet-1'))) {
+              return Promise.resolve(activePetBookings);
+            }
+            return Promise.resolve([]);
+          }),
+        },
+      };
+
+      const service = new SpaService(
+        prisma as unknown as PrismaService,
+        {} as PaymentService,
+        {} as any,
+      );
+      Object.defineProperty(service, 'autoUpdateBookingStatuses', {
+        value: jest.fn(),
+      });
+
+      const slots = await service.getAvailability('branch-1', '2026-08-20', 60, 'pet-1');
+      const slot0900 = slots.find((s) => s.time === '09:00');
+      const slot1000 = slots.find((s) => s.time === '10:00');
+      const slot1130 = slots.find((s) => s.time === '11:30');
+      const slot1200 = slots.find((s) => s.time === '12:00');
+
+      expect(slot0900?.isPetBusy).toBe(true);
+      expect(slot0900?.isAvailable).toBe(false);
+      expect(slot1000?.isPetBusy).toBe(true);
+      expect(slot1000?.isAvailable).toBe(false);
+      expect(slot1130?.isPetBusy).toBe(true);
+      expect(slot1130?.isAvailable).toBe(false);
+
+      expect(slot1200?.isPetBusy).toBe(false);
+      expect(slot1200?.isAvailable).toBe(true);
     });
   });
 });
