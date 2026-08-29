@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, Info, Plus, Sparkles, Upload, X } from "lucide-react"
+import { Award, Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, FileText, ImagePlus, Info, Minus, Plus, Scale, ShieldCheck, Sparkles, Syringe, Upload, X, Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import api from "@/lib/axios"
 import { breedingOptions, catBreeds, dogBreeds, provinces } from "@/lib/pet-options"
 import { cn } from "@/lib/utils"
@@ -39,8 +41,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   })
   const [avatar, setAvatar] = useState<string | null>(null)
   const [gallery, setGallery] = useState<string[]>([])
-  const [vaccinePhoto, setVaccinePhoto] = useState<string | null>(null)
-  const [pedigreePhoto, setPedigreePhoto] = useState<string | null>(null)
+  const [vaccinePhotos, setVaccinePhotos] = useState<string[]>([])
+  const [pedigreePhotos, setPedigreePhotos] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [submitError, setSubmitError] = useState("")
@@ -120,11 +122,87 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     setGallery(gallery.filter((_, currentIndex) => currentIndex !== index))
   }
 
+  const handleMultiDocUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    setPhotos: React.Dispatch<React.SetStateAction<string[]>>,
+    purpose: UploadPurpose,
+    currentCount: number,
+    maxCount = 4,
+  ) => {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+
+    setIsUploading(true)
+    setSubmitError("")
+    try {
+      const remainingSlots = Math.max(0, maxCount - currentCount)
+      const uploaded = await uploadImages(files.slice(0, remainingSlots), purpose)
+      setPhotos((current) => [...current, ...uploaded.map((image) => image.url)].slice(0, maxCount))
+    } catch {
+      setSubmitError("Không tải được ảnh giấy tờ. Vui lòng thử lại (ảnh tối đa 5MB).")
+    } finally {
+      setIsUploading(false)
+      event.target.value = ""
+    }
+  }
+
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [activePreset, setActivePreset] = useState<number | null>(null)
+
+  const getTodayString = () => {
+    const today = new Date()
+    const yyyy = today.getFullYear()
+    const mm = String(today.getMonth() + 1).padStart(2, "0")
+    const dd = String(today.getDate()).padStart(2, "0")
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  const setAgePreset = (months: number) => {
+    setActivePreset(months)
+    const targetDate = new Date()
+    targetDate.setMonth(targetDate.getMonth() - months)
+    const yyyy = targetDate.getFullYear()
+    const mm = String(targetDate.getMonth() + 1).padStart(2, "0")
+    const dd = String(targetDate.getDate()).padStart(2, "0")
+    setFormData((prev) => ({ ...prev, birthday: `${yyyy}-${mm}-${dd}` }))
+  }
+
+  const handleCalendarSelect = (date: Date | undefined) => {
+    if (date) {
+      setActivePreset(null)
+      const yyyy = date.getFullYear()
+      const mm = String(date.getMonth() + 1).padStart(2, "0")
+      const dd = String(date.getDate()).padStart(2, "0")
+      setFormData((prev) => ({ ...prev, birthday: `${yyyy}-${mm}-${dd}` }))
+      setIsCalendarOpen(false)
+    }
+  }
+
+  const formatBirthdayDisplay = (dateStr: string) => {
+    if (!dateStr) return "Chọn ngày sinh của bé..."
+    const [yyyy, mm, dd] = dateStr.split("-")
+    if (!yyyy || !mm || !dd) return dateStr
+    return `Ngày ${dd}/${mm}/${yyyy}`
+  }
+
   const calculateAge = () => {
     if (!formData.birthday) return ""
     const birthday = new Date(formData.birthday)
     const now = new Date()
-    const months = (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth())
+
+    if (birthday > now) {
+      return "Ngày trong tương lai"
+    }
+
+    let months = (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth())
+    if (now.getDate() < birthday.getDate()) months -= 1
+    months = Math.max(0, months)
+
+    if (months === 0) {
+      const diffDays = Math.floor((now.getTime() - birthday.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays <= 0) return "Hôm nay"
+      return `${diffDays} ngày tuổi (Sơ sinh)`
+    }
 
     if (months < 12) {
       return `${months} tháng tuổi`
@@ -139,7 +217,10 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     if (!formData.birthday) return null
     const birthday = new Date(formData.birthday)
     const now = new Date()
-    return (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth())
+    if (birthday > now) return null
+    let months = (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth())
+    if (now.getDate() < birthday.getDate()) months -= 1
+    return Math.max(0, months)
   }
 
   const minBreedingAgeMonths = formData.species === "cat" ? 8 : 12
@@ -152,6 +233,30 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     const eligibleDate = new Date(birthday)
     eligibleDate.setMonth(eligibleDate.getMonth() + minBreedingAgeMonths)
     return eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" })
+  }
+
+  const getWeightClassification = () => {
+    const weightNum = parseFloat(formData.weight)
+    if (isNaN(weightNum) || weightNum <= 0) return null
+
+    if (formData.species === "cat") {
+      if (weightNum < 3) return { label: "🐾 Mèo nhỏ / Nhẹ cân", color: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/40 dark:border-blue-900" }
+      if (weightNum <= 5.5) return { label: "🐾 Mèo tiêu chuẩn", color: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-900" }
+      if (weightNum <= 8) return { label: "🐾 Mèo mập / Khung to", color: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900" }
+      return { label: "🐾 Mèo ngoại cỡ (Maine Coon/XL)", color: "text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-900" }
+    }
+    // Dog
+    if (weightNum < 5) return { label: "🐾 Vóc siêu nhỏ (Toy/Mini)", color: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/40 dark:border-blue-900" }
+    if (weightNum <= 12) return { label: "🐾 Vóc nhỏ (Small)", color: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-900" }
+    if (weightNum <= 25) return { label: "🐾 Vóc trung bình (Medium)", color: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900" }
+    if (weightNum <= 45) return { label: "🐾 Vóc lớn (Large)", color: "text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-950/40 dark:border-orange-900" }
+    return { label: "🐾 Khổng lồ (Giant/XL)", color: "text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-900" }
+  }
+
+  const adjustWeight = (delta: number) => {
+    const current = parseFloat(formData.weight) || (formData.species === "cat" ? 4 : 10)
+    const next = Math.max(0.1, Math.min(150, Math.round((current + delta) * 10) / 10))
+    setFormData((prev) => ({ ...prev, weight: String(next) }))
   }
 
   const canProceed = () => {
@@ -180,13 +285,13 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       return
     }
 
-    if (formData.isVaccinated && !vaccinePhoto) {
-      setSubmitError("Vui lòng tải ảnh sổ tiêm phòng để gửi xác minh.")
+    if (formData.isVaccinated && vaccinePhotos.length === 0) {
+      setSubmitError("Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh.")
       setStep(2)
       return
     }
-    if (formData.hasPedigree && !pedigreePhoto) {
-      setSubmitError("Vui lòng tải ảnh giấy tờ phả hệ để gửi xác minh.")
+    if (formData.hasPedigree && pedigreePhotos.length === 0) {
+      setSubmitError("Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh.")
       setStep(2)
       return
     }
@@ -228,9 +333,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         isVaccinated: formData.isVaccinated,
         hasPedigree: formData.hasPedigree,
         pedigreeNumber: formData.pedigreeNumber.trim() || undefined,
-        vaccineDocumentUrls: vaccinePhoto ? [vaccinePhoto] : undefined,
+        vaccineDocumentUrls: vaccinePhotos.length > 0 ? vaccinePhotos : undefined,
         vaccineNote: formData.isVaccinated ? "Đã tiêm đủ 3 mũi cơ bản" : undefined,
-        pedigreeDocumentUrls: pedigreePhoto ? [pedigreePhoto] : undefined,
+        pedigreeDocumentUrls: pedigreePhotos.length > 0 ? pedigreePhotos : undefined,
         pedigreeNote: formData.pedigreeNumber.trim() || "Giấy tờ phả hệ VKA/TICA",
         breedingOption: gender === "MALE" ? breedingOptionMap[formData.breedingOption] || undefined : undefined,
         breedingFee: gender === "MALE" && formData.breedingPrice ? Number(formData.breedingPrice) : undefined,
@@ -313,7 +418,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="name">Tên của bé *</Label>
+                <Label htmlFor="name">
+                  Tên của bé <span className="text-destructive font-bold">*</span>
+                </Label>
                 <Input
                   id="name"
                   placeholder="Ví dụ: Đậu Đậu"
@@ -323,7 +430,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label>Loài *</Label>
+                <Label>
+                  Loài <span className="text-destructive font-bold">*</span>
+                </Label>
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     type="button"
@@ -351,7 +460,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="breed">Giống *</Label>
+                <Label htmlFor="breed">
+                  Giống <span className="text-destructive font-bold">*</span>
+                </Label>
                 <Select
                   value={isCustomBreed ? "OTHER" : formData.breed}
                   onValueChange={(value) => {
@@ -393,7 +504,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label>Giới tính *</Label>
+                <Label>
+                  Giới tính <span className="text-destructive font-bold">*</span>
+                </Label>
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     type="button"
@@ -429,23 +542,98 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
             <div className="space-y-6">
               <h2 className="mb-6 text-center text-2xl font-bold">Chỉ số & Sức khỏe</h2>
 
-              <div className="space-y-2">
-                <Label htmlFor="birthday">Ngày sinh *</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    id="birthday"
-                    type="date"
-                    max={new Date().toISOString().split("T")[0]}
-                    value={formData.birthday}
-                    onChange={(event) => setFormData({ ...formData, birthday: event.target.value })}
-                    className="flex-1"
-                  />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="birthday" className="text-sm font-bold">
+                    Ngày sinh <span className="text-destructive font-bold">*</span>
+                  </Label>
                   {formData.birthday && (
-                    <span className="whitespace-nowrap text-sm font-medium text-primary">{calculateAge()}</span>
+                    <span className={cn(
+                      "text-xs font-black px-2.5 py-0.5 rounded-full border",
+                      new Date(formData.birthday) > new Date()
+                        ? "bg-destructive/10 text-destructive border-destructive/20"
+                        : "bg-primary/10 text-primary border-primary/20"
+                    )}>
+                      {new Date(formData.birthday) > new Date() ? "⚠️ Ngày không hợp lệ" : `✨ ${calculateAge()}`}
+                    </span>
                   )}
                 </div>
-                {formData.birthday && isUnderage && currentAgeMonths !== null && (
-                  <div className="mt-2.5 rounded-2xl border border-blue-200 bg-blue-50/80 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/30 space-y-1">
+
+                {/* Quick Age Presets */}
+                <div className="space-y-1.5 rounded-2xl bg-muted/40 p-3 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
+                      <Sparkles className="size-3 text-primary" /> Bạn chỉ nhớ số tháng/tuổi? Chọn nhanh:
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {[
+                      { label: "🍼 2 tháng", months: 2 },
+                      { label: "4 tháng", months: 4 },
+                      { label: "6 tháng", months: 6 },
+                      { label: "8 tháng", months: 8 },
+                      { label: "1 tuổi", months: 12 },
+                      { label: "2 tuổi", months: 24 },
+                      { label: "3 tuổi", months: 36 },
+                      { label: "5 tuổi", months: 60 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.months}
+                        type="button"
+                        onClick={() => setAgePreset(preset.months)}
+                        className={cn(
+                          "rounded-lg px-2.5 py-1 text-xs font-bold border transition-all cursor-pointer",
+                          activePreset === preset.months
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-background text-muted-foreground border-border/80 hover:border-primary/50 hover:text-foreground"
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* DatePicker Popover with Calendar */}
+                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "w-full flex items-center justify-between h-12 px-4 rounded-xl border bg-background text-sm font-bold shadow-xs transition-all hover:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer",
+                        !formData.birthday ? "text-muted-foreground font-medium" : "text-foreground border-primary/40"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                          <CalendarIcon className="size-4" />
+                        </div>
+                        <span className="text-sm font-bold">
+                          {formatBirthdayDisplay(formData.birthday)}
+                        </span>
+                      </div>
+                      <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-lg">
+                        {formData.birthday ? "Đổi ngày" : "Mở lịch chọn"}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 rounded-2xl shadow-2xl border border-border/80 z-[100]" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.birthday ? new Date(formData.birthday) : undefined}
+                      onSelect={handleCalendarSelect}
+                      disabled={(date) => date > new Date() || date < new Date("1995-01-01")}
+                      captionLayout="dropdown"
+                      startMonth={new Date(1995, 0)}
+                      endMonth={new Date()}
+                      className="rounded-2xl p-3"
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {/* Underage info card */}
+                {formData.birthday && isUnderage && currentAgeMonths !== null && new Date(formData.birthday) <= new Date() && (
+                  <div className="mt-2 rounded-2xl border border-blue-200 bg-blue-50/80 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/30 space-y-1">
                     <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300 font-extrabold text-xs">
                       <Info className="size-4 shrink-0" />
                       <span>Thông tin độ tuổi &amp; Chuẩn an toàn sinh sản</span>
@@ -455,39 +643,129 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     </p>
                   </div>
                 )}
-                {formData.birthday && !isUnderage && (
-                  <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+
+                {/* Mature status info */}
+                {formData.birthday && !isUnderage && new Date(formData.birthday) <= new Date() && (
+                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
                     <Sparkles className="size-3.5" /> Bé đã đạt độ tuổi trưởng thành, đủ điều kiện tham gia ghép đôi phối giống.
                   </p>
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="weight">Cân nặng (kg) *</Label>
-                <div className="relative">
-                  <Input
-                    id="weight"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    placeholder="Ví dụ: 5.5"
-                    value={formData.weight}
-                    onChange={(event) => setFormData({ ...formData, weight: event.target.value })}
-                    className="pr-12"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">kg</span>
+              {/* Cân nặng Block */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="weight" className="text-sm font-bold">
+                    Cân nặng (kg) <span className="text-destructive font-bold">*</span>
+                  </Label>
+                  {getWeightClassification() && (
+                    <span className={cn("text-xs font-black px-2.5 py-0.5 rounded-full border", getWeightClassification()?.color)}>
+                      {getWeightClassification()?.label}
+                    </span>
+                  )}
                 </div>
+
+                {/* Quick Weight Presets */}
+                <div className="space-y-1.5 rounded-2xl bg-muted/40 p-3 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
+                      <Scale className="size-3 text-primary" />
+                      {formData.species === "cat" ? "Gợi ý cân nặng phổ biến cho Mèo:" : "Gợi ý cân nặng phổ biến cho Chó:"}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {(formData.species === "cat"
+                      ? [
+                          { label: "2.5 kg", val: "2.5" },
+                          { label: "3.5 kg", val: "3.5" },
+                          { label: "4.5 kg", val: "4.5" },
+                          { label: "5.5 kg", val: "5.5" },
+                          { label: "7.0 kg", val: "7" },
+                        ]
+                      : [
+                          { label: "3 kg (Toy)", val: "3" },
+                          { label: "6 kg (Nhỏ)", val: "6" },
+                          { label: "12 kg (Vừa)", val: "12" },
+                          { label: "25 kg (Lớn)", val: "25" },
+                          { label: "35 kg (Rất lớn)", val: "35" },
+                        ]
+                    ).map((preset) => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, weight: preset.val }))}
+                        className={cn(
+                          "rounded-lg px-2.5 py-1 text-xs font-bold border transition-all cursor-pointer",
+                          formData.weight === preset.val
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-background text-muted-foreground border-border/80 hover:border-primary/50 hover:text-foreground"
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Integrated Stepper Input Group */}
+                <div className="flex items-stretch rounded-2xl border-2 border-border/80 bg-background overflow-hidden shadow-xs focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => adjustWeight(-0.5)}
+                    className="flex items-center justify-center px-4 py-2.5 bg-muted/40 hover:bg-primary/10 hover:text-primary active:bg-primary/20 text-muted-foreground transition-colors cursor-pointer border-r border-border/60 text-xs font-black select-none"
+                    title="Giảm 0.5 kg"
+                  >
+                    <Minus className="size-4" />
+                  </button>
+
+                  <div className="relative flex-1 flex items-center justify-center">
+                    <input
+                      id="weight"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      max="150"
+                      placeholder="0.0"
+                      value={formData.weight}
+                      onChange={(event) => setFormData({ ...formData, weight: event.target.value })}
+                      className="w-full h-12 bg-transparent text-center text-lg font-black text-foreground focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none pr-8 pl-4"
+                    />
+                    <span className="absolute right-4 text-xs font-black text-muted-foreground pointer-events-none">
+                      kg
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => adjustWeight(0.5)}
+                    className="flex items-center justify-center px-4 py-2.5 bg-muted/40 hover:bg-primary/10 hover:text-primary active:bg-primary/20 text-muted-foreground transition-colors cursor-pointer border-l border-border/60 text-xs font-black select-none"
+                    title="Tăng 0.5 kg"
+                  >
+                    <Plus className="size-4" />
+                  </button>
+                </div>
+
+                {/* Sanity Check Warnings */}
                 {formData.weight && Number(formData.weight) <= 0 && (
-                  <p className="text-xs font-semibold text-destructive mt-1">Cân nặng phải lớn hơn 0 kg.</p>
+                  <p className="text-xs font-bold text-destructive">⚠️ Cân nặng phải lớn hơn 0 kg.</p>
                 )}
-                {formData.weight && Number(formData.weight) > 150 && (
-                  <p className="text-xs font-semibold text-destructive mt-1">Cân nặng quá lớn (tối đa 150kg). Vui lòng kiểm tra lại.</p>
+                {formData.species === "cat" && Number(formData.weight) > 15 && (
+                  <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                    ⚠️ Mèo hiếm khi nặng hơn 15kg (trừ một số giống đặc biệt như Maine Coon). Vui lòng kiểm tra lại.
+                  </p>
+                )}
+                {formData.species === "dog" && Number(formData.weight) > 120 && (
+                  <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                    ⚠️ Cân nặng của chó vượt quá 120kg. Vui lòng kiểm tra lại.
+                  </p>
                 )}
               </div>
 
               <div className="space-y-3 rounded-2xl border bg-muted/20 p-4">
                 <div className="space-y-1">
-                  <Label className="font-extrabold text-sm">Địa chỉ & Khu vực của bé tại Hà Nội *</Label>
+                  <Label className="font-extrabold text-sm">
+                    Địa chỉ & Khu vực của bé tại Hà Nội <span className="text-destructive font-bold">*</span>
+                  </Label>
                   <p className="text-xs text-muted-foreground">
                     Chọn Phường / Xã nơi bé đang ở để hệ thống tự động xác định toạ độ và đề xuất ghép đôi gần nhất.
                   </p>
@@ -498,58 +776,161 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 />
               </div>
 
-              <div className="space-y-4 rounded-xl bg-muted/50 p-4">
-                <Label htmlFor="vaccinated" className="flex cursor-pointer items-center gap-2">
-                  <Checkbox
+              {/* Sổ tiêm phòng & Vắc-xin Card */}
+              <div
+                className={cn(
+                  "rounded-2xl border-2 p-4 transition-all space-y-3",
+                  formData.isVaccinated
+                    ? "border-primary/40 bg-primary/5 shadow-xs"
+                    : "border-border/80 bg-muted/20"
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "flex size-10 items-center justify-center rounded-xl shrink-0 font-bold transition-colors",
+                        formData.isVaccinated
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      <Syringe className="size-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-foreground">Sổ tiêm phòng &amp; Vắc-xin</span>
+                        {formData.isVaccinated && (
+                          <span className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-bold">
+                            Xác minh sức khỏe
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Đã tiêm phòng đầy đủ các mũi cơ bản (5/7 bệnh hoặc vắc-xin dại).
+                      </p>
+                    </div>
+                  </div>
+
+                  <Switch
                     id="vaccinated"
                     checked={formData.isVaccinated}
-                    onCheckedChange={(checked) => setFormData({ ...formData, isVaccinated: checked as boolean })}
+                    onCheckedChange={(checked) => {
+                      setFormData({ ...formData, isVaccinated: checked })
+                      if (!checked) setVaccinePhotos([])
+                    }}
                   />
-                  <span>Đã tiêm đủ 3 mũi cơ bản</span>
-                </Label>
+                </div>
 
                 {formData.isVaccinated && (
-                  <UploadBox
-                    label="Tải ảnh sổ tiêm phòng"
-                    image={vaccinePhoto}
-                    imageAlt="Sổ tiêm phòng"
-                    onRemove={() => setVaccinePhoto(null)}
-                    onUpload={(event) => handleImageUpload(event, setVaccinePhoto, "vaccine-document")}
-                  />
+                  <div className="pt-2 border-t border-border/60">
+                    <DocumentMultiUploadBox
+                      title="Ảnh chụp sổ tiêm phòng"
+                      subtitle="Chụp rõ trang có thông tin bé, các mũi tiêm và nhãn dán vắc-xin."
+                      photos={vaccinePhotos}
+                      maxCount={4}
+                      isUploading={isUploading}
+                      onUpload={(e) => handleMultiDocUpload(e, setVaccinePhotos, "vaccine-document", vaccinePhotos.length, 4)}
+                      onRemove={(index) => setVaccinePhotos((prev) => prev.filter((_, i) => i !== index))}
+                    />
+                  </div>
                 )}
               </div>
 
-              <div className="space-y-4 rounded-xl bg-muted/50 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <Label htmlFor="pedigree" className="cursor-pointer">
-                    Giấy tờ phả hệ (VKA/TICA)
-                  </Label>
+              {/* Giấy tờ phả hệ Card */}
+              <div
+                className={cn(
+                  "rounded-2xl border-2 p-4 transition-all space-y-3",
+                  formData.hasPedigree
+                    ? "border-primary/40 bg-primary/5 shadow-xs"
+                    : "border-border/80 bg-muted/20"
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "flex size-10 items-center justify-center rounded-xl shrink-0 font-bold transition-colors",
+                        formData.hasPedigree
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      <Award className="size-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-foreground">Giấy tờ phả hệ thuần chủng</span>
+                        {formData.hasPedigree && (
+                          <span className="rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 text-[10px] font-bold">
+                            Thuần chủng
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Chứng nhận phả hệ cấp bởi VKA, FCI, TICA, WCF hoặc hiệp hội quốc tế.
+                      </p>
+                    </div>
+                  </div>
+
                   <Switch
                     id="pedigree"
                     checked={formData.hasPedigree}
-                    onCheckedChange={(checked) => setFormData({ ...formData, hasPedigree: checked })}
+                    onCheckedChange={(checked) => {
+                      setFormData({ ...formData, hasPedigree: checked })
+                      if (!checked) {
+                        setPedigreePhotos([])
+                        setFormData((prev) => ({ ...prev, hasPedigree: false, pedigreeNumber: "" }))
+                      }
+                    }}
                   />
                 </div>
 
                 {formData.hasPedigree && (
-                  <div className="space-y-4 pt-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="pedigreeNumber" className="text-sm">
-                        Mã số chứng nhận
-                      </Label>
+                  <div className="pt-2 border-t border-border/60 space-y-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="pedigreeNumber" className="text-xs font-bold text-foreground">
+                          Mã số chứng nhận phả hệ
+                        </Label>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-muted-foreground mr-1">Hiệp hội:</span>
+                          {["VKA", "TICA", "FCI", "WCF"].map((club) => (
+                            <button
+                              key={club}
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => {
+                                  const current = prev.pedigreeNumber.trim()
+                                  if (current.startsWith(club)) return prev
+                                  return { ...prev, pedigreeNumber: `${club}-${current.replace(/^[A-Z]+-?/, "")}` }
+                                })
+                              }}
+                              className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground hover:bg-primary hover:text-primary-foreground transition cursor-pointer"
+                            >
+                              {club}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <Input
                         id="pedigreeNumber"
-                        placeholder="Ví dụ: VKA-2023-001"
+                        placeholder="Ví dụ: VKA-2023-001 hoặc TICA-09872"
                         value={formData.pedigreeNumber}
                         onChange={(event) => setFormData({ ...formData, pedigreeNumber: event.target.value })}
+                        className="rounded-xl font-bold bg-background h-10"
                       />
                     </div>
-                    <UploadBox
-                      label="Tải ảnh giấy tờ"
-                      image={pedigreePhoto}
-                      imageAlt="Giấy tờ phả hệ"
-                      onRemove={() => setPedigreePhoto(null)}
-                      onUpload={(event) => handleImageUpload(event, setPedigreePhoto, "pedigree-document")}
+
+                    <DocumentMultiUploadBox
+                      title="Ảnh chụp giấy chứng nhận phả hệ"
+                      subtitle="Chụp rõ mặt trước và mặt sau (hoặc sơ đồ phả hệ) để Admin kiểm duyệt."
+                      photos={pedigreePhotos}
+                      maxCount={4}
+                      isUploading={isUploading}
+                      onUpload={(e) => handleMultiDocUpload(e, setPedigreePhotos, "pedigree-document", pedigreePhotos.length, 4)}
+                      onRemove={(index) => setPedigreePhotos((prev) => prev.filter((_, i) => i !== index))}
                     />
                   </div>
                 )}
@@ -680,46 +1061,69 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   )
 }
 
-function UploadBox({
-  label,
-  image,
-  imageAlt,
-  onRemove,
+function DocumentMultiUploadBox({
+  title,
+  subtitle,
+  photos,
+  maxCount = 4,
   onUpload,
+  onRemove,
+  isUploading,
 }: {
-  label: string
-  image: string | null
-  imageAlt: string
-  onRemove: () => void
+  title: string
+  subtitle: string
+  photos: string[]
+  maxCount?: number
   onUpload: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onRemove: (index: number) => void
+  isUploading: boolean
 }) {
   return (
-    <div className="pt-2">
-      <Label className="mb-2 block text-sm text-muted-foreground">{label}</Label>
-      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 transition-all hover:border-primary/50">
-        {image ? (
-          <div className="relative">
-            <img src={image} alt={imageAlt} className="max-h-32 rounded" />
+    <div className="space-y-3 pt-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-xs font-black text-foreground">{title}</span>
+          <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+        </div>
+        <span className="text-xs font-bold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full border border-primary/20">
+          {photos.length}/{maxCount} ảnh
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {photos.map((url, index) => (
+          <div key={`${url}-${index}`} className="group relative aspect-[4/3] overflow-hidden rounded-xl border bg-muted shadow-2xs">
+            <img src={url} alt={`Trang ${index + 1}`} className="size-full object-cover" />
+            <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-xs">
+              Trang {index + 1}
+            </span>
             <button
               type="button"
-              onClick={(event) => {
-                event.preventDefault()
-                onRemove()
-              }}
-              className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
-              aria-label="Xóa ảnh"
+              onClick={() => onRemove(index)}
+              className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-destructive text-white shadow-md transition hover:scale-110 cursor-pointer"
+              aria-label="Xóa ảnh này"
             >
-              <X className="size-4" />
+              <X className="size-3.5" />
             </button>
           </div>
-        ) : (
-          <>
-            <Upload className="size-5 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Tải ảnh lên</span>
-          </>
+        ))}
+
+        {photos.length < maxCount && (
+          <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-primary/30 bg-background text-center transition hover:border-primary hover:bg-primary/5 shadow-2xs">
+            <ImagePlus className="size-5 text-primary/70" />
+            <span className="text-xs font-bold text-foreground">+ Thêm trang</span>
+            <span className="text-[10px] text-muted-foreground">Tối đa 5MB</span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+              disabled={isUploading}
+              onChange={onUpload}
+            />
+          </label>
         )}
-        <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
-      </label>
+      </div>
     </div>
   )
 }

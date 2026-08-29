@@ -1325,7 +1325,7 @@ function Field({
     <div className={cn("space-y-2", className)}>
       <Label>
         {label}
-        {required ? " *" : ""}
+        {required && <span className="text-destructive font-bold ml-1">*</span>}
       </Label>
       {children}
     </div>
@@ -1451,12 +1451,20 @@ function formatDate(value: string) {
 function formatAge(value: string) {
   const birthday = new Date(value);
   const now = new Date();
+  if (birthday > now) return "Ngày không hợp lệ";
   let months =
     (now.getFullYear() - birthday.getFullYear()) * 12 +
     now.getMonth() -
     birthday.getMonth();
   if (now.getDate() < birthday.getDate()) months -= 1;
   months = Math.max(0, months);
+  if (months === 0) {
+    const diffDays = Math.floor(
+      (now.getTime() - birthday.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (diffDays <= 0) return "Hôm nay";
+    return `${diffDays} ngày tuổi (Sơ sinh)`;
+  }
   if (months < 12) return `${months} tháng tuổi`;
   const years = Math.floor(months / 12);
   const remainingMonths = months % 12;
