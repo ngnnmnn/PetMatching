@@ -1,6 +1,22 @@
-TÀI KHOẢN MẪU CHO VAI TRÒ QUẢN LÝ CỬA HÀNG (STORE MANAGER)
-=========================================================
+TÀI KHOẢN MẪU CHO VAI TRÒ QUẢN LÝ VÀ NHÂN VIÊN (MANAGERS & STAFF)
+==================================================================
 
+1. STORE MANAGER (Quản lý cửa hàng):
 - Email: managerstore@petmatch.com
 - Mật khẩu: 123456
-- Vai trò (Role): STORE_MANAGER
+- Role: STORE_MANAGER
+
+2. SPA MANAGER (Quản lý Spa):
+- Email: mai@spa.petmatch.vn
+- Mật khẩu: spa123
+- Role: SPA_MANAGER
+
+3. SPA STAFF 1 (Nhân viên Spa 1):
+- Email: hoa@spa.petmatch.vn
+- Mật khẩu: spa123
+- Role: SPA_STAFF
+
+4. SPA STAFF 2 (Nhân viên Spa 2 - Mới tạo):
+- Email: lan@spa.petmatch.vn
+- Mật khẩu: spa123
+- Role: SPA_STAFF

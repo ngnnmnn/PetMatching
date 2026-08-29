@@ -11,6 +11,7 @@ import {
   Inbox,
   Info,
   Layers,
+  Maximize2,
   PawPrint,
   Search,
   SlidersHorizontal,
@@ -36,6 +37,8 @@ import {
   PetPublicProfileDialog,
   type PetWithOwner,
 } from '@/components/pets/PetPublicProfileDialog';
+import { ImageLightbox } from '@/components/ui/image-lightbox';
+
 
 // =============================================================
 // Types
@@ -147,6 +150,8 @@ export default function UnifiedMatchingHubPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [selectedCandidateDetail, setSelectedCandidateDetail] = useState<Pet | null>(null);
+  const [candidateImageIndex, setCandidateImageIndex] = useState(0);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [autoExpandCompatibility, setAutoExpandCompatibility] = useState(false);
   const [requestingPet, setRequestingPet] = useState<Pet | null>(null);
   const [requestNote, setRequestNote] = useState('');
@@ -157,6 +162,18 @@ export default function UnifiedMatchingHubPage() {
     requestId?: string;
     matchingLocked?: boolean;
   } | null>(null);
+
+  // Extract all distinct images for selected candidate
+  const candidateImages = useMemo(() => {
+    if (!selectedCandidateDetail) return [];
+    const list = [
+      selectedCandidateDetail.avatarUrl,
+      selectedCandidateDetail.avatar,
+      ...(selectedCandidateDetail.gallery || []),
+    ].filter((url): url is string => Boolean(url && typeof url === 'string' && url.trim()));
+    return Array.from(new Set(list));
+  }, [selectedCandidateDetail]);
+
 
   // Derived selected pet & Breeding Eligibility
   const selectedPet = useMemo(() => myPets.find((p) => p.id === selectedPetId), [myPets, selectedPetId]);
@@ -804,195 +821,374 @@ export default function UnifiedMatchingHubPage() {
       {/* ================= CANDIDATE DETAIL MODAL (FULL PROFILE) ================= */}
       <AnimatePresence>
         {selectedCandidateDetail && (
-          <div className="fixed inset-0 z-50 flex justify-center p-4 bg-black/80 backdrop-blur-md pt-safe-top overflow-y-auto" onClick={() => setSelectedCandidateDetail(null)}>
+          <div
+            className="fixed inset-0 z-50 flex justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md pt-safe-top overflow-y-auto"
+            onClick={() => setSelectedCandidateDetail(null)}
+          >
             <motion.div
-              initial={{ opacity: 0, y: 100, scale: 0.95 }}
+              initial={{ opacity: 0, y: 50, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 100, scale: 0.95 }}
+              exit={{ opacity: 0, y: 50, scale: 0.96 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-2xl rounded-[2rem] bg-background shadow-2xl overflow-hidden my-auto border border-white/10"
+              className="relative w-full max-w-2xl rounded-[2rem] bg-background shadow-2xl overflow-hidden my-auto border border-border/60 flex flex-col max-h-[92vh]"
             >
-              {/* Cover Image Container */}
-              <div className="relative aspect-square md:aspect-[4/3] bg-muted w-full">
-                <img
-                  src={selectedCandidateDetail.avatarUrl || selectedCandidateDetail.avatar || selectedCandidateDetail.gallery?.[0] || '/placeholder.svg'}
-                  alt={selectedCandidateDetail.name}
-                  className="size-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+              {/* Scrollable Content Container */}
+              <div className="overflow-y-auto flex-1 pb-24">
                 
-                {/* Close Button */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCandidateDetail(null)}
-                  className="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60 transition-colors z-10"
-                >
-                  <X className="size-5" />
-                </button>
-
-                {/* Overlaid Badges */}
-                <div className="absolute left-6 top-4 flex gap-2">
-                  {selectedCandidateDetail.compatibilityScore && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/90 px-3 py-1 text-xs font-black text-white shadow backdrop-blur-md">
-                      <Sparkles className="size-3.5" /> {selectedCandidateDetail.compatibilityScore}% Phù hợp
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Profile Details */}
-              <div className="px-6 pb-24 pt-2 md:pt-0 md:-mt-10 relative z-10 space-y-6">
-                
-                {/* Header Info */}
-                <div>
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <h2 className="text-4xl md:text-5xl font-black drop-shadow-sm text-foreground">
-                        {selectedCandidateDetail.name}
-                      </h2>
-                      <p className="text-base font-medium text-muted-foreground mt-1">
-                        {selectedCandidateDetail.breed} · {selectedCandidateDetail.location}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-center justify-center size-14 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0 shadow-sm">
-                      <span className="text-lg font-black leading-none">{selectedCandidateDetail.gender === 'MALE' ? '♂' : '♀'}</span>
-                    </div>
-                  </div>
+                {/* 1. Cover Image Container with Gallery Carousel */}
+                <div className="relative aspect-[4/3] sm:aspect-[16/10] bg-muted w-full select-none overflow-hidden group">
+                  <AnimatePresence mode="wait">
+                    <motion.img
+                      key={candidateImages[candidateImageIndex] || selectedCandidateDetail.avatarUrl}
+                      initial={{ opacity: 0.6 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0.6 }}
+                      transition={{ duration: 0.2 }}
+                      src={
+                        candidateImages[candidateImageIndex] ||
+                        selectedCandidateDetail.avatarUrl ||
+                        selectedCandidateDetail.avatar ||
+                        selectedCandidateDetail.gallery?.[0] ||
+                        '/placeholder.svg'
+                      }
+                      alt={`${selectedCandidateDetail.name} - Ảnh ${candidateImageIndex + 1}`}
+                      className="size-full object-cover"
+                    />
+                  </AnimatePresence>
                   
-                  {/* Owner Info */}
-                  {selectedCandidateDetail.ownerName && (
-                    <div className="mt-4 flex items-center gap-2 rounded-full border bg-card/50 p-1.5 pr-4 w-fit">
-                      <img
-                        src={selectedCandidateDetail.ownerAvatar || '/placeholder.svg'}
-                        alt={selectedCandidateDetail.ownerName}
-                        className="size-7 rounded-full border bg-muted object-cover shrink-0"
+                  {/* Subtle top & bottom shadow gradient for badges */}
+                  <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" />
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+
+                  {/* Story-style Segment Bars (when > 1 images) */}
+                  {candidateImages.length > 1 && (
+                    <div className="absolute top-3 left-4 right-16 z-20 flex gap-1.5 pointer-events-auto">
+                      {candidateImages.map((_, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCandidateImageIndex(idx);
+                          }}
+                          className="h-1.5 flex-1 rounded-full bg-black/40 overflow-hidden backdrop-blur-xs transition-all hover:h-2 cursor-pointer"
+                          title={`Xem ảnh ${idx + 1}`}
+                        >
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all duration-300',
+                              idx === candidateImageIndex
+                                ? 'bg-white shadow-sm'
+                                : idx < candidateImageIndex
+                                ? 'bg-white/60'
+                                : 'bg-transparent',
+                            )}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Prev / Next Tap Zones */}
+                  {candidateImages.length > 1 && (
+                    <>
+                      <div
+                        className="absolute inset-y-0 left-0 w-1/4 z-10 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCandidateImageIndex((prev) =>
+                            prev > 0 ? prev - 1 : candidateImages.length - 1,
+                          );
+                        }}
+                        title="Ảnh trước"
                       />
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        Chủ nuôi: <span className="font-bold text-foreground">{selectedCandidateDetail.ownerName}</span>
+                      <div
+                        className="absolute inset-y-0 right-0 w-1/4 z-10 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCandidateImageIndex((prev) =>
+                            prev < candidateImages.length - 1 ? prev + 1 : 0,
+                          );
+                        }}
+                        title="Ảnh tiếp theo"
+                      />
+
+                      {/* Glassmorphic Prev Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCandidateImageIndex((prev) =>
+                            prev > 0 ? prev - 1 : candidateImages.length - 1,
+                          );
+                        }}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex size-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 transition-all cursor-pointer hover:scale-105 shadow-xl border border-white/20"
+                        aria-label="Ảnh trước"
+                      >
+                        <ChevronLeft className="size-6" />
+                      </button>
+
+                      {/* Glassmorphic Next Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCandidateImageIndex((prev) =>
+                            prev < candidateImages.length - 1 ? prev + 1 : 0,
+                          );
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex size-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 transition-all cursor-pointer hover:scale-105 shadow-xl border border-white/20"
+                        aria-label="Ảnh tiếp theo"
+                      >
+                        <ChevronRight className="size-6" />
+                      </button>
+                    </>
+                  )}
+
+                  {/* Top-Right Close Button */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCandidateDetail(null)}
+                    className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/75 transition-colors z-20 cursor-pointer shadow-md border border-white/10"
+                    title="Đóng hồ sơ"
+                  >
+                    <X className="size-5" />
+                  </button>
+
+                  {/* Top-Left Badges (Score & Verification) */}
+                  <div className="absolute left-4 top-8 md:top-6 flex flex-wrap gap-2 z-10 pointer-events-none">
+                    {selectedCandidateDetail.compatibilityScore && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/95 px-3 py-1 text-xs font-black text-white shadow-lg backdrop-blur-md">
+                        <Sparkles className="size-3.5" /> {selectedCandidateDetail.compatibilityScore}% Phù hợp
                       </span>
-                    </div>
-                  )}
+                    )}
+                    {(selectedCandidateDetail.vaccineVerified || selectedCandidateDetail.pedigreeVerified) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/95 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-md">
+                        ✓ Đã xác minh
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Bottom-Right Zoom / Lightbox Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const activeUrl =
+                        candidateImages[candidateImageIndex] ||
+                        selectedCandidateDetail.avatarUrl ||
+                        selectedCandidateDetail.avatar;
+                      if (activeUrl) setLightboxImage(activeUrl);
+                    }}
+                    className="absolute right-3.5 bottom-3.5 z-20 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md hover:bg-black/80 transition-all shadow-md border border-white/15 cursor-pointer hover:scale-105"
+                    title="Bấm để xem ảnh phóng to toàn màn hình"
+                  >
+                    <Maximize2 className="size-3.5" />
+                    <span>{candidateImages.length > 1 ? `Xem lớn (${candidateImageIndex + 1}/${candidateImages.length})` : 'Xem lớn'}</span>
+                  </button>
                 </div>
 
-                {/* Compatibility Breakdown Section (Collapsible Accordion) */}
-                {selectedPet && (
-                  <CompatibilityBreakdown
-                    key={`${selectedCandidateDetail.id}-${autoExpandCompatibility}`}
-                    defaultExpanded={autoExpandCompatibility}
-                    myPet={{
-                      name: selectedPet.name,
-                      breed: selectedPet.breed,
-                      gender: selectedPet.gender,
-                      weight: selectedPet.weight,
-                      location: selectedPet.location,
-                      ward: selectedPet.ward,
-                      hasPedigree: selectedPet.hasPedigree,
-                      pedigreeVerified: selectedPet.pedigreeVerified,
-                      isVaccinated: selectedPet.isVaccinated,
-                      vaccineVerified: selectedPet.vaccineVerified,
-                    }}
-                    candidatePet={{
-                      name: selectedCandidateDetail.name,
-                      breed: selectedCandidateDetail.breed,
-                      gender: selectedCandidateDetail.gender,
-                      weight: selectedCandidateDetail.weight,
-                      location: selectedCandidateDetail.location,
-                      ward: selectedCandidateDetail.ward,
-                      hasPedigree: selectedCandidateDetail.hasPedigree,
-                      pedigreeVerified: selectedCandidateDetail.pedigreeVerified,
-                      isVaccinated: selectedCandidateDetail.isVaccinated,
-                      vaccineVerified: selectedCandidateDetail.vaccineVerified,
-                      distanceKm: selectedCandidateDetail.distanceKm,
-                      compatibilityScore: selectedCandidateDetail.compatibilityScore,
-                      matchReasons: selectedCandidateDetail.matchReasons,
-                      breedWarnings: selectedCandidateDetail.breedWarnings,
-                      breedInfo: selectedCandidateDetail.breedInfo,
-                    }}
-                  />
-                )}
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="rounded-2xl bg-muted/50 p-4 border flex flex-col items-center justify-center text-center space-y-1">
-                    <span className="text-2xl">🎂</span>
-                    <span className="text-xs text-muted-foreground font-bold uppercase">Tuổi</span>
-                    <span className="text-sm font-black">{getAge(selectedCandidateDetail.birthday)}</span>
-                  </div>
-                  <div className="rounded-2xl bg-muted/50 p-4 border flex flex-col items-center justify-center text-center space-y-1">
-                    <span className="text-2xl">⚖️</span>
-                    <span className="text-xs text-muted-foreground font-bold uppercase">Cân nặng</span>
-                    <span className="text-sm font-black">{selectedCandidateDetail.weight} kg</span>
-                  </div>
-                  <div className={cn(
-                    'rounded-2xl border p-4 flex flex-col items-center justify-center text-center space-y-1',
-                    selectedCandidateDetail.pedigreeVerified
-                      ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20'
-                      : 'border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-950',
-                  )}>
-                    <span className="text-2xl">🧬</span>
-                    <span className={cn('text-xs font-bold uppercase', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600 dark:text-gray-300')}>Phả hệ VKA</span>
-                    <span className={cn('text-sm font-black', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600 dark:text-gray-300')}>
-                      {selectedCandidateDetail.hasPedigree ? (selectedCandidateDetail.pedigreeVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa cung cấp'}
-                    </span>
-                  </div>
-                  <div className={cn(
-                    'rounded-2xl border p-4 flex flex-col items-center justify-center text-center space-y-1',
-                    selectedCandidateDetail.vaccineVerified
-                      ? 'border-blue-200 bg-blue-50/50 dark:border-blue-900/50 dark:bg-blue-950/20'
-                      : 'border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-950',
-                  )}>
-                    <span className="text-2xl">💉</span>
-                    <span className={cn('text-xs font-bold uppercase', selectedCandidateDetail.vaccineVerified ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300')}>Đã tiêm chủng</span>
-                    <span className={cn('text-sm font-black', selectedCandidateDetail.vaccineVerified ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300')}>
-                      {selectedCandidateDetail.isVaccinated ? (selectedCandidateDetail.vaccineVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa cung cấp'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Personality & Breeding Terms */}
-                <div className="space-y-4">
-                  {selectedCandidateDetail.personality && (
-                    <div className="rounded-2xl border p-4 bg-card shadow-sm space-y-2">
-                      <h3 className="font-extrabold text-sm flex items-center gap-2"><Sparkles className="size-4 text-primary" /> Tính cách & Đặc điểm</h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {selectedCandidateDetail.personality}
-                      </p>
-                    </div>
-                  )}
-
-                  {selectedCandidateDetail.breedingOption && (
-                    <div className="rounded-2xl border p-4 bg-orange-50/50 dark:bg-orange-950/20 border-orange-100 dark:border-orange-900 space-y-2">
-                      <h3 className="font-extrabold text-sm flex items-center gap-2 text-orange-600 dark:text-orange-400">💍 Yêu cầu Phối giống</h3>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900 px-3 py-1.5 text-xs font-bold text-orange-700 dark:text-orange-300">
-                          {selectedCandidateDetail.breedingOption === 'CASH' ? '💰 Trả phí tiền mặt' : '🐾 Chia đàn con'}
+                {/* 2. Main Profile Details Section */}
+                <div className="px-5 sm:px-7 pt-5 space-y-6">
+                  
+                  {/* Header Title & Badges Bar */}
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-foreground tracking-tight">
+                          {selectedCandidateDetail.name}
+                        </h2>
+                        
+                        {/* Gender Pill Badge */}
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black border shadow-xs',
+                            selectedCandidateDetail.gender === 'MALE'
+                              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                              : 'bg-pink-50 text-pink-700 dark:bg-pink-950/60 dark:text-pink-300 border-pink-200 dark:border-pink-800',
+                          )}
+                        >
+                          {selectedCandidateDetail.gender === 'MALE' ? '♂ Đực' : '♀ Cái'}
                         </span>
-                        {selectedCandidateDetail.breedingOption === 'CASH' && selectedCandidateDetail.breedingFee && (
-                          <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900 px-3 py-1.5 text-xs font-bold text-orange-700 dark:text-orange-300">
-                            Phí: {selectedCandidateDetail.breedingFee.toLocaleString('vi-VN')} đ
-                          </span>
-                        )}
-                        {selectedCandidateDetail.breedingOption === 'SHARE_LITTER' && selectedCandidateDetail.shareLitterCount && (
-                          <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900 px-3 py-1.5 text-xs font-bold text-orange-700 dark:text-orange-300">
-                            Chia: {selectedCandidateDetail.shareLitterCount} bé
-                          </span>
-                        )}
+
+                        {/* Breeding Ready Tag */}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 text-xs font-black">
+                          ✨ Sẵn sàng phối giống
+                        </span>
                       </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="h-6"></div>
+                    {/* Breed & Location Subtitle */}
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-muted-foreground">
+                      <span className="text-foreground font-bold">{selectedCandidateDetail.breed}</span>
+                      <span>·</span>
+                      <span>{selectedCandidateDetail.species === 'DOG' ? 'Chó' : 'Mèo'}</span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1 text-primary">
+                        📍 {selectedCandidateDetail.ward || selectedCandidateDetail.location}
+                        {selectedCandidateDetail.distanceKm != null && (
+                          <span className="text-muted-foreground font-medium">
+                            ({selectedCandidateDetail.distanceKm <= 1 ? '< 1 km' : `cách ~${selectedCandidateDetail.distanceKm} km`})
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    
+                    {/* Owner Info Capsule */}
+                    {selectedCandidateDetail.ownerName && (
+                      <div className="flex items-center gap-2.5 rounded-2xl border bg-muted/30 p-2 pr-4 w-fit shadow-xs">
+                        <img
+                          src={selectedCandidateDetail.ownerAvatar || '/placeholder.svg'}
+                          alt={selectedCandidateDetail.ownerName}
+                          className="size-8 rounded-full border bg-muted object-cover shrink-0"
+                        />
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Chủ sở hữu: </span>
+                          <span className="font-bold text-foreground">{selectedCandidateDetail.ownerName}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Compatibility Breakdown Section (Collapsible Accordion) */}
+                  {selectedPet && (
+                    <CompatibilityBreakdown
+                      key={`${selectedCandidateDetail.id}-${autoExpandCompatibility}`}
+                      defaultExpanded={autoExpandCompatibility}
+                      myPet={{
+                        name: selectedPet.name,
+                        breed: selectedPet.breed,
+                        gender: selectedPet.gender,
+                        weight: selectedPet.weight,
+                        location: selectedPet.location,
+                        ward: selectedPet.ward,
+                        hasPedigree: selectedPet.hasPedigree,
+                        pedigreeVerified: selectedPet.pedigreeVerified,
+                        isVaccinated: selectedPet.isVaccinated,
+                        vaccineVerified: selectedPet.vaccineVerified,
+                      }}
+                      candidatePet={{
+                        name: selectedCandidateDetail.name,
+                        breed: selectedCandidateDetail.breed,
+                        gender: selectedCandidateDetail.gender,
+                        weight: selectedCandidateDetail.weight,
+                        location: selectedCandidateDetail.location,
+                        ward: selectedCandidateDetail.ward,
+                        hasPedigree: selectedCandidateDetail.hasPedigree,
+                        pedigreeVerified: selectedCandidateDetail.pedigreeVerified,
+                        isVaccinated: selectedCandidateDetail.isVaccinated,
+                        vaccineVerified: selectedCandidateDetail.vaccineVerified,
+                        distanceKm: selectedCandidateDetail.distanceKm,
+                        compatibilityScore: selectedCandidateDetail.compatibilityScore,
+                        matchReasons: selectedCandidateDetail.matchReasons,
+                        breedWarnings: selectedCandidateDetail.breedWarnings,
+                        breedInfo: selectedCandidateDetail.breedInfo,
+                      }}
+                    />
+                  )}
+
+                  {/* 5. 4-Key Metrics Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="rounded-2xl bg-muted/40 p-3.5 border flex flex-col items-center justify-center text-center space-y-1 shadow-xs">
+                      <span className="text-2xl">🎂</span>
+                      <span className="text-[11px] text-muted-foreground font-bold uppercase">Tuổi</span>
+                      <span className="text-sm font-black">{getAge(selectedCandidateDetail.birthday)}</span>
+                    </div>
+                    <div className="rounded-2xl bg-muted/40 p-3.5 border flex flex-col items-center justify-center text-center space-y-1 shadow-xs">
+                      <span className="text-2xl">⚖️</span>
+                      <span className="text-[11px] text-muted-foreground font-bold uppercase">Cân nặng</span>
+                      <span className="text-sm font-black">{selectedCandidateDetail.weight} kg</span>
+                    </div>
+                    <div className={cn(
+                      'rounded-2xl border p-3.5 flex flex-col items-center justify-center text-center space-y-1 shadow-xs',
+                      selectedCandidateDetail.pedigreeVerified
+                        ? 'border-amber-200 bg-amber-50/60 dark:border-amber-900/50 dark:bg-amber-950/20'
+                        : 'border-gray-200 bg-muted/40 dark:border-gray-800',
+                    )}>
+                      <span className="text-2xl">🧬</span>
+                      <span className={cn('text-[11px] font-bold uppercase', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>Phả hệ VKA</span>
+                      <span className={cn('text-sm font-black', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-foreground')}>
+                        {selectedCandidateDetail.hasPedigree ? (selectedCandidateDetail.pedigreeVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa có'}
+                      </span>
+                    </div>
+                    <div className={cn(
+                      'rounded-2xl border p-3.5 flex flex-col items-center justify-center text-center space-y-1 shadow-xs',
+                      selectedCandidateDetail.vaccineVerified
+                        ? 'border-blue-200 bg-blue-50/60 dark:border-blue-900/50 dark:bg-blue-950/20'
+                        : 'border-gray-200 bg-muted/40 dark:border-gray-800',
+                    )}>
+                      <span className="text-2xl">💉</span>
+                      <span className={cn('text-[11px] font-bold uppercase', selectedCandidateDetail.vaccineVerified ? 'text-blue-700 dark:text-blue-300' : 'text-muted-foreground')}>Tiêm chủng</span>
+                      <span className={cn('text-sm font-black', selectedCandidateDetail.vaccineVerified ? 'text-blue-700 dark:text-blue-300' : 'text-foreground')}>
+                        {selectedCandidateDetail.isVaccinated ? (selectedCandidateDetail.vaccineVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa có'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 6. Personality & Breeding Requirements */}
+                  <div className="space-y-4">
+                    {selectedCandidateDetail.breedingOption && (
+                      <div className="rounded-2xl border p-4 bg-orange-50/50 dark:bg-orange-950/20 border-orange-200/70 dark:border-orange-900 space-y-2 shadow-xs">
+                        <h3 className="font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 text-orange-700 dark:text-orange-400">
+                          💍 Điều kiện phối giống từ chủ nuôi
+                        </h3>
+                        <div className="flex flex-wrap gap-2 pt-0.5">
+                          <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900/80 px-3 py-1.5 text-xs font-bold text-orange-800 dark:text-orange-200">
+                            {selectedCandidateDetail.breedingOption === 'CASH' ? '💰 Thu phí phối giống' : selectedCandidateDetail.breedingOption === 'SHARE_LITTER' ? '🐾 Thỏa thuận chia đàn con' : '🤝 Thỏa thuận đôi bên'}
+                          </span>
+                          {selectedCandidateDetail.breedingOption === 'CASH' && selectedCandidateDetail.breedingFee && (
+                            <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900/80 px-3 py-1.5 text-xs font-black text-orange-900 dark:text-orange-100">
+                              Mức phí: {selectedCandidateDetail.breedingFee.toLocaleString('vi-VN')} VNĐ
+                            </span>
+                          )}
+                          {selectedCandidateDetail.breedingOption === 'SHARE_LITTER' && selectedCandidateDetail.shareLitterCount && (
+                            <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900/80 px-3 py-1.5 text-xs font-black text-orange-900 dark:text-orange-100">
+                              Chia: {selectedCandidateDetail.shareLitterCount} bé con
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedCandidateDetail.personality && (
+                      <div className="rounded-2xl border p-4 bg-card shadow-xs space-y-2">
+                        <h3 className="font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 text-muted-foreground">
+                          <Sparkles className="size-3.5 text-primary" /> Tính cách & Đặc điểm
+                        </h3>
+                        <p className="text-sm text-foreground leading-relaxed font-medium">
+                          {selectedCandidateDetail.personality}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="h-4"></div>
+                </div>
               </div>
               
               {/* Fixed Bottom Action Bar */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-lg border-t flex gap-3 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-                <Button variant="outline" size="lg" className="rounded-xl font-bold px-6 shrink-0 h-14" onClick={() => { handlePass(selectedCandidateDetail.id); setSelectedCandidateDetail(null); }}>
+              <div className="sticky bottom-0 inset-x-0 p-4 bg-background/95 backdrop-blur-lg border-t flex gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] z-30">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="rounded-xl font-bold px-6 shrink-0 h-13 text-muted-foreground hover:text-destructive hover:border-destructive"
+                  onClick={() => {
+                    handlePass(selectedCandidateDetail.id);
+                    setSelectedCandidateDetail(null);
+                  }}
+                >
                   <X className="mr-2 size-5" /> Bỏ qua
                 </Button>
-                <Button size="lg" className="flex-1 rounded-xl font-black text-base shadow-lg shadow-primary/20 h-14" onClick={() => { setRequestingPet(selectedCandidateDetail); setSelectedCandidateDetail(null); }}>
-                  <Heart className="mr-2 size-5" /> Gửi yêu cầu ghép đôi
+                <Button
+                  size="lg"
+                  className="flex-1 rounded-xl font-black text-base shadow-lg shadow-primary/25 h-13 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  onClick={() => {
+                    setRequestingPet(selectedCandidateDetail);
+                    setSelectedCandidateDetail(null);
+                  }}
+                >
+                  <Heart className="mr-2 size-5 fill-current" /> Gửi yêu cầu ghép đôi
                 </Button>
               </div>
 
@@ -1000,6 +1196,8 @@ export default function UnifiedMatchingHubPage() {
           </div>
         )}
       </AnimatePresence>
+
+
 
       {/* ================= SEND REQUEST MODAL ================= */}
       <AnimatePresence>
@@ -1045,6 +1243,12 @@ export default function UnifiedMatchingHubPage() {
           }
         />
       )}
+
+      {/* Lightbox for Fullscreen Image View */}
+      <ImageLightbox
+        imageUrl={lightboxImage}
+        onClose={() => setLightboxImage(null)}
+      />
     </main>
   );
 }
@@ -1072,6 +1276,18 @@ function SwipeCardContainer({
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
   const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0.5, 1, 1, 1, 0.5]);
 
+  const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const petImages = useMemo(() => {
+    const list = [pet.avatarUrl, pet.avatar, ...(pet.gallery || [])].filter(
+      (url): url is string => Boolean(url && typeof url === 'string' && url.trim()),
+    );
+    return Array.from(new Set(list));
+  }, [pet]);
+
+  useEffect(() => {
+    setActivePhotoIdx(0);
+  }, [pet.id]);
+
   const handleDragEnd = (_: any, info: any) => {
     if (info.offset.x > 120) {
       onRequestOpen();
@@ -1089,16 +1305,74 @@ function SwipeCardContainer({
       className="relative overflow-hidden rounded-3xl border bg-card shadow-2xl cursor-grab active:cursor-grabbing touch-none select-none"
     >
       {/* Aspect 4/5 tall photo */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-muted cursor-pointer" onClick={onViewDetail}>
+      <div className="relative aspect-[4/5] overflow-hidden bg-muted cursor-pointer group">
         <img
-          src={pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'}
-          alt={pet.name}
-          className="size-full object-cover"
+          src={petImages[activePhotoIdx] || pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'}
+          alt={`${pet.name} - Ảnh ${activePhotoIdx + 1}`}
+          className="size-full object-cover transition-all duration-300"
+          onClick={onViewDetail}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+
+        {/* Story Progress Bars (when > 1 photos) */}
+        {petImages.length > 1 && (
+          <div className="absolute top-2.5 left-4 right-4 z-20 flex gap-1.5 pointer-events-auto">
+            {petImages.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActivePhotoIdx(idx);
+                }}
+                className="h-1 flex-1 rounded-full bg-black/40 overflow-hidden backdrop-blur-xs transition-all hover:h-1.5"
+                title={`Xem ảnh ${idx + 1}`}
+              >
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all duration-300',
+                    idx === activePhotoIdx
+                      ? 'bg-white shadow-sm'
+                      : idx < activePhotoIdx
+                      ? 'bg-white/60'
+                      : 'bg-transparent',
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Tap zones to quickly browse photos on swipe card */}
+        {petImages.length > 1 && (
+          <>
+            <div
+              className="absolute inset-y-0 left-0 w-1/3 z-10 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePhotoIdx((prev) => (prev > 0 ? prev - 1 : petImages.length - 1));
+              }}
+              title="Ảnh trước"
+            />
+            <div
+              className="absolute inset-y-0 right-0 w-1/3 z-10 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePhotoIdx((prev) => (prev < petImages.length - 1 ? prev + 1 : 0));
+              }}
+              title="Ảnh tiếp theo"
+            />
+          </>
+        )}
 
         {/* Top Badges */}
-        <div className="absolute top-4 left-4 right-4 flex items-center justify-end">
+        <div className="absolute top-5 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
+          {petImages.length > 1 ? (
+            <span className="rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-black text-white backdrop-blur-md border border-white/10 pointer-events-auto">
+              📷 {activePhotoIdx + 1}/{petImages.length}
+            </span>
+          ) : <span />}
+
           <button
             type="button"
             onClick={(e) => {
@@ -1106,16 +1380,16 @@ function SwipeCardContainer({
               if (onViewScoreDetail) onViewScoreDetail();
               else onViewDetail();
             }}
-            className="flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md hover:bg-black/80 transition-all cursor-pointer group hover:scale-105"
+            className="pointer-events-auto flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md hover:bg-black/80 transition-all cursor-pointer group/score hover:scale-105"
             title="Bấm để xem phân tích chi tiết độ phù hợp"
           >
-            <Sparkles className="mr-1.5 size-4 text-primary group-hover:rotate-12 transition-transform" />
+            <Sparkles className="mr-1.5 size-4 text-primary group-hover/score:rotate-12 transition-transform" />
             <span className="text-xs font-black text-primary">{pet.compatibilityScore || 95}% Phù hợp</span>
           </button>
         </div>
 
         {/* Bottom Content Overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 text-white space-y-2">
+        <div className="absolute bottom-0 left-0 right-0 p-6 text-white space-y-2 pointer-events-none z-10">
           <div className="flex items-baseline gap-3">
             <h2 className="text-3xl font-black drop-shadow-md">{pet.name}</h2>
             <span className="text-lg font-bold text-white/90">{getAge(pet.birthday)}</span>
@@ -1144,6 +1418,7 @@ function SwipeCardContainer({
           </div>
         </div>
       </div>
+
 
       {/* Big Action Floating Buttons */}
       <div className="p-4 bg-card flex items-center justify-around gap-4 border-t">

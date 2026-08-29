@@ -3,12 +3,18 @@
 import { useEffect, useState } from "react";
 import {
   BadgeCheck,
+  Check,
+  CheckCircle2,
+  Coins,
   Eye,
+  EyeOff,
+  Handshake,
   Heart,
   Info,
   PawPrint,
   Plus,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Syringe,
   X,
@@ -587,261 +593,412 @@ export default function MyPetsPage() {
       {/* ============ MALE PET MATCHING SETUP MODAL (MATCHING STITCH SCREEN) ============ */}
       <AnimatePresence>
         {selectedSetupPet && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-card p-6 shadow-2xl space-y-6"
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="w-full max-w-lg rounded-[2rem] bg-card shadow-2xl border border-border/70 overflow-hidden flex flex-col max-h-[90vh] my-auto"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between border-b pb-4">
-                <div>
-                  <h2 className="text-xl font-black">
-                    Thiết lập Cấu hình Ghép đôi
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Dành cho thú cưng đực:{" "}
-                    <span className="font-bold text-primary">
-                      {selectedSetupPet.name}
-                    </span>{" "}
-                    ({selectedSetupPet.breed})
-                  </p>
+              {/* 1. Fixed Header */}
+              <div className="flex items-center justify-between border-b px-6 py-4.5 shrink-0 bg-card">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={selectedSetupPet.avatarUrl || "/placeholder.svg"}
+                    alt={selectedSetupPet.name}
+                    className="size-11 rounded-2xl border-2 border-primary/20 object-cover bg-muted shrink-0 shadow-xs"
+                  />
+                  <div>
+                    <h2 className="text-lg font-black text-foreground tracking-tight">
+                      Cấu hình Ghép đôi
+                    </h2>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-foreground">{selectedSetupPet.name}</span>
+                      <span>·</span>
+                      <span className="font-semibold">{selectedSetupPet.breed}</span>
+                      <span>·</span>
+                      <span className="text-blue-600 dark:text-blue-400 font-black">♂ Đực</span>
+                    </p>
+                  </div>
                 </div>
+
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="rounded-full hover:bg-muted size-9"
                   onClick={() => setSelectedSetupPet(null)}
                 >
                   <X className="size-5" />
                 </Button>
               </div>
 
-              {/* Underage Notice if applicable */}
-              {(() => {
-                const setupStatus = selectedSetupPet ? getPetBreedingStatus(selectedSetupPet) : null;
-                if (!setupStatus?.isUnderage) return null;
-                return (
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30 flex items-start gap-3">
-                    <Info className="size-5 text-blue-600 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <h4 className="text-xs font-black text-blue-900 dark:text-blue-200">
-                        Bé chưa đạt tuổi phối giống an toàn ({setupStatus.months}/{setupStatus.minMonths} tháng)
-                      </h4>
-                      <p className="text-xs text-blue-700/90 dark:text-blue-300/90 leading-relaxed">
-                        Theo chuẩn thú y, bé cần tối thiểu {setupStatus.minMonths} tháng tuổi. Tính năng sẵn sàng ghép đôi sẽ tự động mở vào <strong>Tháng {setupStatus.eligibleDateStr}</strong>!
-                      </p>
+              {/* 2. Scrollable Body Content */}
+              <div className="overflow-y-auto flex-1 p-5 sm:p-6 space-y-4.5">
+                
+                {/* Underage Notice if applicable */}
+                {(() => {
+                  const setupStatus = selectedSetupPet ? getPetBreedingStatus(selectedSetupPet) : null;
+                  if (!setupStatus?.isUnderage) return null;
+                  return (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50/90 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/40 flex items-start gap-3 shadow-xs">
+                      <Info className="size-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-black text-blue-900 dark:text-blue-200">
+                          Bé chưa đạt tuổi phối giống an toàn ({setupStatus.months}/{setupStatus.minMonths} tháng)
+                        </h4>
+                        <p className="text-xs text-blue-700/90 dark:text-blue-300/90 leading-relaxed font-medium">
+                          Theo chuẩn thú y, bé cần tối thiểu {setupStatus.minMonths} tháng tuổi. Tính năng sẵn sàng ghép đôi sẽ tự động mở vào <strong>Tháng {setupStatus.eligibleDateStr}</strong>!
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
-              {/* Main Toggle Hero Card */}
-              <div
-                className={cn(
-                  "rounded-2xl border-2 p-4 transition-all",
-                  isAvailable
-                    ? "border-emerald-500 bg-emerald-50/50"
-                    : "border-border bg-muted/30",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-sm font-black">
-                      Trạng thái Sẵn sàng Ghép đôi
-                    </span>
-                    <p className="text-xs text-muted-foreground">
-                      {isAvailable
-                        ? "Hồ sơ đang hiển thị trong hệ thống đề xuất cho pet cái."
-                        : "Hồ sơ đang ẩn khỏi kết quả tìm kiếm."}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)}
-                    onClick={() => setIsAvailable(!isAvailable)}
-                    className={cn(
-                      "relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                      Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)
-                        ? "cursor-not-allowed opacity-50 bg-gray-200 dark:bg-gray-800"
-                        : "cursor-pointer",
-                      isAvailable ? "bg-emerald-500" : "bg-gray-300",
-                    )}
-                  >
-                    <span
+                {/* Main Toggle Switch Card */}
+                <div
+                  className={cn(
+                    "rounded-2xl border-2 p-4 transition-all shadow-xs",
+                    isAvailable
+                      ? "border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30"
+                      : "border-border bg-muted/30",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={cn(
+                          "flex size-10 items-center justify-center rounded-xl shrink-0 transition-colors",
+                          isAvailable
+                            ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/20"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {isAvailable ? <CheckCircle2 className="size-5" /> : <EyeOff className="size-5" />}
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-foreground">
+                            {isAvailable ? "Sẵn sàng Ghép đôi" : "Tạm ẩn hồ sơ ghép đôi"}
+                          </span>
+                          {isAvailable && (
+                            <span className="rounded-full bg-emerald-500 text-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-xs">
+                              Đang công khai
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {isAvailable
+                            ? "Hồ sơ bé đực đang hiển thị trong đề xuất ghép đôi cho pet cái."
+                            : "Bé đực sẽ tạm ẩn khỏi bảng tin tìm kiếm ghép đôi."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)}
+                      onClick={() => setIsAvailable(!isAvailable)}
                       className={cn(
-                        "pointer-events-none inline-block size-6 rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
-                        isAvailable ? "translate-x-5" : "translate-x-0",
+                        "relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none cursor-pointer",
+                        Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)
+                          ? "cursor-not-allowed opacity-50 bg-gray-200 dark:bg-gray-800"
+                          : isAvailable
+                          ? "bg-emerald-500"
+                          : "bg-gray-300 dark:bg-gray-700",
                       )}
-                    />
-                  </button>
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block size-6 rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                          isAvailable ? "translate-x-5" : "translate-x-0",
+                        )}
+                      />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {/* Breeding Options */}
-              <div className="space-y-3">
-                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Hình thức & Quyền lợi Phối giống
-                </label>
+                {/* Breeding Options */}
+                <div className="space-y-2.5">
+                  <label className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Coins className="size-3.5 text-primary" /> Hình thức & Quyền lợi Phối giống
+                  </label>
 
+                  <div className="space-y-2">
+                    {/* Option 1: CASH */}
+                    <div
+                      className={cn(
+                        "flex flex-col rounded-2xl border-2 p-3.5 cursor-pointer transition-all shadow-2xs",
+                        breedingOption === "CASH"
+                          ? "border-primary bg-primary/5 shadow-xs"
+                          : "border-border/70 bg-card hover:border-primary/40",
+                      )}
+                      onClick={() => setBreedingOption("CASH")}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "flex size-10 items-center justify-center rounded-xl shrink-0 text-xl font-bold transition-transform",
+                          breedingOption === "CASH"
+                            ? "bg-primary/15 text-primary scale-105"
+                            : "bg-muted text-muted-foreground",
+                        )}>
+                          💰
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-foreground">
+                              Thu phí phối giống (Tiền mặt)
+                            </span>
+                            <div className={cn(
+                              "size-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                              breedingOption === "CASH" ? "border-primary bg-primary text-white" : "border-muted-foreground/40",
+                            )}>
+                              {breedingOption === "CASH" && <Check className="size-3 stroke-[3]" />}
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Chủ thú cưng cái sẽ thanh toán phí phối trực tiếp cho bạn.
+                          </p>
+                        </div>
+                      </div>
+
+                      {breedingOption === "CASH" && (
+                        <div className="mt-3 pt-3 border-t border-primary/15 space-y-2 pl-2 sm:pl-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-foreground">
+                              Mức phí phối giống (VNĐ):
+                            </label>
+                            {breedingFee && Number(breedingFee) > 0 && (
+                              <span className="text-xs font-black text-primary font-mono">
+                                {Number(breedingFee).toLocaleString("vi-VN")} đ
+                              </span>
+                            )}
+                          </div>
+
+                          <Input
+                            type="number"
+                            value={breedingFee}
+                            onChange={(e) => setBreedingFee(e.target.value)}
+                            placeholder="Nhập số tiền (ví dụ: 3000000)"
+                            className="rounded-xl font-bold bg-background text-base h-10"
+                          />
+
+                          {/* Quick Preset Pills */}
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            <span className="text-[11px] font-semibold text-muted-foreground mr-1">Mức phổ biến:</span>
+                            {[1000000, 2000000, 3000000, 5000000, 10000000].map((fee) => (
+                              <button
+                                key={fee}
+                                type="button"
+                                onClick={() => setBreedingFee(String(fee))}
+                                className={cn(
+                                  "rounded-lg px-2.5 py-1 text-[11px] font-bold border transition-all cursor-pointer",
+                                  Number(breedingFee) === fee
+                                    ? "bg-primary text-white border-primary shadow-xs"
+                                    : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground",
+                                )}
+                              >
+                                {(fee / 1000000).toLocaleString("vi-VN")}tr
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Option 2: SHARE_LITTER */}
+                    <div
+                      className={cn(
+                        "flex flex-col rounded-2xl border-2 p-3.5 cursor-pointer transition-all shadow-2xs",
+                        breedingOption === "SHARE_LITTER"
+                          ? "border-primary bg-primary/5 shadow-xs"
+                          : "border-border/70 bg-card hover:border-primary/40",
+                      )}
+                      onClick={() => setBreedingOption("SHARE_LITTER")}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "flex size-10 items-center justify-center rounded-xl shrink-0 text-xl font-bold transition-transform",
+                          breedingOption === "SHARE_LITTER"
+                            ? "bg-primary/15 text-primary scale-105"
+                            : "bg-muted text-muted-foreground",
+                        )}>
+                          🐾
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-foreground">
+                              Chia đàn con non (Bắt con)
+                            </span>
+                            <div className={cn(
+                              "size-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                              breedingOption === "SHARE_LITTER" ? "border-primary bg-primary text-white" : "border-muted-foreground/40",
+                            )}>
+                              {breedingOption === "SHARE_LITTER" && <Check className="size-3 stroke-[3]" />}
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Nhận số lượng chó/mèo con theo thỏa thuận trong lứa đẻ.
+                          </p>
+                        </div>
+                      </div>
+
+                      {breedingOption === "SHARE_LITTER" && (
+                        <div className="mt-3 pt-3 border-t border-primary/15 space-y-2 pl-2 sm:pl-3" onClick={(e) => e.stopPropagation()}>
+                          <label className="text-xs font-bold text-foreground">
+                            Số con muốn nhận:
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { value: "1", label: "1 bé", desc: "Ưu tiên chọn trước" },
+                              { value: "2", label: "2 bé", desc: "Lứa từ 5 bé trở lên" },
+                              { value: "3", label: "Thỏa thuận", desc: "Theo quy mô lứa" },
+                            ].map((opt) => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => setShareLitterCount(opt.value)}
+                                className={cn(
+                                  "flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all cursor-pointer",
+                                  shareLitterCount === opt.value
+                                    ? "border-primary bg-primary text-white shadow-xs font-bold"
+                                    : "border-border bg-background text-muted-foreground hover:border-primary/40",
+                                )}
+                              >
+                                <span className="text-xs font-black">{opt.label}</span>
+                                <span className={cn("text-[10px] mt-0.5", shareLitterCount === opt.value ? "text-white/80" : "text-muted-foreground")}>
+                                  {opt.desc}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Option 3: NEGOTIATE */}
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 rounded-2xl border-2 p-3.5 cursor-pointer transition-all shadow-2xs",
+                        breedingOption === "NEGOTIATE"
+                          ? "border-primary bg-primary/5 shadow-xs"
+                          : "border-border/70 bg-card hover:border-primary/40",
+                      )}
+                      onClick={() => setBreedingOption("NEGOTIATE")}
+                    >
+                      <div className={cn(
+                        "flex size-10 items-center justify-center rounded-xl shrink-0 text-xl font-bold transition-transform",
+                        breedingOption === "NEGOTIATE"
+                          ? "bg-primary/15 text-primary scale-105"
+                          : "bg-muted text-muted-foreground",
+                      )}>
+                        🤝
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold text-foreground">
+                            Thỏa thuận đôi bên
+                          </span>
+                          <div className={cn(
+                            "size-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                            breedingOption === "NEGOTIATE" ? "border-primary bg-primary text-white" : "border-muted-foreground/40",
+                          )}>
+                            {breedingOption === "NEGOTIATE" && <Check className="size-3 stroke-[3]" />}
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Trao đổi điều kiện cụ thể với đối phương qua tin nhắn sau khi kết nối.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ghi chú & Điều kiện phối giống */}
                 <div className="space-y-2">
-                  {/* Option 1: CASH */}
-                  <label
-                    className={cn(
-                      "flex flex-col rounded-xl border-2 p-3.5 cursor-pointer transition-all",
-                      breedingOption === "CASH"
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-card",
-                    )}
-                    onClick={() => setBreedingOption("CASH")}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="breedingOption"
-                        checked={breedingOption === "CASH"}
-                        readOnly
-                        className="accent-primary"
-                      />
-                      <div className="flex-1">
-                        <span className="text-sm font-bold">
-                          Thu tiền mặt (CASH)
-                        </span>
-                        <p className="text-xs text-muted-foreground">
-                          Chủ thú cưng cái sẽ trả phí phối giống theo mức bạn
-                          quy định.
-                        </p>
-                      </div>
-                    </div>
-                    {breedingOption === "CASH" && (
-                      <div className="mt-3 pl-7">
-                        <label className="text-xs font-semibold text-muted-foreground">
-                          Mức phí phối giống (VNĐ):
-                        </label>
-                        <Input
-                          type="number"
-                          value={breedingFee}
-                          onChange={(e) => setBreedingFee(e.target.value)}
-                          placeholder="Ví dụ: 3000000"
-                          className="mt-1 rounded-xl font-bold"
-                        />
-                      </div>
-                    )}
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">
+                      Điều kiện & Ghi chú đối với thú cưng cái
+                    </label>
+                    <span className="text-[11px] text-muted-foreground font-semibold">
+                      {personalityNote.length}/300 ký tự
+                    </span>
+                  </div>
 
-                  {/* Option 2: SHARE_LITTER */}
-                  <label
-                    className={cn(
-                      "flex flex-col rounded-xl border-2 p-3.5 cursor-pointer transition-all",
-                      breedingOption === "SHARE_LITTER"
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-card",
-                    )}
-                    onClick={() => setBreedingOption("SHARE_LITTER")}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="breedingOption"
-                        checked={breedingOption === "SHARE_LITTER"}
-                        readOnly
-                        className="accent-primary"
-                      />
-                      <div className="flex-1">
-                        <span className="text-sm font-bold">
-                          Chia con non (SHARE_LITTER)
-                        </span>
-                        <p className="text-xs text-muted-foreground">
-                          Chủ thú cưng đực sẽ nhận số lượng con non thỏa thuận
-                          trong lứa đẻ.
-                        </p>
-                      </div>
-                    </div>
-                    {breedingOption === "SHARE_LITTER" && (
-                      <div className="mt-3 pl-7">
-                        <label className="text-xs font-semibold text-muted-foreground">
-                          Số con muốn nhận:
-                        </label>
-                        <select
-                          value={shareLitterCount}
-                          onChange={(e) => setShareLitterCount(e.target.value)}
-                          className="mt-1 w-full rounded-xl border bg-background p-2.5 text-sm font-bold"
-                        >
-                          <option value="1">1 con (Ưu tiên chọn trước)</option>
-                          <option value="2">2 con</option>
-                          <option value="3">
-                            Thỏa thuận tỷ lệ theo số lượng lứa
-                          </option>
-                        </select>
-                      </div>
-                    )}
-                  </label>
+                  {/* Quick Tag Suggestions (Above Textarea for instant access) */}
+                  <div className="flex flex-wrap gap-1.5 pb-1">
+                    {[
+                      "Bao đậu / Bảo hành phối lại 1 lần",
+                      "Yêu cầu bé cái tiêm phòng đủ vắc-xin",
+                      "Hỗ trợ phối tại nhà đực",
+                      "Tắm sạch & tẩy giun trước khi phối",
+                      "Gửi video/ảnh nhật ký phối giống",
+                    ].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          if (personalityNote.includes(tag)) return;
+                          setPersonalityNote((prev) => {
+                            const trimmed = prev.trim();
+                            if (!trimmed) return tag;
+                            return `${trimmed}\n• ${tag}`;
+                          });
+                        }}
+                        className={cn(
+                          "rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-all cursor-pointer",
+                          personalityNote.includes(tag)
+                            ? "bg-primary/10 text-primary border-primary/30 font-bold"
+                            : "bg-muted/50 text-muted-foreground border-border/80 hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        + {tag}
+                      </button>
+                    ))}
+                  </div>
 
-                  {/* Option 3: NEGOTIATE */}
-                  <label
-                    className={cn(
-                      "flex items-center gap-3 rounded-xl border-2 p-3.5 cursor-pointer transition-all",
-                      breedingOption === "NEGOTIATE"
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-card",
-                    )}
-                    onClick={() => setBreedingOption("NEGOTIATE")}
-                  >
-                    <input
-                      type="radio"
-                      name="breedingOption"
-                      checked={breedingOption === "NEGOTIATE"}
-                      readOnly
-                      className="accent-primary"
-                    />
-                    <div>
-                      <span className="text-sm font-bold">
-                        Thỏa thuận trực tiếp
-                      </span>
-                      <p className="text-xs text-muted-foreground">
-                        Trao đổi điều kiện cụ thể với đối phương qua tin nhắn
-                        sau khi kết nối.
-                      </p>
-                    </div>
-                  </label>
+                  <textarea
+                    rows={2.5}
+                    maxLength={300}
+                    value={personalityNote}
+                    onChange={(e) => setPersonalityNote(e.target.value)}
+                    placeholder="Ví dụ: Bé cái tiêm phòng đầy đủ, bao đậu 1 lần phối lại, hỗ trợ phối tại nhà..."
+                    className="w-full rounded-2xl border bg-background p-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed"
+                  />
                 </div>
               </div>
 
-              {/* Breeding Requirements / Note */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Điều kiện & Ghi chú đối với thú cưng cái
-                </label>
-                <textarea
-                  rows={3}
-                  value={personalityNote}
-                  onChange={(e) => setPersonalityNote(e.target.value)}
-                  placeholder="Ví dụ: Yêu cầu bé cái tiêm phòng đầy đủ 5 mũi, tắm sạch trước khi mang tới phối tại nhà..."
-                  className="w-full rounded-xl border bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
+              {/* 3. Fixed Sticky Footer */}
+              <div className="flex gap-3 px-6 py-4 border-t bg-muted/15 shrink-0">
                 <Button
                   variant="outline"
-                  className="flex-1 rounded-xl font-bold"
+                  size="lg"
+                  className="flex-1 rounded-xl font-bold h-11 text-muted-foreground hover:text-foreground"
                   onClick={() => setSelectedSetupPet(null)}
                 >
-                  Hủy
+                  Hủy bỏ
                 </Button>
                 <Button
-                  className="flex-1 rounded-xl font-bold shadow-md shadow-primary/20"
+                  size="lg"
+                  className="flex-1 rounded-xl font-black text-sm shadow-lg shadow-primary/20 h-11 bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={() => handleSaveSetup()}
                   disabled={savingSetup}
                 >
-                  {savingSetup ? "Đang lưu..." : "Lưu cấu hình ghép đôi"}
+                  {savingSetup ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="size-4 animate-spin" /> Đang lưu...
+                    </span>
+                  ) : (
+                    "Lưu cấu hình ngay"
+                  )}
                 </Button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+
 
       {/* ============ SHOPPING RECOMMENDATIONS MODAL ============ */}
       <AnimatePresence>
