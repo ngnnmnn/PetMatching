@@ -82,7 +82,7 @@ export default function CartPage() {
 
   // Calculate totals based on selected items only
   const selectedItems = cartItems.filter((item) => selectedItemIds.includes(item.id));
-  
+
   const selectedTotal = selectedItems.reduce((acc, item) => {
     const price = item.product.salePrice ?? item.product.sellingPrice;
     return acc + price * item.quantity;
@@ -101,7 +101,7 @@ export default function CartPage() {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {/* Back Link */}
         <Link
-          href="/home"
+          href="/shop"
           className="inline-flex items-center gap-2 text-sm font-bold text-[var(--text-muted)] hover:text-primary transition mb-6"
         >
           <ArrowLeft className="size-4" />
@@ -130,11 +130,11 @@ export default function CartPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
+
             {/* Cart Items List */}
             <div className="lg:col-span-8 space-y-4">
               <div className="rounded-2xl border border-[var(--border-color)] bg-white overflow-hidden shadow-sm">
-                
+
                 {/* Select All Bar */}
                 <div className="bg-[#FCFCFA] px-4 py-3 border-b border-[var(--border-color)] flex items-center gap-3">
                   <input
@@ -182,7 +182,7 @@ export default function CartPage() {
                             className="w-full h-full object-cover"
                           />
                         </Link>
- 
+
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</p>
@@ -197,7 +197,7 @@ export default function CartPage() {
                           {item.product.unit && (
                             <p className="text-xs text-[var(--text-muted)] mt-0.5">Đơn vị: {item.product.unit}</p>
                           )}
-                          
+
                           {/* Unit Price */}
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-sm font-bold text-[var(--primary-color)]">{formatCurrency(price)}</span>
@@ -206,7 +206,7 @@ export default function CartPage() {
                             )}
                           </div>
                         </div>
- 
+
                         {/* Quantity Controls */}
                         <div className="flex items-center gap-3">
                           <div className="flex items-center rounded-lg border border-[var(--border-color)] bg-white p-1">
@@ -226,12 +226,12 @@ export default function CartPage() {
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
- 
+
                           {/* Item Subtotal */}
                           <div className="hidden sm:block text-right min-w-[80px]">
                             <span className="text-sm font-black text-[var(--text-main)]">{formatCurrency(itemSubtotal)}</span>
                           </div>
- 
+
                           {/* Delete Button */}
                           <button
                             type="button"
@@ -248,14 +248,14 @@ export default function CartPage() {
                 </div>
               </div>
             </div>
- 
+
             {/* Order Summary & Checkout Redirect */}
             <div className="lg:col-span-4 space-y-6">
-              
+
               {/* Summary Card */}
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-sm space-y-4">
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b border-[var(--border-color)]">Tóm tắt đơn hàng</h3>
-                
+
                 <div className="space-y-2.5 text-sm font-semibold">
                   <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Tạm tính ({selectedCount} sản phẩm)</span>
@@ -277,12 +277,12 @@ export default function CartPage() {
                       </p>
                     </div>
                   )}
-                  
+
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end">
                     <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
                     <span className="text-xl font-black text-[var(--primary-color)]">{formatCurrency(finalTotal)}</span>
                   </div>
- 
+
                   <button
                     disabled={selectedItemIds.length === 0}
                     onClick={() => {
@@ -299,7 +299,7 @@ export default function CartPage() {
                   </button>
                 </div>
               </div>
- 
+
             </div>
           </div>
         )}
