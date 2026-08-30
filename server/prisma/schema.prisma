@@ -114,9 +114,9 @@ model Pet {
   vaccineVerified          Boolean           @default(false)
   /// Đã xác minh giấy phả hệ qua giấy tờ thực tế
   pedigreeVerified         Boolean           @default(false)
-  /// Badge tổng hợp hiển thị trên card - được cập nhật bởi DocumentService:
-  /// - NONE     → chưa upload giấy tờ nào
-  /// - PENDING  → có giấy tờ đang chờ duyệt
+  /// Trạng thái xác minh tổng hợp, được cập nhật theo giấy tờ:
+  /// - NONE     → chưa có giấy tờ hợp lệ hoặc toàn bộ giấy tờ bị từ chối
+  /// - PENDING  → có giấy tờ đang chờ xử lý hoặc cần bổ sung
   /// - VERIFIED → ít nhất một giấy tờ được duyệt
   verificationBadge        VerificationBadge @default(NONE)
   avatarUrl                String?
@@ -888,8 +888,8 @@ enum SpaBookingStatus {
 }
 
 /// Trạng thái badge xác minh hiển thị trên swipe card:
-/// NONE     - Chưa nộp giấy tờ nào (chỉ tự khai báo)
-/// PENDING  - Đã nộp giấy tờ, đang chờ moderator duyệt
+/// NONE     - Chưa có giấy tờ hợp lệ hoặc toàn bộ giấy tờ bị từ chối
+/// PENDING  - Có giấy tờ đang chờ xử lý hoặc cần bổ sung
 /// VERIFIED - Ít nhất một giấy tờ được duyệt thành công
 enum VerificationBadge {
   NONE

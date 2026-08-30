@@ -29,8 +29,11 @@ import {
   ReportMatchDto,
 } from './dto/report-match.dto';
 import { NotificationsService } from '../notifications/notifications.service';
-import { getProvinceCoords } from './province-coordinates';
 import { getHanoiWardCoords } from './hanoi-wards';
+import {
+  isPetMatchingWeightEligible,
+  PET_WEIGHT_LIMITS,
+} from '../../common/constants/pet-weight.constants';
 
 type PetWithOwner = Pet & {
   owner: {
@@ -111,6 +114,29 @@ export class MatchingService {
     const minAgeDate = new Date();
     const minMonths = MIN_AGE_MONTHS[femalePet.species];
     minAgeDate.setMonth(minAgeDate.getMonth() - minMonths);
+    const matchingWeightLimits = PET_WEIGHT_LIMITS[femalePet.species];
+    const requestedWeightMin = dto.weightMin
+      ? Number(dto.weightMin)
+      : matchingWeightLimits.matchingMin;
+    const requestedWeightMax = dto.weightMax
+      ? Number(dto.weightMax)
+      : matchingWeightLimits.matchingMax;
+    const effectiveWeightMin = Math.max(
+      matchingWeightLimits.matchingMin,
+      requestedWeightMin,
+    );
+    const effectiveWeightMax = Math.min(
+      matchingWeightLimits.matchingMax,
+      requestedWeightMax,
+    );
+    if (
+      requestedWeightMin > requestedWeightMax ||
+      effectiveWeightMin > effectiveWeightMax
+    ) {
+      throw new BadRequestException(
+        'Khoảng cân nặng tìm kiếm không hợp lệ hoặc nằm ngoài điều kiện matching.',
+      );
+    }
 
     const where: Prisma.PetWhereInput = {
       species: femalePet.species,
@@ -120,6 +146,11 @@ export class MatchingService {
       ownerId: { notIn: [userId, ...blockedUserIds] },
       // Hard constraint: chỉ lấy pet đủ tuổi
       birthday: { lte: minAgeDate },
+      // Hard constraint: chỉ lấy pet đủ cân nặng phối giống
+      weight: {
+        gte: effectiveWeightMin,
+        lte: effectiveWeightMax,
+      },
     };
 
     if (dto.breed && dto.breed !== 'all') {
@@ -127,12 +158,6 @@ export class MatchingService {
     }
     if (dto.location && dto.location !== 'all') {
       where.location = dto.location;
-    }
-    if (dto.weightMin || dto.weightMax) {
-      where.weight = {
-        gte: dto.weightMin ? Number(dto.weightMin) : undefined,
-        lte: dto.weightMax ? Number(dto.weightMax) : undefined,
-      };
     }
     if (dto.verifiedOnly === 'true') {
       where.verificationBadge = VerificationBadge.VERIFIED;
@@ -213,7 +238,8 @@ export class MatchingService {
 
       // 3. Đối với yêu cầu REJECTED, PASSED, CANCELLED hoặc ACCEPTED cũ đã kết thúc match:
       // Chỉ hiển thị lại nếu một trong 2 pet có cập nhật hồ sơ sau thời điểm phản hồi / kết thúc match
-      const requestTimestamp = latest.respondedAt || latest.updatedAt || latest.createdAt;
+      const requestTimestamp =
+        latest.respondedAt || latest.updatedAt || latest.createdAt;
       const latestProfileUpdate =
         femalePet.updatedAt > candidate.updatedAt
           ? femalePet.updatedAt
@@ -245,12 +271,16 @@ export class MatchingService {
 
       // Tra cứu fallback theo Phường Hà Nội nếu thiếu toạ độ GPS
       if (femaleLat == null || femaleLng == null) {
-        const fWardCoords = getHanoiWardCoords(femalePet.ward || femalePet.location);
+        const fWardCoords = getHanoiWardCoords(
+          femalePet.ward || femalePet.location,
+        );
         femaleLat = fWardCoords.lat;
         femaleLng = fWardCoords.lng;
       }
       if (candLat == null || candLng == null) {
-        const cWardCoords = getHanoiWardCoords(candidate.ward || candidate.location);
+        const cWardCoords = getHanoiWardCoords(
+          candidate.ward || candidate.location,
+        );
         candLat = cWardCoords.lat;
         candLng = cWardCoords.lng;
       }
@@ -259,12 +289,23 @@ export class MatchingService {
       const isSameWard =
         femalePet.ward &&
         candidate.ward &&
-        femalePet.ward.trim().toLowerCase() === candidate.ward.trim().toLowerCase();
+        femalePet.ward.trim().toLowerCase() ===
+          candidate.ward.trim().toLowerCase();
 
       if (isSameWard) {
         distanceKm = 0.8;
-      } else if (femaleLat != null && femaleLng != null && candLat != null && candLng != null) {
-        distanceKm = calculateHaversineDistance(femaleLat, femaleLng, candLat, candLng);
+      } else if (
+        femaleLat != null &&
+        femaleLng != null &&
+        candLat != null &&
+        candLng != null
+      ) {
+        distanceKm = calculateHaversineDistance(
+          femaleLat,
+          femaleLng,
+          candLat,
+          candLng,
+        );
       } else {
         distanceKm = 5.0;
       }
@@ -399,6 +440,8 @@ export class MatchingService {
       requestId,
     );
     const [pet1Id, pet2Id] = [request.femalePetId, request.malePetId].sort();
+    this.assertMatchingWeight(request.femalePet);
+    this.assertMatchingWeight(request.malePet);
 
     const compatibility = await this.calculateCompatibilityScore(
       request.femalePet,
@@ -585,15 +628,11 @@ export class MatchingService {
 
     return matches.map(({ reports, ...match }) => {
       const otherUserId =
-        match.pet1.ownerId === userId
-          ? match.pet2.ownerId
-          : match.pet1.ownerId;
+        match.pet1.ownerId === userId ? match.pet2.ownerId : match.pet1.ownerId;
       return {
         ...match,
         reportedTargetTypes: reports.map((report) => report.targetType),
-        blockedByMe: blocks.some(
-          (block) => block.blockedId === otherUserId,
-        ),
+        blockedByMe: blocks.some((block) => block.blockedId === otherUserId),
       };
     });
   }
@@ -913,11 +952,7 @@ export class MatchingService {
       );
       const match = await this.getLockedMatch(tx, matchId);
       this.ensureMatchAllowsChat(match, userId);
-      await this.ensureNoUserBlock(
-        tx,
-        match.pet1.ownerId,
-        match.pet2.ownerId,
-      );
+      await this.ensureNoUserBlock(tx, match.pet1.ownerId, match.pet2.ownerId);
 
       const message = await tx.message.create({
         data: { matchId, senderId: userId, content: normalizedContent },
@@ -1146,6 +1181,7 @@ export class MatchingService {
 
     // Hard constraint: tuổi tối thiểu
     this.assertMinimumAge(pet);
+    this.assertMatchingWeight(pet);
 
     return pet;
   }
@@ -1163,6 +1199,7 @@ export class MatchingService {
     if (pet.status !== PetStatus.ACTIVE || !pet.isAvailableForMatching) {
       throw new BadRequestException('This pet is not available for matching.');
     }
+    this.assertMatchingWeight(pet);
 
     return pet;
   }
@@ -1181,6 +1218,15 @@ export class MatchingService {
           `${pet.species === 'DOG' ? 'Chó' : 'Mèo'} cần ít nhất ${minAge} tháng tuổi để phối giống.`,
       );
     }
+  }
+
+  private assertMatchingWeight(pet: Pet): void {
+    if (isPetMatchingWeightEligible(pet.species, pet.weight)) return;
+    const limits = PET_WEIGHT_LIMITS[pet.species];
+    throw new BadRequestException(
+      `Bé ${pet.name} nặng ${pet.weight} kg. ` +
+        `${pet.species === Species.DOG ? 'Chó' : 'Mèo'} cần từ ${limits.matchingMin}-${limits.matchingMax} kg để tham gia phối giống.`,
+    );
   }
 
   private getAgeInMonths(birthday: Date): number {

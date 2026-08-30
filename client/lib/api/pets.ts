@@ -52,10 +52,6 @@ export type UpdatePetPayload = Partial<
   Pick<
     Pet,
     | "name"
-    | "species"
-    | "breed"
-    | "gender"
-    | "birthday"
     | "weight"
     | "location"
     | "district"

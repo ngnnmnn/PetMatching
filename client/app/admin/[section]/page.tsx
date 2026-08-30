@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import axios from 'axios';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -11,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Pagination,
@@ -34,6 +36,8 @@ import {
   RestorePetReason,
 } from '@/lib/api/admin';
 
+// Admin sections share one table shell but return different response shapes.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
 type SpaManagerRoleFlow = {
@@ -47,7 +51,7 @@ type PetModerationFlow = {
 };
 
 type ReuploadDocumentType = 'VACCINE_RECORD' | 'PEDIGREE_CERT';
-type PetVerificationFilter = 'ALL' | 'PENDING' | 'VERIFIED' | 'NEED_MORE_INFO' | 'NONE';
+type PetVerificationFilter = 'ALL' | 'PENDING' | 'VERIFIED' | 'NEED_MORE_INFO' | 'REJECTED' | 'NONE';
 
 const ADMIN_PAGE_SIZE = 10;
 
@@ -220,6 +224,8 @@ export default function AdminSectionPage() {
   }, [config, section]);
 
   useEffect(() => {
+    // Loading remote section data is the synchronization performed by this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -233,6 +239,8 @@ export default function AdminSectionPage() {
     if (section !== 'reports') return;
     const query = new URLSearchParams(window.location.search);
     const status = query.get('status');
+    // Keep report filters synchronized with links from the dashboard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setComplaintTarget(query.get('targetType') ?? 'ALL');
     setComplaintStatus(
       status === 'REVIEWING' ? 'PENDING' : status ?? 'PENDING',
@@ -274,7 +282,7 @@ export default function AdminSectionPage() {
     if (section === 'pets') {
       return {
         total: rows.length,
-        active: rows.filter((row) => row.verificationBadge === 'VERIFIED').length,
+        active: rows.filter(hasApprovedPetDocument).length,
         pending: rows.filter(hasActionablePetDocument).length,
       };
     }
@@ -329,8 +337,8 @@ export default function AdminSectionPage() {
       toast.success(success);
       load();
       return true;
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Thao tác thất bại.');
+    } catch (error: unknown) {
+      toast.error(getAdminErrorMessage(error, 'Thao tác thất bại.'));
       return false;
     } finally {
       setSavingId('');
@@ -456,7 +464,7 @@ export default function AdminSectionPage() {
             onRoleChange={handleRoleChange}
           />
         ) : section === 'system-profile' ? (
-          <SystemProfileForm profile={rows[0]} onSaved={load} />
+          <SystemProfileForm key={String(rows[0]?.id ?? 'loading')} profile={rows[0]} onSaved={load} />
         ) : section === 'store-overview' ? (
           <StoreOverviewPanel data={rows[0]} />
         ) : section === 'spa-overview' ? (
@@ -833,7 +841,7 @@ function MatchingReportDialog({
                     {message.content && <p className="mt-2 whitespace-pre-wrap break-words">{message.content}</p>}
                     {message.imageUrl && (
                       <a href={message.imageUrl} target="_blank" rel="noreferrer" className="mt-2 block">
-                        <img src={message.imageUrl} alt="Ảnh trong báo cáo" className="max-h-64 rounded-lg border object-contain" />
+                        <Image src={message.imageUrl} alt="Ảnh trong báo cáo" width={640} height={360} unoptimized className="max-h-64 w-auto rounded-lg border object-contain" />
                       </a>
                     )}
                   </div>
@@ -968,8 +976,8 @@ function UserManagementPanel({
   onRoleChange: (row: Row, role: AdminRole) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [roleFilter, setRoleFilter] = useState<AdminRole | 'ALL'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<AccountStatus | 'ALL'>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -995,6 +1003,14 @@ function UserManagementPanel({
   const verifiedCount = users.filter((user) => user.isVerified).length;
   const managerCount = users.filter((user) => ['STORE_MANAGER', 'SPA_MANAGER'].includes(user.role)).length;
   const suspendedCount = users.filter((user) => user.accountStatus === 'SUSPENDED').length;
+  const hasActiveFilters = Boolean(query) || roleFilter !== 'ALL' || statusFilter !== 'ALL';
+
+  const clearFilters = () => {
+    setQuery('');
+    setRoleFilter('ALL');
+    setStatusFilter('ALL');
+    setCurrentPage(1);
+  };
 
   return (
     <div>
@@ -1004,7 +1020,7 @@ function UserManagementPanel({
         <UserQuickStat icon={UserX} label="Đang bị khóa" value={suspendedCount} tone="red" />
       </div>
 
-      <div className="grid gap-3 border-b bg-card p-4 xl:grid-cols-[minmax(260px,1fr)_minmax(440px,1.35fr)_minmax(280px,0.85fr)] xl:items-center">
+      <div className="grid gap-3 border-b bg-card p-4 md:grid-cols-2 xl:grid-cols-[minmax(320px,1fr)_220px_200px_112px] xl:items-center">
         <label className="relative block">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -1014,7 +1030,7 @@ function UserManagementPanel({
               setCurrentPage(1);
             }}
             placeholder="Tìm theo tên, email hoặc mã người dùng..."
-            className="h-10 rounded-xl pl-9 pr-10 font-semibold"
+            className="h-11 rounded-xl pl-9 pr-10 font-semibold"
           />
           {query && (
             <button
@@ -1029,56 +1045,74 @@ function UserManagementPanel({
             </button>
           )}
         </label>
-        <AdminSegmentedFilter
-          ariaLabel="Lọc theo vai trò"
+        <Select
           value={roleFilter}
-          onChange={(value) => {
-            setRoleFilter(value);
+          onValueChange={(value) => {
+            setRoleFilter(value as AdminRole | 'ALL');
             setCurrentPage(1);
           }}
-          options={[
-            { value: 'ALL', label: 'Tất cả vai trò' },
-            ...roleOptions.map((role) => ({ value: role, label: formatRole(role) })),
-          ]}
-        />
-        <AdminSegmentedFilter
-          ariaLabel="Lọc theo trạng thái tài khoản"
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl bg-background px-3 font-bold" aria-label="Lọc theo vai trò">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Tất cả vai trò</SelectItem>
+            {roleOptions.map((role) => (
+              <SelectItem key={role} value={role}>{formatRole(role)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
           value={statusFilter}
-          onChange={(value) => {
-            setStatusFilter(value);
+          onValueChange={(value) => {
+            setStatusFilter(value as AccountStatus | 'ALL');
             setCurrentPage(1);
           }}
-          options={[
-            { value: 'ALL', label: 'Tất cả trạng thái' },
-            ...accountStatusOptions.map((status) => ({ value: status, label: formatStatus(status) })),
-          ]}
-        />
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl bg-background px-3 font-bold" aria-label="Lọc theo trạng thái tài khoản">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Tất cả trạng thái</SelectItem>
+            {accountStatusOptions.map((status) => (
+              <SelectItem key={status} value={status}>{formatStatus(status)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex h-11 items-center justify-end md:col-span-2 xl:col-span-1">
+          {hasActiveFilters && (
+            <Button type="button" variant="ghost" onClick={clearFilters} className="h-10 rounded-xl px-3 font-bold text-muted-foreground hover:text-foreground">
+              <X className="size-4" />
+              Xóa lọc
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
+        <table className="w-full min-w-[1080px] table-fixed border-collapse text-left">
           <colgroup>
-            <col className="w-[24%]" />
-            <col className="w-[13%]" />
-            <col className="w-[12%]" />
-            <col className="w-[13%]" />
-            <col className="w-[12%]" />
             <col className="w-[26%]" />
+            <col className="w-[13%]" />
+            <col className="w-[13%]" />
+            <col className="w-[12%]" />
+            <col className="w-[11%]" />
+            <col className="w-[25%]" />
           </colgroup>
-          <thead className="bg-[#F7F9FB]">
-            <tr>
-              {['Người dùng', 'Vai trò hiện tại', 'Xác thực', 'Trạng thái', 'Ngày tham gia', 'Quản lý quyền'].map((label) => (
-                <th key={label} className="px-4 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]">{label}</th>
+          <thead className="bg-[#FAF8F5]">
+            <tr className="h-12">
+              {['Người dùng', 'Vai trò hiện tại', 'Xác thực', 'Trạng thái', 'Ngày tham gia', 'Quản lý quyền'].map((label, index) => (
+                <th key={label} className={`h-12 px-4 align-middle text-[11px] font-black uppercase tracking-[0.08em] text-[#64748B] ${index === 0 ? 'text-left' : 'text-center'}`}>{label}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E5EAF0]">
             {paginatedUsers.map((user) => (
-              <tr key={user.id} className="transition hover:bg-[#F8FBFA]">
-                <td className="px-4 py-4">
+              <tr key={user.id} className="h-20 transition hover:bg-muted/15">
+                <td className="px-4 py-3 align-middle">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-black text-primary-foreground shadow-sm">
-                      {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="size-full object-cover" /> : getInitials(user.name)}
+                    <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-black text-primary-foreground shadow-sm">
+                      {user.avatarUrl ? <Image src={user.avatarUrl} alt="" fill sizes="44px" unoptimized className="object-cover" /> : getInitials(user.name)}
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-black text-[#172033]">{user.name || 'Chưa cập nhật tên'}</p>
@@ -1086,16 +1120,16 @@ function UserManagementPanel({
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-4"><RoleBadge role={user.role} /></td>
-                <td className="px-4 py-4">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black ${user.isVerified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
-                    {user.isVerified ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
+                <td className="px-4 py-3 text-center align-middle"><RoleBadge role={user.role} /></td>
+                <td className="px-4 py-3 text-center align-middle">
+                  <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-black ${user.isVerified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+                    {user.isVerified ? <CheckCircle2 className="size-3.5 shrink-0" /> : <AlertTriangle className="size-3.5 shrink-0" />}
                     {user.isVerified ? 'Đã xác thực' : 'Chưa xác thực'}
                   </span>
                 </td>
-                <td className="px-4 py-4"><StatusBadge status={user.accountStatus} /></td>
-                <td className="px-4 py-4 text-sm font-semibold text-[#64748B]">{dateCell(user)}</td>
-                <td className="px-4 py-4">
+                <td className="px-4 py-3 text-center align-middle"><StatusBadge status={user.accountStatus} /></td>
+                <td className="whitespace-nowrap px-4 py-3 text-center align-middle text-sm font-semibold text-[#64748B]">{dateCell(user)}</td>
+                <td className="px-4 py-3 align-middle">
                   <ActionGroup
                     section="users"
                     row={user}
@@ -1144,7 +1178,7 @@ function RoleBadge({ role }: { role?: string }) {
     SPA_STAFF: 'bg-fuchsia-50 text-fuchsia-700',
     MODERATOR: 'bg-amber-50 text-amber-800',
   };
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${tones[role ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>{formatRole(role)}</span>;
+  return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-black ${tones[role ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>{formatRole(role)}</span>;
 }
 
 function StatusBadge({ status, label, compact = false }: { status?: string; label?: ReactNode; compact?: boolean }) {
@@ -1165,7 +1199,7 @@ function StatusBadge({ status, label, compact = false }: { status?: string; labe
     <Badge
       variant="secondary"
       title={typeof label === 'string' ? label : formatStatus(status)}
-      className={`max-w-full rounded-full border-0 font-black ${compact ? 'gap-1 px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'} ${tones[status ?? 'NONE'] ?? tones.NONE}`}
+      className={`max-w-full whitespace-nowrap rounded-full border-0 font-black ${compact ? 'gap-1 px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'} ${tones[status ?? 'NONE'] ?? tones.NONE}`}
     >
       <span className={`${compact ? 'size-1.5' : 'size-2'} rounded-full bg-current opacity-70`} />
       <span className="truncate">{label ?? formatStatus(status)}</span>
@@ -1177,11 +1211,20 @@ function hasActionablePetDocument(pet: Row) {
   return Boolean(pet.documents?.some((document: Row) => ['PENDING', 'REVIEWING'].includes(document.status)));
 }
 
+function hasApprovedPetDocument(pet: Row) {
+  return Boolean(pet.documents?.some((document: Row) => document.status === 'APPROVED'));
+}
+
+function hasRejectedPetDocument(pet: Row) {
+  return Boolean(pet.documents?.some((document: Row) => document.status === 'REJECTED'));
+}
+
 function petMatchesVerificationFilter(pet: Row, filter: PetVerificationFilter) {
   if (filter === 'ALL') return true;
   if (filter === 'PENDING') return hasActionablePetDocument(pet);
-  if (filter === 'VERIFIED') return pet.verificationBadge === 'VERIFIED';
+  if (filter === 'VERIFIED') return hasApprovedPetDocument(pet);
   if (filter === 'NEED_MORE_INFO') return Boolean(pet.documents?.some((document: Row) => document.status === 'NEED_MORE_INFO'));
+  if (filter === 'REJECTED') return hasRejectedPetDocument(pet);
   return !pet.documents?.length;
 }
 
@@ -1244,27 +1287,11 @@ function renderPetDocumentSummary(row: Row) {
   );
 }
 
-function PetVerificationSummaryBadge({ pet }: { pet: Row }) {
-  const documents: Row[] = pet.documents ?? [];
-  const pendingCount = documents.filter((document) => ['PENDING', 'REVIEWING'].includes(document.status)).length;
-  const needMoreInfoCount = documents.filter((document) => document.status === 'NEED_MORE_INFO').length;
-  const rejectedCount = documents.filter((document) => document.status === 'REJECTED').length;
-
-  if (pendingCount) {
-    return <StatusBadge status="PENDING" label={`Chờ duyệt · ${pendingCount}`} />;
-  }
-  if (needMoreInfoCount) {
-    return <StatusBadge status="NEED_MORE_INFO" label={`Cần bổ sung · ${needMoreInfoCount}`} />;
-  }
-  if (pet.verificationBadge === 'VERIFIED') {
-    return <StatusBadge status="VERIFIED" />;
-  }
-  if (rejectedCount) {
-    return <StatusBadge status="REJECTED" label={`Từ chối · ${rejectedCount}`} />;
-  }
-  return <StatusBadge status="NONE" />;
+function getAdminErrorMessage(error: unknown, fallback: string) {
+  if (!axios.isAxiosError<{ message?: string | string[] }>(error)) return fallback;
+  const message = error.response?.data?.message;
+  return Array.isArray(message) ? message.join(', ') : message || fallback;
 }
-
 
 function getInitials(name?: string) {
   if (!name?.trim()) return 'U';
@@ -1603,8 +1630,8 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
                 <tr key={product.id} className="transition hover:bg-[#FAFBFC]">
                   <td className="px-5 py-4">
                     <div className="flex min-w-[260px] items-center gap-3">
-                      <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5EAF0] bg-[#F7F9FB]">
-                        {product.imageUrl ? <img src={product.imageUrl} alt="" className="size-full object-cover" /> : <PackageOpen className="size-5 text-[#94A3B8]" />}
+                      <span className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5EAF0] bg-[#F7F9FB]">
+                        {product.imageUrl ? <Image src={product.imageUrl} alt="" fill sizes="48px" unoptimized className="object-cover" /> : <PackageOpen className="size-5 text-[#94A3B8]" />}
                       </span>
                       <div className="min-w-0">
                         <p className="max-w-[300px] truncate text-sm font-black text-[#172033]" title={product.name}>{product.name}</p>
@@ -1647,18 +1674,15 @@ function ProductCatalogPanel({ products }: { products: Row[] }) {
 }
 
 function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () => void }) {
-  const initialForm = () => ({
+  const [form, setForm] = useState(() => ({
     name: profile?.name ?? 'PetMatching',
     description: profile?.description ?? '',
     address: profile?.address ?? '',
     phone: profile?.phone ?? '',
     storeStatus: (profile?.storeStatus ?? 'ACTIVE') as ApprovalStatus,
     spaStatus: (profile?.spaStatus ?? 'ACTIVE') as ApprovalStatus,
-  });
-  const [form, setForm] = useState(initialForm);
+  }));
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => setForm(initialForm()), [profile]);
 
   const update = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -1676,8 +1700,8 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
       await adminApi.updateSystemProfile(data);
       toast.success('Đã cập nhật thông tin hệ thống.');
       onSaved();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Không thể cập nhật thông tin hệ thống.');
+    } catch (error: unknown) {
+      toast.error(getAdminErrorMessage(error, 'Không thể cập nhật thông tin hệ thống.'));
     } finally {
       setSaving(false);
     }
@@ -1907,8 +1931,8 @@ function SpaManagerRoleDialog({
         );
       }
       onSuccess();
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Không thể cập nhật quyền Spa Manager.');
+    } catch (error: unknown) {
+      setError(getAdminErrorMessage(error, 'Không thể cập nhật quyền Spa Manager.'));
     } finally {
       setSaving(false);
     }
@@ -2068,7 +2092,7 @@ function PetModerationDialog({
   useEffect(() => {
     adminApi.pet(flow.pet.id)
       .then((response) => setDetail(response.data))
-      .catch((err: any) => setError(err?.response?.data?.message ?? 'Không thể tải chi tiết hồ sơ thú cưng.'))
+      .catch((error: unknown) => setError(getAdminErrorMessage(error, 'Không thể tải chi tiết hồ sơ thú cưng.')))
       .finally(() => setLoading(false));
   }, [flow.pet.id]);
 
@@ -2095,8 +2119,8 @@ function PetModerationDialog({
         toast.success('Đã ẩn hồ sơ thú cưng.');
       }
       onSuccess();
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Không thể cập nhật trạng thái hồ sơ thú cưng.');
+    } catch (error: unknown) {
+      setError(getAdminErrorMessage(error, 'Không thể cập nhật trạng thái hồ sơ thú cưng.'));
     } finally {
       setSaving(false);
     }
@@ -2211,7 +2235,7 @@ function ActionGroup({
   onInspectMatchingReport?: () => void;
 }) {
   if (busy) {
-    return <Loader2 className="ml-auto size-5 animate-spin text-primary" />;
+    return <Loader2 className={`${section === 'users' ? 'mx-auto' : 'ml-auto'} size-5 animate-spin text-primary`} />;
   }
 
   if (section === 'users') {
@@ -2222,10 +2246,11 @@ function ActionGroup({
         : roleOptions;
 
     return (
-      <div className="grid grid-cols-2 gap-2">
+      <div className="mx-auto grid max-w-[340px] grid-cols-2 gap-2">
         <label className="min-w-0">
           <select
-            className="h-9 w-full min-w-0 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-black text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+            aria-label={`Đổi vai trò của ${row.name}`}
+            className="h-10 w-full min-w-0 rounded-lg border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
             value={row.role}
             onChange={(event) => onRoleChange(event.target.value as AdminRole)}
           >
@@ -2234,7 +2259,8 @@ function ActionGroup({
         </label>
         <label className="min-w-0">
           <select
-            className="h-9 w-full min-w-0 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-black text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+            aria-label={`Đổi trạng thái tài khoản của ${row.name}`}
+            className="h-10 w-full min-w-0 rounded-lg border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#334155] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
             value={row.accountStatus}
             onChange={(event) => onAction(() => adminApi.updateAccountStatus(row.id, event.target.value as AccountStatus), 'Đã cập nhật trạng thái tài khoản.')}
           >
@@ -2544,8 +2570,9 @@ function PetVerificationFilters({
   const options: Array<{ value: PetVerificationFilter; label: string; count: number }> = [
     { value: 'ALL', label: 'Tất cả', count: rows.length },
     { value: 'PENDING', label: 'Chờ duyệt', count: rows.filter(hasActionablePetDocument).length },
-    { value: 'VERIFIED', label: 'Đã xác minh', count: rows.filter((row) => row.verificationBadge === 'VERIFIED').length },
+    { value: 'VERIFIED', label: 'Đã xác minh', count: rows.filter(hasApprovedPetDocument).length },
     { value: 'NEED_MORE_INFO', label: 'Cần bổ sung', count: rows.filter((row) => row.documents?.some((document: Row) => document.status === 'NEED_MORE_INFO')).length },
+    { value: 'REJECTED', label: 'Bị từ chối', count: rows.filter(hasRejectedPetDocument).length },
     { value: 'NONE', label: 'Chưa có giấy tờ', count: rows.filter((row) => !row.documents?.length).length },
   ];
 
@@ -2600,44 +2627,48 @@ function PetManagementPanel({
     <div>
       <PetVerificationFilters rows={allPets} value={filter} onChange={onFilterChange} />
       <Table className="w-full table-fixed">
-        <TableHeader className="bg-muted/35">
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[17%] px-4 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Thú cưng</TableHead>
-            <TableHead className="w-[12%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Thông tin</TableHead>
-            <TableHead className="w-[17%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Chủ sở hữu</TableHead>
-            <TableHead className="w-[19%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Giấy tờ</TableHead>
-            <TableHead className="w-[12%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Xác minh</TableHead>
-            <TableHead className="w-[11%] px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground">Trạng thái</TableHead>
-            <TableHead className="w-[12%] px-4 text-right text-[11px] font-black uppercase tracking-wider text-muted-foreground">Thao tác</TableHead>
+        <TableHeader className="bg-[#FAF8F5]">
+          <TableRow className="h-12 hover:bg-transparent">
+            <TableHead className="h-12 w-[18%] px-4 align-middle text-[11px] font-black uppercase tracking-[0.08em] text-muted-foreground">Thú cưng</TableHead>
+            <TableHead className="h-12 w-[13%] px-4 align-middle text-[11px] font-black uppercase tracking-[0.08em] text-muted-foreground">Thông tin</TableHead>
+            <TableHead className="h-12 w-[20%] px-4 align-middle text-[11px] font-black uppercase tracking-[0.08em] text-muted-foreground">Chủ sở hữu</TableHead>
+            <TableHead className="h-12 w-[24%] px-4 align-middle text-[11px] font-black uppercase tracking-[0.08em] text-muted-foreground">Giấy tờ</TableHead>
+            <TableHead className="h-12 w-[12%] px-4 text-center align-middle text-[11px] font-black uppercase tracking-[0.08em] text-muted-foreground">Trạng thái</TableHead>
+            <TableHead className="h-12 w-[13%] px-4 text-center align-middle text-[11px] font-black uppercase tracking-[0.08em] text-muted-foreground">Thao tác</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {pets.map((pet) => (
-            <TableRow key={pet.id} className="group">
-              <TableCell className="px-4 py-4 whitespace-normal">{renderPetIdentity(pet)}</TableCell>
-              <TableCell className="px-3 py-4 whitespace-normal">{renderPetProfileSummary(pet)}</TableCell>
-              <TableCell className="px-3 py-4 whitespace-normal">{renderPetOwner(pet)}</TableCell>
-              <TableCell className="px-3 py-4 whitespace-normal">{renderPetDocumentSummary(pet)}</TableCell>
-              <TableCell className="px-3 py-4 whitespace-normal"><PetVerificationSummaryBadge pet={pet} /></TableCell>
-              <TableCell className="px-3 py-4 whitespace-normal"><StatusBadge status={pet.status} label={formatStatus(pet.status)} /></TableCell>
-              <TableCell className="px-4 py-4 text-right">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={hasActionablePetDocument(pet) ? 'default' : 'outline'}
-                  onClick={() => onInspect(pet)}
-                  aria-label={hasActionablePetDocument(pet) ? `Xem và duyệt hồ sơ ${pet.name}` : `Xem chi tiết hồ sơ ${pet.name}`}
-                  className="w-full max-w-[132px] rounded-lg px-2 text-xs font-black"
-                >
-                  <Eye className="size-4" />
-                  <span className="hidden lg:inline">{hasActionablePetDocument(pet) ? 'Xem & duyệt' : 'Chi tiết'}</span>
-                </Button>
+            <TableRow key={pet.id} className="group h-20 hover:bg-muted/15">
+              <TableCell className="px-4 py-3 align-middle whitespace-normal">{renderPetIdentity(pet)}</TableCell>
+              <TableCell className="px-4 py-3 align-middle whitespace-normal">{renderPetProfileSummary(pet)}</TableCell>
+              <TableCell className="px-4 py-3 align-middle whitespace-normal">{renderPetOwner(pet)}</TableCell>
+              <TableCell className="px-4 py-3 align-middle whitespace-normal">{renderPetDocumentSummary(pet)}</TableCell>
+              <TableCell className="px-4 py-3 align-middle whitespace-normal">
+                <div className="flex justify-center">
+                  <StatusBadge status={pet.status} label={formatStatus(pet.status)} />
+                </div>
+              </TableCell>
+              <TableCell className="px-4 py-3 align-middle">
+                <div className="flex justify-center">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={hasActionablePetDocument(pet) ? 'default' : 'outline'}
+                    onClick={() => onInspect(pet)}
+                    aria-label={hasActionablePetDocument(pet) ? `Xem và duyệt hồ sơ ${pet.name}` : `Xem chi tiết hồ sơ ${pet.name}`}
+                    className="min-w-[118px] rounded-lg px-3 text-xs font-black"
+                  >
+                    <Eye className="size-4" />
+                    <span className="hidden lg:inline">{hasActionablePetDocument(pet) ? 'Xem & duyệt' : 'Chi tiết'}</span>
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
           {!pets.length && (
             <TableRow>
-              <TableCell colSpan={7} className="h-40 text-center whitespace-normal text-sm font-semibold text-muted-foreground">
+              <TableCell colSpan={6} className="h-40 text-center whitespace-normal text-sm font-semibold text-muted-foreground">
                 Không có thú cưng phù hợp với bộ lọc này.
               </TableCell>
             </TableRow>

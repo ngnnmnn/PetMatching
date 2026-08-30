@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Award, Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, FileText, ImagePlus, Info, Minus, Plus, Scale, ShieldCheck, Sparkles, Syringe, Upload, X, Calendar as CalendarIcon } from "lucide-react"
+import { Award, Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Minus, Plus, Scale, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -13,7 +12,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import api from "@/lib/axios"
-import { breedingOptions, catBreeds, dogBreeds, provinces } from "@/lib/pet-options"
+import {
+  breedingOptions,
+  catBreeds,
+  dogBreeds,
+  getPetWeightLimits,
+  isPetMatchingWeightEligible,
+  isPetProfileWeightValid,
+} from "@/lib/pet-options"
 import { cn } from "@/lib/utils"
 import { uploadImages, type UploadPurpose } from "@/lib/api/uploads"
 import { HanoiWardSelect } from "@/components/hanoi-ward-select"
@@ -59,10 +65,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [customBreedInput, setCustomBreedInput] = useState("")
 
   useEffect(() => {
-    if (!formData.species) {
-      setDbBreeds([])
-      return
-    }
+    if (!formData.species) return
     const species = formData.species.toUpperCase()
     api
       .get<{ id: string; name: string }[]>('/breeds', { params: { species } })
@@ -149,14 +152,6 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [activePreset, setActivePreset] = useState<number | null>(null)
 
-  const getTodayString = () => {
-    const today = new Date()
-    const yyyy = today.getFullYear()
-    const mm = String(today.getMonth() + 1).padStart(2, "0")
-    const dd = String(today.getDate()).padStart(2, "0")
-    return `${yyyy}-${mm}-${dd}`
-  }
-
   const setAgePreset = (months: number) => {
     setActivePreset(months)
     const targetDate = new Date()
@@ -226,6 +221,11 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const minBreedingAgeMonths = formData.species === "cat" ? 8 : 12
   const currentAgeMonths = getAgeInMonths()
   const isUnderage = currentAgeMonths !== null && currentAgeMonths < minBreedingAgeMonths
+  const weightLimits = getPetWeightLimits(formData.species)
+  const weightNumber = Number(formData.weight)
+  const hasWeight = formData.weight.trim() !== ""
+  const profileWeightIsValid = hasWeight && isPetProfileWeightValid(formData.species, weightNumber)
+  const matchingWeightIsEligible = hasWeight && isPetMatchingWeightEligible(formData.species, weightNumber)
 
   const getEligibleDate = () => {
     if (!formData.birthday) return ""
@@ -254,8 +254,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   }
 
   const adjustWeight = (delta: number) => {
+    if (!weightLimits) return
     const current = parseFloat(formData.weight) || (formData.species === "cat" ? 4 : 10)
-    const next = Math.max(0.1, Math.min(150, Math.round((current + delta) * 10) / 10))
+    const next = Math.max(
+      weightLimits.profileMin,
+      Math.min(weightLimits.profileMax, Math.round((current + delta) * 10) / 10),
+    )
     setFormData((prev) => ({ ...prev, weight: String(next) }))
   }
 
@@ -268,10 +272,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       const isBirthdayValid = formData.birthday
         ? new Date(formData.birthday) <= new Date() && (new Date().getTime() - new Date(formData.birthday).getTime()) / (1000 * 60 * 60 * 24 * 365) <= 30
         : false;
-      const isWeightValid = formData.weight
-        ? Number(formData.weight) > 0 && Number(formData.weight) <= 150
-        : false;
-      return isBirthdayValid && isWeightValid && !!selectedWard
+      return isBirthdayValid && profileWeightIsValid && !!selectedWard
     }
     return true
   }
@@ -535,6 +536,15 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   </button>
                 </div>
               </div>
+
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                <Info className="mt-0.5 size-4 shrink-0" />
+                <p>
+                  Vui lòng kiểm tra kỹ loài, giống, giới tính và ngày sinh. Đây là
+                  thông tin định danh dùng để đối chiếu giấy tờ và bạn sẽ không thể
+                  tự chỉnh sửa sau khi tạo hồ sơ.
+                </p>
+              </div>
             </div>
           )}
 
@@ -723,8 +733,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                       id="weight"
                       type="number"
                       step="0.1"
-                      min="0.1"
-                      max="150"
+                      min={weightLimits?.profileMin ?? 0.2}
+                      max={weightLimits?.profileMax ?? 160}
                       placeholder="0.0"
                       value={formData.weight}
                       onChange={(event) => setFormData({ ...formData, weight: event.target.value })}
@@ -745,18 +755,22 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   </button>
                 </div>
 
-                {/* Sanity Check Warnings */}
-                {formData.weight && Number(formData.weight) <= 0 && (
-                  <p className="text-xs font-bold text-destructive">⚠️ Cân nặng phải lớn hơn 0 kg.</p>
-                )}
-                {formData.species === "cat" && Number(formData.weight) > 15 && (
-                  <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                    ⚠️ Mèo hiếm khi nặng hơn 15kg (trừ một số giống đặc biệt như Maine Coon). Vui lòng kiểm tra lại.
+                {hasWeight && weightLimits && !profileWeightIsValid && (
+                  <p className="text-xs font-bold text-destructive">
+                    ⚠️ Cân nặng của {formData.species === "dog" ? "chó" : "mèo"} phải từ {weightLimits.profileMin}-{weightLimits.profileMax} kg để lưu hồ sơ.
                   </p>
                 )}
-                {formData.species === "dog" && Number(formData.weight) > 120 && (
-                  <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                    ⚠️ Cân nặng của chó vượt quá 120kg. Vui lòng kiểm tra lại.
+                {profileWeightIsValid && weightLimits && !matchingWeightIsEligible && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                    <p className="font-black">⚠️ Chưa đủ điều kiện cân nặng để phối giống</p>
+                    <p className="mt-1 font-medium">
+                      Hồ sơ vẫn được lưu, nhưng {formData.species === "dog" ? "chó" : "mèo"} cần từ {weightLimits.matchingMin}-{weightLimits.matchingMax} kg để tham gia matching.
+                    </p>
+                  </div>
+                )}
+                {matchingWeightIsEligible && (
+                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    ✓ Cân nặng đạt điều kiện tham gia matching.
                   </p>
                 )}
               </div>

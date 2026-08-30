@@ -150,9 +150,9 @@ describe('MatchingService chat', () => {
   it('does not save a message when either user has blocked the other', async () => {
     transaction.userBlock.findFirst.mockResolvedValue({ id: 'block-1' });
 
-    await expect(service.sendMessage(userId, matchId, 'hello')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      service.sendMessage(userId, matchId, 'hello'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(transaction.message.create).not.toHaveBeenCalled();
   });
 
@@ -416,6 +416,7 @@ describe('MatchingService pet eligibility', () => {
       },
       userBlock: { findMany: jest.fn().mockResolvedValue([]) },
       matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      match: { findMany: jest.fn().mockResolvedValue([]) },
       breedRule: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = new MatchingService(
@@ -428,15 +429,37 @@ describe('MatchingService pet eligibility', () => {
       femalePetId: activeFemale.id,
     });
 
-    expect(prisma.pet.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          gender: Gender.MALE,
-          status: PetStatus.ACTIVE,
-          isAvailableForMatching: true,
+    const findManyCall = prisma.pet.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(findManyCall.where).toMatchObject({
+      gender: Gender.MALE,
+      status: PetStatus.ACTIVE,
+      isAvailableForMatching: true,
+      weight: { gte: 1.5, lte: 100 },
+    });
+  });
+
+  it('rejects an underweight female pet before querying candidates', async () => {
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue({
+          ...activeFemale,
+          weight: 1.4,
         }),
-      }),
+      },
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as NotificationsService,
     );
+
+    await expect(
+      service.getCandidates(activeFemale.ownerId, {
+        femalePetId: activeFemale.id,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('does not create a new request when the male pet is admin-hidden', async () => {
@@ -522,10 +545,16 @@ describe('MatchingService moderation', () => {
       auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     };
     prisma = {
-      $transaction: jest.fn().mockImplementation((callback: (client: any) => unknown) => callback(tx)),
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (client: any) => unknown) =>
+          callback(tx),
+        ),
       match: { findUnique: jest.fn().mockResolvedValue(match) },
     };
-    notifications = { create: jest.fn().mockResolvedValue({ id: 'notification-1' }) };
+    notifications = {
+      create: jest.fn().mockResolvedValue({ id: 'notification-1' }),
+    };
     service = new MatchingService(
       prisma as PrismaService,
       {} as CloudinaryService,
@@ -540,19 +569,25 @@ describe('MatchingService moderation', () => {
       detail: ' detail ',
     });
 
-    expect(tx.petReport.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        matchId,
-        userId,
-        reportedUserId: otherUserId,
-        petId: 'pet-2',
-        targetType: 'USER',
-        detail: 'detail',
+    expect(tx.petReport.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          matchId,
+          userId,
+          reportedUserId: otherUserId,
+          petId: 'pet-2',
+          targetType: 'USER',
+          detail: 'detail',
+        }),
       }),
-    }));
-    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ action: 'USER_CREATE_MATCHING_REPORT' }),
-    }));
+    );
+    expect(tx.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'USER_CREATE_MATCHING_REPORT',
+        }),
+      }),
+    );
     expect(notifications.create).toHaveBeenCalledWith(
       expect.objectContaining({
         userId,
@@ -580,21 +615,25 @@ describe('MatchingService moderation', () => {
       },
       select: { id: true },
     });
-    expect(tx.petReport.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        reportedUserId: otherUserId,
-        petId: 'pet-2',
-        targetType: 'PET',
-      }),
-    }));
-    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        metadata: expect.objectContaining({
+    expect(tx.petReport.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          reportedUserId: otherUserId,
+          petId: 'pet-2',
           targetType: 'PET',
-          reportedPetId: 'pet-2',
         }),
       }),
-    }));
+    );
+    expect(tx.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            targetType: 'PET',
+            reportedPetId: 'pet-2',
+          }),
+        }),
+      }),
+    );
   });
 
   it('rejects a report reason that does not match the selected target', async () => {
@@ -634,7 +673,11 @@ describe('MatchingService moderation', () => {
   it('blocks idempotently and closes pending matching interactions once', async () => {
     const result = await service.blockMatchUser(userId, matchId);
 
-    expect(result).toEqual({ success: true, blockedUserId: otherUserId, alreadyBlocked: false });
+    expect(result).toEqual({
+      success: true,
+      blockedUserId: otherUserId,
+      alreadyBlocked: false,
+    });
     expect(tx.matchingRequest.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.match.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
@@ -666,9 +709,11 @@ describe('MatchingService moderation', () => {
     expect(tx.userBlock.deleteMany).toHaveBeenCalledWith({
       where: { blockerId: userId, blockedId: otherUserId },
     });
-    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ action: 'USER_UNBLOCK' }),
-    }));
+    expect(tx.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'USER_UNBLOCK' }),
+      }),
+    );
   });
 
   it('handles repeated unblock requests without duplicate audit logs', async () => {

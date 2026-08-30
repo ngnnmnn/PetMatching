@@ -6,9 +6,12 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { BreedingOption, Gender, Species } from '@prisma/client';
+import { PET_WEIGHT_LIMITS } from '../../../common/constants/pet-weight.constants';
 
 export class CreatePetDto {
   @IsString()
@@ -27,6 +30,8 @@ export class CreatePetDto {
   birthday!: string;
 
   @IsNumber()
+  @Min(PET_WEIGHT_LIMITS.DOG.profileMin)
+  @Max(PET_WEIGHT_LIMITS.DOG.profileMax)
   weight!: number;
 
   @IsString()

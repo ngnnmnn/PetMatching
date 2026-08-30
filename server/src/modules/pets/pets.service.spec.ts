@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   BreedingOption,
@@ -17,9 +18,11 @@ import {
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PetsService } from './pets.service';
+import { UpdatePetDto } from './dto/update-pet.dto';
 
 type PetWithDocuments = Pet & { documents: PetDocument[] };
 type FindPet = (args: unknown) => Promise<PetWithDocuments | null>;
+type CreatePet = (args: { data: Partial<Pet> }) => Promise<PetWithDocuments>;
 type UpdatePet = (args: { data: Partial<Pet> }) => Promise<PetWithDocuments>;
 type AsyncMock = (...args: unknown[]) => Promise<unknown>;
 
@@ -40,7 +43,7 @@ type TransactionMock = {
 
 describe('PetsService profile details and updates', () => {
   let detailFindUnique: jest.MockedFunction<FindPet>;
-  let createPet: jest.Mock;
+  let createPet: jest.MockedFunction<CreatePet>;
   let transactionPetFindUnique: jest.MockedFunction<FindPet>;
   let transactionPetUpdate: jest.MockedFunction<UpdatePet>;
   let tx: TransactionMock;
@@ -68,7 +71,7 @@ describe('PetsService profile details and updates', () => {
     ward: null,
     latitude: null,
     longitude: null,
-    avatarUrl: null,
+    avatarUrl: 'https://res.cloudinary.com/demo/image/upload/pets/milo.jpg',
     gallery: [],
     personality: null,
     isVaccinated: false,
@@ -91,7 +94,7 @@ describe('PetsService profile details and updates', () => {
   beforeEach(() => {
     detailFindUnique = jest.fn() as jest.MockedFunction<FindPet>;
     detailFindUnique.mockResolvedValue(pet);
-    createPet = jest.fn().mockImplementation(({ data }) =>
+    createPet = jest.fn(({ data }) =>
       Promise.resolve({ ...pet, ...data, documents: [] }),
     );
     transactionPetFindUnique = jest.fn() as jest.MockedFunction<FindPet>;
@@ -144,17 +147,63 @@ describe('PetsService profile details and updates', () => {
       birthday: '2024-01-01',
       weight: 5,
       location: 'TP. Hồ Chí Minh',
+      avatarUrl: 'https://res.cloudinary.com/demo/image/upload/pets/milo.jpg',
     });
 
-    expect(createPet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: PetStatus.ACTIVE,
-          isAvailableForMatching: false,
-        }),
-      }),
-    );
+    const create = createPet.mock.calls[0]?.[0];
+    expect(create?.data).toMatchObject({
+      status: PetStatus.ACTIVE,
+      isAvailableForMatching: false,
+    });
   });
+
+  it.each([
+    [Species.DOG, 0.1],
+    [Species.DOG, 160.1],
+    [Species.CAT, 0.1],
+    [Species.CAT, 20.1],
+  ])(
+    'rejects %s profile creation with invalid weight %s kg',
+    (species, weight) => {
+      expect(() =>
+        service.createPet('owner-1', {
+          name: 'Milo',
+          species,
+          breed: 'Poodle',
+          gender: Gender.MALE,
+          birthday: '2024-01-01',
+          weight,
+          location: 'Hà Nội',
+          avatarUrl:
+            'https://res.cloudinary.com/demo/image/upload/pets/milo.jpg',
+        }),
+      ).toThrow(BadRequestException);
+      expect(createPet).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [Species.DOG, 0.2],
+    [Species.DOG, 160],
+    [Species.CAT, 0.2],
+    [Species.CAT, 20],
+  ])(
+    'accepts %s profile creation at boundary weight %s kg',
+    async (species, weight) => {
+      await service.createPet('owner-1', {
+        name: 'Milo',
+        species,
+        breed: species === Species.DOG ? 'Poodle' : 'Mèo ta',
+        gender: Gender.MALE,
+        birthday: '2024-01-01',
+        weight,
+        location: 'Hà Nội',
+        avatarUrl: 'https://res.cloudinary.com/demo/image/upload/pets/milo.jpg',
+      });
+
+      expect(createPet).toHaveBeenCalled();
+    },
+  );
 
   it('rejects a missing pet detail', async () => {
     detailFindUnique.mockResolvedValue(null);
@@ -185,6 +234,90 @@ describe('PetsService profile details and updates', () => {
       avatarUrl: 'https://res.cloudinary.com/demo/avatar.jpg',
       gallery: ['https://res.cloudinary.com/demo/gallery.jpg'],
     });
+  });
+
+  it.each([
+    ['species', Species.CAT],
+    ['breed', 'British Shorthair'],
+    ['gender', Gender.FEMALE],
+    ['birthday', '2023-01-01'],
+  ])(
+    'rejects immutable profile field %s at the DTO boundary',
+    async (field, value) => {
+      const pipe = new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      });
+
+      await expect(
+        pipe.transform(
+          { name: 'Milo mới', [field]: value },
+          { type: 'body', metatype: UpdatePetDto },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
+
+  it('does not persist immutable profile fields when the service is called directly', async () => {
+    await service.updatePet('owner-1', 'pet-1', {
+      name: 'Milo mới',
+      species: Species.CAT,
+      breed: 'British Shorthair',
+      gender: Gender.FEMALE,
+      birthday: '2023-01-01',
+    } as UpdatePetDto & {
+      species: Species;
+      breed: string;
+      gender: Gender;
+      birthday: string;
+    });
+
+    const update = transactionPetUpdate.mock.calls[0]?.[0];
+    expect(update?.data).toMatchObject({ name: 'Milo mới' });
+    expect(update?.data).not.toHaveProperty('species');
+    expect(update?.data).not.toHaveProperty('breed');
+    expect(update?.data).not.toHaveProperty('gender');
+    expect(update?.data).not.toHaveProperty('birthday');
+  });
+
+  it('rejects a cat profile weight above the species limit', async () => {
+    transactionPetFindUnique.mockResolvedValue({
+      ...pet,
+      species: Species.CAT,
+    });
+
+    await expect(
+      service.updatePet('owner-1', pet.id, { weight: 20.1 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [Species.DOG, 1],
+    [Species.DOG, 101],
+    [Species.CAT, 1],
+    [Species.CAT, 16],
+  ])(
+    'turns matching off when edited %s weight becomes %s kg',
+    async (species, weight) => {
+      transactionPetFindUnique.mockResolvedValue({ ...pet, species });
+
+      await service.updatePet('owner-1', pet.id, { weight });
+
+      expect(transactionPetUpdate.mock.calls[0]?.[0].data).toMatchObject({
+        weight,
+        isAvailableForMatching: false,
+      });
+    },
+  );
+
+  it('keeps matching enabled when an edited weight remains eligible', async () => {
+    await service.updatePet('owner-1', pet.id, { weight: 100 });
+
+    const update = transactionPetUpdate.mock.calls[0]?.[0].data;
+    expect(update).toMatchObject({ weight: 100 });
+    expect(update).not.toHaveProperty('isAvailableForMatching');
   });
 
   it('clears pedigree data when pedigree is disabled', async () => {
@@ -226,13 +359,6 @@ describe('PetsService profile details and updates', () => {
     expect(cloudinary.destroyByUrl).not.toHaveBeenCalledWith(
       'https://res.cloudinary.com/demo/image/upload/petmatching/users/owner-1/pets/gallery/kept.jpg',
     );
-  });
-
-  it('turns matching off when gender changes to female', async () => {
-    await service.updatePet('owner-1', 'pet-1', { gender: Gender.FEMALE });
-
-    const update = transactionPetUpdate.mock.calls[0]?.[0];
-    expect(update?.data).toMatchObject({ isAvailableForMatching: false });
   });
 
   it('does not enable matching while documents need to be uploaded again', async () => {
@@ -298,6 +424,27 @@ describe('PetsService profile details and updates', () => {
       status: PetStatus.ACTIVE,
       isAvailableForMatching: true,
     });
+  });
+
+  it.each([
+    [Species.DOG, 1.4],
+    [Species.DOG, 100.1],
+    [Species.CAT, 1.4],
+    [Species.CAT, 15.1],
+  ])('does not enable matching for %s at %s kg', async (species, weight) => {
+    transactionPetFindUnique.mockResolvedValue({
+      ...pet,
+      species,
+      weight,
+      isAvailableForMatching: false,
+    });
+
+    await expect(
+      service.updateAvailability('owner-1', pet.id, {
+        isAvailableForMatching: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
   });
 
   it('does not allow an owner to set the admin-only HIDDEN status', async () => {
@@ -408,6 +555,39 @@ describe('PetsService profile details and updates', () => {
     expect(transactionPetUpdate).not.toHaveBeenCalled();
   });
 
+  it('rejects pedigree number changes after pedigree approval', async () => {
+    transactionPetFindUnique.mockResolvedValue({
+      ...pet,
+      hasPedigree: true,
+      pedigreeNumber: 'VKA-001',
+      pedigreeVerified: true,
+      documents: [
+        {
+          id: 'document-2',
+          petId: pet.id,
+          type: DocumentType.PEDIGREE_CERT,
+          title: 'Giấy chứng nhận phả hệ',
+          imageUrls: ['https://example.com/approved.jpg'],
+          userNote: null,
+          status: DocumentStatus.APPROVED,
+          reviewerId: 'reviewer-1',
+          reviewerName: 'Admin',
+          reviewNote: null,
+          reviewedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+
+    await expect(
+      service.updatePet('owner-1', pet.id, {
+        pedigreeNumber: 'VKA-999',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
+  });
+
   it('removes unapproved documents when the declaration is disabled', async () => {
     transactionPetFindUnique.mockResolvedValue({
       ...pet,
@@ -440,13 +620,6 @@ describe('PetsService profile details and updates', () => {
         status: { not: DocumentStatus.APPROVED },
       },
     });
-  });
-
-  it('rejects a future birthday', async () => {
-    await expect(
-      service.updatePet('owner-1', 'pet-1', { birthday: '2999-01-01' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(transactionPetUpdate).not.toHaveBeenCalled();
   });
 
   it('rejects updates from a different owner', async () => {

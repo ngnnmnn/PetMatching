@@ -550,6 +550,14 @@ describe('AdminService pet document review', () => {
     expect(notifications.create).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'owner-1', entityId: 'document-1' }),
     );
+    expect(prisma.pet.update).toHaveBeenCalledWith({
+      where: { id: 'pet-1' },
+      data: {
+        verificationBadge: VerificationBadge.NONE,
+        vaccineVerified: false,
+        pedigreeVerified: false,
+      },
+    });
   });
 
   it('allows approval without a review note', async () => {
