@@ -3,8 +3,6 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
-  IsDateString,
-  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -13,7 +11,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { Gender, Species } from '@prisma/client';
+import { PET_WEIGHT_LIMITS } from '../../../common/constants/pet-weight.constants';
 
 export class UpdatePetDto {
   @IsOptional()
@@ -22,26 +20,9 @@ export class UpdatePetDto {
   name?: string;
 
   @IsOptional()
-  @IsEnum(Species)
-  species?: Species;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  breed?: string;
-
-  @IsOptional()
-  @IsEnum(Gender)
-  gender?: Gender;
-
-  @IsOptional()
-  @IsDateString()
-  birthday?: string;
-
-  @IsOptional()
   @IsNumber()
-  @Min(0.1)
-  @Max(200)
+  @Min(PET_WEIGHT_LIMITS.DOG.profileMin)
+  @Max(PET_WEIGHT_LIMITS.DOG.profileMax)
   weight?: number;
 
   @IsOptional()

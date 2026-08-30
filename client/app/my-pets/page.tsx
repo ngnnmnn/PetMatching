@@ -8,13 +8,11 @@ import {
   Coins,
   Eye,
   EyeOff,
-  Handshake,
   Heart,
   Info,
   PawPrint,
   Plus,
   Settings2,
-  ShieldCheck,
   Sparkles,
   Syringe,
   X,
@@ -32,6 +30,10 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Product, ProductVariant } from "@/types";
+import {
+  getPetWeightLimits,
+  isPetMatchingWeightEligible,
+} from "@/lib/pet-options";
 
 type RecommendedProduct = Product & {
   matchedVariants: ProductVariant[];
@@ -46,10 +48,24 @@ function getPetBreedingStatus(pet: Pet) {
   if (now.getDate() < birthday.getDate()) months -= 1;
   months = Math.max(0, months);
   const isUnderage = months < minMonths;
+  const weightLimits = getPetWeightLimits(pet.species);
+  const isWeightEligible = isPetMatchingWeightEligible(
+    pet.species,
+    pet.weight,
+  );
+  const isEligible = !isUnderage && isWeightEligible;
   const eligibleDate = new Date(birthday);
   eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
   const eligibleDateStr = eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" });
-  return { isUnderage, months, minMonths, eligibleDateStr };
+  return {
+    isUnderage,
+    isWeightEligible,
+    isEligible,
+    months,
+    minMonths,
+    eligibleDateStr,
+    weightLimits,
+  };
 }
 
 export default function MyPetsPage() {
@@ -80,6 +96,9 @@ export default function MyPetsPage() {
   const [shareLitterCount, setShareLitterCount] = useState<string>("1");
   const [personalityNote, setPersonalityNote] = useState<string>("");
   const [savingSetup, setSavingSetup] = useState(false);
+  const selectedSetupStatus = selectedSetupPet
+    ? getPetBreedingStatus(selectedSetupPet)
+    : null;
 
   const loadPets = async () => {
     try {
@@ -341,6 +360,8 @@ export default function MyPetsPage() {
             {pets.map((pet) => {
               const {
                 isUnderage,
+                isWeightEligible,
+                isEligible,
                 months: ageMonths,
                 minMonths,
                 eligibleDateStr,
@@ -395,6 +416,10 @@ export default function MyPetsPage() {
                     <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-blue-600/90 backdrop-blur-md px-2.5 py-1 text-xs font-bold text-white shadow-md">
                       🌱 Đang lớn ({ageMonths} th)
                     </span>
+                  ) : !isWeightEligible ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-amber-600/90 px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
+                      ⚖️ Chưa đủ cân phối giống
+                    </span>
                   ) : pet.gender === "MALE" ? (
                     <span
                       className={cn(
@@ -442,6 +467,11 @@ export default function MyPetsPage() {
                         🌱 Đang phát triển ({ageMonths}/{minMonths} th)
                       </span>
                     )}
+                    {!isWeightEligible && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                        ⚖️ Chưa đạt cân nặng matching
+                      </span>
+                    )}
                     {pet.isVaccinated && (
                       <span
                         className={cn(
@@ -475,7 +505,7 @@ export default function MyPetsPage() {
                   </div>
 
                   {/* Breeding option preview for male */}
-                  {pet.gender === "MALE" && pet.isAvailableForMatching && !isUnderage && (
+                  {pet.gender === "MALE" && pet.isAvailableForMatching && isEligible && (
                     <div className="mt-3 min-h-[54px] rounded-xl border bg-primary/5 p-3 text-xs space-y-1">
                       <span className="font-bold text-primary uppercase tracking-wider text-[10px]">
                         Hình thức phối giống:
@@ -494,14 +524,16 @@ export default function MyPetsPage() {
                   <div className="mt-auto space-y-2 pt-4">
                     <div className="flex gap-2">
                       {pet.gender === "MALE" ? (
-                        isUnderage ? (
+                        !isEligible ? (
                           <Button
                             variant="outline"
                             onClick={() => setSelectedDetailPetId(pet.id)}
-                            className="h-10 flex-1 gap-1.5 rounded-xl font-bold border-blue-200 bg-blue-50/60 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-xs shadow-xs"
-                            title="Bé chưa đủ tuổi phối giống"
+                            className="h-10 flex-1 gap-1.5 rounded-xl border-amber-200 bg-amber-50/60 text-xs font-bold text-amber-700 shadow-xs dark:bg-amber-950/40 dark:text-amber-300"
+                            title="Bé chưa đủ điều kiện phối giống"
                           >
-                            🌱 Đang lớn (T{eligibleDateStr})
+                            {isUnderage
+                              ? `🌱 Đang lớn (T${eligibleDateStr})`
+                              : "⚖️ Chưa đủ cân phối giống"}
                           </Button>
                         ) : (
                           <Button
@@ -525,15 +557,13 @@ export default function MyPetsPage() {
                           <Heart className="size-4" />
                           Không thể ghép đôi
                         </Button>
-                      ) : isUnderage ? (
+                      ) : !isEligible ? (
                         <Button
-                          className="h-10 flex-1 gap-1.5 rounded-xl font-bold border-blue-200 bg-blue-50/60 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-xs shadow-xs"
-                          asChild
+                          className="h-10 flex-1 gap-1.5 rounded-xl border-amber-200 bg-amber-50/60 text-xs font-bold text-amber-700 shadow-xs dark:bg-amber-950/40 dark:text-amber-300"
+                          onClick={() => setSelectedDetailPetId(pet.id)}
                         >
-                          <Link href="/explore">
-                            <Heart className="size-4" />
-                            Xem trước ứng viên
-                          </Link>
+                          <Heart className="size-4" />
+                          {isUnderage ? "Chưa đủ tuổi" : "Chưa đủ cân phối giống"}
                         </Button>
                       ) : (
                         <Button
@@ -638,22 +668,35 @@ export default function MyPetsPage() {
                 
                 {/* Underage Notice if applicable */}
                 {(() => {
-                  const setupStatus = selectedSetupPet ? getPetBreedingStatus(selectedSetupPet) : null;
-                  if (!setupStatus?.isUnderage) return null;
+                  if (!selectedSetupStatus?.isUnderage) return null;
                   return (
                     <div className="rounded-2xl border border-blue-200 bg-blue-50/90 p-3.5 dark:border-blue-900/50 dark:bg-blue-950/40 flex items-start gap-3 shadow-xs">
                       <Info className="size-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                       <div className="space-y-0.5">
                         <h4 className="text-xs font-black text-blue-900 dark:text-blue-200">
-                          Bé chưa đạt tuổi phối giống an toàn ({setupStatus.months}/{setupStatus.minMonths} tháng)
+                          Bé chưa đạt tuổi phối giống an toàn ({selectedSetupStatus.months}/{selectedSetupStatus.minMonths} tháng)
                         </h4>
                         <p className="text-xs text-blue-700/90 dark:text-blue-300/90 leading-relaxed font-medium">
-                          Theo chuẩn thú y, bé cần tối thiểu {setupStatus.minMonths} tháng tuổi. Tính năng sẵn sàng ghép đôi sẽ tự động mở vào <strong>Tháng {setupStatus.eligibleDateStr}</strong>!
+                          Bé cần tối thiểu {selectedSetupStatus.minMonths} tháng tuổi. Bạn có thể bật ghép đôi từ <strong>Tháng {selectedSetupStatus.eligibleDateStr}</strong>.
                         </p>
                       </div>
                     </div>
                   );
                 })()}
+
+                {selectedSetupStatus && !selectedSetupStatus.isWeightEligible && selectedSetupStatus.weightLimits && (
+                  <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-3.5 shadow-xs dark:border-amber-900/50 dark:bg-amber-950/40">
+                    <Info className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-black text-amber-900 dark:text-amber-200">
+                        Bé chưa đạt cân nặng để phối giống
+                      </h4>
+                      <p className="text-xs font-medium leading-relaxed text-amber-700/90 dark:text-amber-300/90">
+                        {selectedSetupPet?.species === "DOG" ? "Chó" : "Mèo"} cần từ {selectedSetupStatus.weightLimits.matchingMin}-{selectedSetupStatus.weightLimits.matchingMax} kg để bật matching; hiện tại bé nặng {selectedSetupPet?.weight} kg.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Main Toggle Switch Card */}
                 <div
@@ -697,11 +740,11 @@ export default function MyPetsPage() {
 
                     <button
                       type="button"
-                      disabled={Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)}
+                      disabled={Boolean(selectedSetupStatus && !selectedSetupStatus.isEligible)}
                       onClick={() => setIsAvailable(!isAvailable)}
                       className={cn(
                         "relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none cursor-pointer",
-                        Boolean(selectedSetupPet && getPetBreedingStatus(selectedSetupPet).isUnderage)
+                        Boolean(selectedSetupStatus && !selectedSetupStatus.isEligible)
                           ? "cursor-not-allowed opacity-50 bg-gray-200 dark:bg-gray-800"
                           : isAvailable
                           ? "bg-emerald-500"

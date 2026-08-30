@@ -78,6 +78,11 @@ import {
 import { cn } from "@/lib/utils";
 import { HanoiWardSelect } from "@/components/hanoi-ward-select";
 import { getHanoiWardCoords } from "@/lib/hanoi-wards";
+import {
+  getPetWeightLimits,
+  isPetMatchingWeightEligible,
+  isPetProfileWeightValid,
+} from "@/lib/pet-options";
 
 type DialogMode = "view" | "edit";
 
@@ -91,10 +96,6 @@ type PetProfileDialogProps = {
 
 type EditForm = {
   name: string;
-  species: Pet["species"];
-  breed: string;
-  gender: Pet["gender"];
-  birthday: string;
   weight: string;
   location: string;
   district: string;
@@ -116,10 +117,6 @@ function petDocument(pet: Pet, type: PetDocument["type"]) {
 function formFromPet(pet: Pet): EditForm {
   return {
     name: pet.name,
-    species: pet.species,
-    breed: pet.breed,
-    gender: pet.gender,
-    birthday: pet.birthday.slice(0, 10),
     weight: String(pet.weight),
     location: pet.location,
     district: pet.district ?? "",
@@ -319,14 +316,10 @@ export function PetProfileDialog({
 
   const validateForm = () => {
     if (!form.name.trim()) return "Vui lòng nhập tên thú cưng.";
-    if (!form.breed.trim()) return "Vui lòng nhập giống thú cưng.";
-    if (!form.birthday) return "Vui lòng chọn ngày sinh.";
-    if (new Date(form.birthday).getTime() > Date.now()) {
-      return "Ngày sinh không được nằm trong tương lai.";
-    }
     const weight = Number(form.weight);
-    if (!Number.isFinite(weight) || weight < 0.1 || weight > 200) {
-      return "Cân nặng phải nằm trong khoảng 0,1–200 kg.";
+    const weightLimits = getPetWeightLimits(pet.species);
+    if (!weightLimits || !isPetProfileWeightValid(pet.species, weight)) {
+      return `Cân nặng của ${pet.species === "DOG" ? "chó" : "mèo"} phải nằm trong khoảng ${weightLimits?.profileMin ?? 0.2}–${weightLimits?.profileMax ?? 160} kg.`;
     }
     if (!form.location.trim() && !form.ward.trim()) return "Vui lòng chọn Phường / Xã tại Hà Nội.";
     if (!form.avatarUrl && (!form.gallery || form.gallery.length === 0)) {
@@ -348,10 +341,6 @@ export function PetProfileDialog({
 
     const payload: UpdatePetPayload = {
       name: form.name.trim(),
-      species: form.species,
-      breed: form.breed.trim(),
-      gender: form.gender,
-      birthday: form.birthday,
       weight: Number(form.weight),
       location: "Hà Nội",
       district: null,
@@ -653,6 +642,11 @@ function PetDetails({
   if (now.getDate() < birthday.getDate()) ageMonths -= 1;
   ageMonths = Math.max(0, ageMonths);
   const isUnderage = ageMonths < minMonths;
+  const weightLimits = getPetWeightLimits(pet.species);
+  const isMatchingWeightEligible = isPetMatchingWeightEligible(
+    pet.species,
+    pet.weight,
+  );
   const eligibleDate = new Date(birthday);
   eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
   const eligibleDateStr = eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" });
@@ -720,6 +714,10 @@ function PetDetails({
               <span className="rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 px-2.5 py-1 text-xs font-black">
                 🌱 Đang lớn ({ageMonths} tháng)
               </span>
+            ) : !isMatchingWeightEligible ? (
+              <span className="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/60 dark:text-amber-300">
+                ⚖️ Chưa đủ điều kiện cân nặng
+              </span>
             ) : (
               <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 px-2.5 py-1 text-xs font-black">
                 ✨ Đủ tuổi phối giống
@@ -739,6 +737,16 @@ function PetDetails({
               <p className="font-extrabold">Độ tuổi an toàn sinh sản</p>
               <p className="mt-0.5 text-blue-700/90 dark:text-blue-300/90 font-medium">
                 Bé chưa đạt tuổi phối giống tối thiểu ({minMonths} tháng). Tính năng tìm bạn đời sẽ tự động sẵn sàng vào <strong>Tháng {eligibleDateStr}</strong>.
+              </p>
+            </div>
+          </div>
+        ) : !isMatchingWeightEligible && weightLimits ? (
+          <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <Scale className="mt-0.5 size-4 shrink-0 text-amber-600" />
+            <div>
+              <p className="font-extrabold">Chưa đủ điều kiện cân nặng để phối giống</p>
+              <p className="mt-0.5 font-medium text-amber-700/90 dark:text-amber-300/90">
+                Hồ sơ vẫn hoạt động bình thường, nhưng {pet.species === "DOG" ? "chó" : "mèo"} cần từ {weightLimits.matchingMin}-{weightLimits.matchingMax} kg để tham gia matching.
               </p>
             </div>
           </div>
@@ -855,6 +863,13 @@ function PetEditForm({
 }) {
   const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
   const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
+  const weightLimits = getPetWeightLimits(pet.species);
+  const weightNumber = Number(form.weight);
+  const hasWeight = form.weight.trim() !== "";
+  const profileWeightIsValid =
+    hasWeight && isPetProfileWeightValid(pet.species, weightNumber);
+  const matchingWeightIsEligible =
+    hasWeight && isPetMatchingWeightEligible(pet.species, weightNumber);
   const update = <Key extends keyof EditForm>(key: Key, value: EditForm[Key]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
@@ -972,6 +987,14 @@ function PetEditForm({
 
       <section>
         <SectionTitle icon={PawPrint} title="Thông tin cơ bản" />
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <Info className="mt-0.5 size-4 shrink-0" />
+          <p>
+            Loài, giống, giới tính và ngày sinh là thông tin định danh gắn với
+            giấy tờ xác minh nên không thể tự chỉnh sửa. Nếu thông tin sai, vui
+            lòng liên hệ hỗ trợ.
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tên thú cưng" required>
             <Input
@@ -980,19 +1003,17 @@ function PetEditForm({
               onChange={(event) => update("name", event.target.value)}
             />
           </Field>
-          <Field label="Giống" required>
+          <Field label="Giống">
             <Input
-              value={form.breed}
-              maxLength={100}
-              onChange={(event) => update("breed", event.target.value)}
+              value={pet.breed}
+              disabled
+              aria-label="Giống thú cưng không thể chỉnh sửa"
             />
           </Field>
-          <Field label="Loài" required>
+          <Field label="Loài">
             <Select
-              value={form.species}
-              onValueChange={(value) =>
-                update("species", value as Pet["species"])
-              }
+              value={pet.species}
+              disabled
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -1003,12 +1024,10 @@ function PetEditForm({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Giới tính" required>
+          <Field label="Giới tính">
             <Select
-              value={form.gender}
-              onValueChange={(value) =>
-                update("gender", value as Pet["gender"])
-              }
+              value={pet.gender}
+              disabled
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -1019,23 +1038,41 @@ function PetEditForm({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Ngày sinh" required>
+          <Field label="Ngày sinh">
             <Input
               type="date"
-              max={new Date().toISOString().slice(0, 10)}
-              value={form.birthday}
-              onChange={(event) => update("birthday", event.target.value)}
+              value={pet.birthday.slice(0, 10)}
+              disabled
+              aria-label="Ngày sinh thú cưng không thể chỉnh sửa"
             />
           </Field>
           <Field label="Cân nặng (kg)" required>
             <Input
               type="number"
-              min="0.1"
-              max="200"
+              min={weightLimits?.profileMin ?? 0.2}
+              max={weightLimits?.profileMax ?? 160}
               step="0.1"
               value={form.weight}
               onChange={(event) => update("weight", event.target.value)}
             />
+            {hasWeight && weightLimits && !profileWeightIsValid && (
+              <p className="text-xs font-bold text-destructive">
+                Cân nặng phải từ {weightLimits.profileMin}-{weightLimits.profileMax} kg để lưu hồ sơ.
+              </p>
+            )}
+            {profileWeightIsValid && weightLimits && !matchingWeightIsEligible && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                <p className="font-black">⚠️ Chưa đủ điều kiện cân nặng để phối giống</p>
+                <p className="mt-1 font-medium">
+                  Thay đổi vẫn được lưu, nhưng thú cưng cần từ {weightLimits.matchingMin}-{weightLimits.matchingMax} kg để tham gia matching. Nếu đang bật ghép đôi, hệ thống sẽ tự tắt.
+                </p>
+              </div>
+            )}
+            {matchingWeightIsEligible && (
+              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                ✓ Cân nặng đạt điều kiện tham gia matching.
+              </p>
+            )}
           </Field>
         </div>
       </section>

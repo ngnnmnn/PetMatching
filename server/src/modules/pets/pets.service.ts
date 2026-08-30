@@ -9,6 +9,7 @@ import {
   DocumentType,
   Gender,
   PetStatus,
+  Species,
   VerificationBadge,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -16,6 +17,11 @@ import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { UpdatePetDto } from './dto/update-pet.dto';
+import {
+  isPetMatchingWeightEligible,
+  isPetProfileWeightValid,
+  PET_WEIGHT_LIMITS,
+} from '../../common/constants/pet-weight.constants';
 
 @Injectable()
 export class PetsService {
@@ -48,6 +54,7 @@ export class PetsService {
   }
 
   createPet(userId: string, dto: CreatePetDto) {
+    this.assertProfileWeight(dto.species, dto.weight);
     const birthday = new Date(dto.birthday);
     if (Number.isNaN(birthday.getTime())) {
       throw new BadRequestException('Birthday is invalid.');
@@ -125,25 +132,16 @@ export class PetsService {
         if (pet.ownerId !== userId) {
           throw new ForbiddenException('You do not own this pet.');
         }
+        if (dto.weight !== undefined) {
+          this.assertProfileWeight(pet.species, dto.weight);
+        }
 
         for (const [label, value] of [
           ['Name', dto.name],
-          ['Breed', dto.breed],
           ['Location', dto.location],
         ] as const) {
           if (value !== undefined && !value.trim()) {
             throw new BadRequestException(`${label} cannot be empty.`);
-          }
-        }
-
-        let birthday: Date | undefined;
-        if (dto.birthday !== undefined) {
-          birthday = new Date(dto.birthday);
-          if (Number.isNaN(birthday.getTime())) {
-            throw new BadRequestException('Birthday is invalid.');
-          }
-          if (birthday.getTime() > Date.now()) {
-            throw new BadRequestException('Birthday cannot be in the future.');
           }
         }
 
@@ -157,9 +155,10 @@ export class PetsService {
           );
         }
 
-        const nextGender = dto.gender ?? pet.gender;
+        const nextWeight = dto.weight ?? pet.weight;
         const shouldDisableMatching =
-          nextGender !== Gender.MALE && pet.isAvailableForMatching;
+          pet.isAvailableForMatching &&
+          !isPetMatchingWeightEligible(pet.species, nextWeight);
 
         const vaccineDocuments = pet.documents.filter(
           (document) => document.type === DocumentType.VACCINE_RECORD,
@@ -188,10 +187,14 @@ export class PetsService {
         }
         if (
           pedigreeDocumentLocked &&
-          (dto.pedigreeDocumentUrls !== undefined || dto.hasPedigree === false)
+          (dto.pedigreeDocumentUrls !== undefined ||
+            dto.hasPedigree === false ||
+            (dto.pedigreeNumber !== undefined &&
+              (dto.pedigreeNumber?.trim() || null) !==
+                (pet.pedigreeNumber?.trim() || null)))
         ) {
           throw new BadRequestException(
-            'Approved pedigree documents cannot be changed.',
+            'Approved pedigree information and documents cannot be changed.',
           );
         }
 
@@ -315,10 +318,6 @@ export class PetsService {
           where: { id: petId },
           data: {
             ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-            ...(dto.species !== undefined ? { species: dto.species } : {}),
-            ...(dto.breed !== undefined ? { breed: dto.breed.trim() } : {}),
-            ...(dto.gender !== undefined ? { gender: dto.gender } : {}),
-            ...(birthday !== undefined ? { birthday } : {}),
             ...(dto.weight !== undefined ? { weight: dto.weight } : {}),
             ...(dto.location !== undefined
               ? { location: dto.location.trim() }
@@ -434,6 +433,7 @@ export class PetsService {
         );
       }
       if (isMatchingAvailable) {
+        this.assertMatchingWeight(pet.species, pet.weight);
         const documentsNeedingReupload = await tx.petDocument.count({
           where: { petId, status: DocumentStatus.NEED_MORE_INFO },
         });
@@ -464,5 +464,21 @@ export class PetsService {
 
       return updatedPet;
     });
+  }
+
+  private assertProfileWeight(species: Species, weight: number) {
+    if (isPetProfileWeightValid(species, weight)) return;
+    const limits = PET_WEIGHT_LIMITS[species];
+    throw new BadRequestException(
+      `Cân nặng của ${species === Species.DOG ? 'chó' : 'mèo'} phải nằm trong khoảng ${limits.profileMin}-${limits.profileMax} kg.`,
+    );
+  }
+
+  private assertMatchingWeight(species: Species, weight: number) {
+    if (isPetMatchingWeightEligible(species, weight)) return;
+    const limits = PET_WEIGHT_LIMITS[species];
+    throw new BadRequestException(
+      `Thú cưng cần có cân nặng từ ${limits.matchingMin}-${limits.matchingMax} kg để tham gia ghép đôi.`,
+    );
   }
 }

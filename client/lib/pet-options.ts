@@ -47,3 +47,46 @@ export const breedingOptions = [
   { value: 'negotiate', label: 'Thỏa thuận sau' },
 ];
 
+export const petWeightLimits = {
+  dog: {
+    profileMin: 0.2,
+    profileMax: 160,
+    matchingMin: 1.5,
+    matchingMax: 100,
+  },
+  cat: {
+    profileMin: 0.2,
+    profileMax: 20,
+    matchingMin: 1.5,
+    matchingMax: 15,
+  },
+} as const;
+
+export function getPetWeightLimits(species?: string) {
+  const normalizedSpecies = species?.toLowerCase();
+  if (normalizedSpecies === 'dog' || normalizedSpecies === 'cat') {
+    return petWeightLimits[normalizedSpecies];
+  }
+  return null;
+}
+
+export function isPetProfileWeightValid(species: string, weight: number) {
+  const limits = getPetWeightLimits(species);
+  return Boolean(
+    limits &&
+      Number.isFinite(weight) &&
+      weight >= limits.profileMin &&
+      weight <= limits.profileMax,
+  );
+}
+
+export function isPetMatchingWeightEligible(species: string, weight: number) {
+  const limits = getPetWeightLimits(species);
+  return Boolean(
+    limits &&
+      Number.isFinite(weight) &&
+      weight >= limits.matchingMin &&
+      weight <= limits.matchingMax,
+  );
+}
+
