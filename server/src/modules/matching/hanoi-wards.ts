@@ -3,13 +3,17 @@
  * Dùng để tính toán khoảng cách tự động (Haversine distance) phía Backend.
  */
 
-export interface HanoiWardCoord {
+interface HanoiWardCoordinate {
   name: string;
   lat: number;
   lng: number;
 }
 
-export const HANOI_WARDS: HanoiWardCoord[] = [
+export interface HanoiWardCoord extends HanoiWardCoordinate {
+  wardCode: string;
+}
+
+const HANOI_WARD_COORDINATES: HanoiWardCoordinate[] = [
   { name: 'Phường Ba Đình', lat: 21.0345, lng: 105.8236 },
   { name: 'Phường Ngọc Hà', lat: 21.0378, lng: 105.8269 },
   { name: 'Phường Giảng Võ', lat: 21.0272, lng: 105.8197 },
@@ -137,6 +141,29 @@ export const HANOI_WARDS: HanoiWardCoord[] = [
   { name: 'Xã Hồng Sơn', lat: 20.6544, lng: 105.7311 },
   { name: 'Xã Hương Sơn', lat: 20.6189, lng: 105.8089 },
 ];
+
+// Mã đơn vị hành chính chính thức tương ứng với 126 phường/xã Hà Nội sau 01/07/2025.
+// Thứ tự được giữ cùng HANOI_WARD_COORDINATES để tọa độ và mã chỉ có một nguồn dữ liệu.
+const HANOI_WARD_CODES = [
+  4, 8, 25, 70, 82, 91, 97, 103, 118, 127, 136, 145, 160, 166, 175, 190, 199,
+  226, 229, 235, 256, 283, 292, 301, 316, 322, 328, 331, 337, 340, 352, 364,
+  367, 376, 382, 385, 430, 433, 454, 466, 475, 493, 508, 541, 562, 565, 577,
+  592, 598, 602, 611, 613, 619, 622, 634, 637, 640, 643, 664, 679, 685, 4930,
+  8974, 8980, 8995, 9022, 9552, 9556, 9562, 9568, 9574, 9604, 9616, 9619, 9634,
+  9661, 9664, 9676, 9694, 9700, 9706, 9715, 9739, 9772, 9784, 9787, 9817, 9832,
+  9856, 9871, 9877, 9886, 9895, 9910, 9931, 9952, 9955, 9982, 9988, 10003,
+  10015, 10030, 10045, 10072, 10081, 10096, 10114, 10126, 10144, 10180, 10183,
+  10210, 10231, 10237, 10273, 10279, 10330, 10342, 10354, 10369, 10402, 10417,
+  10441, 10459, 10465, 10489,
+] as const;
+
+if (HANOI_WARD_COORDINATES.length !== HANOI_WARD_CODES.length) {
+  throw new Error('Danh sách phường/xã Hà Nội và mã hành chính không đồng bộ.');
+}
+
+export const HANOI_WARDS: HanoiWardCoord[] = HANOI_WARD_COORDINATES.map(
+  (ward, index) => ({ ...ward, wardCode: String(HANOI_WARD_CODES[index]) }),
+);
 
 function removeVietnameseTones(str: string): string {
   return str

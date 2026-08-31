@@ -107,13 +107,27 @@ export interface StoreSettings {
   name: string;
   phone?: string;
   address?: string;
+  addressDetail?: string;
+  provinceId?: number;
+  provinceName?: string;
+  wardCode?: string;
+  wardName?: string;
+  description?: string;
+}
+
+export interface UpdateStoreSettingsInput {
+  name: string;
+  phone: string;
+  addressDetail: string;
+  wardCode: string;
   description?: string;
 }
 
 export const managerApi = {
   getDashboardStats: () => api.get<ManagerDashboardStats>('/manager/dashboard-stats'),
-  getStoreSettings: () => api.get<StoreSettings>('/admin/store-settings'),
-  updateStoreSettings: (data: Partial<StoreSettings>) => api.put<StoreSettings>('/admin/store-settings', data),
+  getStoreSettings: () => api.get<StoreSettings>('/manager/store-settings'),
+  updateStoreSettings: (data: UpdateStoreSettingsInput) =>
+    api.put<StoreSettings>('/manager/store-settings', data),
   
   getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
   createProduct: (data: Partial<ManagerProduct>) => api.post<ManagerProduct>('/manager/products', data),

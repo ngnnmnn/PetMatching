@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats, ProductUnit } from '@/lib/api/manager';
+import { HanoiWardOption, shippingApi } from '@/lib/api/shipping';
 import { productsApi } from '@/lib/api/products';
 import { spaApi } from '@/lib/api/spa';
 import { Category } from '@/types';
@@ -142,6 +143,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [orders, setOrders] = useState<ManagerOrder[]>([]);
   const [customers, setCustomers] = useState<ManagerCustomer[]>([]);
   const [storeInfo, setStoreInfo] = useState<StoreSettings | null>(null);
+  const [hanoiWards, setHanoiWards] = useState<HanoiWardOption[]>([]);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ManagerOrder | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -272,7 +274,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, unitsRes] =
+      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, unitsRes, wardsRes] =
         await Promise.allSettled([
           managerApi.getDashboardStats(),
           managerApi.getProducts(),
@@ -281,6 +283,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
           managerApi.getStoreSettings(),
           productsApi.getCategories(),
           managerApi.getProductUnits(),
+          shippingApi.getHanoiWards(),
         ]);
 
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
@@ -290,6 +293,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       if (settingsRes.status === 'fulfilled') setStoreInfo(settingsRes.value.data);
       if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
       if (unitsRes.status === 'fulfilled') setUnits(unitsRes.value.data);
+      if (wardsRes.status === 'fulfilled') setHanoiWards(wardsRes.value.data);
     } catch (error) {
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
@@ -748,9 +752,20 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const handleUpdateSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!storeInfo) return;
+    if (!storeInfo.wardCode) {
+      toast.error('Vui lòng chọn phường/xã thuộc Thành phố Hà Nội.');
+      return;
+    }
     setSubmittingSettings(true);
     try {
-      await managerApi.updateStoreSettings(storeInfo);
+      const response = await managerApi.updateStoreSettings({
+        name: storeInfo.name,
+        phone: storeInfo.phone || '',
+        addressDetail: storeInfo.addressDetail || '',
+        wardCode: storeInfo.wardCode,
+        description: storeInfo.description,
+      });
+      setStoreInfo(response.data);
       setIsSaved(true);
       toast.success('Lưu cấu hình cửa hàng thành công!');
     } catch (error) {
@@ -4507,14 +4522,51 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Địa chỉ chi nhánh *</label>
+              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Tỉnh / Thành phố *</label>
+              <input
+                type="text"
+                readOnly
+                value="Thành phố Hà Nội"
+                className="w-full cursor-not-allowed rounded-xl border border-[#EFEAE2] bg-gray-100 px-4 py-3 text-[15px] font-semibold text-gray-600"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Phường / Xã *</label>
+              <select
+                required
+                value={storeInfo?.wardCode || ''}
+                onChange={(e) => {
+                  if (storeInfo) {
+                    const ward = hanoiWards.find((item) => item.wardCode === e.target.value);
+                    setStoreInfo({
+                      ...storeInfo,
+                      wardCode: e.target.value,
+                      wardName: ward?.wardName || '',
+                    });
+                    setIsSaved(false);
+                  }
+                }}
+                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
+              >
+                <option value="">Chọn phường/xã tại Hà Nội</option>
+                {hanoiWards.map((ward) => (
+                  <option key={ward.wardCode} value={ward.wardCode}>
+                    {ward.wardName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Số nhà, tên đường *</label>
               <input
                 type="text"
                 required
-                value={storeInfo?.address || ''}
+                value={storeInfo?.addressDetail || ''}
                 onChange={(e) => {
                   if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, address: e.target.value });
+                    setStoreInfo({ ...storeInfo, addressDetail: e.target.value });
                     setIsSaved(false);
                   }
                 }}

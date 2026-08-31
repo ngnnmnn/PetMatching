@@ -1024,7 +1024,6 @@ export default function OrdersPage() {
           }}
           savedAddresses={savedAddresses}
           itemsSubtotal={editOrder.items.reduce((sum, item) => sum + item.price * item.quantity, 0)}
-          currentShippingFee={editOrder.shippingFee || 0}
           onSubmit={handleAddressFormSubmit}
           showSaveOptions={false}
           showShippingFee={true}

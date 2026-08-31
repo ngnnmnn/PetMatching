@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, ChevronDown, Search, Check, Loader2 } from 'lucide-react';
+import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { HanoiWardOption, shippingApi } from '@/lib/api/shipping';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
@@ -11,23 +12,6 @@ function formatCurrency(value: number) {
     currency: 'VND',
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-interface Province {
-  provinceId: number;
-  provinceName: string;
-  code?: string;
-}
-
-interface District {
-  districtId: number;
-  districtName: string;
-  code?: string;
-}
-
-interface Ward {
-  wardCode: string;
-  wardName: string;
 }
 
 interface CustomSelectOption {
@@ -54,15 +38,9 @@ function removeDiacritics(str: string) {
     .replace(/Đ/g, 'D');
 }
 
-const cleanAddressName = (name: string, type: 'province' | 'district' | 'ward') => {
+const cleanWardName = (name: string) => {
   let s = removeDiacritics(name).toLowerCase().trim();
-  if (type === 'province') {
-    s = s.replace(/^(tinh|thanh pho|tp)\s+/g, '');
-  } else if (type === 'district') {
-    s = s.replace(/^(quan|huyen|thi xa|thanh pho|tp)\s+/g, '');
-  } else if (type === 'ward') {
-    s = s.replace(/^(phuong|xa|thi tran)\s+/g, '');
-  }
+  s = s.replace(/^(phuong|xa|thi tran)\s+/g, '');
   return s.trim();
 };
 
@@ -202,7 +180,6 @@ interface AddressFormModalProps {
   showSaveOptions?: boolean;
   showShippingFee?: boolean;
   itemsSubtotal?: number;
-  currentShippingFee?: number;
 }
 
 const HANOI_PROVINCE_ID = 1;
@@ -219,10 +196,7 @@ export default function AddressFormModal({
   showSaveOptions = false,
   showShippingFee = false,
   itemsSubtotal,
-  currentShippingFee,
 }: AddressFormModalProps) {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-
   const actionButtonText =
     submitButtonText ||
     (initialData?.receiverName || initialData?.detail ? 'Cập nhật địa chỉ' : 'Thêm địa chỉ mới');
@@ -239,21 +213,14 @@ export default function AddressFormModal({
   const [setAsDefault, setSetAsDefault] = useState(false);
 
   // Address data is currently limited to Hanoi.
-  const [wards, setWards] = useState<Ward[]>([]);
-
-  const [provinceId, setProvinceId] = useState<number>(HANOI_PROVINCE_ID);
-  const [provinceName, setProvinceName] = useState<string>(HANOI_PROVINCE_NAME);
-  const [districtId, setDistrictId] = useState<number | undefined>(initialData?.districtId || 1);
-  const [districtName, setDistrictName] = useState<string>(initialData?.district || 'Hà Nội');
+  const [wards, setWards] = useState<HanoiWardOption[]>([]);
   const [wardCode, setWardCode] = useState<string | undefined>(initialData?.wardCode);
   const [wardName, setWardName] = useState<string>(initialData?.ward || '');
 
   const [loadingWards, setLoadingWards] = useState(false);
 
-  // Fee calculation state
-  const [calculatedShippingFee, setCalculatedShippingFee] = useState<number | null>(null);
-  const [calculatingFee, setCalculatingFee] = useState(false);
-
+  // Fixed shipping fee preview.
+  const calculatedShippingFee = showShippingFee ? 30000 : null;
   // Reset form when opening
   useEffect(() => {
     if (isOpen) {
@@ -266,25 +233,11 @@ export default function AddressFormModal({
         setReceiverName(initialData?.receiverName || '');
         setReceiverPhone(initialData?.receiverPhone || '');
         setDetail(initialData?.detail || '');
-        setProvinceName(HANOI_PROVINCE_NAME);
-        setDistrictName(initialData?.district || 'Hà Nội');
         setWardName(initialData?.ward || '');
-
-        setProvinceId(HANOI_PROVINCE_ID);
-        setDistrictId(initialData?.districtId || 1);
         setWardCode(initialData?.wardCode);
       }
     }
   }, [initialData, isOpen, savedAddresses]);
-
-  // Live Shipping Fee Calculation (Fixed 30k)
-  useEffect(() => {
-    if (!showShippingFee) {
-      setCalculatedShippingFee(null);
-      return;
-    }
-    setCalculatedShippingFee(30000);
-  }, [showShippingFee]);
 
   // Fetch Wards for Hanoi (province_id = 1) when modal is open
   useEffect(() => {
@@ -293,16 +246,15 @@ export default function AddressFormModal({
     const fetchWards = async () => {
       setLoadingWards(true);
       try {
-        const res = await fetch(`${apiBaseUrl}/shipping/wards?province_id=${HANOI_PROVINCE_ID}`);
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : [];
+        const response = await shippingApi.getHanoiWards();
+        const list = response.data;
         setWards(list);
 
         if (initialData?.ward && !initialData?.wardCode) {
-          const cleanInit = cleanAddressName(initialData.ward, 'ward');
-          let match = list.find((w: Ward) => cleanAddressName(w.wardName, 'ward') === cleanInit);
+          const cleanInit = cleanWardName(initialData.ward);
+          let match = list.find((w) => cleanWardName(w.wardName) === cleanInit);
           if (!match) {
-            match = list.find((w: Ward) => {
+            match = list.find((w) => {
               const apiName = removeDiacritics(w.wardName).toLowerCase();
               const initName = removeDiacritics(initialData.ward!).toLowerCase();
               return apiName.includes(initName) || initName.includes(apiName);
@@ -322,18 +274,14 @@ export default function AddressFormModal({
     };
 
     fetchWards();
-  }, [isOpen, initialData?.ward, apiBaseUrl]);
+  }, [isOpen, initialData?.ward, initialData?.wardCode]);
 
   const handleSelectSavedAddress = (addr: any) => {
     setSelectedSavedAddressId(addr.id);
     setReceiverName(addr.receiverName || addr.name || '');
     setReceiverPhone(addr.phone || addr.receiverPhone || '');
     setDetail(addr.detail || '');
-    setProvinceName(HANOI_PROVINCE_NAME);
-    setDistrictName(addr.district || 'Hà Nội');
     setWardName(addr.ward || '');
-    setProvinceId(HANOI_PROVINCE_ID);
-    setDistrictId(addr.districtId || 1);
     setWardCode(addr.wardCode || undefined);
   };
 
@@ -364,11 +312,11 @@ export default function AddressFormModal({
       receiverName: receiverName.trim(),
       receiverPhone: receiverPhone.trim(),
       provinceName: HANOI_PROVINCE_NAME,
-      districtName: districtName || wardName,
+      districtName: wardName,
       wardName,
       detail: detail.trim(),
       provinceId: HANOI_PROVINCE_ID,
-      districtId: districtId || Number(wardCode),
+      districtId: Number(wardCode),
       wardCode,
       saveAddressToDb,
       setAsDefault,
@@ -599,14 +547,12 @@ export default function AddressFormModal({
           )}
 
           {/* Live Recalculated Shipping Fee & Total Order Preview Box */}
-          {showShippingFee && ((districtId && wardCode) || calculatedShippingFee !== null) && (
+          {showShippingFee && (
             <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
               <div className="flex justify-between items-center font-extrabold text-emerald-900">
                 <span>Phí vận chuyển mới:</span>
                 <span className="text-sm font-black text-[#0F766E]">
-                  {calculatingFee ? (
-                    <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Đang tính phí...</span>
-                  ) : calculatedShippingFee !== null ? (
+                  {calculatedShippingFee !== null ? (
                     formatCurrency(calculatedShippingFee)
                   ) : (
                     '—'

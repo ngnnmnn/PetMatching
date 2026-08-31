@@ -295,58 +295,7 @@ function CheckoutPageContent() {
 
   const checkoutCount = checkoutItems.reduce((acc, item) => acc + item.quantity, 0);
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-  const [calculatedShippingFee, setCalculatedShippingFee] = useState<number>(30000);
-  const [calculatingFee, setCalculatingFee] = useState<boolean>(false);
-  const [shippingFeeWarning, setShippingFeeWarning] = useState<string | null>(null);
-
-  // Refresh the shipping fee when the selected address changes.
-  useEffect(() => {
-    let targetDistrictId: number | undefined;
-    let targetWardCode: string | undefined;
-
-    if (selectedAddressId === 'new' || !selectedAddressId) {
-      targetDistrictId = selectedDistrictId;
-      targetWardCode = selectedWardCode;
-    } else {
-      const addr = savedAddresses.find((a) => a.id === selectedAddressId);
-      if (addr) {
-        targetDistrictId = addr.districtId ?? undefined;
-        targetWardCode = addr.wardCode ?? undefined;
-      }
-    }
-
-    if (targetDistrictId && targetWardCode) {
-      const fetchFee = async () => {
-        setCalculatingFee(true);
-        try {
-          const res = await fetch(`${apiBaseUrl}/shipping/calculate-fee`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              toDistrictId: targetDistrictId,
-              toWardCode: targetWardCode,
-              weight: 500,
-            }),
-          });
-          const data = await res.json();
-          if (data.total && typeof data.total === 'number') {
-            setCalculatedShippingFee(data.total);
-          }
-          if (data.isEstimated && data.message) {
-            setShippingFeeWarning(data.message);
-          } else {
-            setShippingFeeWarning(null);
-          }
-        } catch (err) {
-          console.error('Failed to calculate shipping fee', err);
-        } finally {
-          setCalculatingFee(false);
-        }
-      };
-      fetchFee();
-    }
-  }, [selectedAddressId, savedAddresses, selectedDistrictId, selectedWardCode, apiBaseUrl]);
+  const calculatedShippingFee = 30000;
 
   const hasItems = !!directCheckoutItem || selectedItemIds.length > 0;
   const baseShippingFee = (hasItems && checkoutTotal > 500000) ? 0 : calculatedShippingFee;
@@ -777,13 +726,6 @@ function CheckoutPageContent() {
                     setSetAsDefault(data.setAsDefault);
                   }}
                 />
-
-                {shippingFeeWarning && (
-                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mt-3 flex items-start gap-2 text-amber-800 text-xs font-bold animate-in fade-in duration-200">
-                    <span>⚠️</span>
-                    <p className="leading-relaxed">{shippingFeeWarning}</p>
-                  </div>
-                )}
 
                 <div className="border-t border-[var(--border-color)] pt-4 mt-2">
                   <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">Ghi chú giao hàng (tùy chọn)</label>
