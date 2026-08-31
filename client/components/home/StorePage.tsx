@@ -1,6 +1,5 @@
 'use client';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
 import { Sparkles, ArrowRight, Scissors, Heart, ShieldCheck, Truck, RotateCcw } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import { useProducts } from '@/hooks/useProducts';
@@ -64,7 +63,6 @@ const isTestOrSystemProduct = (product: any) => {
 };
 
 export default function StorePage() {
-  const router = useRouter();
   const { featuredProducts, featuredLoading, error } = useProducts({ 
     limit: 8,
   });

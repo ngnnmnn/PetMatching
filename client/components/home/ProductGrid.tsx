@@ -21,20 +21,16 @@ export default function ProductGrid({
   products,
   loading,
   selectedPet,
-  onPreviewClick,
-  isPreviewOpen = false,
   gridClassName,
 }: {
   products: Product[];
   loading: boolean;
   selectedPet?: any;
-  onPreviewClick?: (product: Product) => void;
-  isPreviewOpen?: boolean;
   gridClassName?: string;
 }) {
   return (
     <section>
-      <div className={gridClassName || (isPreviewOpen ? "grid grid-cols-1 sm:grid-cols-2 gap-6" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6")}>
+      <div className={gridClassName || "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"}>
         {loading
           ? Array.from({ length: 12 }).map((_, index) => <SkeletonCard key={index} />)
           : products.map((product) => (
@@ -42,7 +38,6 @@ export default function ProductGrid({
                 key={product.id}
                 product={product}
                 selectedPet={selectedPet}
-                onPreviewClick={onPreviewClick}
               />
             ))}
       </div>

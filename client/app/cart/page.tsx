@@ -10,7 +10,6 @@ import {
   ArrowLeft,
   ShoppingBag
 } from 'lucide-react';
-import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
 import { useCart } from '@/context/CartContext';
 

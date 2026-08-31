@@ -201,12 +201,4 @@ export class UsersController {
   ) {
     return this.usersService.requestRefund(req.user.id, id, body);
   }
-
-  @Post('bank-lookup')
-  lookupBankAccount(@Body() body: { bankCode: string; accountNumber: string }) {
-    return this.usersService.lookupBankAccount(
-      body.bankCode,
-      body.accountNumber,
-    );
-  }
 }

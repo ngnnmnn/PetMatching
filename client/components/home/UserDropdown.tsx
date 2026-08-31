@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, LogOut, MessageCircle, Package, Scissors, ShieldCheck, Sparkles, User } from 'lucide-react';
+import { ChevronDown, LogOut, MessageCircle, Package, Scissors, ShieldCheck, User } from 'lucide-react';
 import { User as UserType } from '@/types';
 
 const MENU_ITEMS = [
@@ -10,7 +10,6 @@ const MENU_ITEMS = [
   { icon: Package, label: 'Đơn hàng của tôi', href: '/orders' },
   { icon: MessageCircle, label: 'Tin nhắn & Ghép đôi', href: '/messages' },
   { icon: Scissors, label: 'Lịch hẹn Spa', href: '/spa/bookings' },
-  { icon: Sparkles, label: 'Đề xuất & Chăm sóc', href: '/my-pets/recommendations' },
 ];
 
 export default function UserDropdown() {

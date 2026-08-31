@@ -31,11 +31,6 @@ export class VouchersController {
     return this.vouchersService.getAllVouchers();
   }
 
-  @Get(':id')
-  async getVoucherById(@Param('id') id: string) {
-    return this.vouchersService.getVoucherById(id);
-  }
-
   @Post()
   async createVoucher(@Body() dto: CreateVoucherDto) {
     return this.vouchersService.createVoucher(dto);
