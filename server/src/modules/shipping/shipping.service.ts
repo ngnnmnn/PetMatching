@@ -2,14 +2,11 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { CalculateFeeDto } from './dto/calculate-fee.dto';
 
 @Injectable()
 export class ShippingService {
   private readonly logger = new Logger(ShippingService.name);
-
-  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Lấy danh sách Tỉnh / Thành phố từ Open API v2 (provinces.open-api.vn/api/v2/p/)
@@ -66,7 +63,7 @@ export class ShippingService {
         districtName: w.wardName,
         code: w.wardCode,
       }));
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -74,7 +71,7 @@ export class ShippingService {
   /**
    * Phí giao hàng mặc định 30,000 VND (30k)
    */
-  async calculateShippingFee(dto?: CalculateFeeDto) {
+  calculateShippingFee(_dto?: CalculateFeeDto) {
     return {
       total: 30000,
       serviceFee: 30000,

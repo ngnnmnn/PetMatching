@@ -1,6 +1,5 @@
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { ShippingService } from '../shipping/shipping.service';
 import { ManagerService } from './manager.service';
 
 describe('ManagerService dashboard revenue', () => {
@@ -25,7 +24,6 @@ describe('ManagerService dashboard revenue', () => {
     };
     const service = new ManagerService(
       prisma as unknown as PrismaService,
-      {} as ShippingService,
       {} as CloudinaryService,
       {} as any,
     );

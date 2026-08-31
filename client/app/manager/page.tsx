@@ -431,17 +431,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setProductsPage(1);
   }, [searchQuery, filterStatus, filterCategory, sortBy]);
 
-  const eligibleOrdersForGhn = useMemo(() => {
-    return filteredOrders.filter(
-      (o) =>
-        o.status !== 'CANCELLED' &&
-        o.status !== 'SHIPPED' &&
-        o.status !== 'DELIVERED' &&
-        o.refundStatus !== 'PENDING' &&
-        o.refundStatus !== 'REFUNDED'
-    );
-  }, [filteredOrders]);
-
   const handleExportExcel = () => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);

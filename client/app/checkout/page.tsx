@@ -300,7 +300,7 @@ function CheckoutPageContent() {
   const [calculatingFee, setCalculatingFee] = useState<boolean>(false);
   const [shippingFeeWarning, setShippingFeeWarning] = useState<string | null>(null);
 
-  // Auto calculate GHN shipping fee when selected address changes
+  // Refresh the shipping fee when the selected address changes.
   useEffect(() => {
     let targetDistrictId: number | undefined;
     let targetWardCode: string | undefined;
@@ -334,17 +334,12 @@ function CheckoutPageContent() {
             setCalculatedShippingFee(data.total);
           }
           if (data.isEstimated && data.message) {
-            // Check if it is a block warning from GHN or dynamic calculation issue
-            if (data.message.includes('ngưng hỗ trợ') || data.message.includes('RECEIVER_WARD_BLOCKED') || data.message.includes('block')) {
-              setShippingFeeWarning('Địa chỉ này tạm thời GHN không nhận giao hàng. Bạn vẫn có thể đặt hàng và Shop sẽ chủ động liên hệ giao cho bạn bằng đơn vị vận chuyển khác (ViettelPost, GHTK...).');
-            } else {
-              setShippingFeeWarning(null);
-            }
+            setShippingFeeWarning(data.message);
           } else {
             setShippingFeeWarning(null);
           }
         } catch (err) {
-          console.error('Failed to calculate GHN fee', err);
+          console.error('Failed to calculate shipping fee', err);
         } finally {
           setCalculatingFee(false);
         }

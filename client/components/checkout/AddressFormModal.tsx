@@ -238,7 +238,7 @@ export default function AddressFormModal({
   const [saveAddressToDb, setSaveAddressToDb] = useState(true);
   const [setAsDefault, setSetAsDefault] = useState(false);
 
-  // GHN Address Data (Fixed to Hanoi)
+  // Address data is currently limited to Hanoi.
   const [wards, setWards] = useState<Ward[]>([]);
 
   const [provinceId, setProvinceId] = useState<number>(HANOI_PROVINCE_ID);
@@ -602,7 +602,7 @@ export default function AddressFormModal({
           {showShippingFee && ((districtId && wardCode) || calculatedShippingFee !== null) && (
             <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
               <div className="flex justify-between items-center font-extrabold text-emerald-900">
-                <span>Phí vận chuyển mới (tính tự động từ GHN):</span>
+                <span>Phí vận chuyển mới:</span>
                 <span className="text-sm font-black text-[#0F766E]">
                   {calculatingFee ? (
                     <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Đang tính phí...</span>

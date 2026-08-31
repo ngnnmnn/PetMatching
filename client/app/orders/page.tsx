@@ -56,7 +56,6 @@ interface Order {
     orderCode?: number | null;
     paymentUrl?: string | null;
   } | null;
-  ghnOrderCode?: string | null;
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
