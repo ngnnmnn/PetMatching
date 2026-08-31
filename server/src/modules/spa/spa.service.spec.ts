@@ -100,6 +100,54 @@ describe('SpaService manager dashboard revenue', () => {
   });
 });
 
+describe('SpaService completed booking history', () => {
+  it('uses the customer snapshot after the account relation is removed', async () => {
+    const prisma = {
+      spaBooking: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'booking-1',
+            userId: null,
+            user: null,
+            customerNameSnapshot: 'Nguyễn Văn A',
+            customerEmailSnapshot: 'customer@example.com',
+            customerPhoneSnapshot: '0900000000',
+            serviceId: null,
+            mainServiceId: null,
+            subServiceIds: [],
+            service: null,
+            priceSnapshot: 150_000,
+            totalPrice: 150_000,
+            discountAmount: 0,
+            status: SpaBookingStatus.COMPLETED,
+            scheduledAt: new Date('2026-08-01T08:00:00Z'),
+            staffId: null,
+          },
+        ]),
+      },
+      spaService: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new SpaService(
+      prisma as unknown as PrismaService,
+      {} as PaymentService,
+      {} as any,
+    );
+    Object.defineProperty(service, 'autoUpdateBookingStatuses', {
+      value: jest.fn(),
+    });
+
+    const [booking] = await service.getManagerBookings('manager-1', 'ALL');
+
+    expect(booking.user).toEqual({
+      id: null,
+      name: 'Nguyễn Văn A',
+      email: 'customer@example.com',
+      phone: '0900000000',
+      avatarUrl: null,
+    });
+  });
+});
+
 describe('SpaService getAvailability and slot deduction', () => {
     it('calculates remainingSlots from free staff (assigned bookings only) and counts all overlapping bookings', async () => {
       const staffs = [

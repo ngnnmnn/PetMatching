@@ -406,20 +406,28 @@ export class UsersService {
         'USER',
       );
 
-      const [ordersWithMedia, messagesWithImages] = await Promise.all([
-        tx.order.findMany({
-          where: { userId },
-          select: { refundProofUrl: true, deliveryProofUrl: true },
-        }),
-        tx.message.findMany({
-          where: { senderId: userId, imageUrl: { not: null } },
-          select: { imageUrl: true },
-        }),
-      ]);
+      const [nonCompletedOrdersWithMedia, messagesWithImages] =
+        await Promise.all([
+          tx.order.findMany({
+            where: { userId, status: { not: OrderStatus.DELIVERED } },
+            select: { refundProofUrl: true, deliveryProofUrl: true },
+          }),
+          tx.message.findMany({
+            where: { senderId: userId, imageUrl: { not: null } },
+            select: { imageUrl: true },
+          }),
+        ]);
       await tx.order.updateMany({
-        where: { userId },
+        where: { userId, status: OrderStatus.DELIVERED },
+        data: { userId: null },
+      });
+      await tx.order.updateMany({
+        where: { userId, status: { not: OrderStatus.DELIVERED } },
         data: {
           userId: null,
+          customerNameSnapshot: null,
+          customerEmailSnapshot: null,
+          customerPhoneSnapshot: null,
           shippingAddress: 'Thông tin người nhận đã được ẩn',
           districtId: null,
           wardCode: null,
@@ -470,7 +478,7 @@ export class UsersService {
           user.avatarUrl,
           ...spa.mediaUrls,
           ...pets.mediaUrls,
-          ...ordersWithMedia.flatMap((order) => [
+          ...nonCompletedOrdersWithMedia.flatMap((order) => [
             order.refundProofUrl,
             order.deliveryProofUrl,
           ]),
@@ -676,6 +684,14 @@ export class UsersService {
         : null;
 
     const order = await this.prisma.$transaction(async (tx) => {
+      const customer = await tx.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true, phone: true },
+      });
+      if (!customer) {
+        throw new NotFoundException('Không tìm thấy tài khoản.');
+      }
+
       // 1. Check stock for each item and decrement
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
@@ -830,6 +846,9 @@ export class UsersService {
         data: {
           id: generatedId,
           userId,
+          customerNameSnapshot: customer.name,
+          customerEmailSnapshot: customer.email,
+          customerPhoneSnapshot: customer.phone,
           storeId: store.id,
           totalAmount: Math.max(0, dto.totalAmount - discountAmount),
           shippingFee: dto.shippingFee || 0,

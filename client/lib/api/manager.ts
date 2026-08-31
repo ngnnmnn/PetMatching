@@ -39,17 +39,20 @@ export interface ManagerProduct {
 
 export interface ManagerOrder {
   id: string;
-  userId: string;
+  userId: string | null;
+  customerNameSnapshot?: string | null;
+  customerEmailSnapshot?: string | null;
+  customerPhoneSnapshot?: string | null;
   status: string;
   totalAmount: number;
   shippingAddress: string;
   createdAt: string;
   user: {
-    id: string;
+    id: string | null;
     name: string;
     email: string;
-    phone?: string;
-  };
+    phone?: string | null;
+  } | null;
   items: {
     id: string;
     productId: string;

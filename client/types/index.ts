@@ -51,7 +51,10 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  userId: string;
+  userId: string | null;
+  customerNameSnapshot?: string | null;
+  customerEmailSnapshot?: string | null;
+  customerPhoneSnapshot?: string | null;
   status:
     | "PENDING"
     | "PACKED"
@@ -261,7 +264,10 @@ export interface SpaBookingType {
   serviceId: string | null;
   mainServiceId?: string | null;
   subServiceIds?: string[];
-  userId: string;
+  userId: string | null;
+  customerNameSnapshot?: string | null;
+  customerEmailSnapshot?: string | null;
+  customerPhoneSnapshot?: string | null;
   staffId: string | null;
   petName: string | null;
   petId?: string | null;

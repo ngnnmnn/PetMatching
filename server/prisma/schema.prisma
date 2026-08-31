@@ -424,34 +424,37 @@ model Address {
 }
 
 model Order {
-  id                  String          @id @default(cuid())
-  userId              String?
-  status              OrderStatus     @default(PENDING)
-  totalAmount         Float
-  shippingFee         Float           @default(0)
-  discountAmount      Float           @default(0)
-  voucherCode         String?
-  shippingAddress     String
-  districtId          Int?
-  wardCode            String?
-  shippingStatus      String?
-  storeId             String?
-  refundStatus        String?
-  refundBankCode      String?
-  refundAccountNumber String?
-  refundAccountName   String?
-  refundReason        String?
-  refundedAt          DateTime?
-  refundProofUrl      String?
-  deliveryProofUrl    String?
-  shippingNote        String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  items               OrderItem[]
-  payment             Payment?
-  reviews             ProductReview[]
-  store               Store?          @relation(fields: [storeId], references: [id])
-  user                User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id                    String          @id @default(cuid())
+  userId                String?
+  customerNameSnapshot  String?
+  customerEmailSnapshot String?
+  customerPhoneSnapshot String?
+  status                OrderStatus     @default(PENDING)
+  totalAmount           Float
+  shippingFee           Float           @default(0)
+  discountAmount        Float           @default(0)
+  voucherCode           String?
+  shippingAddress       String
+  districtId            Int?
+  wardCode              String?
+  shippingStatus        String?
+  storeId               String?
+  refundStatus          String?
+  refundBankCode        String?
+  refundAccountNumber   String?
+  refundAccountName     String?
+  refundReason          String?
+  refundedAt            DateTime?
+  refundProofUrl        String?
+  deliveryProofUrl      String?
+  shippingNote          String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  items                 OrderItem[]
+  payment               Payment?
+  reviews               ProductReview[]
+  store                 Store?          @relation(fields: [storeId], references: [id])
+  user                  User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([storeId])
@@ -522,6 +525,9 @@ model SpaBooking {
   mainServiceId         String?
   subServiceIds         String[]         @default([])
   userId                String?
+  customerNameSnapshot  String?
+  customerEmailSnapshot String?
+  customerPhoneSnapshot String?
   staffId               String?
   petName               String?
   petId                 String?
@@ -587,7 +593,7 @@ model Payment {
 model SpaFeedback {
   id           String   @id @default(cuid())
   bookingId    String   @unique @map("booking_id")
-  userId       String   @map("user_id")
+  userId       String?  @map("user_id")
   rateStaff    Int      @map("rate_staff")
   rateServices Int      @map("rate_services")
   comment      String?
@@ -595,7 +601,7 @@ model SpaFeedback {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   booking SpaBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("spa_feedbacks")
 }

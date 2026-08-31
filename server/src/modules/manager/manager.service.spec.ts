@@ -84,3 +84,38 @@ describe('ManagerService store settings', () => {
     });
   });
 });
+
+describe('ManagerService completed order history', () => {
+  it('uses the customer snapshot after the account relation is removed', async () => {
+    const prisma = {
+      order: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'PM-ORDER-1',
+            userId: null,
+            user: null,
+            customerNameSnapshot: 'Nguyễn Văn A',
+            customerEmailSnapshot: 'customer@example.com',
+            customerPhoneSnapshot: '0900000000',
+            payment: { method: 'COD', status: 'PAID' },
+            items: [],
+          },
+        ]),
+      },
+    };
+    const service = new ManagerService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as any,
+    );
+
+    const [order] = await service.getOrders();
+
+    expect(order.user).toEqual({
+      id: null,
+      name: 'Nguyễn Văn A',
+      email: 'customer@example.com',
+      phone: '0900000000',
+    });
+  });
+});
