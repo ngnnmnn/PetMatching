@@ -80,6 +80,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [weakPasswordModalOpen, setWeakPasswordModalOpen] = useState(false);
   const [showPasswords, setShowPasswords] = useState({
     current: false,
@@ -358,6 +359,8 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAccount = async () => {
+    if (deletingAccount) return;
+    setDeletingAccount(true);
     try {
       await usersApi.deleteAccount();
       localStorage.removeItem('accessToken');
@@ -366,8 +369,18 @@ export default function ProfilePage() {
       window.dispatchEvent(new Event('auth-change'));
       toast.success('Tài khoản đã được xóa.');
       router.push('/login');
-    } catch {
-      toast.error('Không thể xóa tài khoản.');
+    } catch (error: unknown) {
+      const data = (error as {
+        response?: { data?: { code?: string; message?: string } };
+      }).response?.data;
+      const action = data?.code === 'USER_HAS_ACTIVE_STORE_ORDERS'
+        ? { label: 'Xem đơn hàng', onClick: () => router.push('/orders') }
+        : data?.code === 'USER_HAS_ACTIVE_SPA_BOOKING'
+          ? { label: 'Xem lịch Spa', onClick: () => router.push('/spa/bookings') }
+          : undefined;
+      toast.error(data?.message || 'Không thể xóa tài khoản.', { action });
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -458,7 +471,7 @@ export default function ProfilePage() {
                   </span>
                   <div className="min-w-0">
                     <h2 className="text-sm font-extrabold text-red-700">Vùng nguy hiểm</h2>
-                    <p className="mt-1 text-xs leading-5 text-red-700/75">Xóa tài khoản sẽ xóa hồ sơ và dữ liệu liên quan khỏi hệ thống.</p>
+                    <p className="mt-1 text-xs leading-5 text-red-700/75">Hồ sơ cá nhân sẽ bị xóa vĩnh viễn; lịch sử giao dịch hoàn thành và Match đã ẩn danh vẫn được lưu.</p>
                   </div>
                 </div>
 
@@ -481,9 +494,10 @@ export default function ProfilePage() {
                       <AlertDialogDescription>Hành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa tài khoản này không?</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Hủy</AlertDialogCancel>
-                      <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={handleDeleteAccount}>
-                        Xóa vĩnh viễn
+                      <AlertDialogCancel disabled={deletingAccount}>Hủy</AlertDialogCancel>
+                      <AlertDialogAction disabled={deletingAccount} className="bg-red-600 text-white hover:bg-red-700" onClick={handleDeleteAccount}>
+                        {deletingAccount ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {deletingAccount ? 'Đang xóa...' : 'Xóa vĩnh viễn'}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -594,7 +608,7 @@ export default function ProfilePage() {
                             </span>
                             {(!address.districtId || !address.wardCode) && (
                               <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-[10px] font-bold border border-amber-200">
-                                Cần cập nhật vùng GHN
+                                Cần cập nhật mã địa chỉ
                               </span>
                             )}
                           </div>
@@ -742,7 +756,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* Reusable Address Form Modal (GHN integrated) */}
+        {/* Reusable address form modal */}
         <AddressFormModal
           isOpen={isAddressModalOpen}
           onClose={() => {
