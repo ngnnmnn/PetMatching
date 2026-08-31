@@ -90,9 +90,22 @@ describe('UsersService account deletion policy', () => {
       cancelledMatchingRequests: 2,
       endedMatches: 1,
     });
+    expect(tx.order.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', status: OrderStatus.DELIVERED },
+      data: { userId: null },
+    });
     expect(tx.order.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ userId: null }),
+        where: {
+          userId: 'user-1',
+          status: { not: OrderStatus.DELIVERED },
+        },
+        data: expect.objectContaining({
+          userId: null,
+          customerNameSnapshot: null,
+          shippingAddress: 'Thông tin người nhận đã được ẩn',
+          deliveryProofUrl: null,
+        }),
       }),
     );
     expect(tx.spaBooking.updateMany).toHaveBeenCalledWith(

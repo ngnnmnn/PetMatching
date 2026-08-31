@@ -19,6 +19,35 @@ export class SpaService {
     private readonly notifications: NotificationsService,
   ) { }
 
+  private resolveCustomerSnapshot(booking: {
+    user?: {
+      id?: string;
+      name: string;
+      email?: string;
+      phone?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+    customerNameSnapshot?: string | null;
+    customerEmailSnapshot?: string | null;
+    customerPhoneSnapshot?: string | null;
+  }) {
+    if (booking.user) return booking.user;
+    if (
+      !booking.customerNameSnapshot &&
+      !booking.customerEmailSnapshot &&
+      !booking.customerPhoneSnapshot
+    ) {
+      return null;
+    }
+    return {
+      id: null,
+      name: booking.customerNameSnapshot || 'Tài khoản đã xóa',
+      email: booking.customerEmailSnapshot || '',
+      phone: booking.customerPhoneSnapshot,
+      avatarUrl: null,
+    };
+  }
+
   private notifyBooking(
     tx: Prisma.TransactionClient,
     booking: { id: string; userId: string | null; status: SpaBookingStatus; petName: string | null },
@@ -111,7 +140,7 @@ export class SpaService {
   async createBooking(userId: string, dto: CreateBookingDto) {
     const userExists = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true },
+      select: { id: true, name: true, email: true, phone: true },
     });
 
     if (!userExists) {
@@ -316,6 +345,9 @@ export class SpaService {
     return this.prisma.$transaction(async (tx) => {
       const booking = await tx.spaBooking.create({ data: {
         userId,
+        customerNameSnapshot: userExists.name,
+        customerEmailSnapshot: userExists.email,
+        customerPhoneSnapshot: userExists.phone,
         categoryId: categoryId,
         addressSpaId: validAddressSpaId,
         serviceId: mainServiceId,
@@ -1064,6 +1096,9 @@ export class SpaService {
         subServiceIds: true,
         categoryId: true,
         petName: true,
+        customerNameSnapshot: true,
+        customerEmailSnapshot: true,
+        customerPhoneSnapshot: true,
         note: true,
         staffId: true,
         service: {
@@ -1256,7 +1291,8 @@ export class SpaService {
         serviceName: b.service?.name || 'Khác',
         status: b.status,
         petName: b.petName || b.pet?.name || 'Thú cưng',
-        customerName: b.user?.name || 'Khách hàng',
+        customerName:
+          this.resolveCustomerSnapshot(b)?.name || 'Khách hàng',
         note: b.note,
         staffId: b.staffId,
         staffName: b.staff?.name || null,
@@ -1651,6 +1687,7 @@ export class SpaService {
 
       return {
         ...b,
+        user: this.resolveCustomerSnapshot(b),
         rescheduleCount: Number((b as any).rescheduleCount) || 0,
         priceSnapshot: mainPrice,
         totalPrice,
@@ -2142,6 +2179,7 @@ export class SpaService {
       const isLate = diff > 0;
       return {
         ...b,
+        user: this.resolveCustomerSnapshot(b),
         isLate,
         diffMinutes: Math.abs(diff),
         statusText: isLate ? `Muộn ${diff} phút` : `Đúng giờ / Sớm ${Math.abs(diff)} phút`,
@@ -2664,6 +2702,12 @@ export class SpaService {
 
     return feedbacks.map((f) => ({
       ...f,
+      user: f.booking
+        ? this.resolveCustomerSnapshot({
+            ...f.booking,
+            user: f.user,
+          })
+        : f.user,
       booking: f.booking ? {
         ...f.booking,
         subServices: (f.booking.subServiceIds || []).map((id) => subServicesMap.get(id)).filter(Boolean),

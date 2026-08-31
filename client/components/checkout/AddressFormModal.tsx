@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { HanoiWardOption, shippingApi } from '@/lib/api/shipping';
+import { shippingApi, type HanoiWardOption } from '@/lib/api/shipping';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
@@ -79,8 +79,8 @@ function CustomSelect({
   });
 
   return (
-    <div className="flex flex-col relative" ref={containerRef}>
-      <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1.5 h-4 flex items-center">
+    <div className="relative flex flex-col" ref={containerRef}>
+      <label className="mb-2 flex items-center text-xs font-extrabold text-[var(--text-main)]">
         {label} {required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
 
@@ -88,7 +88,7 @@ function CustomSelect({
         type="button"
         disabled={disabled || loading}
         onClick={() => setIsOpen((prev) => !prev)}
-        className="w-full flex items-center justify-between rounded-xl border border-[var(--border-color)] px-3 py-2.5 text-sm bg-[#FCFCFA] text-left focus:outline-none focus:border-primary disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed transition hover:border-gray-400"
+        className="flex min-h-12 w-full items-center justify-between rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] px-4 py-3 text-left text-sm transition hover:border-gray-400 focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
       >
         <span className={`truncate ${!selectedOption ? 'text-gray-400' : 'text-[var(--text-main)] font-semibold'}`}>
           {loading ? 'Đang tải danh sách...' : selectedOption ? selectedOption.label : placeholder}
@@ -97,7 +97,7 @@ function CustomSelect({
       </button>
 
       {isOpen && !disabled && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl bg-white border border-[var(--border-color)] shadow-2xl p-2 max-h-64 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute left-0 right-0 top-full z-[70] mt-2 flex max-h-56 flex-col overflow-hidden rounded-xl border border-[var(--border-color)] bg-white p-2 shadow-2xl animate-in fade-in slide-in-from-top-1 duration-150">
           {options.length > 5 && (
             <div className="relative mb-2 shrink-0">
               <Search className="absolute left-2.5 top-2.5 size-3.5 text-gray-400" />
@@ -112,7 +112,7 @@ function CustomSelect({
             </div>
           )}
 
-          <div className="overflow-y-auto space-y-0.5 max-h-48 pr-1">
+          <div className="max-h-40 space-y-0.5 overflow-y-auto overscroll-contain pr-1">
             {filteredOptions.length === 0 ? (
               <div className="py-3 text-center text-xs text-gray-400 font-medium">Không tìm thấy dữ liệu</div>
             ) : (
@@ -340,13 +340,15 @@ export default function AddressFormModal({
   return (
     <div
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-6"
     >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--border-color)] bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 text-left">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-3xl space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-[var(--border-color)] bg-white p-5 text-left shadow-2xl animate-in zoom-in-95 duration-200 sm:p-7 xl:overflow-visible">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
-          <h2 className="text-lg font-black text-[var(--text-main)] flex items-center gap-2">
-            <MapPin className="size-5 text-[#0F766E]" />
+        <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
+          <h2 className="flex items-center gap-2.5 text-lg font-black text-[var(--text-main)] sm:text-xl">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#0F766E]/10">
+              <MapPin className="size-5 text-[#0F766E]" />
+            </span>
             {title}
           </h2>
           <button
@@ -443,12 +445,12 @@ export default function AddressFormModal({
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {addressTab === 'new' && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
+                  <label className="mb-2 block text-xs font-extrabold text-[var(--text-main)]">
                     Tên người nhận *
                   </label>
                   <input
@@ -457,11 +459,11 @@ export default function AddressFormModal({
                     placeholder="Nhập tên người nhận"
                     value={receiverName}
                     onChange={(e) => setReceiverName(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                    className="min-h-12 w-full rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] px-4 py-3 text-sm focus-visible:border-primary focus-visible:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
+                  <label className="mb-2 block text-xs font-extrabold text-[var(--text-main)]">
                     Số điện thoại *
                   </label>
                   <input
@@ -470,20 +472,20 @@ export default function AddressFormModal({
                     placeholder="Nhập số điện thoại"
                     value={receiverPhone}
                     onChange={(e) => setReceiverPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                    className="min-h-12 w-full rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] px-4 py-3 text-sm focus-visible:border-primary focus-visible:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="rounded-xl bg-teal-50/70 border border-[#0F766E]/20 p-3 text-xs font-semibold text-[#0F766E] flex items-center gap-2">
+              <div className="flex items-center gap-3 rounded-xl border border-[#0F766E]/20 bg-teal-50/70 px-4 py-3 text-xs font-semibold leading-5 text-[#0F766E]">
                 <MapPin className="size-4 shrink-0" />
-                <span>📍 Hệ thống hiện tại chỉ áp dụng giao hàng cho các khu vực thuộc <strong>Thành phố Hà Nội</strong>.</span>
+                <span>Hệ thống hiện tại chỉ áp dụng giao hàng cho các khu vực thuộc <strong>Thành phố Hà Nội</strong>.</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 {/* Fixed Province/City Input */}
                 <div>
-                  <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1.5 h-4 flex items-center">
+                  <label className="mb-2 flex items-center text-xs font-extrabold text-[var(--text-main)]">
                     Tỉnh / Thành phố <span className="text-red-500 ml-0.5">*</span>
                   </label>
                   <input
@@ -491,7 +493,7 @@ export default function AddressFormModal({
                     readOnly
                     disabled
                     value={HANOI_PROVINCE_NAME}
-                    className="w-full rounded-xl border border-[var(--border-color)] px-3 py-2.5 text-sm bg-gray-100 text-gray-700 font-bold cursor-not-allowed"
+                    className="min-h-12 w-full cursor-not-allowed rounded-xl border border-[var(--border-color)] bg-gray-100 px-4 py-3 text-sm font-bold text-gray-700"
                   />
                 </div>
 
@@ -508,7 +510,7 @@ export default function AddressFormModal({
               </div>
 
               <div>
-                <label className="block text-xs font-extrabold text-[var(--text-main)] mb-1">
+                <label className="mb-2 block text-xs font-extrabold text-[var(--text-main)]">
                   Địa chỉ chi tiết (số nhà, đường) *
                 </label>
                 <input
@@ -517,7 +519,7 @@ export default function AddressFormModal({
                   placeholder="Ví dụ: Số 2h, ngõ 81 Duy Tân"
                   value={detail}
                   onChange={(e) => setDetail(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-color)] px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:border-primary bg-[#FCFCFA]"
+                  className="min-h-12 w-full rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] px-4 py-3 text-sm focus-visible:border-primary focus-visible:outline-none"
                 />
               </div>
 
@@ -571,17 +573,17 @@ export default function AddressFormModal({
           )}
 
           {/* Footer Actions */}
-          <div className="flex justify-end gap-3 pt-3 border-t border-[var(--border-color)]">
+          <div className="flex flex-col-reverse gap-3 border-t border-[var(--border-color)] pt-4 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-[var(--border-color)] px-5 py-2.5 text-sm font-extrabold text-[var(--text-main)] hover:bg-gray-50 transition"
+              className="min-h-11 rounded-xl border border-[var(--border-color)] px-6 py-2.5 text-sm font-extrabold text-[var(--text-main)] transition hover:bg-gray-50"
             >
               Hủy bỏ
             </button>
             <button
               type="submit"
-              className="rounded-xl bg-[#0F766E] px-5 py-2.5 text-sm font-extrabold text-white hover:bg-[#115E59] transition"
+              className="min-h-11 rounded-xl bg-[#0F766E] px-7 py-2.5 text-sm font-extrabold text-white transition hover:bg-[#115E59]"
             >
               {actionButtonText}
             </button>

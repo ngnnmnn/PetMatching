@@ -97,4 +97,34 @@ describe('PetsService deletion policy', () => {
     );
     expect(tx.pet.deleteMany).not.toHaveBeenCalled();
   });
+
+  it('keeps completed Spa details and only detaches the deleted pet', async () => {
+    const { service, tx } = setup();
+
+    await service.deletePet('user-1', 'pet-1');
+
+    expect(tx.spaBooking.updateMany).toHaveBeenCalledWith({
+      where: {
+        AND: [
+          { petId: 'pet-1' },
+          { status: SpaBookingStatus.COMPLETED },
+        ],
+      },
+      data: { petId: null },
+    });
+    expect(tx.spaBooking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { petId: 'pet-1' },
+            { status: { not: SpaBookingStatus.COMPLETED } },
+          ],
+        },
+        data: expect.objectContaining({
+          petName: 'Thú cưng đã xóa',
+          photoAfter: null,
+        }),
+      }),
+    );
+  });
 });

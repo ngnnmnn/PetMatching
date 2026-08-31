@@ -473,9 +473,25 @@ export class ManagerService {
       },
     });
 
-    return orders.filter(
-      (o) => !(o.payment?.method === 'QR' && o.payment.status === 'PENDING'),
-    );
+    return orders
+      .filter(
+        (o) => !(o.payment?.method === 'QR' && o.payment.status === 'PENDING'),
+      )
+      .map((order) => ({
+        ...order,
+        user:
+          order.user ||
+          (order.customerNameSnapshot ||
+          order.customerEmailSnapshot ||
+          order.customerPhoneSnapshot
+            ? {
+                id: null,
+                name: order.customerNameSnapshot || 'Tài khoản đã xóa',
+                email: order.customerEmailSnapshot || '',
+                phone: order.customerPhoneSnapshot,
+              }
+            : null),
+      }));
   }
 
   async uploadDeliveryProof(file: Express.Multer.File): Promise<{ url: string }> {
@@ -1558,8 +1574,8 @@ export class ManagerService {
     }
 
     const exportData = orders.map((o) => {
-      let name = o.user?.name || '';
-      let phone = o.user?.phone || '';
+      let name = o.user?.name || o.customerNameSnapshot || '';
+      let phone = o.user?.phone || o.customerPhoneSnapshot || '';
       let address = o.shippingAddress;
       try {
         if (o.shippingAddress.startsWith('{')) {

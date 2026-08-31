@@ -149,25 +149,36 @@ export class PetsService {
       });
     }
 
-    const history = await tx.spaBooking.findMany({
-      where,
+    const nonCompletedHistory = await tx.spaBooking.findMany({
+      where: {
+        AND: [where, { status: { not: SpaBookingStatus.COMPLETED } }],
+      },
       select: { photoAfter: true },
     });
     await tx.spaBooking.updateMany({
-      where,
+      where: {
+        AND: [where, { status: { not: SpaBookingStatus.COMPLETED } }],
+      },
       data: {
         petId: null,
         petName: 'Thú cưng đã xóa',
+        customerNameSnapshot: null,
+        customerEmailSnapshot: null,
+        customerPhoneSnapshot: null,
         note: null,
         petConditionAfter: null,
         photoAfter: null,
         issueReported: null,
       },
     });
+    await tx.spaBooking.updateMany({
+      where: { AND: [where, { status: SpaBookingStatus.COMPLETED }] },
+      data: { petId: null },
+    });
 
     return {
       cancelledSpaBookings: pendingIds.length,
-      mediaUrls: history
+      mediaUrls: nonCompletedHistory
         .map((booking) => booking.photoAfter)
         .filter((url): url is string => Boolean(url)),
     };

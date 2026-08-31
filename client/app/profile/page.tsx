@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
-  BadgeCheck,
   Camera,
   Check,
   ChevronRight,
@@ -50,7 +49,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type MatchingBlock = {
   createdAt: string;
@@ -87,7 +85,6 @@ export default function ProfilePage() {
     next: false,
     confirm: false,
   });
-  const [selectedAddressId, setSelectedAddressId] = useState<string>('');
   const [matchingBlocks, setMatchingBlocks] = useState<MatchingBlock[]>([]);
   const [unblockingUserId, setUnblockingUserId] = useState<string | null>(null);
   const [passwords, setPasswords] = useState({
@@ -194,10 +191,6 @@ export default function ProfilePage() {
       setAddressToDeleteId(null);
     }
   };
-
-  const defaultAddress = useMemo(() => profile?.addresses.find((address) => address.isDefault), [profile?.addresses]);
-
-  const secondaryAddresses = useMemo(() => profile?.addresses.filter((address) => !address.isDefault) ?? [], [profile?.addresses]);
 
   const passwordStrength = useMemo(() => getPasswordStrength(passwords.newPassword), [passwords.newPassword]);
 
@@ -471,7 +464,7 @@ export default function ProfilePage() {
                   </span>
                   <div className="min-w-0">
                     <h2 className="text-sm font-extrabold text-red-700">Vùng nguy hiểm</h2>
-                    <p className="mt-1 text-xs leading-5 text-red-700/75">Hồ sơ cá nhân sẽ bị xóa vĩnh viễn; lịch sử giao dịch hoàn thành và Match đã ẩn danh vẫn được lưu.</p>
+                    <p className="mt-1 text-xs leading-5 text-red-700/75">Hồ sơ cá nhân sẽ bị xóa vĩnh viễn; thông tin giao dịch Store/Spa đã hoàn thành vẫn được lưu trong lịch sử, còn Match được ẩn danh.</p>
                   </div>
                 </div>
 
@@ -880,43 +873,5 @@ function PasswordControl({
         {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
       </button>
     </span>
-  );
-}
-
-function AddressRow({ address, onEdit, onDelete, onSetDefault }: { address: Address; onEdit: (address: Address) => void; onDelete: (id: string) => void; onSetDefault: (id: string) => void }) {
-  return (
-    <div className="rounded-lg border border-[var(--border-color)] bg-[#FFFEFC] p-4 transition hover:border-[rgba(228,93,28,0.22)] hover:shadow-[0_14px_34px_rgba(26,26,26,0.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="font-extrabold">{address.receiverName}</p>
-            <span className="text-sm text-[var(--text-muted)]">{address.receiverPhone}</span>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-extrabold ${address.isDefault ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
-              {address.isDefault ? 'Địa chỉ chính' : 'Địa chỉ phụ'}
-            </span>
-          </div>
-          <div className="mt-2 flex min-w-0 items-start gap-2 text-sm text-[var(--text-muted)]">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--primary-color)]" />
-            <p>
-              {address.detail}, {address.ward}, {address.district}, {address.province}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {!address.isDefault && (
-            <button type="button" className="profile-secondary-button" onClick={() => onSetDefault(address.id)}>
-              <Check className="size-4" />
-              Đặt chính
-            </button>
-          )}
-          <button type="button" className="profile-secondary-button" onClick={() => onEdit(address)}>
-            Sửa
-          </button>
-          <button type="button" className="rounded-md border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50" onClick={() => onDelete(address.id)}>
-            Xóa
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
