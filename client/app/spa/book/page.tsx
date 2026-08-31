@@ -14,7 +14,8 @@ import {
   PawPrint,
   CheckCircle,
   Scissors,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import Footer from '@/components/layout/Footer';
@@ -150,6 +151,7 @@ function SpaBookingWizard() {
 
   const [availableSlots, setAvailableSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
+  const [showOverbookedModal, setShowOverbookedModal] = useState<boolean>(false);
 
   // Active pet object
   const activePet = useMemo(() => {
@@ -307,10 +309,10 @@ function SpaBookingWizard() {
     });
   }, [availableSlots, totalDurationMinutes, bookingDate]);
 
-  // Auto-deselect selected booking time if it is no longer valid/available/free
+  // Auto-deselect selected booking time if it is no longer valid/free for pet
   useEffect(() => {
     if (bookingTime) {
-      const isValid = filteredValidSlots.some((s) => s.time === bookingTime && s.isAvailable && !s.isPetBusy);
+      const isValid = filteredValidSlots.some((s) => s.time === bookingTime && !s.isPetBusy);
       if (!isValid) {
         setBookingTime('');
       }
@@ -417,6 +419,16 @@ function SpaBookingWizard() {
       }
       if (!bookingTime) {
         toast.error('Vui lòng chọn giờ hẹn.');
+        return;
+      }
+
+      const currentSlot = filteredValidSlots.find((s) => s.time === bookingTime);
+      const remaining = typeof currentSlot?.remainingSlots === 'number' ? currentSlot.remainingSlots : 0;
+      const count = typeof currentSlot?.bookingCount === 'number' ? currentSlot.bookingCount : 0;
+
+      // Popup warning if current bookings reach/exceed available staff or no staff available
+      if (currentSlot && (remaining <= 0 || count >= remaining)) {
+        setShowOverbookedModal(true);
         return;
       }
     }
@@ -537,8 +549,8 @@ function SpaBookingWizard() {
                           key={pet.id}
                           onClick={() => setSelectedPetId(pet.id)}
                           className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all ${selectedPetId === pet.id
-                              ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                              : 'border-gray-200 bg-white'
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-gray-200 bg-white'
                             }`}
                         >
                           <input
@@ -637,8 +649,8 @@ function SpaBookingWizard() {
                               key={service.id}
                               onClick={() => setSelectedMainServiceId(isSelected ? '' : service.id)}
                               className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between space-y-2 ${isSelected
-                                  ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/30'
-                                  : 'border-gray-200 bg-white hover:border-purple-200'
+                                ? 'border-purple-600 bg-purple-50/80 ring-2 ring-purple-500/30'
+                                : 'border-gray-200 bg-white hover:border-purple-200'
                                 }`}
                             >
                               <div className="flex items-start justify-between">
@@ -691,8 +703,8 @@ function SpaBookingWizard() {
                               key={sub.id}
                               onClick={() => handleSubServiceToggle(sub.id)}
                               className={`p-3.5 border rounded-xl cursor-pointer transition-all flex items-center justify-between ${isChecked
-                                  ? 'border-green-600 bg-green-50/80 ring-1 ring-green-500/30'
-                                  : 'border-gray-200 bg-white hover:border-green-200 hover:bg-gray-50'
+                                ? 'border-green-600 bg-green-50/80 ring-1 ring-green-500/30'
+                                : 'border-gray-200 bg-white hover:border-green-200 hover:bg-gray-50'
                                 }`}
                             >
                               <div className="flex items-start gap-3">
@@ -781,10 +793,10 @@ function SpaBookingWizard() {
                               setBookingTime('');
                             }}
                             className={`flex flex-col items-center justify-center p-3 rounded-xl border min-w-[76px] transition-all cursor-pointer ${isPast
-                                ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
-                                : active
-                                  ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
-                                  : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
+                              ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
+                              : active
+                                ? 'bg-primary border-primary text-white shadow-md font-bold scale-105'
+                                : 'bg-white border-gray-255 text-gray-700 hover:border-primary/50'
                               }`}
                           >
                             <span className="text-[10px] uppercase font-bold tracking-wider">{day.weekdayStr}</span>
@@ -814,71 +826,68 @@ function SpaBookingWizard() {
                         <p className="text-xs text-gray-400 font-semibold mt-2">Đang tìm khung giờ khả dụng...</p>
                       </div>
                     ) : filteredValidSlots.length > 0 ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {filteredValidSlots.map((slot) => {
                           const isSelected = bookingTime === slot.time;
                           const isPetBusy = !!slot.isPetBusy;
-                          const isShopFull = !slot.isAvailable && !isPetBusy;
-                          const isSelectable = slot.isAvailable && !isPetBusy;
-
-                          const tooltipTitle = isPetBusy
-                            ? `Bé ${activePet?.name ? `"${activePet.name}"` : 'của bạn'} đã có lịch hẹn Spa khác trùng trong khung giờ này (${slot.time}).`
-                            : isShopFull
-                              ? `Khung giờ ${slot.time} đã kín lịch (tất cả nhân viên Spa đều có lịch hẹn).`
-                              : `Khung giờ ${slot.time} khả dụng (${slot.remainingSlots} nhân viên rảnh).`;
+                          const isSelectable = !isPetBusy;
+                          const remainingSlots = typeof slot.remainingSlots === 'number' ? slot.remainingSlots : 0;
+                          const bookingCount = typeof slot.bookingCount === 'number' ? slot.bookingCount : 0;
+                          const isOverbooked = remainingSlots <= 0 || bookingCount >= remainingSlots;
 
                           return (
                             <div key={slot.time} className="relative group">
                               <button
                                 type="button"
                                 disabled={!isSelectable}
-                                title={tooltipTitle}
                                 onClick={() => isSelectable && setBookingTime(slot.time)}
-                                className={`w-full py-3.5 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center ${
-                                  isPetBusy
-                                    ? 'bg-gray-900 border-gray-800 text-gray-400 cursor-not-allowed shadow-inner'
-                                    : isShopFull
-                                      ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                                      : isSelected
-                                        ? 'bg-primary border-primary text-white shadow-md font-bold cursor-pointer scale-105'
-                                        : 'bg-white border-gray-250 text-gray-700 hover:border-primary cursor-pointer'
-                                }`}
+                                className={`w-full py-3 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center gap-1 ${isPetBusy
+                                  ? 'bg-gray-900 border-gray-800 text-gray-400 cursor-not-allowed shadow-inner opacity-70'
+                                  : isSelected
+                                    ? 'bg-primary border-primary text-white shadow-md font-bold cursor-pointer scale-102 ring-2 ring-primary/30'
+                                    : isOverbooked
+                                      ? 'bg-amber-50/70 border-amber-200 hover:border-amber-400 text-gray-800 cursor-pointer hover:shadow-2xs'
+                                      : 'bg-white border-gray-250 text-gray-700 hover:border-primary cursor-pointer hover:shadow-2xs'
+                                  }`}
                               >
-                                <span className={`text-sm font-black ${isPetBusy ? 'text-gray-200' : ''}`}>{slot.time}</span>
+                                <span className={`text-sm font-black ${isPetBusy ? 'text-gray-300' : isSelected ? 'text-white' : 'text-gray-800'}`}>
+                                  {slot.time}
+                                </span>
+
                                 {isPetBusy ? (
-                                  <span className="text-[9px] mt-0.5 font-bold text-amber-400">
+                                  <span className="text-[10px] font-bold text-amber-400">
                                     🐾 Bé bận lịch
                                   </span>
-                                ) : isShopFull ? (
-                                  <span className="text-[9px] mt-0.5 font-semibold text-gray-400">
-                                    Đã kín lịch
-                                  </span>
                                 ) : (
-                                  <span className={`text-[9px] mt-0.5 font-semibold ${isSelected ? 'text-white/90 font-bold' : 'text-gray-500'}`}>
-                                    {slot.remainingSlots} nhân viên rảnh
-                                  </span>
+                                  <>
+                                    <span className={`text-[11px] font-bold leading-tight ${isSelected
+                                      ? 'text-white'
+                                      : remainingSlots <= 0
+                                        ? 'text-rose-600'
+                                        : 'text-emerald-700'
+                                      }`}>
+                                      {remainingSlots} lịch khả dụng
+                                    </span>
+                                    <span className={`text-[10px] leading-tight ${isSelected
+                                      ? 'text-white/85'
+                                      : isOverbooked
+                                        ? 'text-amber-800 font-semibold'
+                                        : 'text-gray-500'
+                                      }`}>
+                                      {bookingCount} khách hàng đặt
+                                    </span>
+                                  </>
                                 )}
                               </button>
 
-                              {/* Visual Tooltip on Hover for disabled slots */}
-                              {!isSelectable && (
+                              {/* Visual Tooltip on Hover for pet busy slot */}
+                              {!isSelectable && isPetBusy && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-30 pointer-events-none w-52 text-center animate-in fade-in zoom-in-95 duration-150">
                                   <div className="bg-gray-950/95 text-white text-[11px] font-medium py-2 px-3 rounded-xl shadow-2xl border border-gray-700 leading-snug backdrop-blur-xs">
-                                    {isPetBusy ? (
-                                      <>
-                                        <span className="text-amber-300 font-black block mb-0.5 flex items-center justify-center gap-1">
-                                          ⚠️ Trùng lịch thú cưng
-                                        </span>
-                                        Bé {activePet?.name ? <strong className="text-white">"{activePet.name}"</strong> : 'của bạn'} đã có lịch hẹn Spa khác trong khoảng thời gian này ({slot.time}).
-                                      </>
-                                    ) : (
-                                      <>
-                                        <span className="text-rose-300 font-black block mb-0.5 flex items-center justify-center gap-1">
-                                          ⚠️ Đã kín lịch
-                                        </span>
-                                        Tất cả nhân viên Spa đều đã kín lịch hẹn trong khung giờ này.
-                                      </>
-                                    )}
+                                    <span className="text-amber-300 font-black block mb-0.5 flex items-center justify-center gap-1">
+                                      ⚠️ Trùng lịch thú cưng
+                                    </span>
+                                    Bé {activePet?.name ? <strong className="text-white">"{activePet.name}"</strong> : 'của bạn'} đã có lịch hẹn Spa khác trong khoảng thời gian này ({slot.time}).
                                   </div>
                                   <div className="w-2.5 h-2.5 bg-gray-950 rotate-45 -mt-1 border-r border-b border-gray-700" />
                                 </div>
@@ -991,6 +1000,75 @@ function SpaBookingWizard() {
           )}
         </div>
       </div>
+
+      {/* Modal cảnh báo khi slot đã vượt quá số nhân viên khả dụng */}
+      {showOverbookedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-150 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3.5">
+              <div className="size-12 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
+                <AlertTriangle className="size-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 leading-tight">Cảnh báo khung giờ</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Số lượng khách đặt đã vượt quá nhân viên rảnh</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-4 space-y-2 text-xs text-amber-900 leading-relaxed">
+              <p className="font-semibold text-[13px]">
+                Hiện tại số người đặt slot này đã quá so với số lượng nhân viên khả dụng.
+              </p>
+              <p className="text-amber-950 font-bold">
+                Bạn vẫn muốn đặt slot này không?
+              </p>
+            </div>
+
+            <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-200/80 text-xs space-y-2 text-gray-600">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Khung giờ đã chọn:</span>
+                <span className="font-bold text-gray-800">{bookingTime} - {new Date(bookingDate).toLocaleDateString('vi-VN')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Nhân viên khả dụng:</span>
+                <span className="font-bold text-gray-800">
+                  {filteredValidSlots.find((s) => s.time === bookingTime)?.remainingSlots ?? 0} nhân viên
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Số khách hàng đang đặt:</span>
+                <span className="font-bold text-amber-700">
+                  {filteredValidSlots.find((s) => s.time === bookingTime)?.bookingCount ?? 0} khách
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowOverbookedModal(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-gray-300 text-gray-700 text-xs font-bold hover:bg-gray-100 transition cursor-pointer"
+              >
+                Không, chọn lại slot khác
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverbookedModal(false);
+                  setStep(3);
+                  if (typeof window !== 'undefined') {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover shadow-sm transition cursor-pointer"
+              >
+                Có, tiếp tục đặt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </main>
   );

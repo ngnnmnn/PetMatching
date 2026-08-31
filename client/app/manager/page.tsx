@@ -5604,13 +5604,15 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         const total = stats.statusDistribution.reduce((acc: number, x: any) => acc + x.value, 0);
                         const percent = ((item.value / total) * 100).toFixed(0);
                         const displayStatus = {
-                          PENDING: { label: 'Đang xử lý', color: 'bg-amber-500' },
+                          PENDING: { label: 'Chờ xác nhận', color: 'bg-amber-500' },
                           CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
+                          CHECK_IN: { label: 'Đã Check-in', color: 'bg-teal-500' },
+                          ARRIVED: { label: 'Khách đã đến', color: 'bg-teal-600' },
                           ASSIGNED: { label: 'Đã phân công', color: 'bg-indigo-500' },
                           IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
                           COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
                           CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
-                          NO_SHOW: { label: 'No Show', color: 'bg-gray-500' },
+                          NO_SHOW: { label: 'Khách vắng mặt', color: 'bg-gray-500' },
                           LATE: { label: 'Trễ hẹn', color: 'bg-rose-500' }
                         }[item.status as string] || { label: item.status, color: 'bg-gray-400' };
 
@@ -6215,7 +6217,23 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               </td>
                               <td className="px-6 py-4">
                                 <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
-                                <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
+                                {b.discountAmount > 0 ? (
+                                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                    <span className="text-[11px] text-gray-400 line-through font-medium">
+                                      {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                                    </span>
+                                    <span className="text-xs font-black text-rose-600">
+                                      {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
+                                    </span>
+                                    <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
+                                      -10%
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                    {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                  </p>
+                                )}
                                 {(() => {
                                   const subList = getManagerBookingSubServices(b);
                                   if (subList.length === 0) return null;
@@ -6225,9 +6243,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                     </div>
                                   );
                                 })()}
-                                {b.discountAmount ? (
-                                  <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10% (trễ)</span>
-                                ) : null}
                               </td>
                               <td className="px-6 py-4 font-semibold text-xs text-gray-700">
                                 {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}

@@ -111,7 +111,7 @@ export default function SpaHistory() {
       const diffMins = Math.round(
         (new Date(rescheduleBooking.timeEndExpected).getTime() -
           new Date(rescheduleBooking.timeStartExpected).getTime()) /
-          (60 * 1000)
+        (60 * 1000)
       );
       if (diffMins > 0) {
         return diffMins;
@@ -160,9 +160,9 @@ export default function SpaHistory() {
       : '';
     const curBookingTime = rescheduleBooking?.scheduledAt
       ? (() => {
-          const d = new Date(rescheduleBooking.scheduledAt);
-          return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-        })()
+        const d = new Date(rescheduleBooking.scheduledAt);
+        return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      })()
       : '';
 
     return rescheduleSlots
@@ -473,168 +473,182 @@ export default function SpaHistory() {
             {sortedBookings
               .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
               .map((booking) => (
-              <div
-                key={booking.id}
-                onClick={() => openDetailModal(booking)}
-                className="bg-card border border-[var(--border-color)] rounded-xl p-5 shadow-xs space-y-4 transition hover:shadow-md cursor-pointer group"
-              >
-                {/* Top Section: Status and Price */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {getStatusBadge(booking.status)}
-                    {booking.payment?.status === 'PAID' && (
-                      <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[11px] font-black text-emerald-800 flex items-center gap-1">
-                        ✓ Đã thanh toán
-                      </span>
-                    )}
-                    <span className="text-[10px] text-gray-400 font-semibold tracking-wider uppercase">
-                      ID: #{booking.id.slice(-6).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <span className="text-xs text-[var(--text-muted)] block sm:inline mr-1">Tổng cộng:</span>
-                      <span className="text-lg font-black text-primary">
-                        {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                <div
+                  key={booking.id}
+                  onClick={() => openDetailModal(booking)}
+                  className="bg-card border border-[var(--border-color)] rounded-xl p-5 shadow-xs space-y-4 transition hover:shadow-md cursor-pointer group"
+                >
+                  {/* Top Section: Status and Price */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStatusBadge(booking.status)}
+                      {booking.payment?.status === 'PAID' && (
+                        <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                          ✓ Đã thanh toán
+                        </span>
+                      )}
+                      <span className="text-[10px] text-gray-400 font-semibold tracking-wider uppercase">
+                        ID: #{booking.id.slice(-6).toUpperCase()}
                       </span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDetailModal(booking);
-                      }}
-                      className="text-xs font-bold gap-1 text-primary border-primary/30 hover:bg-primary/5"
-                    >
-                      <Eye className="size-3.5" />
-                      Xem chi tiết
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Middle Section: Info details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-[var(--border-color)] text-sm">
-                  {/* Service and Pet information */}
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2">
-                      <Scissors className="size-4 text-primary shrink-0 mt-0.5" />
-                      <div>
-                        <span className="text-xs text-gray-400 block leading-none">Dịch vụ chính</span>
-                        <span className="font-bold text-[var(--text-main)]">
-                          {booking.service?.name || 'Dịch vụ Spa'}
-                        </span>
-                        {(() => {
-                          const subList = getBookingSubServices(booking);
-                          if (subList.length === 0) return null;
-                          return (
-                            <div className="mt-1 space-y-0.5">
-                              <span className="text-[11px] font-bold text-gray-500 block">Dịch vụ thêm:</span>
-                              <div className="flex flex-wrap gap-1">
-                                {subList.map((sub, i) => (
-                                  <span
-                                    key={i}
-                                    className="inline-block rounded bg-gray-100 text-gray-700 text-[10px] font-medium px-1.5 py-0.5"
-                                  >
-                                    + {sub.name}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-xs text-[var(--text-muted)] block sm:inline mr-1">Tổng cộng:</span>
+                        {booking.discountAmount && booking.discountAmount > 0 ? (
+                          <div className="inline-flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs text-gray-400 line-through font-normal">
+                              {((booking.totalPrice || 0) + (booking.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                            </span>
+                            <span className="text-lg font-black text-rose-600">
+                              {(booking.totalPrice || 0).toLocaleString('vi-VN')}đ
+                            </span>
+                            <span className="inline-flex items-center text-[10px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded border border-rose-200">
+                              -10%
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-lg font-black text-primary">
+                            {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                          </span>
+                        )}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <PawPrint className="size-4 text-amber-600 shrink-0" />
-                      <div>
-                        <span className="text-xs text-gray-400 block leading-none">Thú cưng</span>
-                        <span className="font-bold text-[var(--text-main)]">{booking.petName}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Scheduled time and Branch info */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Clock className="size-4 text-primary shrink-0" />
-                      <div>
-                        <span className="text-xs text-gray-400 block leading-none">Thời gian hẹn</span>
-                        <span className="font-bold text-[var(--text-main)]">
-                          {formatDateTime(booking.scheduledAt)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <MapPin className="size-4 text-primary shrink-0 mt-0.5" />
-                      <div>
-                        <span className="text-xs text-gray-400 block leading-none">Địa chỉ Spa</span>
-                        <span className="font-semibold text-[var(--text-main)]">
-                          {booking.addressSpa?.name || 'PetMatch Spa – Quận 1'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom Section: Action buttons */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-dashed border-gray-200">
-                  {canUserReschedule(booking) && (
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openRescheduleModal(booking);
-                      }}
-                      variant="outline"
-                      className="text-xs text-purple-700 hover:text-purple-800 hover:bg-purple-50 border-purple-200 font-bold px-3.5 h-8 gap-1.5 cursor-pointer"
-                    >
-                      <RefreshCw className="size-3.5" />
-                      Đổi lịch
-                    </Button>
-                  )}
-
-                  {canUserCancel(booking) && (
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCancelBooking(booking.id);
-                      }}
-                      disabled={cancellingId === booking.id}
-                      variant="ghost"
-                      className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50 font-semibold px-4 h-8"
-                    >
-                      {cancellingId === booking.id ? 'Đang hủy...' : 'Hủy lịch hẹn'}
-                    </Button>
-                  )}
-
-                  {booking.status === 'COMPLETED' && (
-                    booking.feedback ? (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
+                          openDetailModal(booking);
                         }}
-                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-xs cursor-default"
+                        className="text-xs font-bold gap-1 text-primary border-primary/30 hover:bg-primary/5"
                       >
-                        <CheckCircle className="size-3.5" />
-                        Đã đánh giá
-                      </button>
-                    ) : (
+                        <Eye className="size-3.5" />
+                        Xem chi tiết
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Middle Section: Info details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-[var(--border-color)] text-sm">
+                    {/* Service and Pet information */}
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2">
+                        <Scissors className="size-4 text-primary shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-xs text-gray-400 block leading-none">Dịch vụ chính</span>
+                          <span className="font-bold text-[var(--text-main)]">
+                            {booking.service?.name || 'Dịch vụ Spa'}
+                          </span>
+                          {(() => {
+                            const subList = getBookingSubServices(booking);
+                            if (subList.length === 0) return null;
+                            return (
+                              <div className="mt-1 space-y-0.5">
+                                <span className="text-[11px] font-bold text-gray-500 block">Dịch vụ thêm:</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {subList.map((sub, i) => (
+                                    <span
+                                      key={i}
+                                      className="inline-block rounded bg-gray-100 text-gray-700 text-[10px] font-medium px-1.5 py-0.5"
+                                    >
+                                      + {sub.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <PawPrint className="size-4 text-amber-600 shrink-0" />
+                        <div>
+                          <span className="text-xs text-gray-400 block leading-none">Thú cưng</span>
+                          <span className="font-bold text-[var(--text-main)]">{booking.petName}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Scheduled time and Branch info */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Clock className="size-4 text-primary shrink-0" />
+                        <div>
+                          <span className="text-xs text-gray-400 block leading-none">Thời gian hẹn</span>
+                          <span className="font-bold text-[var(--text-main)]">
+                            {formatDateTime(booking.scheduledAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <MapPin className="size-4 text-primary shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-xs text-gray-400 block leading-none">Địa chỉ Spa</span>
+                          <span className="font-semibold text-[var(--text-main)]">
+                            {booking.addressSpa?.name || 'PetMatch Spa – Quận 1'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Section: Action buttons */}
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-dashed border-gray-200">
+                    {canUserReschedule(booking) && (
                       <Button
                         onClick={(e) => {
                           e.stopPropagation();
-                          openFeedbackModal(booking);
+                          openRescheduleModal(booking);
                         }}
-                        className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 h-8 gap-1.5 shadow-sm cursor-pointer"
+                        variant="outline"
+                        className="text-xs text-purple-700 hover:text-purple-800 hover:bg-purple-50 border-purple-200 font-bold px-3.5 h-8 gap-1.5 cursor-pointer"
                       >
-                        <Star className="size-3.5 fill-white text-white" />
-                        Đánh giá
+                        <RefreshCw className="size-3.5" />
+                        Đổi lịch
                       </Button>
-                    )
-                  )}
+                    )}
+
+                    {canUserCancel(booking) && (
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCancelBooking(booking.id);
+                        }}
+                        disabled={cancellingId === booking.id}
+                        variant="ghost"
+                        className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50 font-semibold px-4 h-8"
+                      >
+                        {cancellingId === booking.id ? 'Đang hủy...' : 'Hủy lịch hẹn'}
+                      </Button>
+                    )}
+
+                    {booking.status === 'COMPLETED' && (
+                      booking.feedback ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-xs cursor-default"
+                        >
+                          <CheckCircle className="size-3.5" />
+                          Đã đánh giá
+                        </button>
+                      ) : (
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openFeedbackModal(booking);
+                          }}
+                          className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 h-8 gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          <Star className="size-3.5 fill-white text-white" />
+                          Đánh giá
+                        </Button>
+                      )
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
             <AppPagination
               currentPage={currentPage}
               totalItems={sortedBookings.length}
@@ -858,11 +872,10 @@ export default function SpaHistory() {
                         {[1, 2, 3, 4, 5].map((star) => (
                           <Star
                             key={star}
-                            className={`size-3.5 ${
-                              star <= (selectedBooking.feedback?.rateServices || 0)
-                                ? 'text-amber-500 fill-amber-500'
-                                : 'text-gray-300'
-                            }`}
+                            className={`size-3.5 ${star <= (selectedBooking.feedback?.rateServices || 0)
+                              ? 'text-amber-500 fill-amber-500'
+                              : 'text-gray-300'
+                              }`}
                           />
                         ))}
                         <span className="text-xs font-black text-amber-700 ml-1">
@@ -878,11 +891,10 @@ export default function SpaHistory() {
                         {[1, 2, 3, 4, 5].map((star) => (
                           <Star
                             key={star}
-                            className={`size-3.5 ${
-                              star <= (selectedBooking.feedback?.rateStaff || 0)
-                                ? 'text-amber-500 fill-amber-500'
-                                : 'text-gray-300'
-                            }`}
+                            className={`size-3.5 ${star <= (selectedBooking.feedback?.rateStaff || 0)
+                              ? 'text-amber-500 fill-amber-500'
+                              : 'text-gray-300'
+                              }`}
                           />
                         ))}
                         <span className="text-xs font-black text-amber-700 ml-1">
@@ -904,15 +916,42 @@ export default function SpaHistory() {
                 </div>
               )}
 
+              {/* DISCOUNT NOTICE IF APPLIED */}
+              {selectedBooking.discountAmount && selectedBooking.discountAmount > 0 && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between text-xs font-bold text-rose-700">
+                  <span className="flex items-center gap-1.5">
+                    🎁 Giảm giá 10% do trễ phục vụ:
+                  </span>
+                  <span className="text-rose-700 font-black text-sm">
+                    -{(selectedBooking.discountAmount || 0).toLocaleString('vi-VN')}đ
+                  </span>
+                </div>
+              )}
+
               {/* TOTAL PRICE SUMMARY */}
               <div className="p-4 bg-gray-900 text-white rounded-xl flex items-center justify-between shadow-md">
                 <div>
                   <span className="text-xs text-gray-400 block font-semibold">TỔNG TIỀN THANH TOÁN</span>
-                  <span className="text-xs text-emerald-400 font-bold">Thanh toán tại cửa hàng sau khi hoàn tất</span>
                 </div>
-                <span className="text-2xl font-black text-white">
-                  {(selectedBooking.totalPrice || selectedBooking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                </span>
+                <div className="text-right">
+                  {selectedBooking.discountAmount && selectedBooking.discountAmount > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-400 line-through font-normal">
+                        {((selectedBooking.totalPrice || 0) + (selectedBooking.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                      </span>
+                      <span className="text-2xl font-black text-rose-400">
+                        {(selectedBooking.totalPrice || 0).toLocaleString('vi-VN')}đ
+                      </span>
+                      <span className="text-[10px] bg-rose-500/20 text-rose-300 font-bold px-2 py-0.5 rounded border border-rose-500/30">
+                        -10%
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-2xl font-black text-white">
+                      {(selectedBooking.totalPrice || selectedBooking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1182,8 +1221,8 @@ export default function SpaHistory() {
                             isCurrent
                               ? 'Lịch hẹn hiện tại của bạn (không thể chọn lại trùng giờ)'
                               : isDisabled
-                              ? 'Khung giờ này đã kín chỗ'
-                              : 'Chọn khung giờ này'
+                                ? 'Khung giờ này đã kín chỗ'
+                                : 'Chọn khung giờ này'
                           }
                           className={`py-2 px-2.5 rounded-xl text-xs border transition-all flex flex-col items-center justify-center gap-0.5 ${buttonStyle}`}
                         >
@@ -1198,9 +1237,8 @@ export default function SpaHistory() {
                             </span>
                           ) : (
                             <span
-                              className={`text-[9px] font-medium ${
-                                isSelected ? 'text-white/90' : 'text-gray-400'
-                              }`}
+                              className={`text-[9px] font-medium ${isSelected ? 'text-white/90' : 'text-gray-400'
+                                }`}
                             >
                               Còn {slot.remainingSlots} chỗ
                             </span>

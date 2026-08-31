@@ -297,18 +297,11 @@ export class SpaService {
       });
 
       const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
-      const unassignedBookings = activeOverlapping.filter((b) => !b.staffId);
 
       const freeStaffs = activeStaffs.filter((staff) => {
         const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
         return !isStaffBusy(staffAssigned, timeStartExpected, timeEndExpected);
       });
-
-      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
-
-      if (remainingSlots <= 0) {
-        throw new BadRequestException('Khung giờ này tại chi nhánh đã kín lịch (hết nhân viên khả dụng). Vui lòng chọn khung giờ khác.');
-      }
 
       if (validStaffId) {
         const targetStaffIsFree = freeStaffs.some((s) => s.userId === validStaffId || s.id === validStaffId);
@@ -929,6 +922,7 @@ export class SpaService {
 
   async getPublicFeedbacks() {
     return this.prisma.spaFeedback.findMany({
+      take: 20,
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -994,6 +988,41 @@ export class SpaService {
         await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
       }
     });
+
+    // 3. Customer ARRIVED / CHECK_IN but 30+ minutes past scheduledAt without staff moving to IN_PROGRESS -> AUTO DISCOUNT 10%
+    const overdueArrivedBookings = await this.prisma.spaBooking.findMany({
+      where: {
+        status: {
+          in: [
+            SpaBookingStatus.ARRIVED,
+            SpaBookingStatus.CHECK_IN,
+          ],
+        },
+        scheduledAt: { lt: thirtyMinsAgo },
+        discountAmount: { lte: 0 },
+      },
+    });
+    if (overdueArrivedBookings.length > 0) await this.prisma.$transaction(async (tx) => {
+      for (const booking of overdueArrivedBookings) {
+        const basePrice = (booking.totalPrice || 0) + (booking.discountAmount || 0) || (booking.priceSnapshot || 0);
+        const discountAmount = Math.round(basePrice * 0.1);
+        const newTotalPrice = Math.max(0, basePrice - discountAmount);
+
+        await tx.payment.updateMany({
+          where: { spaBookingId: booking.id, status: { not: PaymentStatus.PAID } },
+          data: { amount: newTotalPrice },
+        });
+
+        const updated = await tx.spaBooking.update({
+          where: { id: booking.id },
+          data: {
+            discountAmount,
+            totalPrice: newTotalPrice,
+          },
+        });
+        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      }
+    });
   }
 
   async getManagerBranches(managerId: string) {
@@ -1023,16 +1052,41 @@ export class SpaService {
 
     const bookings = await this.prisma.spaBooking.findMany({
       where: branchFilter,
-      include: {
-        payment: true,
+      select: {
+        id: true,
+        scheduledAt: true,
+        status: true,
+        totalPrice: true,
+        priceSnapshot: true,
+        discountAmount: true,
+        serviceId: true,
+        mainServiceId: true,
+        subServiceIds: true,
+        categoryId: true,
+        petName: true,
+        note: true,
+        staffId: true,
         service: {
-          include: { category: true },
+          select: { id: true, name: true, price: true, categoryId: true },
         },
-        category: true,
-        user: true,
-        pet: true,
-        staff: true,
-        feedback: true,
+        category: {
+          select: { id: true, name: true },
+        },
+        user: {
+          select: { name: true },
+        },
+        pet: {
+          select: { name: true },
+        },
+        staff: {
+          select: { name: true },
+        },
+        payment: {
+          select: { status: true, amount: true },
+        },
+        feedback: {
+          select: { rateServices: true },
+        },
       },
     });
 
@@ -1821,17 +1875,11 @@ export class SpaService {
       });
 
       const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
-      const unassignedBookings = activeOverlapping.filter((b) => !b.staffId);
 
       const freeStaffs = activeStaffs.filter((staff) => {
         const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
         return !isStaffBusy(staffAssigned, newStart, newEnd);
       });
-
-      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
-      if (remainingSlots <= 0) {
-        throw new BadRequestException('Khung giờ mới tại chi nhánh đã kín lịch (hết nhân viên khả dụng). Vui lòng chọn khung giờ khác.');
-      }
 
       if (booking.staffId) {
         const currentStaffIsFree = freeStaffs.some((s) => s.userId === booking.staffId || s.id === booking.staffId);
@@ -1975,17 +2023,11 @@ export class SpaService {
       });
 
       const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
-      const unassignedBookings = activeOverlapping.filter((b) => !b.staffId);
 
       const freeStaffs = activeStaffs.filter((staff) => {
         const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
         return !isStaffBusy(staffAssigned, newStart, newEnd);
       });
-
-      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
-      if (remainingSlots <= 0) {
-        throw new BadRequestException('Khung giờ mới tại chi nhánh đã kín lịch (hết nhân viên khả dụng). Vui lòng chọn khung giờ khác.');
-      }
 
       if (booking.staffId) {
         const currentStaffIsFree = freeStaffs.some((s) => s.userId === booking.staffId || s.id === booking.staffId);
@@ -2226,10 +2268,13 @@ export class SpaService {
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
       SpaBookingStatus.ASSIGNED,
+      SpaBookingStatus.CHECK_IN,
+      SpaBookingStatus.LATE,
+      SpaBookingStatus.ARRIVED,
     ];
     if (!allowedAssignStatuses.includes(booking.status)) {
       throw new BadRequestException(
-        'Chỉ có thể xem nhân viên rảnh khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+        'Chỉ có thể xem nhân viên rảnh khi lịch hẹn ở trạng thái chưa hoàn thành hoặc chưa bị hủy.',
       );
     }
 
@@ -2740,7 +2785,6 @@ export class SpaService {
       });
 
       const assignedBookings = overlappingBookings.filter((b) => !!b.staffId);
-      const unassignedBookings = overlappingBookings.filter((b) => !b.staffId);
 
       const freeStaffs = [];
       for (const staff of staffs) {
@@ -2764,15 +2808,16 @@ export class SpaService {
         return bStart < slotEnd && bEnd > slotStart;
       });
 
-      const remainingSlots = Math.max(0, freeStaffs.length - unassignedBookings.length);
-      const availableStaffs = freeStaffs.slice(0, remainingSlots);
+      const remainingSlots = freeStaffs.length;
+      const bookingCount = overlappingBookings.length;
 
       result.push({
         time: timeStr,
-        isAvailable: remainingSlots > 0 && !isPetBusy,
+        isAvailable: !isPetBusy,
         isPetBusy,
         remainingSlots,
-        availableStaffs,
+        bookingCount,
+        availableStaffs: freeStaffs,
       });
     }
 

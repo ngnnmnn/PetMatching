@@ -414,21 +414,6 @@ function SpaManagerConsoleContent() {
       if (currentTab === 'dashboard') {
         const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId);
         setStats(statsRes.data);
-
-        // Auto fetch available staffs for confirmed bookings
-        const todayBookings = statsRes.data?.todayBookings || [];
-        const confirmed = todayBookings.filter((b: any) => b.status === 'CONFIRMED');
-        const staffMap: Record<string, any[]> = {};
-        for (const b of confirmed) {
-          try {
-            const stRes = await spaApi.getAvailableStaffForBooking(b.id);
-            staffMap[b.id] = stRes.data || [];
-          } catch (e) {
-            console.error(e);
-          }
-        }
-        setAvailableStaffsMap(staffMap);
-
       } else if (currentTab === 'bookings') {
         const [bookingsRes, staffsRes, servicesRes] = await Promise.all([
           spaApi.getManagerBookings(selectedBranchId),
@@ -439,21 +424,6 @@ function SpaManagerConsoleContent() {
         setBookings(bList);
         setManagerStaffs(staffsRes.data || []);
         if (servicesRes.data) setServices(servicesRes.data);
-
-        // Auto fetch available staff for bookings needing assignment
-        const needStaffBookings = bList.filter((b: any) => !b.staffId && ['PENDING', 'CONFIRMED', 'CHECK_IN', 'LATE'].includes(b.status));
-        const staffMap: Record<string, any[]> = {};
-        await Promise.all(
-          needStaffBookings.map(async (b: any) => {
-            try {
-              const stRes = await spaApi.getAvailableStaffForBooking(b.id);
-              staffMap[b.id] = stRes.data || [];
-            } catch (e) {
-              console.error(e);
-            }
-          })
-        );
-        setAvailableStaffsMap(staffMap);
       } else if (currentTab === 'services') {
         const servicesRes = await spaApi.getManagerServices();
         setServices(servicesRes.data || []);
@@ -1083,7 +1053,7 @@ function SpaManagerConsoleContent() {
       {/* Dynamic Purple Header */}
       <section className="bg-primary text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <span className="text-xs text-orange-200 block uppercase tracking-wider font-extrabold">Spa Manager</span>
+          <span className="text-xs text-orange-200 block uppercase tracking-wider font-extrabold">Quản Lý Spa</span>
           <h2 className="text-2xl font-black">{managerUser?.name || 'Nguyễn Thị Mai'}</h2>
           <p className="text-xs text-orange-100 mt-1 font-medium flex items-center gap-1">
             📍 Quản lý: <span className="font-bold">{branchNames || 'Chi nhánh Spa'}</span>
@@ -1244,13 +1214,15 @@ function SpaManagerConsoleContent() {
                         const total = stats.statusDistribution.reduce((acc: number, x: any) => acc + x.value, 0);
                         const percent = ((item.value / total) * 100).toFixed(0);
                         const displayStatus = {
-                          PENDING: { label: 'Đang xử lý', color: 'bg-amber-500' },
+                          PENDING: { label: 'Chờ xác nhận', color: 'bg-amber-500' },
                           CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
+                          CHECK_IN: { label: 'Đã Check-in', color: 'bg-teal-500' },
+                          ARRIVED: { label: 'Khách đã đến', color: 'bg-teal-600' },
                           ASSIGNED: { label: 'Đã phân công', color: 'bg-indigo-500' },
                           IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
                           COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
                           CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
-                          NO_SHOW: { label: 'No Show', color: 'bg-gray-500' },
+                          NO_SHOW: { label: 'Khách vắng mặt', color: 'bg-gray-500' },
                           LATE: { label: 'Trễ hẹn', color: 'bg-rose-500' }
                         }[item.status as string] || { label: item.status, color: 'bg-gray-400' };
 
@@ -1331,7 +1303,26 @@ function SpaManagerConsoleContent() {
                                   <p className="text-[10px] text-gray-405 font-semibold">Pet: <span className="text-gray-600 font-extrabold">{b.petName}</span></p>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 font-bold text-gray-800 text-xs">{b.serviceName}</td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-gray-800 text-xs">{b.serviceName}</p>
+                                {b.discountAmount > 0 ? (
+                                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                    <span className="text-[11px] text-gray-400 line-through font-medium">
+                                      {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                                    </span>
+                                    <span className="text-xs font-black text-rose-600">
+                                      {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
+                                    </span>
+                                    <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
+                                      -10%
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                    {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
+                                  </p>
+                                )}
+                              </td>
                               <td className="px-6 py-4 text-xs italic text-gray-500 max-w-[200px] truncate" title={b.note}>
                                 {b.note ? `"${b.note}"` : '—'}
                               </td>
@@ -1950,7 +1941,23 @@ function SpaManagerConsoleContent() {
                                 </td>
                                 <td className="px-6 py-4">
                                   <p className="font-bold text-gray-800 text-xs">{b.service?.name || (b.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}</p>
-                                  <p className="text-[10px] text-gray-400 font-semibold">{(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ</p>
+                                  {b.discountAmount > 0 ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                      <span className="text-[11px] text-gray-400 line-through font-medium">
+                                        {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                                      </span>
+                                      <span className="text-xs font-black text-rose-600">
+                                        {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
+                                      </span>
+                                      <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
+                                        -10%
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                      {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                    </p>
+                                  )}
                                   {(() => {
                                     const subList = getManagerBookingSubServices(b);
                                     if (subList.length === 0) return null;
@@ -1960,9 +1967,6 @@ function SpaManagerConsoleContent() {
                                       </div>
                                     );
                                   })()}
-                                  {b.discountAmount ? (
-                                    <span className="inline-block text-[9px] bg-red-50 text-red-600 font-black px-1 rounded">Đã giảm 10%</span>
-                                  ) : null}
                                 </td>
                                 <td className="px-6 py-4 font-semibold text-xs text-gray-700">
                                   {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
@@ -2917,7 +2921,23 @@ function SpaManagerConsoleContent() {
 
                 <div className="pt-2 border-t border-gray-200 flex justify-between items-center font-black text-sm text-purple-950">
                   <span>Tổng thanh toán:</span>
-                  <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
+                  <div className="flex items-center gap-2">
+                    {selectedBookingDetail.discountAmount > 0 ? (
+                      <>
+                        <span className="text-xs text-gray-400 line-through font-normal">
+                          {((selectedBookingDetail.totalPrice || 0) + (selectedBookingDetail.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                        <span className="text-sm font-black text-rose-600">
+                          {(selectedBookingDetail.totalPrice || 0).toLocaleString('vi-VN')}đ
+                        </span>
+                        <span className="text-[10px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded border border-rose-200">
+                          -10% (Trễ phục vụ &gt;30p)
+                        </span>
+                      </>
+                    ) : (
+                      <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
