@@ -38,3 +38,49 @@ describe('ManagerService dashboard revenue', () => {
     expect(prisma.order.aggregate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ManagerService store settings', () => {
+  it('stores a canonical Hanoi ward selected by its official code', async () => {
+    const prisma = {
+      store: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'store-1',
+          name: 'PetMatching',
+          phone: '0987654321',
+          address: 'Địa chỉ cũ',
+          description: null,
+        }),
+        update: jest.fn().mockImplementation(({ data }) => ({
+          id: 'store-1',
+          ...data,
+        })),
+      },
+    };
+    const service = new ManagerService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as any,
+    );
+
+    const result = await service.updateStoreSettings('manager-1', {
+      name: 'PetMatching Hà Nội',
+      phone: '0987654321',
+      addressDetail: 'Số 1 Tràng Tiền',
+      wardCode: '70',
+      description: 'Cửa hàng thú cưng',
+    });
+
+    expect(prisma.store.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          address: 'Số 1 Tràng Tiền, Phường Hoàn Kiếm, Thành phố Hà Nội',
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      wardCode: '70',
+      wardName: 'Phường Hoàn Kiếm',
+      addressDetail: 'Số 1 Tràng Tiền',
+    });
+  });
+});

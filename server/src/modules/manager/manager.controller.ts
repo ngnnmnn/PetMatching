@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ManagerGuard } from '../../common/auth/manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
 import { Response } from 'express';
+import { UpdateStoreSettingsDto } from './dto/update-store-settings.dto';
 import { ManagerService } from './manager.service';
 
 @UseGuards(JwtAuthGuard, ManagerGuard)
@@ -34,13 +35,16 @@ export class ManagerController {
   }
 
   @Get('store-settings')
-  getStoreSettings() {
-    return this.managerService.getStoreSettings();
+  getStoreSettings(@Req() req: AuthenticatedRequest) {
+    return this.managerService.getStoreSettings(req.user.id);
   }
 
   @Put('store-settings')
-  updateStoreSettings(@Body() dto: any) {
-    return this.managerService.updateStoreSettings(dto);
+  updateStoreSettings(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateStoreSettingsDto,
+  ) {
+    return this.managerService.updateStoreSettings(req.user.id, dto);
   }
 
   @Get('products')

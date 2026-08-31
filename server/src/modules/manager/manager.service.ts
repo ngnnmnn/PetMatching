@@ -10,6 +10,8 @@ import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
 import { NotificationCategory, NotificationEventType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
+import { HANOI_WARDS } from '../matching/hanoi-wards';
+import { UpdateStoreSettingsDto } from './dto/update-store-settings.dto';
 
 @Injectable()
 export class ManagerService {
@@ -19,24 +21,57 @@ export class ManagerService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  getStoreSettings() {
+  private serializeStoreSettings(store: {
+    id: string;
+    name: string;
+    phone: string | null;
+    address: string | null;
+    description: string | null;
+  }) {
+    const address = store.address?.trim() || '';
+    const ward = HANOI_WARDS.find(({ name }) => address.includes(name));
+    const wardPosition = ward ? address.lastIndexOf(ward.name) : -1;
+    const addressDetail =
+      wardPosition >= 0
+        ? address.slice(0, wardPosition).replace(/,\s*$/, '').trim()
+        : address;
+
     return {
-      id: 'default-store',
-      name: 'PetMatch Store',
-      phone: '0987654321',
-      address: 'Hà Nội, Việt Nam',
-      description: 'Cửa hàng dụng cụ & thức ăn thú cưng PetMatch',
+      ...store,
+      address,
+      addressDetail,
+      provinceId: 1,
+      provinceName: 'Thành phố Hà Nội',
+      wardCode: ward?.wardCode || '',
+      wardName: ward?.name || '',
     };
   }
 
-  updateStoreSettings(dto: any) {
-    return {
-      id: 'default-store',
-      name: dto.name || 'PetMatch Store',
-      phone: dto.phone || '0987654321',
-      address: dto.address || 'Hà Nội, Việt Nam',
-      description: dto.description || 'Cửa hàng dụng cụ & thức ăn thú cưng PetMatch',
-    };
+  async getStoreSettings(managerId: string) {
+    const store = await this.getOrCreateStore(managerId);
+    return this.serializeStoreSettings(store);
+  }
+
+  async updateStoreSettings(managerId: string, dto: UpdateStoreSettingsDto) {
+    const ward = HANOI_WARDS.find(({ wardCode }) => wardCode === dto.wardCode);
+    if (!ward) {
+      throw new BadRequestException(
+        'Mã phường/xã không thuộc danh sách 126 phường/xã Hà Nội.',
+      );
+    }
+
+    const store = await this.getOrCreateStore(managerId);
+    const updatedStore = await this.prisma.store.update({
+      where: { id: store.id },
+      data: {
+        name: dto.name.trim(),
+        phone: dto.phone.trim(),
+        address: `${dto.addressDetail.trim()}, ${ward.name}, Thành phố Hà Nội`,
+        description: dto.description?.trim() || null,
+      },
+    });
+
+    return this.serializeStoreSettings(updatedStore);
   }
 
   private async syncProductStockTx(tx: any, productId: string) {
@@ -87,9 +122,9 @@ export class ManagerService {
     if (!store) {
       store = await this.prisma.store.create({
         data: {
-          name: 'Cửa hàng PetMatching Quận 1',
-          phone: '028.3822.4455',
-          address: '120 Lê Lợi, Phường Bến Thành, Quận 1, TP. HCM',
+          name: 'Cửa hàng PetMatching Hà Nội',
+          phone: '0987654321',
+          address: 'Số 1 Tràng Tiền, Phường Hoàn Kiếm, Thành phố Hà Nội',
           status: 'ACTIVE',
           managerId,
         },
