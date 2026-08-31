@@ -617,6 +617,11 @@ export default function MyPetsPage() {
             setEditModePetId(null);
           }}
           onPetUpdated={handlePetUpdated}
+          onPetDeleted={(petId) => {
+            setPets((current) => current.filter((pet) => pet.id !== petId));
+            setSelectedDetailPetId(null);
+            setEditModePetId(null);
+          }}
         />
       )}
 

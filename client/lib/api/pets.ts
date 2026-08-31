@@ -70,6 +70,14 @@ export type UpdatePetPayload = Partial<
   pedigreeDocumentUrls?: string[];
 };
 
+export type DeletePetResult = {
+  success: true;
+  message: string;
+  cancelledSpaBookings: number;
+  cancelledMatchingRequests: number;
+  endedMatches: number;
+};
+
 export const petsApi = {
   getMine: () => api.get<Pet[]>("/pets/my"),
   getDetail: (petId: string) => api.get<Pet>(`/pets/${petId}`),
@@ -86,4 +94,6 @@ export const petsApi = {
       personality?: string;
     },
   ) => api.patch<Pet>(`/pets/${petId}/availability`, payload),
+  delete: (petId: string) =>
+    api.delete<DeletePetResult>(`/pets/${petId}`),
 };

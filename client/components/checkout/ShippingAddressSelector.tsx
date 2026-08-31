@@ -250,7 +250,7 @@ export default function ShippingAddressSelector({
                 </p>
                 {selectedAddressId === addr.id && (!addr.districtId || !addr.wardCode) && (
                   <p className="text-[10px] text-amber-600 font-bold mt-1.5 flex items-center gap-1">
-                    ⚠️ Địa chỉ cũ/thiếu mã vùng GHN (Phí ship mặc định 30,000₫). Vui lòng bấm "Sửa" để chọn quận/huyện, phường/xã.
+                    ⚠️ Địa chỉ cũ hoặc thiếu mã khu vực (phí vận chuyển mặc định 30.000₫). Vui lòng bấm &quot;Sửa&quot; để chọn lại phường/xã.
                   </p>
                 )}
               </div>

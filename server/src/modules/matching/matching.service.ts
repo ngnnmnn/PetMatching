@@ -440,6 +440,14 @@ export class MatchingService {
       requestId,
     );
     const [pet1Id, pet2Id] = [request.femalePetId, request.malePetId].sort();
+    const pet1OwnerId =
+      pet1Id === request.femalePetId
+        ? request.femalePet.ownerId
+        : request.malePet.ownerId;
+    const pet2OwnerId =
+      pet2Id === request.malePetId
+        ? request.malePet.ownerId
+        : request.femalePet.ownerId;
     this.assertMatchingWeight(request.femalePet);
     this.assertMatchingWeight(request.malePet);
 
@@ -496,6 +504,8 @@ export class MatchingService {
       const match = await tx.match.upsert({
         where: { pet1Id_pet2Id: { pet1Id, pet2Id } },
         update: {
+          pet1OwnerId,
+          pet2OwnerId,
           status: MatchStatus.ACTIVE,
           endedAt: null,
           endedById: null,
@@ -504,6 +514,8 @@ export class MatchingService {
         create: {
           pet1Id,
           pet2Id,
+          pet1OwnerId,
+          pet2OwnerId,
           status: MatchStatus.ACTIVE,
           compatibilityScore: compatibility.score,
           matchReasons: compatibility.reasons,
@@ -590,7 +602,7 @@ export class MatchingService {
   async getMatches(userId: string) {
     const matches = await this.prisma.match.findMany({
       where: {
-        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+        OR: [{ pet1OwnerId: userId }, { pet2OwnerId: userId }],
       },
       include: {
         pet1: {
@@ -627,12 +639,25 @@ export class MatchingService {
     });
 
     return matches.map(({ reports, ...match }) => {
+      const pet1 =
+        match.pet1 ?? this.deletedPetParticipant(match.pet1OwnerId, userId);
+      const pet2 =
+        match.pet2 ?? this.deletedPetParticipant(match.pet2OwnerId, userId);
       const otherUserId =
-        match.pet1.ownerId === userId ? match.pet2.ownerId : match.pet1.ownerId;
+        match.pet1OwnerId === userId ? match.pet2OwnerId : match.pet1OwnerId;
       return {
         ...match,
+        pet1,
+        pet2,
+        messages: match.messages.map((message) => ({
+          ...message,
+          sender:
+            message.sender ?? ({ id: null, name: 'Tài khoản đã xóa' } as const),
+        })),
         reportedTargetTypes: reports.map((report) => report.targetType),
-        blockedByMe: blocks.some((block) => block.blockedId === otherUserId),
+        blockedByMe:
+          Boolean(otherUserId) &&
+          blocks.some((block) => block.blockedId === otherUserId),
       };
     });
   }
@@ -667,8 +692,7 @@ export class MatchingService {
           );
         }
 
-        const reportedPetId =
-          participant.side === 'pet1' ? match.pet2Id : match.pet1Id;
+        const reportedPetId = participant.otherPet.id;
         const report = await tx.petReport.create({
           data: {
             matchId,
@@ -776,14 +800,8 @@ export class MatchingService {
         where: {
           status: { not: MatchStatus.CANCELLED },
           OR: [
-            {
-              pet1: { ownerId: userId },
-              pet2: { ownerId: blockedUserId },
-            },
-            {
-              pet1: { ownerId: blockedUserId },
-              pet2: { ownerId: userId },
-            },
+            { pet1OwnerId: userId, pet2OwnerId: blockedUserId },
+            { pet1OwnerId: blockedUserId, pet2OwnerId: userId },
           ],
         },
         data: {
@@ -854,7 +872,7 @@ export class MatchingService {
 
     return this.prisma.$transaction(async (tx) => {
       const match = await this.getLockedMatch(tx, matchId);
-      this.getParticipantContext(match, userId);
+      const participant = this.getParticipantContext(match, userId);
 
       if (match.status === MatchStatus.CANCELLED) {
         throw new ConflictException('Match đã kết thúc trước đó.');
@@ -873,14 +891,20 @@ export class MatchingService {
         select: matchActionSelect,
       });
       await tx.pet.updateMany({
-        where: { id: { in: [match.pet1Id, match.pet2Id] } },
+        where: { id: { in: [participant.ownPet.id, participant.otherPet.id] } },
         data: { updatedAt: endedAt },
       });
       await tx.matchingRequest.updateMany({
         where: {
           OR: [
-            { femalePetId: match.pet1Id, malePetId: match.pet2Id },
-            { femalePetId: match.pet2Id, malePetId: match.pet1Id },
+            {
+              femalePetId: participant.ownPet.id,
+              malePetId: participant.otherPet.id,
+            },
+            {
+              femalePetId: participant.otherPet.id,
+              malePetId: participant.ownPet.id,
+            },
           ],
           status: MatchingRequestStatus.ACCEPTED,
         },
@@ -907,7 +931,7 @@ export class MatchingService {
     const match = await this.prisma.match.findFirst({
       where: {
         id: matchId,
-        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+        OR: [{ pet1OwnerId: userId }, { pet2OwnerId: userId }],
       },
       select: {
         messages: {
@@ -932,9 +956,14 @@ export class MatchingService {
       });
     }
 
-    return match.messages.map((message) =>
-      message.senderId === userId ? message : { ...message, isRead: true },
-    );
+    return match.messages.map((message) => ({
+      ...(message.senderId === userId ? message : { ...message, isRead: true }),
+      sender: message.sender ?? {
+        id: null,
+        name: 'Tài khoản đã xóa',
+        avatarUrl: null,
+      },
+    }));
   }
 
   async sendMessage(userId: string, matchId: string, content: string) {
@@ -951,8 +980,12 @@ export class MatchingService {
         activeMatch.pet2.ownerId,
       );
       const match = await this.getLockedMatch(tx, matchId);
-      this.ensureMatchAllowsChat(match, userId);
-      await this.ensureNoUserBlock(tx, match.pet1.ownerId, match.pet2.ownerId);
+      const participant = this.ensureMatchAllowsChat(match, userId);
+      await this.ensureNoUserBlock(
+        tx,
+        participant.ownOwner.id,
+        participant.otherOwner.id,
+      );
 
       const message = await tx.message.create({
         data: { matchId, senderId: userId, content: normalizedContent },
@@ -993,11 +1026,11 @@ export class MatchingService {
           activeMatch.pet2.ownerId,
         );
         const match = await this.getLockedMatch(tx, matchId);
-        this.ensureMatchAllowsChat(match, userId);
+        const participant = this.ensureMatchAllowsChat(match, userId);
         await this.ensureNoUserBlock(
           tx,
-          match.pet1.ownerId,
-          match.pet2.ownerId,
+          participant.ownOwner.id,
+          participant.otherOwner.id,
         );
 
         const message = await tx.message.create({
@@ -1028,7 +1061,7 @@ export class MatchingService {
       where: {
         id: matchId,
         status: { in: CHAT_ENABLED_MATCH_STATUSES },
-        OR: [{ pet1: { ownerId: userId } }, { pet2: { ownerId: userId } }],
+        OR: [{ pet1OwnerId: userId }, { pet2OwnerId: userId }],
       },
       select: {
         id: true,
@@ -1041,29 +1074,36 @@ export class MatchingService {
         'Không tìm thấy match đang cho phép trò chuyện.',
       );
     }
+    if (!match.pet1 || !match.pet2) {
+      throw new NotFoundException(
+        'Không tìm thấy match đang cho phép trò chuyện.',
+      );
+    }
     await this.ensureNoUserBlock(
       this.prisma,
       match.pet1.ownerId,
       match.pet2.ownerId,
     );
-    this.ensurePetsAllowChat(match);
-    return match;
+    this.ensurePetsAllowChat({ pet1: match.pet1, pet2: match.pet2 });
+    return { id: match.id, pet1: match.pet1, pet2: match.pet2 };
   }
 
-  private ensureMatchAllowsChat(
-    match: MatchWithParticipants,
-    userId: string,
-  ): void {
-    const isParticipant =
-      match.pet1.ownerId === userId || match.pet2.ownerId === userId;
+  private ensureMatchAllowsChat(match: MatchWithParticipants, userId: string) {
     const allowsChat = CHAT_ENABLED_MATCH_STATUSES.includes(match.status);
+    const pet1OwnerId = match.pet1OwnerId ?? match.pet1?.ownerId;
+    const pet2OwnerId = match.pet2OwnerId ?? match.pet2?.ownerId;
 
-    if (!isParticipant || !allowsChat) {
+    if (!allowsChat || (pet1OwnerId !== userId && pet2OwnerId !== userId)) {
       throw new NotFoundException(
         'Không tìm thấy match đang cho phép trò chuyện.',
       );
     }
-    this.ensurePetsAllowChat(match);
+    const participant = this.getParticipantContext(match, userId);
+    this.ensurePetsAllowChat({
+      pet1: participant.ownPet,
+      pet2: participant.otherPet,
+    });
+    return participant;
   }
 
   private ensurePetsAllowChat(match: {
@@ -1137,10 +1177,15 @@ export class MatchingService {
   }
 
   private getParticipantContext(match: MatchWithParticipants, userId: string) {
+    if (!match.pet1 || !match.pet2) {
+      throw new ConflictException(
+        'Hồ sơ phía bên kia không còn khả dụng. Match chỉ có thể xem lại.',
+      );
+    }
     const side =
-      match.pet1.ownerId === userId
+      (match.pet1OwnerId ?? match.pet1.ownerId) === userId
         ? 'pet1'
-        : match.pet2.ownerId === userId
+        : (match.pet2OwnerId ?? match.pet2.ownerId) === userId
           ? 'pet2'
           : null;
     if (!side) {
@@ -1153,8 +1198,26 @@ export class MatchingService {
     return {
       side,
       ownPet: isPet1 ? match.pet1 : match.pet2,
+      otherPet: isPet1 ? match.pet2 : match.pet1,
       ownOwner: isPet1 ? match.pet1.owner : match.pet2.owner,
       otherOwner: isPet1 ? match.pet2.owner : match.pet1.owner,
+    };
+  }
+
+  private deletedPetParticipant(ownerId: string | null, userId: string) {
+    return {
+      id: null,
+      name: 'Thú cưng đã xóa',
+      breed: 'Không còn thông tin',
+      gender: null,
+      avatarUrl: null,
+      status: PetStatus.INACTIVE,
+      isDeleted: true,
+      owner: {
+        id: ownerId,
+        name: ownerId === userId ? 'Bạn' : 'Tài khoản đã xóa',
+        avatarUrl: null,
+      },
     };
   }
 

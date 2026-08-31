@@ -47,6 +47,7 @@ export class SpaReminderService
       const reminderUntil = new Date(now.getTime() + REMINDER_WINDOW_MS);
       const bookings = await this.prisma.spaBooking.findMany({
         where: {
+          userId: { not: null },
           reminderSentAt: null,
           scheduledAt: { gt: now, lte: reminderUntil },
           status: {
@@ -67,6 +68,8 @@ export class SpaReminderService
 
       let sentCount = 0;
       for (const booking of bookings) {
+        if (!booking.userId) continue;
+        const bookingUserId = booking.userId;
         await this.prisma.$transaction(async (tx) => {
           const claimed = await tx.spaBooking.updateMany({
             where: { id: booking.id, reminderSentAt: null },
@@ -84,7 +87,7 @@ export class SpaReminderService
           }).format(booking.scheduledAt);
           await this.notifications.create(
             {
-              userId: booking.userId,
+              userId: bookingUserId,
               category: NotificationCategory.APPOINTMENT,
               eventType: NotificationEventType.SPA_BOOKING_REMINDER,
               title: 'Sắp đến lịch hẹn Spa',

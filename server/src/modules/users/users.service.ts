@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { NotificationCategory, NotificationEventType, UserRole } from '@prisma/client';
+import {
+  NotificationCategory,
+  NotificationEventType,
+  OrderStatus,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -13,9 +19,9 @@ import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaymentService } from '../payment/payment.service';
-import { ShippingService } from '../shipping/shipping.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PetsService } from '../pets/pets.service';
 
 type User = {
   id: string;
@@ -64,8 +70,8 @@ export class UsersService {
     private prisma: PrismaService,
     private paymentService: PaymentService,
     private cloudinary: CloudinaryService,
-    private shippingService: ShippingService,
     private readonly notifications: NotificationsService,
+    private readonly petsService: PetsService,
   ) {}
 
   private async syncProductStockTx(tx: any, productId: string) {
@@ -335,31 +341,156 @@ export class UsersService {
   }
 
   async deleteAccount(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        avatarUrl: true,
-        pets: {
-          select: {
-            avatarUrl: true,
-            gallery: true,
-            documents: { select: { imageUrls: true } },
-          },
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "users" WHERE "id" = ${userId} FOR UPDATE`,
+      );
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          role: true,
+          avatarUrl: true,
+          pets: { select: { id: true } },
         },
-      },
-    });
-    await this.prisma.user.delete({ where: { id: userId } });
+      });
+      if (!user) {
+        throw new NotFoundException('Không tìm thấy tài khoản.');
+      }
+      if (user.role !== UserRole.USER) {
+        throw new ConflictException({
+          code: 'USER_ROLE_MUST_BE_REVOKED',
+          message:
+            'Vui lòng chuyển giao hoặc thu hồi vai trò quản lý/nhân viên trước khi xóa tài khoản.',
+        });
+      }
 
-    const urls = [
-      user?.avatarUrl,
-      ...(user?.pets.flatMap((pet) => [
-        pet.avatarUrl,
-        ...pet.gallery,
-        ...pet.documents.flatMap((document) => document.imageUrls),
-      ]) ?? []),
-    ];
-    await Promise.all(urls.map((url) => this.cloudinary.destroyByUrl(url)));
-    return { success: true };
+      const blockingOrders = await tx.order.findMany({
+        where: {
+          userId,
+          OR: [
+            {
+              status: {
+                in: [
+                  OrderStatus.PENDING,
+                  OrderStatus.PACKED,
+                  OrderStatus.PROCESSING,
+                  OrderStatus.SHIPPED,
+                ],
+              },
+            },
+            { refundStatus: 'PENDING' },
+          ],
+        },
+        select: { id: true, status: true, refundStatus: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (blockingOrders.length > 0) {
+        throw new ConflictException({
+          code: 'USER_HAS_ACTIVE_STORE_ORDERS',
+          message:
+            'Không thể xóa tài khoản vì bạn còn đơn hàng hoặc yêu cầu hoàn tiền chưa hoàn tất.',
+          orders: blockingOrders,
+        });
+      }
+
+      const petIds = user.pets.map((pet) => pet.id);
+      const spa = await this.petsService.prepareSpaBookingsForDeletion(
+        tx,
+        {
+          OR: [
+            { userId },
+            ...(petIds.length > 0 ? [{ petId: { in: petIds } }] : []),
+          ],
+        },
+        'USER',
+      );
+
+      const [ordersWithMedia, messagesWithImages] = await Promise.all([
+        tx.order.findMany({
+          where: { userId },
+          select: { refundProofUrl: true, deliveryProofUrl: true },
+        }),
+        tx.message.findMany({
+          where: { senderId: userId, imageUrl: { not: null } },
+          select: { imageUrl: true },
+        }),
+      ]);
+      await tx.order.updateMany({
+        where: { userId },
+        data: {
+          userId: null,
+          shippingAddress: 'Thông tin người nhận đã được ẩn',
+          districtId: null,
+          wardCode: null,
+          refundBankCode: null,
+          refundAccountNumber: null,
+          refundAccountName: null,
+          refundReason: null,
+          refundProofUrl: null,
+          deliveryProofUrl: null,
+          shippingNote: null,
+        },
+      });
+      await tx.spaBooking.updateMany({
+        where: { userId },
+        data: { userId: null },
+      });
+      await tx.message.updateMany({
+        where: { senderId: userId },
+        data: { imageUrl: null },
+      });
+      await tx.match.updateMany({
+        where: { endedById: userId },
+        data: { endedById: null },
+      });
+      await tx.complaint.updateMany({
+        where: { reporterId: userId },
+        data: { reporterId: null },
+      });
+      await tx.complaint.updateMany({
+        where: { targetId: userId, targetType: 'USER' },
+        data: { targetId: null },
+      });
+
+      const pets = await this.petsService.deleteOwnedPetsInTransaction(
+        tx,
+        userId,
+        petIds,
+        'USER_DELETED',
+      );
+      await tx.matchingRequest.deleteMany({ where: { requesterId: userId } });
+      await tx.user.delete({ where: { id: userId } });
+
+      return {
+        cancelledSpaBookings: spa.cancelledSpaBookings,
+        cancelledMatchingRequests: pets.cancelledMatchingRequests,
+        endedMatches: pets.endedMatches,
+        mediaUrls: [
+          user.avatarUrl,
+          ...spa.mediaUrls,
+          ...pets.mediaUrls,
+          ...ordersWithMedia.flatMap((order) => [
+            order.refundProofUrl,
+            order.deliveryProofUrl,
+          ]),
+          ...messagesWithImages.map((message) => message.imageUrl),
+        ].filter((url): url is string => Boolean(url)),
+      };
+    });
+
+    await Promise.all(
+      [...new Set(result.mediaUrls)].map((url) =>
+        this.cloudinary.destroyByUrl(url),
+      ),
+    );
+    return {
+      success: true,
+      message: 'Tài khoản đã được xóa.',
+      cancelledSpaBookings: result.cancelledSpaBookings,
+      cancelledMatchingRequests: result.cancelledMatchingRequests,
+      endedMatches: result.endedMatches,
+    };
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {

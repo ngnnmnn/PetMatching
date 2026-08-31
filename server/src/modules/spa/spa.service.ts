@@ -21,10 +21,11 @@ export class SpaService {
 
   private notifyBooking(
     tx: Prisma.TransactionClient,
-    booking: { id: string; userId: string; status: SpaBookingStatus; petName: string | null },
+    booking: { id: string; userId: string | null; status: SpaBookingStatus; petName: string | null },
     eventType: NotificationEventType,
     content?: string,
   ) {
+    if (!booking.userId) return Promise.resolve(null);
     return this.notifications.create(
       {
         userId: booking.userId,
@@ -2851,4 +2852,3 @@ function getVietnamTimeMinutes(date: Date): { startMins: number; hours: number; 
   const minutes = Number(parts.find((p) => p.type === 'minute')?.value || 0);
   return { startMins: hours * 60 + minutes, hours, minutes };
 }
-

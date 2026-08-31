@@ -1,4 +1,8 @@
-import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Injectable,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaymentService } from './payment.service';
 import { NotificationCategory, NotificationEventType } from '@prisma/client';
@@ -6,8 +10,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
-export class PaymentSyncService implements OnApplicationBootstrap {
-  private syncInterval: NodeJS.Timeout;
+export class PaymentSyncService
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
+  private syncInterval?: NodeJS.Timeout;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -27,6 +33,13 @@ export class PaymentSyncService implements OnApplicationBootstrap {
       console.log('Running periodic payment status sync...');
       await this.syncPendingOrders();
     }, 300000);
+  }
+
+  onModuleDestroy() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = undefined;
+    }
   }
 
   /**
@@ -70,9 +83,7 @@ export class PaymentSyncService implements OnApplicationBootstrap {
 
           if (paymentInfo && paymentInfo.status === 'PAID') {
             await this.paymentService.markPaidByOrderCode(payment.orderCode);
-            console.log(
-              `Payment ${payment.id} automatically synced to PAID.`,
-            );
+            console.log(`Payment ${payment.id} automatically synced to PAID.`);
           } else if (
             payment.createdAt < fifteenMinsAgo ||
             (paymentInfo &&
@@ -96,16 +107,21 @@ export class PaymentSyncService implements OnApplicationBootstrap {
                   where: { id: payment.order.id },
                   data: { status: targetStatus },
                 });
-                await this.notifications.create({
-                  userId: payment.order.userId,
-                  category: NotificationCategory.ORDER,
-                  eventType: NotificationEventType.ORDER_STATUS_CHANGED,
-                  title: 'Đơn hàng đã cập nhật',
-                  content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${ORDER_STATUS_LABELS[updatedOrder.status]}.`,
-                  targetUrl: `/orders?orderId=${updatedOrder.id}`,
-                  entityType: 'ORDER',
-                  entityId: updatedOrder.id,
-                }, tx);
+                if (payment.order.userId) {
+                  await this.notifications.create(
+                    {
+                      userId: payment.order.userId,
+                      category: NotificationCategory.ORDER,
+                      eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+                      title: 'Đơn hàng đã cập nhật',
+                      content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${ORDER_STATUS_LABELS[updatedOrder.status]}.`,
+                      targetUrl: `/orders?orderId=${updatedOrder.id}`,
+                      entityType: 'ORDER',
+                      entityId: updatedOrder.id,
+                    },
+                    tx,
+                  );
+                }
 
                 for (const item of payment.order.items) {
                   if (item.variantId) {

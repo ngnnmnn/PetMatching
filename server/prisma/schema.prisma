@@ -9,44 +9,46 @@ datasource db {
 }
 
 model User {
-  id                   String               @id @default(cuid())
-  email                String               @unique
-  username             String?              @unique
-  googleId             String?              @unique
+  id                      String               @id @default(cuid())
+  email                   String               @unique
+  username                String?              @unique
+  googleId                String?              @unique
   /// Mật khẩu đã được hash (bcrypt)
-  passwordHash         String?
-  name                 String
-  avatarUrl            String?
-  phone                String?
-  role                 UserRole             @default(USER)
-  accountStatus        AccountStatus        @default(ACTIVE)
+  passwordHash            String?
+  name                    String
+  avatarUrl               String?
+  phone                   String?
+  role                    UserRole             @default(USER)
+  accountStatus           AccountStatus        @default(ACTIVE)
   /// Xác thực email
-  isVerified           Boolean              @default(false)
+  isVerified              Boolean              @default(false)
   /// Số lần nhập sai OTP liên tiếp
-  failedOtpAttempts    Int                  @default(0) @map("failed_otp_attempts")
+  failedOtpAttempts       Int                  @default(0) @map("failed_otp_attempts")
   /// Thời điểm hết hạn khóa do nhập sai OTP
-  lockedUntil          DateTime?            @map("locked_until")
+  lockedUntil             DateTime?            @map("locked_until")
   /// Refresh token lưu trong DB (backup cho Redis)
-  refreshToken         String?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  managedSpaAddresses  AddressSpa[]         @relation("SpaAddressManager")
-  addresses            Address[]
-  auditLogs            AuditLog[]           @relation("AuditActor")
-  cartItems            CartItem[]
-  matchingRequests     MatchingRequest[]    @relation("MatchingRequester")
-  messages             Message[]
-  orders               Order[]
-  reviewedDocuments    PetDocument[]        @relation("PetDocumentReviewer")
-  pets                 Pet[]
-  reviews              ProductReview[]
-  assignedSpaBookings  SpaBooking[]         @relation("SpaStaffBookings")
-  spaBookings          SpaBooking[]
-  spaFeedbacks         SpaFeedback[]
-  managedSpaCategories SpaCategory[]        @relation("SpaCategoryManager")
-  spaStaffProfile      SpaStaff?            @relation("UserSpaStaffProfile")
-  managedStores        Store[]              @relation("StoreManager")
-  passwordResetTokens  PasswordResetToken[]
+  refreshToken            String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  managedSpaAddresses     AddressSpa[]         @relation("SpaAddressManager")
+  addresses               Address[]
+  auditLogs               AuditLog[]           @relation("AuditActor")
+  cartItems               CartItem[]
+  matchingRequests        MatchingRequest[]    @relation("MatchingRequester")
+  messages                Message[]
+  matchesAsPet1Owner      Match[]              @relation("MatchPet1Owner")
+  matchesAsPet2Owner      Match[]              @relation("MatchPet2Owner")
+  orders                  Order[]
+  reviewedDocuments       PetDocument[]        @relation("PetDocumentReviewer")
+  pets                    Pet[]
+  reviews                 ProductReview[]
+  assignedSpaBookings     SpaBooking[]         @relation("SpaStaffBookings")
+  spaBookings             SpaBooking[]
+  spaFeedbacks            SpaFeedback[]
+  managedSpaCategories    SpaCategory[]        @relation("SpaCategoryManager")
+  spaStaffProfile         SpaStaff?            @relation("UserSpaStaffProfile")
+  managedStores           Store[]              @relation("StoreManager")
+  passwordResetTokens     PasswordResetToken[]
   matchingReportsCreated  PetReport[]          @relation("MatchingReportReporter")
   matchingReportsReceived PetReport[]          @relation("MatchingReportSubject")
   matchingReportsResolved PetReport[]          @relation("MatchingReportResolver")
@@ -178,27 +180,33 @@ model MatchingRequest {
 }
 
 model Match {
-  id                      String      @id @default(cuid())
-  pet1Id                  String
-  pet2Id                  String
+  id                 String      @id @default(cuid())
+  pet1Id             String?
+  pet2Id             String?
+  pet1OwnerId        String?
+  pet2OwnerId        String?
   /// Điểm tương thích 0-100 (tính bởi matching engine)
-  compatibilityScore      Int         @default(0)
+  compatibilityScore Int         @default(0)
   /// Lý do match (JSON): ["same_breed", "both_pedigree", "breed_compatible", "near_location"]
-  matchReasons            Json?
-  status                  MatchStatus @default(ACTIVE)
-  endedAt                 DateTime?
-  endedById               String?
-  endReason               String?
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
-  pet1                    Pet         @relation("MatchPet1", fields: [pet1Id], references: [id])
-  pet2                    Pet         @relation("MatchPet2", fields: [pet2Id], references: [id])
-  messages                Message[]
-  reports                 PetReport[]
+  matchReasons       Json?
+  status             MatchStatus @default(ACTIVE)
+  endedAt            DateTime?
+  endedById          String?
+  endReason          String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  pet1               Pet?        @relation("MatchPet1", fields: [pet1Id], references: [id], onDelete: SetNull)
+  pet2               Pet?        @relation("MatchPet2", fields: [pet2Id], references: [id], onDelete: SetNull)
+  pet1Owner          User?       @relation("MatchPet1Owner", fields: [pet1OwnerId], references: [id], onDelete: SetNull)
+  pet2Owner          User?       @relation("MatchPet2Owner", fields: [pet2OwnerId], references: [id], onDelete: SetNull)
+  messages           Message[]
+  reports            PetReport[]
 
   @@unique([pet1Id, pet2Id])
   @@index([pet1Id, status])
   @@index([pet2Id, status])
+  @@index([pet1OwnerId, status])
+  @@index([pet2OwnerId, status])
   @@map("matches")
 }
 
@@ -207,11 +215,11 @@ model Message {
   content   String
   imageUrl  String?
   matchId   String
-  senderId  String
+  senderId  String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  sender    User     @relation(fields: [senderId], references: [id])
+  sender    User?    @relation(fields: [senderId], references: [id], onDelete: SetNull)
 
   @@index([matchId, createdAt])
   @@index([senderId])
@@ -219,7 +227,7 @@ model Message {
 }
 
 model Notification {
-  id         String                    @id @default(cuid())
+  id         String                @id @default(cuid())
   userId     String
   category   NotificationCategory
   eventType  NotificationEventType
@@ -229,12 +237,12 @@ model Notification {
   entityType String?
   entityId   String?
   payload    Json?
-  isRead     Boolean                   @default(false)
+  isRead     Boolean               @default(false)
   readAt     DateTime?
   deletedAt  DateTime?
-  createdAt  DateTime                  @default(now())
-  updatedAt  DateTime                  @updatedAt
-  user       User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, deletedAt, createdAt])
   @@index([userId, deletedAt, isRead])
@@ -297,27 +305,27 @@ model PetDocument {
 }
 
 model PetReport {
-  id             String    @id @default(cuid())
-  petId          String
-  userId         String
-  matchId        String?
-  reportedUserId String?
-  targetType     String    @default("USER")
-  reason         String
-  detail         String?
-  status         ComplaintStatus @default(PENDING)
-  actionTaken    ComplaintAction?
-  adminNote      String?
+  id                String           @id @default(cuid())
+  petId             String
+  userId            String
+  matchId           String?
+  reportedUserId    String?
+  targetType        String           @default("USER")
+  reason            String
+  detail            String?
+  status            ComplaintStatus  @default(PENDING)
+  actionTaken       ComplaintAction?
+  adminNote         String?
   resolutionMessage String?
-  reviewStartedAt DateTime?
-  resolvedAt     DateTime?
-  resolvedById   String?
-  createdAt      DateTime  @default(now())
-  pet            Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
-  reporter       User      @relation("MatchingReportReporter", fields: [userId], references: [id], onDelete: Cascade)
-  reportedUser   User?     @relation("MatchingReportSubject", fields: [reportedUserId], references: [id], onDelete: SetNull)
-  resolver       User?     @relation("MatchingReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
-  match          Match?    @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  reviewStartedAt   DateTime?
+  resolvedAt        DateTime?
+  resolvedById      String?
+  createdAt         DateTime         @default(now())
+  pet               Pet              @relation(fields: [petId], references: [id], onDelete: Cascade)
+  reporter          User             @relation("MatchingReportReporter", fields: [userId], references: [id], onDelete: Cascade)
+  reportedUser      User?            @relation("MatchingReportSubject", fields: [reportedUserId], references: [id], onDelete: SetNull)
+  resolver          User?            @relation("MatchingReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  match             Match?           @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
   @@unique([matchId, userId, targetType])
   @@index([reportedUserId, status])
@@ -359,11 +367,11 @@ model Store {
 
 model Product {
   /// Mã sản phẩm dạng 6 chữ số, ví dụ: 482731
-  id             String          @id
+  id             String           @id
   name           String
-  slug           String?         @unique
+  slug           String?          @unique
   category       String
-  targetSpecies  String          @default("ALL")
+  targetSpecies  String           @default("ALL")
   description    String?
   imageUrl       String?
   images         String[]
@@ -373,18 +381,18 @@ model Product {
   importPrice    Float?
   brand          String?
   unit           String?
-  rating         Float           @default(0)
-  reviewCount    Int             @default(0)
-  stock          Int             @default(5)
-  isActive       Boolean         @default(true)
-  isFeatured     Boolean         @default(false)
+  rating         Float            @default(0)
+  reviewCount    Int              @default(0)
+  stock          Int              @default(5)
+  isActive       Boolean          @default(true)
+  isFeatured     Boolean          @default(false)
   storeId        String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
   cartItems      CartItem[]
   orderItems     OrderItem[]
   reviews        ProductReview[]
-  store          Store?          @relation(fields: [storeId], references: [id])
+  store          Store?           @relation(fields: [storeId], references: [id])
   variants       ProductVariant[]
 
   @@index([category, isActive])
@@ -416,12 +424,12 @@ model Address {
 }
 
 model Order {
-  id                  String      @id @default(cuid())
-  userId              String
-  status              OrderStatus @default(PENDING)
+  id                  String          @id @default(cuid())
+  userId              String?
+  status              OrderStatus     @default(PENDING)
   totalAmount         Float
-  shippingFee         Float       @default(0)
-  discountAmount      Float       @default(0)
+  shippingFee         Float           @default(0)
+  discountAmount      Float           @default(0)
   voucherCode         String?
   shippingAddress     String
   districtId          Int?
@@ -437,13 +445,13 @@ model Order {
   refundProofUrl      String?
   deliveryProofUrl    String?
   shippingNote        String?
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
   items               OrderItem[]
   payment             Payment?
   reviews             ProductReview[]
-  store               Store?      @relation(fields: [storeId], references: [id])
-  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store               Store?          @relation(fields: [storeId], references: [id])
+  user                User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([storeId])
@@ -513,7 +521,7 @@ model SpaBooking {
   serviceId             String?
   mainServiceId         String?
   subServiceIds         String[]         @default([])
-  userId                String
+  userId                String?
   staffId               String?
   petName               String?
   petId                 String?
@@ -544,7 +552,7 @@ model SpaBooking {
   pet                   Pet?             @relation(fields: [petId], references: [id])
   service               SpaService?      @relation(fields: [serviceId], references: [id])
   staff                 User?            @relation("SpaStaffBookings", fields: [staffId], references: [id])
-  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                  User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   feedback              SpaFeedback?
   payment               Payment?
 
@@ -926,21 +934,21 @@ model ProductUnit {
 }
 
 model ProductVariant {
-  id           String      @id @default(cuid())
-  productId    String      @map("product_id")
-  name         String      // e.g. "Size S", "Màu Đỏ", "500g"
-  attributes   Json?       // e.g. { "size": "S", "color": "Đỏ" }
-  sellingPrice Float       @map("selling_price")
-  salePrice    Float?      @map("sale_price")
-  stock        Int         @default(0)
-  imageUrl     String?     @map("image_url")
-  isActive     Boolean     @default(true) @map("is_active")
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  id           String   @id @default(cuid())
+  productId    String   @map("product_id")
+  name         String // e.g. "Size S", "Màu Đỏ", "500g"
+  attributes   Json? // e.g. { "size": "S", "color": "Đỏ" }
+  sellingPrice Float    @map("selling_price")
+  salePrice    Float?   @map("sale_price")
+  stock        Int      @default(0)
+  imageUrl     String?  @map("image_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  product      Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  cartItems    CartItem[]
-  orderItems   OrderItem[]
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   @@index([productId, isActive])
   @@map("product_variants")

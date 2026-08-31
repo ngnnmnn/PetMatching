@@ -2,14 +2,10 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CalculateFeeDto } from './dto/calculate-fee.dto';
-import { CreateShippingOrderDto } from './dto/create-shipping-order.dto';
 import { ShippingService } from './shipping.service';
 
 @Controller('api/shipping')
@@ -36,7 +32,7 @@ export class ShippingController {
   }
 
   @Post('calculate-fee')
-  async calculateShippingFee(@Body() dto: CalculateFeeDto) {
+  calculateShippingFee(@Body() dto: CalculateFeeDto) {
     return this.shippingService.calculateShippingFee(dto);
   }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -51,5 +52,10 @@ export class PetsController {
     @Body() dto: UpdateAvailabilityDto,
   ) {
     return this.petsService.updateAvailability(request.user.id, id, dto);
+  }
+
+  @Delete(':id')
+  deletePet(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.petsService.deletePet(request.user.id, id);
   }
 }

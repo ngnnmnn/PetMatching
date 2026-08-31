@@ -99,31 +99,33 @@ type Match = {
   blockedByMe: boolean;
   createdAt: string;
   pet1: {
-    id: string;
+    id: string | null;
     name: string;
     breed: string;
-    gender: 'MALE' | 'FEMALE';
+    gender: 'MALE' | 'FEMALE' | null;
     avatarUrl?: string | null;
     status: PetStatus;
-    owner: { id: string; name: string };
+    isDeleted?: boolean;
+    owner: { id: string | null; name: string };
   };
   pet2: {
-    id: string;
+    id: string | null;
     name: string;
     breed: string;
-    gender: 'MALE' | 'FEMALE';
+    gender: 'MALE' | 'FEMALE' | null;
     avatarUrl?: string | null;
     status: PetStatus;
-    owner: { id: string; name: string };
+    isDeleted?: boolean;
+    owner: { id: string | null; name: string };
   };
   messages?: Array<{
     id: string;
     content: string;
-    senderId: string;
+    senderId: string | null;
     createdAt: string;
     isRead: boolean;
     imageUrl?: string | null;
-    sender: { id: string; name: string };
+    sender: { id: string | null; name: string };
   }>;
   _count?: { messages: number };
 };
@@ -131,9 +133,9 @@ type Match = {
 type ChatMessage = {
   id: string;
   content: string;
-  senderId: string;
+  senderId: string | null;
   createdAt: string;
-  sender: { id: string; name: string; avatarUrl?: string | null };
+  sender: { id: string | null; name: string; avatarUrl?: string | null };
   isRead: boolean;
   imageUrl?: string | null;
   senderName?: string;
@@ -496,6 +498,10 @@ export default function MessagesPage() {
     const otherUserId = selectedMatch.pet1.owner.id === currentUserId
       ? selectedMatch.pet2.owner.id
       : selectedMatch.pet1.owner.id;
+    if (!otherUserId) {
+      toast.error('Tài khoản phía bên kia không còn khả dụng.');
+      return;
+    }
     setMatchAction('UNBLOCK');
     try {
       await api.delete(`/matching/blocks/${otherUserId}`);
@@ -517,9 +523,18 @@ export default function MessagesPage() {
   const chatReadOnly = selectedMatch?.status === 'CANCELLED' || chatModerated;
 
   const currentUserOwnsPet1 = selectedMatch?.pet1.owner.id === currentUserId;
+  const ownPet = selectedMatch
+    ? (currentUserOwnsPet1 ? selectedMatch.pet1 : selectedMatch.pet2)
+    : null;
   const otherPet = selectedMatch
     ? (currentUserOwnsPet1 ? selectedMatch.pet2 : selectedMatch.pet1)
     : null;
+  const deletedParticipant = Boolean(
+    selectedMatch?.pet1.isDeleted || selectedMatch?.pet2.isDeleted,
+  );
+  const deletedHistoryMessage = ownPet?.isDeleted
+    ? 'Hồ sơ thú cưng của bạn đã được xóa.'
+    : 'Hồ sơ phía bên kia không còn khả dụng.';
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [selectedMatch?.id, currentMatchMessages.length]);
@@ -742,7 +757,7 @@ export default function MessagesPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            disabled={(selectedMatch.reportedTargetTypes?.length ?? 0) === 2}
+                            disabled={deletedParticipant || (selectedMatch.reportedTargetTypes?.length ?? 0) === 2}
                             onSelect={openReportDialog}
                           >
                             <Flag />
@@ -750,7 +765,7 @@ export default function MessagesPage() {
                               ? 'Đã gửi đủ báo cáo'
                               : 'Báo cáo'}
                           </DropdownMenuItem>
-                          {selectedMatch.blockedByMe ? (
+                          {!deletedParticipant && (selectedMatch.blockedByMe ? (
                             <DropdownMenuItem onSelect={handleUnblockUser} disabled={matchAction === 'UNBLOCK'}>
                               <UserCheck /> Bỏ chặn người dùng
                             </DropdownMenuItem>
@@ -758,7 +773,7 @@ export default function MessagesPage() {
                             <DropdownMenuItem variant="destructive" onSelect={() => setBlockDialogOpen(true)}>
                               <UserX /> Chặn người dùng
                             </DropdownMenuItem>
-                          )}
+                          ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -769,7 +784,11 @@ export default function MessagesPage() {
                       {selectedMatch.blockedByMe
                         ? 'Bạn đã chặn người dùng này. Phòng chat hiện ở chế độ chỉ đọc.'
                         : 'Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.'}
-                      {selectedMatch.endReason && <span className="ml-1">Lý do: {selectedMatch.endReason}</span>}
+                      {deletedParticipant ? (
+                        <span className="ml-1">{deletedHistoryMessage}</span>
+                      ) : selectedMatch.endReason ? (
+                        <span className="ml-1">Lý do: {selectedMatch.endReason}</span>
+                      ) : null}
                     </div>
                   )}
                   {selectedMatch.status === 'ACTIVE' && chatModerated && (

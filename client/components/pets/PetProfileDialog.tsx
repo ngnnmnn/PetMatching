@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Sparkles,
   Syringe,
+  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -54,6 +55,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -92,6 +94,7 @@ type PetProfileDialogProps = {
   startInEditMode?: boolean;
   onClose: () => void;
   onPetUpdated: (pet: Pet) => void;
+  onPetDeleted: (petId: string) => void;
 };
 
 type EditForm = {
@@ -150,6 +153,7 @@ export function PetProfileDialog({
   startInEditMode = false,
   onClose,
   onPetUpdated,
+  onPetDeleted,
 }: PetProfileDialogProps) {
   const [pet, setPet] = useState<Pet>(initialPet);
   const initialMode: DialogMode = startInEditMode ? "edit" : "view";
@@ -165,6 +169,8 @@ export function PetProfileDialog({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [statusConfirmOpen, setStatusConfirmOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [discardAction, setDiscardAction] = useState<"close" | "view">("view");
 
   const dirty = useMemo(
@@ -411,6 +417,21 @@ export function PetProfileDialog({
     }
   };
 
+  const deletePet = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const response = await petsApi.delete(pet.id);
+      toast.success(response.data.message);
+      setDeleteConfirmOpen(false);
+      onPetDeleted(pet.id);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, 'Không thể xóa thú cưng lúc này.'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <Dialog
@@ -475,6 +496,14 @@ export function PetProfileDialog({
                         {pet.status === "INACTIVE"
                           ? "Hiện lại hồ sơ"
                           : "Ẩn hồ sơ"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="size-4" />
+                        Xóa thú cưng
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -574,6 +603,30 @@ export function PetProfileDialog({
               )}
             >
               {pet.status === "INACTIVE" ? "Hiện lại hồ sơ" : "Ẩn hồ sơ"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa hồ sơ của {pet.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Hồ sơ và hình ảnh sẽ bị xóa vĩnh viễn. Các yêu cầu ghép đôi sẽ
+              bị hủy, Match đang hoạt động sẽ kết thúc và lịch Spa chưa xác
+              nhận sẽ được hủy. Lịch sử hoàn thành vẫn được lưu lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Quay lại</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deletePet}
+              disabled={deleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : null}
+              {deleting ? 'Đang xóa...' : 'Xóa thú cưng'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

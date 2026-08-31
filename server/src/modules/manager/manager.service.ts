@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { ShippingService } from '../shipping/shipping.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
 import { NotificationCategory, NotificationEventType } from '@prisma/client';
@@ -16,7 +15,6 @@ import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels
 export class ManagerService {
   constructor(
     private prisma: PrismaService,
-    private shippingService: ShippingService,
     private cloudinaryService: CloudinaryService,
     private readonly notifications: NotificationsService,
   ) {}
@@ -615,7 +613,7 @@ export class ManagerService {
         include: { payment: true },
       });
 
-      if (order.status !== updatedOrder.status) {
+      if (order.status !== updatedOrder.status && order.userId) {
         await this.notifications.create(
           {
             userId: order.userId,
@@ -932,7 +930,7 @@ export class ManagerService {
           where: { id: orderId },
           data: updateData,
         });
-        if (order.status !== updatedOrder.status) {
+        if (order.status !== updatedOrder.status && order.userId) {
           await this.notifications.create(
             {
               userId: order.userId,

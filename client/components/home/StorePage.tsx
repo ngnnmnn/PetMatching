@@ -221,7 +221,7 @@ export default function StorePage() {
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-[var(--border-color)]">
             {[
               { icon: ShieldCheck, title: 'Sản phẩm chính hãng', desc: 'Cam kết 100% thức ăn & phụ kiện nguồn gốc xuất xứ rõ ràng.' },
-              { icon: Truck, title: 'Giao hàng siêu tốc', desc: 'Đồng bộ vận chuyển GHN giao hàng nhanh toàn quốc chỉ từ 1-3 ngày.' },
+              { icon: Truck, title: 'Giao hàng thuận tiện', desc: 'Phí vận chuyển minh bạch, đơn hàng được cửa hàng chủ động xác nhận và bàn giao.' },
               { icon: RotateCcw, title: 'Chính sách đổi trả', desc: 'Đổi trả miễn phí trong vòng 7 ngày đối với các sản phẩm lỗi sản xuất.' },
             ].map((value, idx) => (
               <div key={idx} className="flex gap-4 p-5 rounded-2xl bg-[#FAF9F5] border border-[var(--border-color)]">
