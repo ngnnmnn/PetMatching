@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -8,7 +9,11 @@ import {
   DocumentStatus,
   DocumentType,
   Gender,
+  MatchStatus,
+  PaymentStatus,
   PetStatus,
+  Prisma,
+  SpaBookingStatus,
   Species,
   VerificationBadge,
 } from '@prisma/client';
@@ -36,6 +41,205 @@ export class PetsService {
       include: { documents: { orderBy: { updatedAt: 'desc' } } },
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
+  }
+
+  async deletePet(userId: string, petId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const spa = await this.prepareSpaBookingsForDeletion(
+        tx,
+        { petId },
+        'PET',
+      );
+      const pets = await this.deleteOwnedPetsInTransaction(
+        tx,
+        userId,
+        [petId],
+        'PET_DELETED',
+      );
+      return {
+        ...pets,
+        cancelledSpaBookings: spa.cancelledSpaBookings,
+        mediaUrls: [...spa.mediaUrls, ...pets.mediaUrls],
+      };
+    });
+
+    await Promise.all(
+      [...new Set(result.mediaUrls)].map((url) =>
+        this.cloudinary.destroyByUrl(url),
+      ),
+    );
+
+    return {
+      success: true,
+      message: `Đã xóa hồ sơ của ${result.petNames[0]}.`,
+      cancelledSpaBookings: result.cancelledSpaBookings,
+      cancelledMatchingRequests: result.cancelledMatchingRequests,
+      endedMatches: result.endedMatches,
+    };
+  }
+
+  async prepareSpaBookingsForDeletion(
+    tx: Prisma.TransactionClient,
+    where: Prisma.SpaBookingWhereInput,
+    scope: 'PET' | 'USER',
+  ) {
+    const activeStatuses: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.ASSIGNED,
+      SpaBookingStatus.CHECK_IN,
+      SpaBookingStatus.ARRIVED,
+      SpaBookingStatus.LATE,
+      SpaBookingStatus.IN_PROGRESS,
+    ];
+    const activeBookings = await tx.spaBooking.findMany({
+      where: { AND: [where, { status: { in: activeStatuses } }] },
+      include: { payment: true },
+      orderBy: { scheduledAt: 'asc' },
+    });
+    const blockers = activeBookings.filter(
+      (booking) =>
+        booking.status !== SpaBookingStatus.PENDING ||
+        booking.payment?.status === PaymentStatus.PAID,
+    );
+    if (blockers.length > 0) {
+      throw new ConflictException({
+        code:
+          scope === 'PET'
+            ? 'PET_HAS_ACTIVE_SPA_BOOKING'
+            : 'USER_HAS_ACTIVE_SPA_BOOKING',
+        message:
+          scope === 'PET'
+            ? 'Không thể xóa thú cưng vì đang có lịch Spa đã xác nhận, đang thực hiện hoặc đã thanh toán.'
+            : 'Không thể xóa tài khoản vì bạn hoặc thú cưng đang có lịch Spa đã xác nhận, đang thực hiện hoặc đã thanh toán.',
+        bookings: blockers.map((booking) => ({
+          id: booking.id,
+          status: booking.status,
+          scheduledAt: booking.scheduledAt,
+        })),
+      });
+    }
+
+    const pendingIds = activeBookings
+      .filter((booking) => booking.status === SpaBookingStatus.PENDING)
+      .map((booking) => booking.id);
+    if (pendingIds.length > 0) {
+      await tx.payment.updateMany({
+        where: {
+          spaBookingId: { in: pendingIds },
+          status: {
+            in: [
+              PaymentStatus.PENDING,
+              PaymentStatus.EXPIRED,
+              PaymentStatus.PAYMENT_ERROR,
+            ],
+          },
+        },
+        data: { status: PaymentStatus.CANCELLED },
+      });
+      await tx.spaBooking.updateMany({
+        where: { id: { in: pendingIds } },
+        data: {
+          status: SpaBookingStatus.CANCELLED,
+          cancelReason:
+            scope === 'PET'
+              ? 'Hồ sơ thú cưng đã được xóa'
+              : 'Tài khoản khách hàng đã được xóa',
+        },
+      });
+    }
+
+    const history = await tx.spaBooking.findMany({
+      where,
+      select: { photoAfter: true },
+    });
+    await tx.spaBooking.updateMany({
+      where,
+      data: {
+        petId: null,
+        petName: 'Thú cưng đã xóa',
+        note: null,
+        petConditionAfter: null,
+        photoAfter: null,
+        issueReported: null,
+      },
+    });
+
+    return {
+      cancelledSpaBookings: pendingIds.length,
+      mediaUrls: history
+        .map((booking) => booking.photoAfter)
+        .filter((url): url is string => Boolean(url)),
+    };
+  }
+
+  async deleteOwnedPetsInTransaction(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    petIds: string[],
+    reason: 'PET_DELETED' | 'USER_DELETED',
+  ) {
+    if (petIds.length === 0) {
+      return {
+        petNames: [] as string[],
+        cancelledMatchingRequests: 0,
+        endedMatches: 0,
+        mediaUrls: [] as string[],
+      };
+    }
+
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "pets" WHERE "id" IN (${Prisma.join(
+        petIds,
+      )}) ORDER BY "id" FOR UPDATE`,
+    );
+    const pets = await tx.pet.findMany({
+      where: { id: { in: petIds } },
+      include: { documents: { select: { imageUrls: true } } },
+    });
+    if (pets.length !== petIds.length) {
+      throw new NotFoundException('Không tìm thấy thú cưng.');
+    }
+    if (pets.some((pet) => pet.ownerId !== userId)) {
+      throw new ForbiddenException('Bạn không có quyền xóa thú cưng này.');
+    }
+
+    const now = new Date();
+    const matchWhere: Prisma.MatchWhereInput = {
+      OR: [{ pet1Id: { in: petIds } }, { pet2Id: { in: petIds } }],
+    };
+    const endedMatches = await tx.match.updateMany({
+      where: { AND: [matchWhere, { status: MatchStatus.ACTIVE }] },
+      data: {
+        status: MatchStatus.CANCELLED,
+        endedAt: now,
+        endedById: reason === 'PET_DELETED' ? userId : null,
+        endReason: reason,
+      },
+    });
+    const cancelledRequests = await tx.matchingRequest.deleteMany({
+      where: {
+        OR: [
+          { femalePetId: { in: petIds } },
+          { malePetId: { in: petIds } },
+          ...(reason === 'USER_DELETED' ? [{ requesterId: userId }] : []),
+        ],
+      },
+    });
+
+    const mediaUrls = pets.flatMap((pet) => [
+      pet.avatarUrl,
+      ...pet.gallery,
+      ...pet.documents.flatMap((document) => document.imageUrls),
+    ]);
+    await tx.pet.deleteMany({ where: { id: { in: petIds } } });
+
+    return {
+      petNames: pets.map((pet) => pet.name),
+      cancelledMatchingRequests: cancelledRequests.count,
+      endedMatches: endedMatches.count,
+      mediaUrls: mediaUrls.filter((url): url is string => Boolean(url)),
+    };
   }
 
   async getPetDetail(userId: string, petId: string) {

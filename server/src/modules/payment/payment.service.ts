@@ -126,16 +126,21 @@ export class PaymentService {
           where: { id: payment.order.id },
           data: { status: 'PROCESSING' },
         });
-        await this.notifications.create({
-          userId: payment.order.userId,
-          category: NotificationCategory.ORDER,
-          eventType: NotificationEventType.ORDER_STATUS_CHANGED,
-          title: 'Thanh toán đơn hàng thành công',
-          content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đang được xử lý.`,
-          targetUrl: `/orders?orderId=${updatedOrder.id}`,
-          entityType: 'ORDER',
-          entityId: updatedOrder.id,
-        }, tx);
+        if (payment.order.userId) {
+          await this.notifications.create(
+            {
+              userId: payment.order.userId,
+              category: NotificationCategory.ORDER,
+              eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+              title: 'Thanh toán đơn hàng thành công',
+              content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đang được xử lý.`,
+              targetUrl: `/orders?orderId=${updatedOrder.id}`,
+              entityType: 'ORDER',
+              entityId: updatedOrder.id,
+            },
+            tx,
+          );
+        }
       }
 
       if (
@@ -158,16 +163,21 @@ export class PaymentService {
             ),
           },
         });
-        await this.notifications.create({
-          userId: payment.spaBooking.userId,
-          category: NotificationCategory.APPOINTMENT,
-          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
-          title: 'Lịch Spa đã hoàn thành',
-          content: `Lịch Spa của ${updatedBooking.petName || 'thú cưng'} đã hoàn thành.`,
-          targetUrl: `/spa/bookings?bookingId=${updatedBooking.id}`,
-          entityType: 'SPA_BOOKING',
-          entityId: updatedBooking.id,
-        }, tx);
+        if (payment.spaBooking.userId) {
+          await this.notifications.create(
+            {
+              userId: payment.spaBooking.userId,
+              category: NotificationCategory.APPOINTMENT,
+              eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+              title: 'Lịch Spa đã hoàn thành',
+              content: `Lịch Spa của ${updatedBooking.petName || 'thú cưng'} đã hoàn thành.`,
+              targetUrl: `/spa/bookings?bookingId=${updatedBooking.id}`,
+              entityType: 'SPA_BOOKING',
+              entityId: updatedBooking.id,
+            },
+            tx,
+          );
+        }
       }
 
       return paidPayment;
@@ -226,5 +236,4 @@ export class PaymentService {
       return null;
     }
   }
-
 }
