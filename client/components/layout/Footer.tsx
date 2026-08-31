@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Facebook, Instagram, Mail, MapPin, PawPrint, Phone, Youtube } from 'lucide-react';
+import { Facebook, Instagram, Mail, MapPin, PawPrint, Youtube } from 'lucide-react';
 import Link from 'next/link';
 import { spaApi } from '@/lib/api/spa';
 import { AddressSpaType } from '@/types';

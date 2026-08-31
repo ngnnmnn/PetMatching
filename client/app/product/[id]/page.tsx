@@ -6,14 +6,10 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   ChevronRight,
-  Heart,
   Minus,
   Plus,
   ShoppingCart,
   Star,
-  ShieldCheck,
-  Truck,
-  RotateCcw,
   Sparkles,
   PackageCheck,
   Store,
@@ -22,7 +18,6 @@ import {
   X,
   Edit2,
   Trash2,
-  Upload,
   Camera,
   Image as ImageIcon
 } from 'lucide-react';

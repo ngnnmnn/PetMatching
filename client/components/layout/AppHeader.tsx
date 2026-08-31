@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { motion } from 'framer-motion';
 import {
   ChevronDown,
   Heart,
@@ -18,8 +17,6 @@ import { BrandMark } from '@/components/auth/AuthShell';
 import UserDropdown from '@/components/home/UserDropdown';
 import { useCart } from '@/context/CartContext';
 import NotificationBell from '@/components/notifications/NotificationBell';
-
-const MotionLink = motion.create(Link);
 
 const MATCHING_NAV = [
   { label: 'Khám phá', href: '/explore', icon: Search },

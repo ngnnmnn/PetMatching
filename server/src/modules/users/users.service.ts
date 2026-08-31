@@ -1298,46 +1298,4 @@ export class UsersService {
       },
     });
   }
-
-  async lookupBankAccount(bankCode: string, accountNumber: string) {
-    const clientId = process.env.VIETQR_CLIENT_ID;
-    const apiKey = process.env.VIETQR_API_KEY;
-
-    if (!clientId || !apiKey) {
-      throw new BadRequestException(
-        'Chức năng kiểm tra tài khoản chưa được cấu hình khóa API VietQR.',
-      );
-    }
-
-    try {
-      const response = await fetch('https://api.vietqr.io/v2/lookup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': clientId,
-          'x-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          bin: bankCode,
-          accountNumber,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.code !== '00') {
-        throw new Error(
-          data.desc || 'Tài khoản không hợp lệ hoặc lỗi tra cứu.',
-        );
-      }
-
-      return {
-        accountName: data.data.accountName,
-      };
-    } catch (error: any) {
-      console.error('VietQR Lookup failed:', error);
-      throw new BadRequestException(
-        error.message || 'Không thể tra cứu thông tin tài khoản ngân hàng này.',
-      );
-    }
-  }
 }

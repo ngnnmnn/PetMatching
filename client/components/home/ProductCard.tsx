@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, PackageCheck, ShoppingCart, Star, X, Sparkles, Eye, Info } from 'lucide-react';
+import { PackageCheck, ShoppingCart, Star, X, Sparkles, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Product } from '@/types';
@@ -41,7 +41,7 @@ const getParsedSpecs = (specifications: any): Array<{ key: string; value: string
     if (typeof obj === 'object' && obj !== null) {
       return Object.entries(obj).map(([key, value]) => ({ key, value: String(value) }));
     }
-  } catch (e) {
+  } catch {
     // Ignore parse error
   }
   return [];
@@ -49,13 +49,10 @@ const getParsedSpecs = (specifications: any): Array<{ key: string; value: string
 
 export default function ProductCard({
   product,
-  featured = false,
   selectedPet,
 }: {
   product: Product;
-  featured?: boolean;
   selectedPet?: any;
-  onPreviewClick?: (product: Product) => void;
 }) {
   const router = useRouter();
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
@@ -177,12 +174,6 @@ export default function ProductCard({
             <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 rounded-lg bg-emerald-600 text-[10px] font-black text-white px-2.5 py-1 shadow-md z-10 animate-pulse">
               <Sparkles className="size-3 fill-white/20" />
               Gợi ý: {selectedVariant.name.replace(/size\s+/i, 'Size ')}
-            </span>
-          )}
-
-          {featured && !(product.soldCount && product.soldCount >= 5) && (
-            <span className="absolute right-2.5 top-2.5 rounded-lg bg-[#F59E0B] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
-              Hot
             </span>
           )}
 
@@ -364,11 +355,6 @@ export default function ProductCard({
                   {discount && (
                     <span className="absolute top-2 left-2 bg-orange-600 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-sm">
                       -{discount}%
-                    </span>
-                  )}
-                  {featured && (
-                    <span className="absolute top-2 right-2 bg-amber-500 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-sm">
-                      HOT
                     </span>
                   )}
                 </div>

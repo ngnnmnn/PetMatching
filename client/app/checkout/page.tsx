@@ -8,8 +8,6 @@ import {
   CreditCard,
   CheckCircle,
   Truck,
-  Plus,
-  MapPin,
   QrCode,
   Coins,
   Loader2,
@@ -26,7 +24,6 @@ import { useCart } from '@/context/CartContext';
 import { usersApi } from '@/lib/api/users';
 import { Address } from '@/types';
 import { PayOSQRModal, PayOSQRData, ShippingAddressSelector, VoucherModal } from '@/components/checkout';
-import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
@@ -54,7 +51,6 @@ function CheckoutPageContent() {
   // Selection and promo code state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [directCheckoutItem, setDirectCheckoutItem] = useState<any | null>(null);
-  const [isAddressesExpanded, setIsAddressesExpanded] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [appliedCode, setAppliedCode] = useState('');
   const [discountPercent, setDiscountPercent] = useState(0);
@@ -65,21 +61,12 @@ function CheckoutPageContent() {
   // Addresses from DB
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>(''); // empty means "new address"
-  const [previousAddressId, setPreviousAddressId] = useState<string>('');
-  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
-  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
-
-  // Address delete state
-  const [addressToDeleteId, setAddressToDeleteId] = useState<string | null>(null);
-  const [deletingAddressLoading, setDeletingAddressLoading] = useState(false);
 
   // Temporary New Address Form State (if not saving to DB immediately)
   const [receiverName, setReceiverName] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [detail, setDetail] = useState('');
   const [userNote, setUserNote] = useState('');
-  const [saveAddressToDb, setSaveAddressToDb] = useState(true);
-  const [setAsDefault, setSetAsDefault] = useState(false);
 
   const [selectedProvinceName, setSelectedProvinceName] = useState('');
   const [selectedDistrictName, setSelectedDistrictName] = useState('');
@@ -103,7 +90,7 @@ function CheckoutPageContent() {
   const [recipientNameStr, setRecipientNameStr] = useState('');
   const [recipientPhoneStr, setRecipientPhoneStr] = useState('');
 
-  const handleQRPaymentSuccess = async (orderId: string) => {
+  const handleQRPaymentSuccess = async () => {
     setOrderPlaced(true);
     setIsQRModalOpen(false);
     if (directCheckoutItem) {
@@ -328,16 +315,13 @@ function CheckoutPageContent() {
         if (!selectedAddressId || selectedAddressId === 'new') {
           const defaultAddr = data.find((a) => a.isDefault) || data[0];
           setSelectedAddressId(defaultAddr.id);
-          setPreviousAddressId(defaultAddr.id);
         }
       } else {
         setSelectedAddressId('new');
-        setPreviousAddressId('new');
       }
     } catch (err) {
       console.error('Failed to load saved addresses', err);
       setSelectedAddressId('new');
-      setPreviousAddressId('new');
     } finally {
       setLoading(false);
     }
@@ -380,131 +364,6 @@ function CheckoutPageContent() {
     );
   }
 
-  const handleEditAddressClick = (addr: Address) => {
-    setEditingAddress(addr);
-    setIsAddressModalOpen(true);
-  };
-
-  const handleDeleteAddressConfirm = async () => {
-    if (!addressToDeleteId) return;
-    setDeletingAddressLoading(true);
-    try {
-      await usersApi.deleteAddress(addressToDeleteId);
-      toast.success('Đã xóa địa chỉ thành công.');
-
-      const response = await usersApi.getAddresses();
-      const data = response.data || [];
-      setSavedAddresses(data);
-      if (data.length > 0) {
-        setSelectedAddressId(data.find((a) => a.isDefault)?.id || data[0].id);
-      } else {
-        setSelectedAddressId('new');
-      }
-    } catch (err) {
-      console.error('Failed to delete address', err);
-      toast.error('Lỗi khi xóa địa chỉ.');
-    } finally {
-      setDeletingAddressLoading(false);
-      setAddressToDeleteId(null);
-    }
-  };
-
-  const handleNewAddressSubmit = async (data: any) => {
-    // Set temporary address variables
-    setReceiverName(data.receiverName);
-    setReceiverPhone(data.receiverPhone);
-    setDetail(data.detail);
-    setSelectedProvinceName(data.provinceName);
-    setSelectedDistrictName(data.districtName);
-    setSelectedWardName(data.wardName);
-    setSelectedProvinceId(data.provinceId);
-    setSelectedDistrictId(data.districtId);
-    setSelectedWardCode(data.wardCode);
-    setSaveAddressToDb(data.saveAddressToDb);
-    setSetAsDefault(data.setAsDefault);
-
-    if (data.saveAddressToDb) {
-      setLoading(true);
-      try {
-        await usersApi.createAddress({
-          receiverName: data.receiverName,
-          receiverPhone: data.receiverPhone,
-          province: data.provinceName,
-          district: data.districtName,
-          ward: data.wardName,
-          detail: data.detail,
-          provinceId: data.provinceId,
-          districtId: data.districtId,
-          wardCode: data.wardCode,
-          isDefault: data.setAsDefault,
-        });
-
-        // Reload addresses from DB
-        const addressesRes = await usersApi.getAddresses();
-        const updatedList = addressesRes.data || [];
-        setSavedAddresses(updatedList);
-
-        // Select the newly created address
-        const newAddr = updatedList.find(
-          (a) => a.receiverName === data.receiverName && a.detail === data.detail,
-        );
-        if (newAddr) {
-          setSelectedAddressId(newAddr.id);
-          setPreviousAddressId(newAddr.id);
-        } else {
-          const fallbackId = updatedList[0]?.id || 'new';
-          setSelectedAddressId(fallbackId);
-          setPreviousAddressId(fallbackId);
-        }
-        toast.success('Đã thêm và lưu địa chỉ mới thành công.');
-      } catch (err) {
-        console.error('Failed to save address to DB', err);
-        toast.error('Lỗi khi lưu địa chỉ mới vào cơ sở dữ liệu.');
-        setSelectedAddressId('new');
-        setPreviousAddressId('new');
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // Just use it as temporary state
-      setSelectedAddressId('new');
-      setPreviousAddressId('new');
-      toast.success('Đã áp dụng địa chỉ giao hàng mới.');
-    }
-  };
-
-  const handleAddressSubmit = async (data: any) => {
-    setIsAddressModalOpen(false);
-
-    if (editingAddress) {
-      setLoading(true);
-      try {
-        await usersApi.updateAddress(editingAddress.id, {
-          receiverName: data.receiverName,
-          receiverPhone: data.receiverPhone,
-          province: data.provinceName,
-          district: data.districtName,
-          ward: data.wardName,
-          detail: data.detail,
-          provinceId: data.provinceId,
-          districtId: data.districtId,
-          wardCode: data.wardCode,
-          isDefault: data.setAsDefault,
-        });
-        toast.success('Đã cập nhật thông tin địa chỉ thành công.');
-        await loadAddresses();
-      } catch (err) {
-        console.error('Failed to update address', err);
-        toast.error('Lỗi khi cập nhật địa chỉ.');
-      } finally {
-        setEditingAddress(null);
-        setLoading(false);
-      }
-    } else {
-      await handleNewAddressSubmit(data);
-    }
-  };
-
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (checkoutItems.length === 0) {
@@ -533,7 +392,6 @@ function CheckoutPageContent() {
         ) {
           toast.error('Vui lòng điền thông tin địa chỉ mới bằng cách nhấn vào Sử dụng địa chỉ mới!');
           setSubmitting(false);
-          setIsAddressModalOpen(true);
           return;
         }
 
@@ -722,8 +580,6 @@ function CheckoutPageContent() {
                     setSelectedProvinceId(data.provinceId);
                     setSelectedDistrictId(data.districtId);
                     setSelectedWardCode(data.wardCode);
-                    setSaveAddressToDb(data.saveAddressToDb);
-                    setSetAsDefault(data.setAsDefault);
                   }}
                 />
 

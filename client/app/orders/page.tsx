@@ -101,7 +101,7 @@ function parseAddressString(addrStr: string) {
         const parsed = JSON.parse(stored);
         name = parsed.name || '';
         phone = parsed.phone || '';
-      } catch (e) { }
+      } catch { }
     }
   }
 
@@ -208,11 +208,6 @@ export default function OrdersPage() {
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
-  const [tempAddressData, setTempAddressData] = useState<any>(null);
-
-  const [showAddressConfirmModal, setShowAddressConfirmModal] = useState(false);
-  const [updatingAddress, setUpdatingAddress] = useState(false);
-
   // PayOS QR Modal State
   const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
@@ -222,7 +217,6 @@ export default function OrdersPage() {
   const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
   const [refundBankCode, setRefundBankCode] = useState('');
   const [refundAccountNumber, setRefundAccountNumber] = useState('');
-  const [isLookingUpAccount, setIsLookingUpAccount] = useState(false);
   const [refundAccountName, setRefundAccountName] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [submittingRefund, setSubmittingRefund] = useState(false);
@@ -275,7 +269,7 @@ export default function OrdersPage() {
     }
   };
 
-  const handleQRSuccess = (orderId: string) => {
+  const handleQRSuccess = () => {
     setIsQRModalOpen(false);
     setPayOSQRData(null);
     loadOrders();
@@ -304,14 +298,6 @@ export default function OrdersPage() {
         .catch((err) => console.error('Failed to fetch banks', err));
     }
   }, [refundOrderId, banks.length]);
-
-  const handleOpenRefundModal = (order: Order) => {
-    setRefundOrderId(order.id);
-    setRefundBankCode(order.refundBankCode || '');
-    setRefundAccountNumber(order.refundAccountNumber || '');
-    setRefundAccountName(order.refundAccountName || '');
-    setRefundReason(order.refundReason || '');
-  };
 
   const handleRefundSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,7 +418,6 @@ export default function OrdersPage() {
       addressStr += ` (Ghi chú: ${parsedOld.note})`;
     }
 
-    setUpdatingAddress(true);
     try {
       await usersApi.updateOrderShipping(editOrder.id, {
         shippingAddress: addressStr,
@@ -445,27 +430,6 @@ export default function OrdersPage() {
     } catch (err: any) {
       console.error('Failed to update address', err);
       toast.error(err.response?.data?.message || 'Lỗi khi cập nhật địa chỉ giao hàng.');
-    } finally {
-      setUpdatingAddress(false);
-    }
-  };
-
-  const handleUpdateAddressConfirm = async () => {
-    if (!editOrder || !tempAddressData) return;
-    setUpdatingAddress(true);
-
-    try {
-      await usersApi.updateOrderShipping(editOrder.id, tempAddressData.addressStr);
-      toast.success('Đã cập nhật địa chỉ giao hàng thành công.');
-      setShowAddressConfirmModal(false);
-      setEditOrder(null);
-      setTempAddressData(null);
-      await loadOrders();
-    } catch (err: any) {
-      console.error('Failed to update address', err);
-      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật địa chỉ giao hàng.');
-    } finally {
-      setUpdatingAddress(false);
     }
   };
 
@@ -1033,19 +997,6 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Shared Confirmation Modal for Address Update */}
-      {showAddressConfirmModal && tempAddressData && (
-        <ConfirmDialog
-          isOpen={showAddressConfirmModal}
-          onClose={() => setShowAddressConfirmModal(false)}
-          onConfirm={handleUpdateAddressConfirm}
-          title="Xác nhận thay đổi địa chỉ"
-          message="Bạn có chắc chắn muốn thay đổi thông tin nhận hàng của đơn hàng này sang địa chỉ mới không?"
-          confirmText="Xác nhận đổi"
-          loading={updatingAddress}
-        />
-      )}
-
       {/* Shared Confirmation Modal for Order Cancellation */}
       <ConfirmDialog
         isOpen={!!cancelOrderId}
@@ -1166,16 +1117,11 @@ export default function OrdersPage() {
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Tên chủ tài khoản (Viết hoa không dấu)</label>
-                  {isLookingUpAccount && (
-                    <span className="text-[10px] text-amber-600 font-bold animate-pulse">Đang tra cứu...</span>
-                  )}
-                </div>
+                <label className="block text-xs font-black uppercase text-[var(--text-muted)]">Tên chủ tài khoản (Viết hoa không dấu)</label>
                 <input
                   type="text"
                   required
-                  placeholder={isLookingUpAccount ? "Đang truy vấn ngân hàng..." : "Ví dụ: TRAN NGOC DUC"}
+                  placeholder="Ví dụ: TRAN NGOC DUC"
                   value={refundAccountName}
                   onChange={(e) => setRefundAccountName(removeAccentsAndUpperCase(e.target.value))}
                   className="w-full rounded-xl border border-gray-200 bg-[#FAF9F5] px-3.5 py-2.5 outline-none focus:border-[var(--primary-color)] font-bold text-xs"

@@ -76,14 +76,6 @@ export class VouchersService {
     });
   }
 
-  async getVoucherById(id: string) {
-    const voucher = await this.prisma.voucher.findUnique({ where: { id } });
-    if (!voucher) {
-      throw new NotFoundException('Không tìm thấy khuyến mãi.');
-    }
-    return voucher;
-  }
-
   async createVoucher(dto: CreateVoucherDto) {
     const cleanCode = dto.code.trim().toUpperCase();
     if (!cleanCode) {

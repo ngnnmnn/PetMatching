@@ -3,10 +3,9 @@
 import { useState, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Grid3X3, Sparkles, X, Loader2, Star, ShoppingCart, Heart, Filter } from 'lucide-react';
+import { Grid3X3, Sparkles, X, Loader2, Filter } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
 import { useProducts } from '@/hooks/useProducts';
-import { useCart } from '@/context/CartContext';
 import ProductFilterSidebar from '@/components/home/ProductFilterSidebar';
 import ProductGrid from '@/components/home/ProductGrid';
 import SearchFilterBar from '@/components/home/SearchFilterBar';
@@ -183,7 +182,6 @@ function ShopPageContent() {
   const [showPetRow, setShowPetRow] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoadingPets, setIsLoadingPets] = useState(false);
-  const { addToCart } = useCart();
 
   // Load user pets list
   const loadUserPets = useCallback(() => {

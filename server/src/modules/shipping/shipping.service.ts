@@ -5,16 +5,6 @@ import { HANOI_WARDS } from '../matching/hanoi-wards';
 export class ShippingService {
   private static readonly HANOI_PROVINCE_ID = 1;
 
-  getProvinces() {
-    return [
-      {
-        provinceId: ShippingService.HANOI_PROVINCE_ID,
-        provinceName: 'Thành phố Hà Nội',
-        code: String(ShippingService.HANOI_PROVINCE_ID),
-      },
-    ];
-  }
-
   getWards(provinceId: number) {
     if (provinceId !== ShippingService.HANOI_PROVINCE_ID) return [];
 
