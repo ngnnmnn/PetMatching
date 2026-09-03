@@ -43,11 +43,14 @@ export const spaApi = {
   staffCheckIn: (id: string) => api.patch<SpaBookingType>(`/spa/staff/bookings/${id}/checkin`),
   staffAddSubServices: (id: string, subServiceIds: string[]) =>
     api.post<SpaBookingType>(`/spa/staff/bookings/${id}/sub-services`, { subServiceIds }),
+  /** Cập nhật thông tin lịch hẹn hoặc trạng thái, báo cáo sau ca làm, cân nặng/tên thú cưng cho nhân viên Spa */
   updateStaffBooking: (id: string, data: {
     status?: string;
     petConditionAfter?: string;
     photoAfter?: string | null;
     issueReported?: string | null;
+    petWeight?: number;
+    petName?: string;
   }) => api.patch<SpaBookingType>(`/spa/staff/bookings/${id}`, data),
   completeStaffBooking: (id: string, data: {
     method: 'COD' | 'QR';

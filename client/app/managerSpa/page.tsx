@@ -41,6 +41,7 @@ import {
   ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { spaApi } from '@/lib/api/spa';
 import { uploadImages } from '@/lib/api/uploads';
 import AppPagination from '@/components/ui/app-pagination';
@@ -48,7 +49,43 @@ import AppPagination from '@/components/ui/app-pagination';
 function SpaManagerConsoleContent() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
+  const bookingIdParam = searchParams.get('bookingId');
   const [managerUser, setManagerUser] = useState<any>(null);
+
+  // Ref lưu map trạng thái đơn [bookingId -> status] để phát hiện đơn mới và đơn bị hủy trong thời gian thực
+  const knownBookingStatusesRef = React.useRef<Map<string, string>>(new Map());
+  const initialLoadDoneRef = React.useRef<boolean>(false);
+
+  /**
+   * Phát âm thanh chuông nhẹ nhàng khi có khách hàng vừa đặt lịch hoặc hủy lịch Spa
+   */
+  const playNotificationSound = React.useCallback((type: 'NEW' | 'CANCEL' = 'NEW') => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+
+      if (type === 'NEW') {
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Note D5
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // Note A5
+      } else {
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime); // Note E5
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.2); // Note A4
+      }
+
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {
+      // Bỏ qua nếu trình duyệt chưa cấp quyền audio
+    }
+  }, []);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -422,6 +459,8 @@ function SpaManagerConsoleContent() {
         ]);
         const bList = bookingsRes.data || [];
         setBookings(bList);
+        bList.forEach((b: any) => knownBookingStatusesRef.current.set(b.id, b.status));
+        initialLoadDoneRef.current = true;
         setManagerStaffs(staffsRes.data || []);
         if (servicesRes.data) setServices(servicesRes.data);
       } else if (currentTab === 'services') {
@@ -448,6 +487,171 @@ function SpaManagerConsoleContent() {
     refreshData();
   }, [selectedBranchId, currentTab]);
 
+  // Tự động mở chi tiết lịch hẹn nếu có bookingId trên URL (khi click từ thông báo / bell)
+  useEffect(() => {
+    if (bookingIdParam && bookings.length > 0) {
+      const target = bookings.find((b) => b.id === bookingIdParam);
+      if (target) {
+        setSelectedBookingDetail(target);
+      }
+    }
+  }, [bookingIdParam, bookings]);
+
+  // Live polling theo thời gian thực: Lắng nghe lịch mới và lịch bị hủy, hiển thị pop-up góc trên cùng bên phải clickable
+  useEffect(() => {
+    if (!selectedBranchId) return;
+
+    const intervalId = setInterval(async () => {
+      // Chỉ kiểm tra khi tab trình duyệt đang hiển thị để tối ưu hiệu năng
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+
+      try {
+        const res = await spaApi.getManagerBookings(selectedBranchId);
+        const latestBookings = res.data || [];
+
+        if (initialLoadDoneRef.current && knownBookingStatusesRef.current.size > 0) {
+          // 1. Kiểm tra LỊCH HẸN MỚI
+          const newBookings = latestBookings.filter(
+            (b: any) => !knownBookingStatusesRef.current.has(b.id)
+          );
+
+          if (newBookings.length > 0) {
+            playNotificationSound('NEW');
+
+            newBookings.forEach((nb: any) => {
+              const timeStr = new Date(nb.scheduledAt).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              toast.custom(
+                (t) => (
+                  <div
+                    onClick={() => {
+                      toast.dismiss(t);
+                      window.history.pushState({}, '', `/managerSpa?tab=bookings&bookingId=${nb.id}`);
+                      setSelectedBookingDetail(nb);
+                    }}
+                    className="w-full max-w-sm cursor-pointer rounded-2xl border-2 border-orange-400 bg-white p-4 shadow-xl transition-all duration-200 hover:scale-[1.02] hover:border-orange-500 hover:shadow-2xl active:scale-[0.98]"
+                    style={{ backgroundColor: '#FFFDF9' }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600 shadow-xs">
+                        <Sparkles className="size-5 animate-spin" style={{ animationDuration: '4s' }} />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1 text-left">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-orange-700">Lịch Hẹn Spa Mới</span>
+                          <span className="text-[10px] font-bold text-gray-400">{timeStr}</span>
+                        </div>
+                        <p className="text-xs font-medium text-gray-800 leading-snug">
+                          Khách <strong className="font-extrabold text-gray-950">{nb.customerNameSnapshot || nb.user?.name || 'Khách'}</strong> vừa đặt lịch cho bé <strong className="font-extrabold text-orange-900">{nb.petName || nb.pet?.name || 'thú cưng'}</strong>.
+                        </p>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-xs font-black text-orange-600">
+                            {(nb.totalPrice || nb.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                          </span>
+                          <span className="text-[10px] font-bold text-orange-600">
+                            Chạm để xem chi tiết →
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ),
+                { position: 'top-right', duration: 8000, id: `new-spa-booking-${nb.id}` }
+              );
+            });
+          }
+
+          // 2. Kiểm tra KHÁCH HÀNG HỦY LỊCH (Màu Hổ phách / Amber ấm áp sang trọng, không dùng màu đỏ)
+          const cancelledBookings = latestBookings.filter(
+            (b: any) =>
+              knownBookingStatusesRef.current.has(b.id) &&
+              knownBookingStatusesRef.current.get(b.id) !== 'CANCELLED' &&
+              b.status === 'CANCELLED'
+          );
+
+          if (cancelledBookings.length > 0) {
+            playNotificationSound('CANCEL');
+
+            cancelledBookings.forEach((cb: any) => {
+              const timeStr = new Date(cb.scheduledAt).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              toast.custom(
+                (t) => (
+                  <div
+                    onClick={() => {
+                      toast.dismiss(t);
+                      window.history.pushState({}, '', `/managerSpa?tab=bookings&bookingId=${cb.id}`);
+                      setSelectedBookingDetail(cb);
+                    }}
+                    className="w-full max-w-sm cursor-pointer rounded-2xl border-2 border-amber-400 bg-white p-4 shadow-xl transition-all duration-200 hover:scale-[1.02] hover:border-amber-500 hover:shadow-2xl active:scale-[0.98]"
+                    style={{ backgroundColor: '#FFFDF2' }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 shadow-xs">
+                        <Clock className="size-5 animate-pulse" />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1 text-left">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-amber-800">Khách Hàng Đã Hủy Lịch</span>
+                          <span className="text-[10px] font-bold text-gray-400">{timeStr}</span>
+                        </div>
+                        <p className="text-xs font-medium text-gray-800 leading-snug">
+                          Khách <strong className="font-extrabold text-gray-950">{cb.customerNameSnapshot || cb.user?.name || 'Khách'}</strong> đã hủy lịch của bé <strong className="font-extrabold text-amber-900">{cb.petName || cb.pet?.name || 'thú cưng'}</strong>.
+                        </p>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
+                            {cb.service?.name || (cb.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-800">
+                            Chạm để xem chi tiết →
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ),
+                { position: 'top-right', duration: 8000, id: `cancelled-spa-booking-${cb.id}` }
+              );
+            });
+          }
+
+          // 3. Cập nhật trực tiếp State danh sách đơn trong thời gian thực
+          if (newBookings.length > 0 || cancelledBookings.length > 0) {
+            setBookings((prev) => {
+              const prevMap = new Map(prev.map((b) => [b.id, b]));
+              const updatedList = latestBookings.map((b: any) => {
+                const isNew = !knownBookingStatusesRef.current.has(b.id);
+                return isNew ? { ...b, isNewLive: true } : (prevMap.get(b.id) || b);
+              });
+              return updatedList;
+            });
+
+            // Cập nhật số liệu thống kê nếu ở dashboard
+            if (currentTab === 'dashboard') {
+              spaApi.getManagerDashboardStats(selectedBranchId).then((sRes) => {
+                if (sRes.data) setStats(sRes.data);
+              }).catch(() => {});
+            }
+          }
+        }
+
+        // Cập nhật map trạng thái đã biết
+        latestBookings.forEach((b: any) => knownBookingStatusesRef.current.set(b.id, b.status));
+        initialLoadDoneRef.current = true;
+      } catch (err) {
+        // Bỏ qua lỗi polling ngầm
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [selectedBranchId, currentTab, playNotificationSound]);
+
   // Fetch slots for reschedule when date changes
   useEffect(() => {
     if (selectedBookingDetail?.id) {
@@ -463,13 +667,90 @@ function SpaManagerConsoleContent() {
     }
   }, [selectedBookingDetail?.id]);
 
+  const getLocalDateString = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Tính tổng thời lượng dịch vụ khi đổi lịch (Main + Sub)
+  const rescheduleDurationMinutes = useMemo(() => {
+    if (!rescheduleBooking) return 30;
+    const mainDur = rescheduleBooking.service?.durationMin || 30;
+    const subList = getManagerBookingSubServices(rescheduleBooking);
+    const subDur = subList.reduce((sum: number, s: any) => sum + (s?.durationMin || 15), 0);
+    return Math.max(15, mainDur + subDur);
+  }, [rescheduleBooking, services]);
+
+  // Lọc các khung giờ khả dụng cho modal đổi lịch của Manager (ẩn các khung giờ quá giờ / trong quá khứ)
+  const filteredRescheduleSlots = useMemo(() => {
+    if (!rescheduleDate || rescheduleSlots.length === 0) return [];
+    const todayStr = getLocalDateString();
+    const isToday = rescheduleDate === todayStr;
+
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    let curBookingDate = '';
+    let curBookingTime = '';
+    if (rescheduleBooking?.scheduledAt) {
+      const parts = rescheduleBooking.scheduledAt.split('T');
+      curBookingDate = parts[0];
+      if (parts[1]) {
+        curBookingTime = parts[1].slice(0, 5);
+      }
+    }
+
+    return rescheduleSlots
+      .map((slot) => {
+        const [h, m] = slot.time.split(':').map(Number);
+        const startMins = h * 60 + m;
+        const endMins = startMins + rescheduleDurationMinutes;
+
+        // 1. Ẩn slot nếu trước 09:00 hoặc kết thúc sau 18:00
+        if (startMins < 9 * 60 || endMins > 18 * 60) {
+          return null;
+        }
+
+        // 2. Ẩn slot nếu ngày chọn là HÔM NAY và giờ đã qua
+        if (isToday && startMins < currentMins) {
+          return null;
+        }
+
+        const isCurrentSlot = rescheduleDate === curBookingDate && slot.time === curBookingTime;
+        const isOccupied =
+          !slot.isAvailable ||
+          slot.remainingSlots <= 0 ||
+          !slot.availableStaffs ||
+          slot.availableStaffs.length === 0;
+
+        return {
+          ...slot,
+          isCurrentSlot,
+          isOccupied,
+          isDisabled: isCurrentSlot || isOccupied,
+        };
+      })
+      .filter((s): s is NonNullable<typeof s> => Boolean(s));
+  }, [rescheduleSlots, rescheduleDate, rescheduleDurationMinutes, rescheduleBooking]);
+
+  // Tự động hủy chọn slot nếu slot đó không còn khả dụng
+  useEffect(() => {
+    if (selectedRescheduleSlot) {
+      const isValid = filteredRescheduleSlots.some((s) => s.time === selectedRescheduleSlot && !s.isDisabled);
+      if (!isValid) {
+        setSelectedRescheduleSlot('');
+      }
+    }
+  }, [filteredRescheduleSlots, selectedRescheduleSlot]);
+
   useEffect(() => {
     const fetchRescheduleSlots = async () => {
       if (!rescheduleBooking || !rescheduleDate) return;
       setLoadingRescheduleSlots(true);
       try {
-        const duration = rescheduleBooking.service?.durationMin || 30;
-        const res = await spaApi.getAvailability(selectedBranchId, rescheduleDate, duration);
+        const res = await spaApi.getAvailability(selectedBranchId, rescheduleDate, rescheduleDurationMinutes);
         setRescheduleSlots(res.data || []);
       } catch (err) {
         toast.error('Lỗi khi tải khung giờ khả dụng.');
@@ -478,7 +759,7 @@ function SpaManagerConsoleContent() {
       }
     };
     fetchRescheduleSlots();
-  }, [rescheduleBooking, rescheduleDate]);
+  }, [rescheduleBooking, rescheduleDate, rescheduleDurationMinutes, selectedBranchId]);
 
   // Fetch available staff list whenever selectedBookingDetail opens
   useEffect(() => {
@@ -1904,7 +2185,7 @@ function SpaManagerConsoleContent() {
                           .slice((bookingPage - 1) * BOOKING_PAGE_SIZE, bookingPage * BOOKING_PAGE_SIZE)
                           .map((b: any) => {
                             const dateObj = new Date(b.scheduledAt);
-                            const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+                            const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
                             const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
                             const statusStyle = {
                               PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -1921,14 +2202,28 @@ function SpaManagerConsoleContent() {
 
                             const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
                             const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
+                            const isSelectedFromUrl = bookingIdParam === b.id;
+                            const isHighlighted = b.isNewLive || isSelectedFromUrl;
 
                             return (
                               <tr
                                 key={b.id}
                                 onClick={() => setSelectedBookingDetail(b)}
-                                className="hover:bg-gray-50/70 transition cursor-pointer"
+                                className={cn(
+                                  "hover:bg-gray-50/70 transition cursor-pointer relative",
+                                  isHighlighted && "bg-orange-50/80 shadow-[inset_3px_0_0_#ea580c] ring-1 ring-orange-300"
+                                )}
                               >
-                                <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
+                                <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span>#{b.id.slice(-6).toUpperCase()}</span>
+                                    {b.isNewLive && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-800 border border-emerald-300 animate-pulse">
+                                        ✨ Mới
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
                                 <td className="px-6 py-4">
                                   <span className="font-extrabold text-gray-900 block">{timeStr}</span>
                                   <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
@@ -3084,6 +3379,161 @@ function SpaManagerConsoleContent() {
                 className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
               >
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESCHEDULE MODAL DIALOG (MANAGER) */}
+      {rescheduleBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100 my-8">
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-purple-700 to-indigo-700 text-white">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="size-5" />
+                <div>
+                  <h3 className="text-base font-extrabold">Đổi Lịch Hẹn Spa (Quản Lý)</h3>
+                  <p className="text-xs text-purple-200">
+                    Lịch hiện tại: {new Date(rescheduleBooking.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })} lúc {new Date(rescheduleBooking.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRescheduleBooking(null)}
+                className="size-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Branch & Pet Info */}
+              <div className="bg-purple-50/60 border border-purple-100 rounded-xl p-3.5 text-xs text-purple-900 space-y-1">
+                <p><strong>Khách hàng:</strong> {rescheduleBooking.customerNameSnapshot || rescheduleBooking.user?.name || 'Khách hàng'}</p>
+                <p><strong>Thú cưng:</strong> {rescheduleBooking.petName || rescheduleBooking.pet?.name || 'Thú cưng'}</p>
+                <p><strong>Chi nhánh:</strong> {rescheduleBooking.addressSpa?.name || 'Chi nhánh Spa'}</p>
+                <p><strong>Dịch vụ:</strong> {rescheduleBooking.service?.name || (rescheduleBooking.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}</p>
+                <p className="text-purple-700 font-medium">
+                  <strong>Thời lượng dự kiến:</strong> {rescheduleDurationMinutes} phút
+                  {rescheduleDurationMinutes >= 60 ? ` (~${(rescheduleDurationMinutes / 60).toFixed(1).replace('.0', '')} tiếng)` : ''}
+                </p>
+              </div>
+
+              {/* Date Input */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-700">
+                  Chọn Ngày Hẹn Mới *
+                </label>
+                <input
+                  type="date"
+                  min={getLocalDateString()}
+                  value={rescheduleDate}
+                  onChange={(e) => {
+                    setRescheduleDate(e.target.value);
+                    setSelectedRescheduleSlot('');
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                />
+              </div>
+
+              {/* Slot Selector */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-700">
+                  Chọn Giờ Hẹn Khả Dụng *
+                </label>
+                {loadingRescheduleSlots ? (
+                  <div className="text-center py-6 text-xs text-gray-400">
+                    <div className="inline-block size-5 animate-spin rounded-full border-2 border-primary border-t-transparent mb-1" />
+                    <p>Đang tải danh sách khung giờ...</p>
+                  </div>
+                ) : filteredRescheduleSlots.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-52 overflow-y-auto p-1">
+                    {filteredRescheduleSlots.map((slot: any) => {
+                      const isSelected = selectedRescheduleSlot === slot.time;
+                      const isCurrent = slot.isCurrentSlot;
+                      const isDisabled = slot.isDisabled;
+
+                      let buttonStyle =
+                        'bg-white text-gray-800 border-gray-200 hover:border-primary/50 hover:bg-primary/5 cursor-pointer shadow-2xs';
+
+                      if (isCurrent) {
+                        buttonStyle =
+                          'bg-slate-900 text-slate-300 border-slate-900 cursor-not-allowed opacity-80 shadow-inner';
+                      } else if (isDisabled) {
+                        buttonStyle =
+                          'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50';
+                      } else if (isSelected) {
+                        buttonStyle =
+                          'bg-primary text-white border-primary shadow-sm scale-105 cursor-pointer font-bold';
+                      }
+
+                      return (
+                        <button
+                          key={slot.time}
+                          type="button"
+                          disabled={isDisabled}
+                          onClick={() => {
+                            if (!isDisabled) {
+                              setSelectedRescheduleSlot(slot.time);
+                            }
+                          }}
+                          title={
+                            isCurrent
+                              ? 'Lịch hẹn hiện tại của khách (không thể chọn lại trùng giờ)'
+                              : isDisabled
+                                ? 'Khung giờ này đã kín chỗ'
+                                : 'Chọn khung giờ này'
+                          }
+                          className={`py-2 px-2.5 rounded-xl text-xs border transition-all flex flex-col items-center justify-center gap-0.5 ${buttonStyle}`}
+                        >
+                          <span className="font-mono font-bold text-xs">{slot.time}</span>
+                          {isCurrent ? (
+                            <span className="text-[9px] font-semibold text-amber-300">
+                              Lịch hiện tại
+                            </span>
+                          ) : isDisabled ? (
+                            <span className="text-[9px] font-medium text-gray-400">
+                              Hết chỗ
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-[9px] font-medium ${isSelected ? 'text-white/90' : 'text-gray-400'
+                                }`}
+                            >
+                              Còn {slot.remainingSlots} chỗ
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-600 bg-amber-50 p-3 rounded-xl border border-amber-200 font-medium">
+                    Không có khung giờ nào còn trống trong ngày này. Vui lòng chọn ngày khác.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setRescheduleBooking(null)}
+                disabled={submittingReschedule}
+                className="px-4 py-2 border rounded-xl font-bold text-xs text-gray-700 hover:bg-gray-100 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleRescheduleSubmit}
+                disabled={submittingReschedule || !selectedRescheduleSlot}
+                className="px-5 py-2 bg-primary hover:bg-[#cf5017] disabled:opacity-50 text-white rounded-xl font-extrabold text-xs shadow-sm cursor-pointer"
+              >
+                {submittingReschedule ? 'Đang cập nhật...' : 'Xác nhận đổi lịch'}
               </button>
             </div>
           </div>

@@ -469,4 +469,101 @@ describe('SpaService getAvailability and slot deduction', () => {
     });
   });
 
+  describe('SpaService updateStaffBooking', () => {
+    /**
+     * Kiểm tra nhân viên Spa cập nhật cân nặng thú cưng trong đơn lịch hẹn và tự động tính lại giá dịch vụ tương ứng
+     */
+    it('cập nhật thành công cân nặng và tự động tính lại giá lịch hẹn theo phân khúc cân nặng mới', async () => {
+      const existingBooking = {
+        id: 'booking-123',
+        status: SpaBookingStatus.CHECK_IN,
+        petWeight: 2.0,
+        petSpecies: 'DOG',
+        mainServiceId: 'srv-tam-nho',
+        subServiceIds: [],
+        priceSnapshot: 70_000,
+        totalPrice: 70_000,
+        discountAmount: 0,
+        staffId: 'staff-1',
+      };
+
+      const currentMainService = {
+        id: 'srv-tam-nho',
+        categoryId: 'cat-tam',
+        name: 'Chỉ Tắm (1.5-3kg)',
+        species: 'DOG',
+        petWeightMin: 1.5,
+        petWeightMax: 3.0,
+        price: 70_000,
+      };
+
+      const candidateMainServices = [
+        currentMainService,
+        {
+          id: 'srv-tam-vua',
+          categoryId: 'cat-tam',
+          name: 'Chỉ Tắm (3-6kg)',
+          species: 'DOG',
+          petWeightMin: 3.0,
+          petWeightMax: 6.0,
+          price: 110_000,
+        },
+      ];
+
+      const updateMock = jest.fn().mockResolvedValue({
+        ...existingBooking,
+        petWeight: 4.5,
+        serviceId: 'srv-tam-vua',
+        mainServiceId: 'srv-tam-vua',
+        priceSnapshot: 110_000,
+        totalPrice: 110_000,
+      });
+
+      const updatePaymentMock = jest.fn().mockResolvedValue({ count: 1 });
+
+      const prisma = {
+        spaBooking: {
+          findUnique: jest.fn().mockResolvedValue(existingBooking),
+          update: updateMock,
+        },
+        spaService: {
+          findUnique: jest.fn().mockResolvedValue(currentMainService),
+          findMany: jest.fn().mockResolvedValue(candidateMainServices),
+        },
+        $transaction: jest.fn().mockImplementation(async (callback) => {
+          return callback({
+            spaBooking: { update: updateMock },
+            payment: { updateMany: updatePaymentMock },
+          });
+        }),
+      };
+
+      const service = new SpaService(
+        prisma as unknown as PrismaService,
+        {} as PaymentService,
+        {} as any,
+      );
+
+      const result = await service.updateStaffBooking('staff-1', 'booking-123', {
+        petWeight: 4.5,
+      });
+
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'booking-123' },
+          data: expect.objectContaining({
+            petWeight: 4.5,
+            serviceId: 'srv-tam-vua',
+            mainServiceId: 'srv-tam-vua',
+            priceSnapshot: 110_000,
+            totalPrice: 110_000,
+          }),
+        }),
+      );
+      expect(result.totalPrice).toBe(110_000);
+      expect(result.petWeight).toBe(4.5);
+    });
+  });
+
+
 

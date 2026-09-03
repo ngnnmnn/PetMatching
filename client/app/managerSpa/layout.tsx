@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import NotificationBell from '@/components/notifications/NotificationBell';
 
 function SpaManagerNavigation() {
   const searchParams = useSearchParams();
@@ -160,8 +161,9 @@ export default function SpaManagerLayout({ children }: { children: ReactNode }) 
               </h1>
             </div>
 
-            {/* Profile Info */}
+            {/* Profile & Notifications Info */}
             <div className="flex items-center gap-3">
+              <NotificationBell />
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-black text-[var(--text-main)]">{currentUser?.name}</p>
                 <p className="mt-0.5 text-xs font-bold text-[var(--text-muted)]">{currentUser?.email}</p>

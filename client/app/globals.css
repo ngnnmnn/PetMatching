@@ -213,3 +213,12 @@
   height: 14px !important;
 }
 
+/* Đặt vị trí pop-up góc trên bên phải hiển thị bên dưới thanh Header (top: 88px) */
+[data-sonner-toaster][data-position="top-right"],
+[data-sonner-toaster][data-y-position="top"][data-x-position="right"] {
+  top: 88px !important;
+  right: 18px !important;
+  z-index: 50 !important;
+}
+
+

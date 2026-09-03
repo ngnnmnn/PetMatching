@@ -106,6 +106,9 @@ export class SpaController {
     return this.spaService.staffAddSubServices(req.user.id, bookingId, dto.subServiceIds);
   }
 
+  /**
+   * Cập nhật thông tin ca làm việc của nhân viên Spa (trạng thái, ảnh sau làm, ghi chú và thông tin/cân nặng thú cưng trong lịch hẹn).
+   */
   @UseGuards(JwtAuthGuard)
   @Patch('staff/bookings/:id')
   updateStaffBooking(
@@ -116,6 +119,8 @@ export class SpaController {
       petConditionAfter?: string;
       photoAfter?: string;
       issueReported?: string;
+      petWeight?: number;
+      petName?: string;
     },
   ) {
     return this.spaService.updateStaffBooking(req.user.id, bookingId, dto);

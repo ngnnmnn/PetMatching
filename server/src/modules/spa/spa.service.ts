@@ -386,13 +386,38 @@ export class SpaService {
         service: {
           select: { name: true, price: true },
         },
-      } });
-      await this.notifyBooking(
-        tx,
-        booking,
-        NotificationEventType.SPA_BOOKING_CREATED,
-        `Lịch Spa cho ${booking.petName || 'thú cưng'} đã được tạo thành công.`,
-      );
+      },
+    });
+
+    await this.notifyBooking(
+      tx,
+      booking,
+      NotificationEventType.SPA_BOOKING_CREATED,
+      `Lịch Spa cho ${booking.petName || 'thú cưng'} đã được tạo thành công.`,
+    );
+
+      // Gửi thông báo đến Quản lý chi nhánh Spa
+      const branch = await tx.addressSpa.findUnique({
+        where: { id: dto.addressSpaId },
+        select: { managerId: true, name: true },
+      });
+
+      if (branch?.managerId) {
+        await this.notifications.create(
+          {
+            userId: branch.managerId,
+            category: NotificationCategory.APPOINTMENT,
+            eventType: NotificationEventType.SPA_BOOKING_CREATED,
+            title: 'Lịch hẹn Spa mới!',
+            content: `Khách hàng ${booking.customerNameSnapshot || 'khách'} vừa đặt lịch cho ${booking.petName || 'thú cưng'} (${booking.service?.name || 'Dịch vụ Spa'}) tại ${branch.name || 'chi nhánh'}.`,
+            targetUrl: `/managerSpa?tab=bookings&bookingId=${booking.id}`,
+            entityType: 'SPA_BOOKING',
+            entityId: booking.id,
+          },
+          tx,
+        );
+      }
+
       return booking;
     });
   }
@@ -527,9 +552,38 @@ export class SpaService {
           status: SpaBookingStatus.CANCELLED,
           cancelReason: 'Khách hàng đã chủ động hủy lịch hẹn',
         },
-        include: { payment: true },
+        include: {
+          payment: true,
+          service: { select: { name: true } },
+        },
       });
+
       await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+
+      // Gửi thông báo đến Quản lý chi nhánh Spa khi khách hủy lịch
+      if (booking.addressSpaId) {
+        const branch = await tx.addressSpa.findUnique({
+          where: { id: booking.addressSpaId },
+          select: { managerId: true, name: true },
+        });
+
+        if (branch?.managerId) {
+          await this.notifications.create(
+            {
+              userId: branch.managerId,
+              category: NotificationCategory.APPOINTMENT,
+              eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+              title: 'Khách hàng đã hủy lịch hẹn',
+              content: `Khách hàng ${booking.customerNameSnapshot || 'khách'} đã hủy lịch hẹn ${booking.petName ? `của bé ${booking.petName}` : ''} (${updated.service?.name || 'Dịch vụ Spa'}). Lý do: Khách hàng đã chủ động hủy lịch hẹn.`,
+              targetUrl: `/managerSpa?tab=bookings&bookingId=${booking.id}`,
+              entityType: 'SPA_BOOKING',
+              entityId: booking.id,
+            },
+            tx,
+          );
+        }
+      }
+
       return updated;
     });
   }
@@ -703,6 +757,11 @@ export class SpaService {
     });
   }
 
+  /**
+   * Cập nhật thông tin lịch hẹn từ phía nhân viên Spa (trạng thái, báo cáo sau ca làm, cân nặng hoặc tên thú cưng).
+   * Khi nhân viên cập nhật cân nặng thú cưng, hệ thống tự động đối chiếu và cập nhật lại gói dịch vụ chính/phụ cùng giá tiền tương ứng với khung cân nặng mới.
+   * Lưu ý: Thay đổi này chỉ lưu vào bản ghi SpaBooking (snapshot), không ảnh hưởng hồ sơ Pet gốc của User.
+   */
   async updateStaffBooking(
     staffId: string,
     bookingId: string,
@@ -711,10 +770,13 @@ export class SpaService {
       petConditionAfter?: string;
       photoAfter?: string;
       issueReported?: string;
+      petWeight?: number;
+      petName?: string;
     },
   ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
+      include: { pet: true },
     });
 
     if (!booking) {
@@ -747,30 +809,180 @@ export class SpaService {
     if (dto.issueReported !== undefined) {
       updatedData.issueReported = dto.issueReported;
     }
+    if (dto.petWeight !== undefined) {
+      const weightNum = Number(dto.petWeight);
+      if (isNaN(weightNum) || weightNum <= 0 || weightNum > 100) {
+        throw new BadRequestException('Cân nặng thú cưng không hợp lệ (phải từ 0.1kg đến 100kg).');
+      }
+      updatedData.petWeight = weightNum;
+
+      // 1. Tự động tìm lại gói dịch vụ chính tương ứng với khung cân nặng mới
+      const currentMainServiceId = booking.mainServiceId || booking.serviceId;
+      let newMainPrice = booking.priceSnapshot || 0;
+
+      if (currentMainServiceId) {
+        const currentMainService = await this.prisma.spaService.findUnique({
+          where: { id: currentMainServiceId },
+        });
+
+        if (currentMainService) {
+          // Lấy tên gói gốc (loại bỏ phần nhãn cân nặng ví dụ "Chỉ Tắm (1.5-3kg)" -> "Chỉ Tắm")
+          const baseName = currentMainService.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
+          const targetSpecies = booking.petSpecies || booking.pet?.species || currentMainService.species;
+
+          let candidateMainServices = await this.prisma.spaService.findMany({
+            where: {
+              categoryId: currentMainService.categoryId,
+              isMain: true,
+              isActive: true,
+              ...(targetSpecies ? { species: targetSpecies } : {}),
+            },
+          });
+
+          if (candidateMainServices.length === 0) {
+            candidateMainServices = await this.prisma.spaService.findMany({
+              where: {
+                isMain: true,
+                isActive: true,
+                ...(targetSpecies ? { species: targetSpecies } : {}),
+              },
+            });
+          }
+
+          const matchedMain = candidateMainServices.find((s) => {
+            const sBaseName = s.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
+            if (sBaseName.toLowerCase() !== baseName.toLowerCase()) return false;
+            const minW = s.petWeightMin ?? 0;
+            const maxW = s.petWeightMax ?? 999;
+            return weightNum >= minW && (weightNum < maxW || maxW === 100);
+          });
+
+          if (matchedMain) {
+            newMainPrice = matchedMain.price;
+            updatedData.serviceId = matchedMain.id;
+            updatedData.mainServiceId = matchedMain.id;
+          } else {
+            newMainPrice = currentMainService.price;
+          }
+        }
+      }
+
+      // 2. Tự động cập nhật lại các dịch vụ lẻ nếu có phân khúc theo cân nặng
+      let newSubTotalPrice = 0;
+      const currentSubServiceIds = booking.subServiceIds || [];
+
+      if (currentSubServiceIds.length > 0) {
+        const currentSubServices = await this.prisma.spaService.findMany({
+          where: { id: { in: currentSubServiceIds } },
+        });
+
+        const updatedSubIds: string[] = [];
+        for (const sub of currentSubServices) {
+          if (sub.petWeightMin !== null || sub.petWeightMax !== null) {
+            const subBaseName = sub.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
+            const targetSubSpecies = booking.petSpecies || booking.pet?.species || sub.species;
+
+            let candidateSubs = await this.prisma.spaService.findMany({
+              where: {
+                categoryId: sub.categoryId,
+                isMain: false,
+                isActive: true,
+                ...(targetSubSpecies ? { species: targetSubSpecies } : {}),
+              },
+            });
+
+            if (candidateSubs.length === 0) {
+              candidateSubs = await this.prisma.spaService.findMany({
+                where: {
+                  isMain: false,
+                  isActive: true,
+                  ...(targetSubSpecies ? { species: targetSubSpecies } : {}),
+                },
+              });
+            }
+
+            const matchedSub = candidateSubs.find((s) => {
+              const sBase = s.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
+              if (sBase.toLowerCase() !== subBaseName.toLowerCase()) return false;
+              const minW = s.petWeightMin ?? 0;
+              const maxW = s.petWeightMax ?? 999;
+              return weightNum >= minW && (weightNum < maxW || maxW === 100);
+            });
+
+            if (matchedSub) {
+              updatedSubIds.push(matchedSub.id);
+              newSubTotalPrice += matchedSub.price;
+            } else {
+              updatedSubIds.push(sub.id);
+              newSubTotalPrice += sub.price;
+            }
+          } else {
+            updatedSubIds.push(sub.id);
+            newSubTotalPrice += sub.price;
+          }
+        }
+
+        updatedData.subServiceIds = updatedSubIds;
+      }
+
+      // 3. Tính toán lại tổng tiền và cập nhật snapshot giá
+      const calculatedTotalPrice = Math.max(0, newMainPrice + newSubTotalPrice - (booking.discountAmount || 0));
+      updatedData.priceSnapshot = newMainPrice;
+      updatedData.totalPrice = calculatedTotalPrice;
+    }
+    if (dto.petName !== undefined) {
+      if (!dto.petName.trim()) {
+        throw new BadRequestException('Tên thú cưng không được để trống.');
+      }
+      updatedData.petName = dto.petName.trim();
+    }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.spaBooking.update({ where: { id: bookingId }, data: updatedData, include: {
-        payment: true,
-        category: {
-          select: {
-            name: true,
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: updatedData,
+        include: {
+          payment: true,
+          category: {
+            select: {
+              name: true,
+            },
           },
-        },
-        service: {
-          select: {
-            name: true,
-            description: true,
+          service: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              price: true,
+              durationMin: true,
+              durationMax: true,
+            },
           },
-        },
-        user: {
-          select: {
-            name: true,
-            phone: true,
-            email: true,
-            avatarUrl: true,
+          user: {
+            select: {
+              name: true,
+              phone: true,
+              email: true,
+              avatarUrl: true,
+            },
           },
+          pet: true,
         },
-      } });
+      });
+
+      // Cập nhật lại số tiền trong payment nếu trạng thái thanh toán là PENDING
+      if (updatedData.totalPrice !== undefined) {
+        await tx.payment.updateMany({
+          where: {
+            spaBookingId: bookingId,
+            status: PaymentStatus.PENDING,
+          },
+          data: {
+            amount: updatedData.totalPrice,
+          },
+        });
+      }
+
       if (dto.status !== undefined && booking.status !== updated.status) {
         await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
       }

@@ -57,6 +57,9 @@ export default function SpaHistory() {
   const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<string>('');
   const [submittingReschedule, setSubmittingReschedule] = useState<boolean>(false);
 
+  // State phóng to xem ảnh sau dịch vụ
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
   const getLocalDateString = (d = new Date()) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -844,8 +847,21 @@ export default function SpaHistory() {
                     <p className="text-xs text-blue-950 leading-relaxed">{selectedBooking.petConditionAfter}</p>
                   )}
                   {selectedBooking.photoAfter && (
-                    <div className="mt-2 aspect-video max-w-sm rounded-lg overflow-hidden border border-blue-200">
-                      <img src={selectedBooking.photoAfter} alt="Ảnh sau spa" className="size-full object-cover" />
+                    <div className="space-y-1 pt-1">
+                      <span className="text-[11px] font-semibold text-blue-800 block">Ảnh chụp thú cưng sau dịch vụ (Bấm để xem ảnh lớn):</span>
+                      <div
+                        onClick={() => setPreviewImageUrl(selectedBooking.photoAfter)}
+                        className="group relative aspect-video max-w-sm rounded-xl overflow-hidden border border-blue-200 cursor-zoom-in shadow-2xs transition hover:shadow-md hover:border-blue-400"
+                      >
+                        <img
+                          src={selectedBooking.photoAfter}
+                          alt="Ảnh sau spa"
+                          className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-white text-xs font-bold gap-1.5 backdrop-blur-[2px]">
+                          <Eye className="size-4" />
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -913,18 +929,6 @@ export default function SpaHistory() {
                       </p>
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* DISCOUNT NOTICE IF APPLIED */}
-              {selectedBooking.discountAmount && selectedBooking.discountAmount > 0 && (
-                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between text-xs font-bold text-rose-700">
-                  <span className="flex items-center gap-1.5">
-                    🎁 Giảm giá 10% do trễ phục vụ:
-                  </span>
-                  <span className="text-rose-700 font-black text-sm">
-                    -{(selectedBooking.discountAmount || 0).toLocaleString('vi-VN')}đ
-                  </span>
                 </div>
               )}
 
@@ -1275,6 +1279,34 @@ export default function SpaHistory() {
                 {submittingReschedule ? 'Đang cập nhật...' : 'Xác nhận đổi lịch'}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* IMAGE PREVIEW LIGHTBOX MODAL */}
+      {previewImageUrl && (
+        <div
+          onClick={() => setPreviewImageUrl(null)}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200 cursor-pointer"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPreviewImageUrl(null);
+              }}
+              className="absolute -top-12 right-0 size-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition cursor-pointer shadow-lg backdrop-blur-xs"
+              title="Đóng ảnh"
+            >
+              <X className="size-5" />
+            </button>
+            <img
+              src={previewImageUrl}
+              alt="Ảnh sau dịch vụ Spa"
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[85vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl border border-white/20 cursor-default"
+            />
           </div>
         </div>
       )}

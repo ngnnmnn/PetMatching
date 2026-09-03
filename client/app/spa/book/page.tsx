@@ -479,6 +479,17 @@ function SpaBookingWizard() {
     return price ? `${price.toLocaleString('vi-VN')}đ` : '0đ';
   };
 
+  // Helper format ngày thành dd/mm/yyyy chuẩn tiếng Việt
+  const formatDateVN = (dateInput?: string | Date | null) => {
+    if (!dateInput) return '';
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return String(dateInput);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
   return (
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-16">
       <AppHeader sectionLabel="Spa" />
@@ -818,7 +829,7 @@ function SpaBookingWizard() {
                     </div>
 
                     <label className="text-xs font-black uppercase text-gray-800 tracking-wider block pt-1">
-                      Chọn giờ hẹn ({new Date(bookingDate).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}) *
+                      Chọn giờ hẹn ({formatDateVN(bookingDate)}) *
                     </label>
                     {loadingSlots ? (
                       <div className="text-center py-10">
@@ -830,10 +841,11 @@ function SpaBookingWizard() {
                         {filteredValidSlots.map((slot) => {
                           const isSelected = bookingTime === slot.time;
                           const isPetBusy = !!slot.isPetBusy;
-                          const isSelectable = !isPetBusy;
                           const remainingSlots = typeof slot.remainingSlots === 'number' ? slot.remainingSlots : 0;
                           const bookingCount = typeof slot.bookingCount === 'number' ? slot.bookingCount : 0;
-                          const isOverbooked = remainingSlots <= 0 || bookingCount >= remainingSlots;
+                          const isFull = remainingSlots <= 0 || slot.isAvailable === false;
+                          const isUnavailable = isPetBusy || isFull;
+                          const isSelectable = !isUnavailable;
 
                           return (
                             <div key={slot.time} className="relative group">
@@ -841,16 +853,14 @@ function SpaBookingWizard() {
                                 type="button"
                                 disabled={!isSelectable}
                                 onClick={() => isSelectable && setBookingTime(slot.time)}
-                                className={`w-full py-3 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center gap-1 ${isPetBusy
+                                className={`w-full py-3 px-3 border rounded-xl text-center transition flex flex-col items-center justify-center gap-1 ${isUnavailable
                                   ? 'bg-gray-900 border-gray-800 text-gray-400 cursor-not-allowed shadow-inner opacity-70'
                                   : isSelected
                                     ? 'bg-primary border-primary text-white shadow-md font-bold cursor-pointer scale-102 ring-2 ring-primary/30'
-                                    : isOverbooked
-                                      ? 'bg-amber-50/70 border-amber-200 hover:border-amber-400 text-gray-800 cursor-pointer hover:shadow-2xs'
-                                      : 'bg-white border-gray-250 text-gray-700 hover:border-primary cursor-pointer hover:shadow-2xs'
+                                    : 'bg-white border-gray-250 text-gray-700 hover:border-primary cursor-pointer hover:shadow-2xs'
                                   }`}
                               >
-                                <span className={`text-sm font-black ${isPetBusy ? 'text-gray-300' : isSelected ? 'text-white' : 'text-gray-800'}`}>
+                                <span className={`text-sm font-black ${isUnavailable ? 'text-gray-300' : isSelected ? 'text-white' : 'text-gray-800'}`}>
                                   {slot.time}
                                 </span>
 
@@ -858,21 +868,21 @@ function SpaBookingWizard() {
                                   <span className="text-[10px] font-bold text-amber-400">
                                     🐾 Bé bận lịch
                                   </span>
+                                ) : isFull ? (
+                                  <span className="text-[10px] font-bold text-amber-400">
+                                    🔒 0 lịch khả dụng
+                                  </span>
                                 ) : (
                                   <>
                                     <span className={`text-[11px] font-bold leading-tight ${isSelected
                                       ? 'text-white'
-                                      : remainingSlots <= 0
-                                        ? 'text-rose-600'
-                                        : 'text-emerald-700'
+                                      : 'text-emerald-700'
                                       }`}>
                                       {remainingSlots} lịch khả dụng
                                     </span>
                                     <span className={`text-[10px] leading-tight ${isSelected
                                       ? 'text-white/85'
-                                      : isOverbooked
-                                        ? 'text-amber-800 font-semibold'
-                                        : 'text-gray-500'
+                                      : 'text-gray-500'
                                       }`}>
                                       {bookingCount} khách hàng đặt
                                     </span>
@@ -880,14 +890,24 @@ function SpaBookingWizard() {
                                 )}
                               </button>
 
-                              {/* Visual Tooltip on Hover for pet busy slot */}
-                              {!isSelectable && isPetBusy && (
+                              {/* Visual Tooltip on Hover for unavailable slots */}
+                              {!isSelectable && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-30 pointer-events-none w-52 text-center animate-in fade-in zoom-in-95 duration-150">
                                   <div className="bg-gray-950/95 text-white text-[11px] font-medium py-2 px-3 rounded-xl shadow-2xl border border-gray-700 leading-snug backdrop-blur-xs">
-                                    <span className="text-amber-300 font-black block mb-0.5 flex items-center justify-center gap-1">
-                                      ⚠️ Trùng lịch thú cưng
-                                    </span>
-                                    Bé {activePet?.name ? <strong className="text-white">"{activePet.name}"</strong> : 'của bạn'} đã có lịch hẹn Spa khác trong khoảng thời gian này ({slot.time}).
+                                    {isPetBusy ? (
+                                      <>
+                                        <span className="text-amber-300 font-black block mb-0.5 flex items-center justify-center gap-1">
+                                          ⚠️ Trùng lịch thú cưng
+                                        </span>
+                                        Bé {activePet?.name ? <strong className="text-white">"{activePet.name}"</strong> : 'của bạn'} đã có lịch hẹn Spa khác trong khoảng thời gian này ({slot.time}).
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-amber-300 font-black block mb-0.5 flex items-center justify-center gap-1">
+                                          🔒 Khung giờ đã kín chỗ
+                                        </span>
+                                      </>
+                                    )}
                                   </div>
                                   <div className="w-2.5 h-2.5 bg-gray-950 rotate-45 -mt-1 border-r border-b border-gray-700" />
                                 </div>
@@ -942,7 +962,7 @@ function SpaBookingWizard() {
                       </div>
                       <div className="flex justify-between pb-2 border-b border-dashed">
                         <span className="text-gray-500">Thời gian hẹn:</span>
-                        <span className="font-bold text-gray-800">{bookingTime} - {bookingDate}</span>
+                        <span className="font-bold text-gray-800">{bookingTime} - {formatDateVN(bookingDate)}</span>
                       </div>
                       <div className="flex justify-between pt-2 border-t font-extrabold text-base">
                         <span className="text-gray-900">Tổng tiền thanh toán:</span>
@@ -1027,7 +1047,7 @@ function SpaBookingWizard() {
             <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-200/80 text-xs space-y-2 text-gray-600">
               <div className="flex justify-between">
                 <span className="text-gray-500">Khung giờ đã chọn:</span>
-                <span className="font-bold text-gray-800">{bookingTime} - {new Date(bookingDate).toLocaleDateString('vi-VN')}</span>
+                <span className="font-bold text-gray-800">{bookingTime} - {formatDateVN(bookingDate)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Nhân viên khả dụng:</span>
