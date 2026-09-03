@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Eye
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import AppHeader from '@/components/layout/AppHeader';
@@ -212,6 +213,13 @@ export default function OrdersPage() {
   const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [retryLoadingId, setRetryLoadingId] = useState<string | null>(null);
+
+  // State hiển thị popup xem ảnh bằng chứng giao hàng / hoàn tiền
+  const [previewModal, setPreviewModal] = useState<{
+    url: string;
+    title: string;
+    subtitle: string;
+  } | null>(null);
 
   // PayOS Payout States
   const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
@@ -878,70 +886,43 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {order.shippingNote && (
-                    <div className="bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 text-xs">
-                      <span className="font-black text-blue-800 uppercase tracking-wider text-[9px] block">Ghi chú giao hàng:</span>
-                      <p className="text-xs font-bold text-blue-900 mt-0.5">{order.shippingNote}</p>
-                    </div>
-                  )}
-
                   {order.status === 'DELIVERED' && order.deliveryProofUrl && (
-                    <div className="space-y-2">
+                    <div className="pt-1">
                       <button
                         type="button"
-                        onClick={() => setShowProofOrderId((prev) => (prev === order.id ? null : order.id))}
+                        onClick={() =>
+                          setPreviewModal({
+                            url: order.deliveryProofUrl!,
+                            title: 'Xác nhận giao hàng thành công',
+                            subtitle: 'Ảnh chụp thực tế từ nhân viên giao hàng (Shipper)',
+                          })
+                        }
                         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-extrabold text-xs transition cursor-pointer shadow-2xs"
                       >
                         <CheckCircle className="size-4 text-emerald-600" />
-                        <span>{showProofOrderId === order.id ? 'Ẩn ảnh' : 'Xem ảnh giao hàng'}</span>
+                        <span>Xem ảnh giao hàng</span>
                         <Eye className="size-3.5 text-emerald-600 ml-0.5" />
                       </button>
-
-                      {showProofOrderId === order.id && (
-                        <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 text-xs space-y-1.5 animate-fadeIn">
-                          <span className="font-black text-emerald-800 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                            <CheckCircle className="size-3.5 text-emerald-600" />
-                            Ảnh bằng chứng giao hàng từ Shop (Shipper chụp)
-                          </span>
-                          <a href={order.deliveryProofUrl} target="_blank" rel="noreferrer" className="block mt-1">
-                            <img
-                              src={order.deliveryProofUrl}
-                              alt="Ảnh xác nhận giao hàng"
-                              className="w-full max-h-56 object-cover rounded-lg border border-emerald-300 hover:opacity-95 transition cursor-pointer shadow-xs"
-                            />
-                          </a>
-                        </div>
-                      )}
                     </div>
                   )}
 
                   {order.refundProofUrl && (
-                    <div className="space-y-2">
+                    <div className="pt-1">
                       <button
                         type="button"
-                        onClick={() => setShowRefundProofOrderId((prev) => (prev === order.id ? null : order.id))}
+                        onClick={() =>
+                          setPreviewModal({
+                            url: order.refundProofUrl!,
+                            title: 'Xác nhận hoàn tiền',
+                            subtitle: 'Bill chuyển khoản hoàn tiền từ Cửa hàng',
+                          })
+                        }
                         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-extrabold text-xs transition cursor-pointer shadow-2xs"
                       >
                         <RefreshCw className="size-4 text-amber-700" />
-                        <span>{showRefundProofOrderId === order.id ? 'Ẩn ảnh' : 'Xem ảnh chuyển khoản hoàn tiền'}</span>
+                        <span>Xem ảnh chuyển khoản hoàn tiền</span>
                         <Eye className="size-3.5 text-amber-700 ml-0.5" />
                       </button>
-
-                      {showRefundProofOrderId === order.id && (
-                        <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200 text-xs space-y-1.5 animate-fadeIn">
-                          <span className="font-black text-amber-800 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                            <CheckCircle className="size-3.5 text-amber-600" />
-                            Ảnh chuyển khoản hoàn tiền từ Shop (Bill chuyển khoản)
-                          </span>
-                          <a href={order.refundProofUrl} target="_blank" rel="noreferrer" className="block mt-1">
-                            <img
-                              src={order.refundProofUrl}
-                              alt="Ảnh xác nhận hoàn tiền"
-                              className="w-full max-h-56 object-cover rounded-lg border border-amber-300 hover:opacity-95 transition cursor-pointer shadow-xs"
-                            />
-                          </a>
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -1160,6 +1141,73 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
+      {/* Delivery & Refund Proof Image Modal Popup */}
+      <AnimatePresence>
+        {previewModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 sm:p-6 backdrop-blur-md"
+            onClick={() => setPreviewModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="relative max-w-3xl sm:max-w-4xl w-full rounded-3xl bg-white p-6 shadow-2xl space-y-4 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b pb-4 border-gray-100">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 shadow-xs">
+                    <CheckCircle className="size-6" />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-black text-gray-900">{previewModal.title}</h3>
+                    <p className="text-xs font-bold text-gray-500">{previewModal.subtitle}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModal(null)}
+                  className="flex size-9 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-800 transition cursor-pointer"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-slate-900 max-h-[78vh] flex items-center justify-center p-3">
+                <img
+                  src={previewModal.url}
+                  alt="Ảnh bằng chứng"
+                  className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl shadow-lg"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <a
+                  href={previewModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-bold text-[#0F766E] hover:underline flex items-center gap-1.5"
+                >
+                  <Eye className="size-4" />
+                  Mở ảnh gốc trong tab mới ↗
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModal(null)}
+                  className="px-5 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-xs font-extrabold transition cursor-pointer shadow-sm"
+                >
+                  Đóng
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

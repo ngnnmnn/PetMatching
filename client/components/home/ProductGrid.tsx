@@ -17,15 +17,18 @@ function SkeletonCard() {
   );
 }
 
+/** Component lưới hiển thị các thẻ sản phẩm kèm trạng thái loading và kết quả rỗng */
 export default function ProductGrid({
   products,
   loading,
   selectedPet,
+  selectedPrices,
   gridClassName,
 }: {
   products: Product[];
   loading: boolean;
   selectedPet?: any;
+  selectedPrices?: string[];
   gridClassName?: string;
 }) {
   return (
@@ -38,6 +41,7 @@ export default function ProductGrid({
                 key={product.id}
                 product={product}
                 selectedPet={selectedPet}
+                selectedPrices={selectedPrices}
               />
             ))}
       </div>

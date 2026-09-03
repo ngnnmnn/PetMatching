@@ -93,6 +93,22 @@ export class ProductsService {
     return result;
   }
 
+  /** Kiểm tra khả năng mở bán và tồn kho thực tế của sản phẩm */
+  private getProductAvailability(product: any): number {
+    if (product.isActive === false) return 0;
+    if (product.variants && product.variants.length > 0) {
+      const activeVars = product.variants.filter((v: any) => v.isActive !== false);
+      if (activeVars.length === 0) return 0;
+      const totalStock = activeVars.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0);
+      return totalStock > 0 ? 1 : 0;
+    }
+    return Number(product.stock || 0) > 0 ? 1 : 0;
+  }
+
+  /**
+   * Lấy danh sách sản phẩm phân trang theo các tiêu chí lọc (Danh mục, Loài thú cưng, Từ khóa)
+   * và thuật toán xếp hạng đa tầng (Phổ biến, Mới nhất, Giá tăng/giảm).
+   */
   async getProducts(dto: GetProductsDto) {
     const {
       category,
@@ -149,6 +165,10 @@ export class ProductsService {
 
       const sorted = allProducts
         .sort((a, b) => {
+          const availA = this.getProductAvailability(a);
+          const availB = this.getProductAvailability(b);
+          if (availB !== availA) return availB - availA; // Còn hàng lên trên, hết hàng xuống dưới
+
           const priceA = getEffectivePrice(a);
           const priceB = getEffectivePrice(b);
           const priceCompare =
@@ -174,8 +194,12 @@ export class ProductsService {
 
       const productsWithSales = await this.attachSoldCount(allProducts);
 
-      // Multi-tier ranking: soldCount -> rating -> reviewCount -> isFeatured -> createdAt
+      // Multi-tier ranking: availability -> soldCount -> rating -> reviewCount -> isFeatured -> createdAt
       const sorted = productsWithSales.sort((a, b) => {
+        const availA = this.getProductAvailability(a);
+        const availB = this.getProductAvailability(b);
+        if (availB !== availA) return availB - availA; // Còn hàng lên trên, hết hàng xuống dưới
+
         if (b.soldCount !== a.soldCount) return b.soldCount - a.soldCount;
         if (b.rating !== a.rating) return b.rating - a.rating;
         if (b.reviewCount !== a.reviewCount) return b.reviewCount - a.reviewCount;
@@ -197,27 +221,29 @@ export class ProductsService {
       };
     }
 
-    const orderBy: Prisma.ProductOrderByWithRelationInput[] = [
-      { createdAt: 'desc' },
-      { id: 'desc' },
-    ];
-
-    const [rawProducts, total] = await this.prisma.$transaction([
+    const [allProducts, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
         where,
-        orderBy,
-        skip,
-        take: limit,
         include: { variants: true },
       }),
       this.prisma.product.count({ where }),
     ]);
 
-    const data = await this.attachSoldCount(rawProducts);
+    const sorted = allProducts
+      .sort((a, b) => {
+        const availA = this.getProductAvailability(a);
+        const availB = this.getProductAvailability(b);
+        if (availB !== availA) return availB - availA; // Còn hàng lên trên, hết hàng xuống dưới
+
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
+      .slice(skip, skip + limit);
+
+    const data = await this.attachSoldCount(sorted);
 
     return {
-        data,
-        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
 

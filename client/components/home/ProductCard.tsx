@@ -47,12 +47,15 @@ const getParsedSpecs = (specifications: any): Array<{ key: string; value: string
   return [];
 };
 
+/** Component thẻ sản phẩm hiển thị thông tin, giá cả, phân loại và nút thêm vào giỏ */
 export default function ProductCard({
   product,
   selectedPet,
+  selectedPrices,
 }: {
   product: Product;
   selectedPet?: any;
+  selectedPrices?: string[];
 }) {
   const router = useRouter();
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
@@ -60,19 +63,14 @@ export default function ProductCard({
 
   const { addToCart } = useCart();
 
-  // Initialize/Update pre-selected variant based on pet weight or lowest price
+  // Mặc định hiển thị ảnh bìa chính của sản phẩm (selectedVariant = null).
+  // Chỉ tự động chọn sẵn variant khi lọc theo thú cưng hoặc khoảng giá.
   useEffect(() => {
     if (product.variants && product.variants.length > 0) {
       const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
       const availableVariants = activeVariants.length > 0 ? activeVariants : product.variants;
 
-      // Find variant sorted by lowest effective price
-      const cheapestVariant = [...availableVariants].sort((a: any, b: any) => {
-        const priceA = a.salePrice ?? a.sellingPrice;
-        const priceB = b.salePrice ?? b.sellingPrice;
-        return priceA - priceB;
-      })[0];
-
+      // 1. Nếu đang lọc theo thú cưng, ưu tiên chọn phân loại khớp kích thước/cân nặng
       if (selectedPet && selectedPet.weight > 0) {
         const w = selectedPet.weight;
         const matched = availableVariants.find((v: any) => {
@@ -80,25 +78,92 @@ export default function ProductCard({
           for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
             if (w >= range.min && w <= range.max) {
               const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-              if (regex.test(nameLower)) {
-                return true;
-              }
+              if (regex.test(nameLower)) return true;
             }
           }
           return false;
         });
-        setSelectedVariant(matched || cheapestVariant || availableVariants[0]);
-      } else {
-        setSelectedVariant(cheapestVariant || availableVariants[0]);
+        if (matched) {
+          setSelectedVariant(matched);
+          return;
+        }
       }
+
+      // 2. Nếu đang chọn lọc theo khoảng giá, ưu tiên chọn phân loại CÒN HÀNG có giá khớp với khoảng giá
+      if (selectedPrices && selectedPrices.length > 0) {
+        const matchedInStockByPrice = availableVariants.find((v: any) => {
+          if (Number(v.stock || 0) <= 0) return false;
+          const p = v.salePrice ?? v.sellingPrice;
+          return selectedPrices.some((range) => {
+            if (range === 'under_100k') return p < 100000;
+            if (range === '100k_500k') return p >= 100000 && p <= 500000;
+            if (range === '500k_1m') return p >= 500000 && p <= 1000000;
+            if (range === 'over_1m') return p > 1000000;
+            return false;
+          });
+        });
+
+        const matchedByPrice = matchedInStockByPrice || availableVariants.find((v: any) => {
+          const p = v.salePrice ?? v.sellingPrice;
+          return selectedPrices.some((range) => {
+            if (range === 'under_100k') return p < 100000;
+            if (range === '100k_500k') return p >= 100000 && p <= 500000;
+            if (range === '500k_1m') return p >= 500000 && p <= 1000000;
+            if (range === 'over_1m') return p > 1000000;
+            return false;
+          });
+        });
+
+        if (matchedByPrice) {
+          setSelectedVariant(matchedByPrice);
+          return;
+        }
+      }
+
+      // 3. Mặc định không có bộ lọc -> KHÔNG chọn sẵn variant nào để giữ ảnh bìa gốc của sản phẩm
+      setSelectedVariant(null);
     } else {
       setSelectedVariant(null);
     }
-  }, [product.variants, selectedPet]);
+  }, [product.variants, selectedPet, selectedPrices]);
 
   const hasVariants = product.variants && product.variants.length > 0;
+  const activeVariants = product.variants?.filter((v: any) => v.isActive !== false) || [];
   
-  // Calculate if the active variant is a direct recommendation match for the pet's weight
+  // Tính toán khoảng giá đối với sản phẩm có nhiều phân loại giá khác nhau
+  const variantPrices = activeVariants
+    .map((v: any) => v.salePrice ?? v.sellingPrice)
+    .filter((p: number) => typeof p === 'number' && p > 0);
+
+  const minVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : (product.salePrice ?? product.sellingPrice);
+  const maxVariantPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : (product.salePrice ?? product.sellingPrice);
+  const hasPriceRange = selectedVariant === null && hasVariants && minVariantPrice < maxVariantPrice;
+
+  // Ưu tiên hiển thị Ảnh Bìa Gốc của sản phẩm (`product.imageUrl`), trừ khi người dùng chủ động chọn 1 variant
+  const productImage = selectedVariant?.imageUrl || product.imageUrl || '/placeholder.svg';
+
+  const displayNumericPrice = selectedVariant
+    ? (selectedVariant.salePrice ?? selectedVariant.sellingPrice)
+    : (product.salePrice ?? product.sellingPrice);
+
+  // Hiển thị giá: Dải giá (ví dụ: 99.000đ - 120.000đ) khi chưa chọn variant, hoặc giá đơn khi đã chọn variant
+  const displayPriceLabel = selectedVariant
+    ? formatCurrency(selectedVariant.salePrice ?? selectedVariant.sellingPrice)
+    : hasPriceRange
+    ? `${formatCurrency(minVariantPrice)} - ${formatCurrency(maxVariantPrice)}`
+    : formatCurrency(product.salePrice ?? product.sellingPrice);
+
+  const discount = getDiscountPercent(selectedVariant || product);
+  const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
+
+  const effectiveTotalStock = product.variants && product.variants.length > 0
+    ? product.variants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
+    : (product.stock ?? 0);
+  const currentStock = selectedVariant !== null ? selectedVariant.stock : effectiveTotalStock;
+  const isOutOfStock = currentStock === 0;
+  const productDetailUrl = `/product/${product.id}${selectedVariant ? `?variantId=${selectedVariant.id}` : ''}`;
+
+  // Kiểm tra xem phân loại đang chọn có khớp với cân nặng của thú cưng hay không
   const isMatchedByPetWeight = !!(
     selectedPet &&
     selectedPet.weight > 0 &&
@@ -117,17 +182,7 @@ export default function ProductCard({
     })()
   );
 
-  const displayPrice = selectedVariant ? (selectedVariant.salePrice ?? selectedVariant.sellingPrice) : (product.salePrice ?? product.sellingPrice);
-  const discount = getDiscountPercent(selectedVariant || product);
-  const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
-  const productImage = selectedVariant?.imageUrl || product.imageUrl || '/placeholder.svg';
-  const effectiveTotalStock = product.variants && product.variants.length > 0
-    ? product.variants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
-    : (product.stock ?? 0);
-  const currentStock = selectedVariant !== null ? selectedVariant.stock : effectiveTotalStock;
-  const isOutOfStock = currentStock === 0;
-  const productDetailUrl = `/product/${product.id}${selectedVariant ? `?variantId=${selectedVariant.id}` : ''}`;
-
+  /** Thao tác thêm sản phẩm vào giỏ hàng từ thẻ sản phẩm */
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -137,7 +192,13 @@ export default function ProductCard({
       router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       return;
     }
-    
+
+    // Nếu sản phẩm có phân loại (variants) nhưng người dùng chưa chọn phân loại nào -> Thông báo yêu cầu chọn phân loại
+    if (hasVariants && !selectedVariant) {
+      toast.warning(`Vui lòng chọn 1 phân loại cho sản phẩm "${product.name}" trước khi thêm vào giỏ hàng!`);
+      return;
+    }
+
     addToCart(product, 1, false, selectedVariant?.id);
     toast.success(`Đã thêm sản phẩm "${product.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}" vào giỏ hàng!`);
   };
@@ -188,7 +249,7 @@ export default function ProductCard({
           )}
 
           {/* Recommend badge */}
-          {isMatchedByPetWeight && (
+          {isMatchedByPetWeight && selectedVariant && (
             <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 rounded-lg bg-emerald-600 text-[10px] font-black text-white px-2.5 py-1 shadow-md z-10 animate-pulse">
               <Sparkles className="size-3 fill-white/20" />
               Gợi ý: {selectedVariant.name.replace(/size\s+/i, 'Size ')}
@@ -262,7 +323,11 @@ export default function ProductCard({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setSelectedVariant(v);
+                      if (selectedVariant?.id === v.id) {
+                        setSelectedVariant(null);
+                      } else {
+                        setSelectedVariant(v);
+                      }
                     }}
                     className={cn(
                       "px-2.5 py-1 text-[10px] font-black rounded-lg border transition cursor-pointer flex items-center gap-1",
@@ -311,10 +376,10 @@ export default function ProductCard({
 
       <div className="p-4 pt-0 space-y-3">
         <div className="flex min-h-10 flex-wrap items-end gap-x-2 gap-y-1">
-          <span className="text-base font-extrabold text-[var(--primary-color)]">{formatCurrency(displayPrice)}</span>
-          {discount && (
+          <span className="text-base font-extrabold text-[var(--primary-color)]">{displayPriceLabel}</span>
+          {discount && selectedVariant && (
             <span className="text-xs text-[var(--text-muted)] line-through">
-              {formatCurrency(selectedVariant ? selectedVariant.sellingPrice : product.sellingPrice)}
+              {formatCurrency(selectedVariant.sellingPrice)}
             </span>
           )}
         </div>
@@ -421,7 +486,7 @@ export default function ProductCard({
                   {/* Price Section */}
                   <div className="flex items-baseline gap-2.5 pt-1">
                     <span className="text-2xl font-black text-orange-600">
-                      {formatCurrency(displayPrice)}
+                      {displayPriceLabel}
                     </span>
                     {discount && (
                       <span className="text-xs text-gray-400 line-through font-semibold">
@@ -430,7 +495,7 @@ export default function ProductCard({
                     )}
                     {discount && selectedVariant && (
                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                        Tiết kiệm {formatCurrency((selectedVariant.sellingPrice || product.sellingPrice) - displayPrice)}
+                        Tiết kiệm {formatCurrency((selectedVariant.sellingPrice || product.sellingPrice) - displayNumericPrice)}
                       </span>
                     )}
                   </div>

@@ -372,8 +372,38 @@ function ShopPageContent() {
     return () => window.removeEventListener('shop-reset', resetShop);
   }, [resetShop]);
 
+  /** Kiểm tra khả năng mở bán và tồn kho thực tế của sản phẩm (khớp theo khoảng giá nếu có) */
+  const getProductAvailability = (p: any): number => {
+    if (p.isActive === false) return 0;
+    if (p.variants && p.variants.length > 0) {
+      // Nếu đang lọc theo khoảng giá, kiểm tra xem có phân loại nào VỪA CÒN HÀNG VỪA KHỚP GIÁ không
+      if (selectedPrices && selectedPrices.length > 0) {
+        const hasInStockMatchingVariant = p.variants.some((v: any) => {
+          if (v.isActive === false || Number(v.stock || 0) <= 0) return false;
+          const price = v.salePrice ?? v.sellingPrice;
+          return selectedPrices.some((range) => {
+            if (range === 'under_100k') return price < 100000;
+            if (range === '100k_500k') return price >= 100000 && price <= 500000;
+            if (range === '500k_1m') return price >= 500000 && price <= 1000000;
+            if (range === 'over_1m') return price > 1000000;
+            return false;
+          });
+        });
+        if (hasInStockMatchingVariant) return 1;
+        return 0; // Phân loại khớp giá đã HẾT HÀNG -> Đẩy xuống cuối!
+      }
+
+      const activeVars = p.variants.filter((v: any) => v.isActive !== false);
+      if (activeVars.length === 0) return 0;
+      const totalStock = activeVars.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0);
+      return totalStock > 0 ? 1 : 0;
+    }
+    return Number(p.stock || 0) > 0 ? 1 : 0;
+  };
+
   // Client-side category, price, and pet customization filtering on full loaded catalog
-  const filteredProducts = products.filter((product) => {
+  const filteredProducts = products
+    .filter((product) => {
     // 1. Filter out test/system products
     if (isTestOrSystemProduct(product)) return false;
 
@@ -422,6 +452,12 @@ function ShopPageContent() {
       });
 
     return matchesPrice;
+  })
+  .sort((a, b) => {
+    // Đẩy các sản phẩm hết hàng hoặc tạm ngưng bán xuống CUỐI DANH SÁCH
+    const availA = getProductAvailability(a);
+    const availB = getProductAvailability(b);
+    return availB - availA;
   });
 
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
@@ -475,9 +511,9 @@ function ShopPageContent() {
           id="shop-main-grid"
           className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 transition-all duration-300"
         >
-          {/* Quick Categories Section */}
+          {/* Quick Categories Section - Single Row Horizontal Scroll */}
           <section className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300 scroll-smooth">
               {dynamicQuickCategories.map((cat, idx) => {
                 const isActive = selectedCategories.includes(cat.category);
                 return (
@@ -491,19 +527,19 @@ function ShopPageContent() {
                       }
                     }}
                     className={cn(
-                      "flex flex-col items-center p-5 rounded-2xl border-2 transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer group shadow-2xs",
+                      "flex flex-col items-center justify-center p-4 min-w-[140px] sm:min-w-[160px] rounded-2xl border-2 transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer group shadow-2xs shrink-0 select-none",
                       isActive
-                        ? "border-[var(--primary-color)] bg-orange-50/30 shadow-xs"
+                        ? "border-[var(--primary-color)] bg-orange-50/40 shadow-xs"
                         : "border-[#EFEAE2]/80 bg-[#FAF9F7] hover:bg-white hover:border-[var(--primary-color)] hover:shadow-xs"
                     )}
                   >
-                    <span className="text-3xl mb-2.5 filter drop-shadow-xs group-hover:scale-110 transition-transform duration-300">
+                    <span className="text-2xl mb-1.5 filter drop-shadow-xs group-hover:scale-110 transition-transform duration-300">
                       {cat.icon}
                     </span>
-                    <span className="text-xs font-black text-[var(--text-main)] text-center">
+                    <span className="text-xs font-black text-[var(--text-main)] text-center whitespace-nowrap">
                       {cat.name}
                     </span>
-                    <span className="text-[9px] text-[var(--text-muted)] font-extrabold mt-1 text-center">
+                    <span className="text-[9px] text-[var(--text-muted)] font-extrabold mt-0.5 text-center whitespace-nowrap">
                       {cat.desc}
                     </span>
                   </button>
@@ -728,6 +764,7 @@ function ShopPageContent() {
                   products={paginatedProducts}
                   loading={loading}
                   selectedPet={selectedPet}
+                  selectedPrices={selectedPrices}
                   gridClassName={
                     isFilterOpen
                       ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"

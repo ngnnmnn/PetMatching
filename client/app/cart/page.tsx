@@ -156,7 +156,7 @@ export default function CartPage() {
               Không có sản phẩm nào trong giỏ hàng của bạn. Hãy quay lại cửa hàng để khám phá hàng ngàn phụ kiện, đồ ăn hấp dẫn cho thú cưng nhé!
             </p>
             <Link
-              href="/home"
+              href="/shop"
               className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017]"
             >
               Quay lại cửa hàng
