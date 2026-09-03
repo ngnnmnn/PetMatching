@@ -12,7 +12,11 @@ import { GetProductsDto } from './dto/get-products.dto';
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
-  private async attachSoldCount<T extends { id: string }>(products: T[]) {
+  /**
+   * Tính tổng số lượng sản phẩm đã bán thực tế từ các đơn hàng thành công (DELIVERED, SHIPPED, PROCESSING, PACKED)
+   * và tính toán tổng tồn kho thực tế từ danh sách biến thể đính kèm vào mỗi sản phẩm.
+   */
+  private async attachSoldCount<T extends { id: string; stock?: number | null; variants?: any[] }>(products: T[]) {
     if (!products.length) return [];
     const productIds = products.map((p) => p.id);
     const sales = await this.prisma.orderItem.groupBy({
@@ -33,10 +37,60 @@ export class ProductsService {
       salesMap.set(s.productId, s._sum.quantity || 0);
     });
 
-    return products.map((p) => ({
-      ...p,
-      soldCount: salesMap.get(p.id) || 0,
-    }));
+    return products.map((p) => {
+      const calculatedStock =
+        p.variants && p.variants.length > 0
+          ? p.variants.reduce((sum: number, v: any) => sum + (v.stock || 0), 0)
+          : p.stock;
+      return {
+        ...p,
+        stock: calculatedStock,
+        soldCount: salesMap.get(p.id) || 0,
+      };
+    });
+  }
+
+  private applyCategoryDiversity<T extends { category?: string | null }>(
+    items: T[],
+    pageSize = 12,
+    maxPerCategoryPerPage = 3,
+  ): T[] {
+    if (!items.length) return [];
+
+    const totalPages = Math.ceil(items.length / pageSize);
+    const result: T[] = [];
+    const remaining = [...items];
+
+    for (let page = 0; page < totalPages; page++) {
+      const pageCategoryCount: Record<string, number> = {};
+      let pageItemsCount = 0;
+      const nextRemaining: T[] = [];
+
+      for (const item of remaining) {
+        const cat = item.category || 'UNKNOWN';
+        const count = pageCategoryCount[cat] || 0;
+
+        if (pageItemsCount < pageSize && count < maxPerCategoryPerPage) {
+          result.push(item);
+          pageCategoryCount[cat] = count + 1;
+          pageItemsCount++;
+        } else {
+          nextRemaining.push(item);
+        }
+      }
+
+      // If page isn't full yet (e.g., some categories ran out), fill remaining slots for this page
+      while (pageItemsCount < pageSize && nextRemaining.length > 0) {
+        const item = nextRemaining.shift()!;
+        result.push(item);
+        pageItemsCount++;
+      }
+
+      remaining.length = 0;
+      remaining.push(...nextRemaining);
+    }
+
+    return result;
   }
 
   async getProducts(dto: GetProductsDto) {
@@ -81,10 +135,22 @@ export class ProductsService {
         this.prisma.product.count({ where }),
       ]);
 
+      const getEffectivePrice = (p: any) => {
+        if (p.variants && p.variants.length > 0) {
+          const activeVars = p.variants.filter((v: any) => v.isActive !== false);
+          const vars = activeVars.length > 0 ? activeVars : p.variants;
+          const prices = vars.map((v: any) => v.salePrice ?? v.sellingPrice).filter((pr: number) => pr > 0);
+          if (prices.length > 0) {
+            return Math.min(...prices);
+          }
+        }
+        return p.salePrice ?? (p.sellingPrice || 0);
+      };
+
       const sorted = allProducts
         .sort((a, b) => {
-          const priceA = a.salePrice ?? (a.sellingPrice || 0);
-          const priceB = b.salePrice ?? (b.sellingPrice || 0);
+          const priceA = getEffectivePrice(a);
+          const priceB = getEffectivePrice(b);
           const priceCompare =
             sortBy === 'price_asc' ? priceA - priceB : priceB - priceA;
 
@@ -100,10 +166,41 @@ export class ProductsService {
       };
     }
 
-    const orderBy: Prisma.ProductOrderByWithRelationInput[] =
-      sortBy === 'newest'
-        ? [{ createdAt: 'desc' }, { id: 'desc' }]
-        : [{ reviewCount: 'desc' }, { rating: 'desc' }];
+    if (sortBy === 'popular') {
+      const [allProducts, total] = await this.prisma.$transaction([
+        this.prisma.product.findMany({ where, include: { variants: true } }),
+        this.prisma.product.count({ where }),
+      ]);
+
+      const productsWithSales = await this.attachSoldCount(allProducts);
+
+      // Multi-tier ranking: soldCount -> rating -> reviewCount -> isFeatured -> createdAt
+      const sorted = productsWithSales.sort((a, b) => {
+        if (b.soldCount !== a.soldCount) return b.soldCount - a.soldCount;
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        if (b.reviewCount !== a.reviewCount) return b.reviewCount - a.reviewCount;
+        if ((b.isFeatured ? 1 : 0) !== (a.isFeatured ? 1 : 0)) return (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0);
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+      // Apply category diversity cap (max 3 items per category on page 1) when browsing all categories
+      let finalOrderedProducts = sorted;
+      if (!category) {
+        finalOrderedProducts = this.applyCategoryDiversity(sorted, limit, 3);
+      }
+
+      const pagedData = finalOrderedProducts.slice(skip, skip + limit);
+
+      return {
+        data: pagedData,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      };
+    }
+
+    const orderBy: Prisma.ProductOrderByWithRelationInput[] = [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ];
 
     const [rawProducts, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
@@ -119,8 +216,8 @@ export class ProductsService {
     const data = await this.attachSoldCount(rawProducts);
 
     return {
-      data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        data,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
 

@@ -198,16 +198,7 @@ function CheckoutPageContent() {
   useEffect(() => {
     const code = searchParams.get('code') || '';
     if (code) {
-      const upperCode = code.toUpperCase();
-      if (upperCode === 'PETMATCH10') {
-        setDiscountPercent(10);
-        setDiscountAmount(0);
-        setAppliedCode(upperCode);
-      } else if (upperCode === 'HELLOWORLD') {
-        setDiscountPercent(0);
-        setDiscountAmount(50000);
-        setAppliedCode(upperCode);
-      }
+      handleApplyPromoCode(undefined, code);
     }
   }, [searchParams]);
 
@@ -233,13 +224,13 @@ function CheckoutPageContent() {
         setAppliedCode(voucher.code);
         if (voucher.type === 'PERCENTAGE') {
           setDiscountPercent(voucher.value);
-          setDiscountAmount(voucher.discountAmount || 0);
+          setDiscountAmount(0);
         } else if (voucher.type === 'FIXED') {
           setDiscountPercent(0);
           setDiscountAmount(voucher.discountAmount || voucher.value);
         } else {
           setDiscountPercent(0);
-          setDiscountAmount(voucher.discountAmount || 0);
+          setDiscountAmount(0);
         }
         toast.success(voucher.message || 'Áp dụng mã giảm giá thành công!');
       }
@@ -431,18 +422,24 @@ function CheckoutPageContent() {
         ),
       }));
 
+      // Toast feedback if QR selected
+      if (paymentMethod === 'QR') {
+        toast.loading('Đang khởi tạo mã QR thanh toán PayOS...', { id: 'payos-loading' });
+      }
+
       // Create Order in DB
       const res = await usersApi.createOrder({
-        totalAmount: Number(checkoutTotal),
+        totalAmount: Number(checkoutTotal + baseShippingFee),
         shippingFee: Number(baseShippingFee),
         shippingAddress: finalAddress,
         districtId: targetDistrictId,
         wardCode: targetWardCode,
         paymentMethod: paymentMethod,
-        voucherCode: appliedVoucher ? appliedVoucher.code : undefined,
+        voucherCode: appliedVoucher?.code || undefined,
         items: orderItems,
       });
 
+      toast.dismiss('payos-loading');
       const orderData = res.data;
       setOrderPlaced(true);
 
@@ -485,8 +482,18 @@ function CheckoutPageContent() {
       const errMsg = Array.isArray(err.response?.data?.message)
         ? err.response.data.message.join(', ')
         : err.response?.data?.message || 'Có lỗi xảy ra trong quá trình đặt hàng.';
-      toast.error(errMsg);
+
+      if (errMsg.includes('thay đổi') || errMsg.includes('giá') || errMsg.includes('kho')) {
+        toast.warning(errMsg, { duration: 6000 });
+        // Reload checkout data after 2s to display updated prices/stocks
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        toast.error(errMsg);
+      }
     } finally {
+      toast.dismiss('payos-loading');
       setSubmitting(false);
     }
   };

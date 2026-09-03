@@ -11,6 +11,7 @@ import ProductGrid from '@/components/home/ProductGrid';
 import SearchFilterBar from '@/components/home/SearchFilterBar';
 import Footer from '@/components/layout/Footer';
 import api from '@/lib/axios';
+import { productsApi } from '@/lib/api/products';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -35,7 +36,7 @@ const QUICK_CATEGORIES = [
 
 const ITEMS_PER_PAGE = 12; // 3 rows, 4 products per row
 
-// Filter out test/system products (e.g. vouchers, shipping fees, debug products, gibberish keyboard mashes)
+/** Kiểm tra sản phẩm thử nghiệm hoặc rác hệ thống để ẩn khỏi danh sách hiển thị */
 const isTestOrSystemProduct = (product: any) => {
   const nameLower = product.name.toLowerCase();
 
@@ -64,7 +65,7 @@ const isTestOrSystemProduct = (product: any) => {
   return isGibberish(product.name);
 };
 
-// Standard sizing weight range mappings (S, M, L, XL, XXL, XXXL) for pet accessories/clothes
+// Bảng ánh xạ khoảng cân nặng tiêu chuẩn theo size sản phẩm
 const SIZE_WEIGHT_RANGES: Record<string, { min: number; max: number }> = {
   s: { min: 0, max: 4 },
   m: { min: 4, max: 8 },
@@ -74,13 +75,13 @@ const SIZE_WEIGHT_RANGES: Record<string, { min: number; max: number }> = {
   xxxl: { min: 45, max: 150 },
 };
 
-// Filter out products with size specs that don't match the pet's weight
+/** Kiểm tra xem kích thước sản phẩm có phù hợp với cân nặng của thú cưng hay không */
 const isSizeCompatible = (product: any, petWeight: number) => {
   if (petWeight <= 0) return true;
 
   let sizeStr = '';
 
-  // 1. Check specifications JSON
+  // 1. Kiểm tra thông số kỹ thuật JSON
   if (product.specifications && typeof product.specifications === 'object') {
     const specs = product.specifications as Record<string, any>;
     const sizeKey = Object.keys(specs).find(k => {
@@ -92,7 +93,7 @@ const isSizeCompatible = (product: any, petWeight: number) => {
     }
   }
 
-  // 2. Check product name or description
+  // 2. Kiểm tra tên hoặc mô tả sản phẩm
   if (!sizeStr) {
     const nameLower = product.name.toLowerCase();
     const sizeRegex = /\b(?:size|cỡ|kích\s*thước|kích\s*cỡ)\s+([sml]|xl|xxl|xxxl)\b/i;
@@ -100,7 +101,6 @@ const isSizeCompatible = (product: any, petWeight: number) => {
     if (match) {
       sizeStr = match[1].toLowerCase();
     } else {
-      // Look for standalone size codes separated by space/dash/parentheses, e.g. " - S", "(S)"
       const nameParts = nameLower.split(/[-()]/);
       for (const part of nameParts) {
         const trimmed = part.trim();
@@ -123,11 +123,10 @@ const isSizeCompatible = (product: any, petWeight: number) => {
   return true;
 };
 
-// Filter out products with weight constraints that don't fit the pet's weight
+/** Kiểm tra sản phẩm có giới hạn cân nặng phù hợp với thú cưng hay không */
 const isWeightCompatible = (product: any, petWeight: number) => {
   const text = `${product.name} ${product.description || ''}`.toLowerCase();
   
-  // 1. Check max weight limits: e.g. "dưới 5kg", "tối đa 4kg", "<3kg", "3kg trở xuống"
   const underRegexes = [
     /dưới\s*(\d+(?:\.\d+)?)\s*kg/g,
     /tối\s*đa\s*(\d+(?:\.\d+)?)\s*kg/g,
@@ -145,7 +144,6 @@ const isWeightCompatible = (product: any, petWeight: number) => {
     }
   }
 
-  // 2. Check weight range limits: e.g. "1 - 3kg", "3-5 kg"
   const rangeRegex = /(\d+(?:\.\d+)?)\s*[-to]\s*(\d+(?:\.\d+)?)\s*kg/g;
   let rangeMatch;
   while ((rangeMatch = rangeRegex.exec(text)) !== null) {
@@ -161,6 +159,7 @@ const isWeightCompatible = (product: any, petWeight: number) => {
   return true;
 };
 
+/** Component giao diện chính trang Cửa hàng sản phẩm */
 function ShopPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -175,6 +174,7 @@ function ShopPageContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(true);
   const [filterResetKey, setFilterResetKey] = useState(0);
+  const [dbCategories, setDbCategories] = useState<Array<{ id: string; name: string; slug: string }>>([]);
 
   // Pet customization state
   const [pets, setPets] = useState<any[]>([]);
@@ -183,7 +183,18 @@ function ShopPageContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoadingPets, setIsLoadingPets] = useState(false);
 
-  // Load user pets list
+  /** Tải danh sách toàn bộ các danh mục sản phẩm động từ CSDL */
+  useEffect(() => {
+    productsApi.getCategories()
+      .then((res) => {
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          setDbCategories(res.data);
+        }
+      })
+      .catch((err) => console.error('Lỗi khi tải danh mục sản phẩm từ CSDL', err));
+  }, []);
+
+  /** Tải danh sách hồ sơ thú cưng của người dùng đã đăng nhập */
   const loadUserPets = useCallback(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     setIsLoggedIn(!!token);
@@ -386,11 +397,23 @@ function ShopPageContent() {
 
     if (!matchesCategory) return false;
 
-    // 4. Price filter
+    // 4. Price filter based on min effective price of product or its active variants
+    const getEffectiveProductPrice = (p: any) => {
+      if (p.variants && p.variants.length > 0) {
+        const activeVars = p.variants.filter((v: any) => v.isActive !== false);
+        const vars = activeVars.length > 0 ? activeVars : p.variants;
+        const prices = vars.map((v: any) => v.salePrice ?? v.sellingPrice).filter((pr: number) => pr > 0);
+        if (prices.length > 0) {
+          return Math.min(...prices);
+        }
+      }
+      return p.salePrice ?? (p.sellingPrice || 0);
+    };
+
     const matchesPrice =
       selectedPrices.length === 0 ||
       selectedPrices.some((range) => {
-        const price = product.salePrice ?? product.sellingPrice;
+        const price = getEffectiveProductPrice(product);
         if (range === 'under_100k') return price < 100000;
         if (range === '100k_500k') return price >= 100000 && price <= 500000;
         if (range === '500k_1m') return price >= 500000 && price <= 1000000;
@@ -406,6 +429,36 @@ function ShopPageContent() {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
+
+  // Map icons cho từng danh mục dựa trên tên/slug
+  const getCategoryIcon = (slugOrName: string) => {
+    const s = slugOrName.toLowerCase();
+    if (s.includes('cho') || s.includes('dog')) return '🐶';
+    if (s.includes('meo') || s.includes('cat')) return '🐱';
+    if (s.includes('choi') || s.includes('toy')) return '⚽';
+    if (s.includes('kien') || s.includes('accessory')) return '🎒';
+    if (s.includes('chuong') || s.includes('dem') || s.includes('bed') || s.includes('cage')) return '🛏️';
+    if (s.includes('day') || s.includes('co') || s.includes('leash')) return '🎗️';
+    if (s.includes('grooming') || s.includes('tam') || s.includes('ve sinh')) return '🪮';
+    if (s.includes('thuoc') || s.includes('y te') || s.includes('suc khoe')) return '💊';
+    return '🐾';
+  };
+
+  const dynamicQuickCategories = dbCategories.length > 0
+    ? dbCategories.map((cat) => ({
+        name: cat.name,
+        category: cat.slug || cat.name,
+        icon: getCategoryIcon(cat.slug || cat.name),
+        desc: 'Sản phẩm chất lượng',
+      }))
+    : QUICK_CATEGORIES;
+
+  const dynamicSidebarCategories = dbCategories.length > 0
+    ? dbCategories.map((cat) => ({
+        value: cat.slug || cat.name,
+        label: cat.name,
+      }))
+    : undefined;
 
   return (
     <div
@@ -425,7 +478,7 @@ function ShopPageContent() {
           {/* Quick Categories Section */}
           <section className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {QUICK_CATEGORIES.map((cat, idx) => {
+              {dynamicQuickCategories.map((cat, idx) => {
                 const isActive = selectedCategories.includes(cat.category);
                 return (
                   <button
@@ -646,6 +699,7 @@ function ShopPageContent() {
                     onSpeciesChange={handleSpeciesChange}
                     onCategoriesChange={setSelectedCategories}
                     onPricesChange={setSelectedPrices}
+                    dynamicCategories={dynamicSidebarCategories}
                   />
                 </div>
               )}

@@ -946,6 +946,7 @@ model ProductVariant {
   attributes   Json? // e.g. { "size": "S", "color": "Đỏ" }
   sellingPrice Float    @map("selling_price")
   salePrice    Float?   @map("sale_price")
+  importPrice  Float?   @map("import_price")
   stock        Int      @default(0)
   imageUrl     String?  @map("image_url")
   isActive     Boolean  @default(true) @map("is_active")

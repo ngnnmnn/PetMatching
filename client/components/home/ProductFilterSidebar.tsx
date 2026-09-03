@@ -3,6 +3,12 @@
 import { Bone, Brush, Cat, Dog, HeartPulse, Home, Package, Tag, Filter, Check } from 'lucide-react';
 import { ProductCategory } from '@/types';
 
+export interface DynamicCategory {
+  value: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}
+
 interface ProductFilterSidebarProps {
   species: string;
   selectedCategories: string[];
@@ -10,10 +16,11 @@ interface ProductFilterSidebarProps {
   onSpeciesChange: (value: string) => void;
   onCategoriesChange: (values: string[]) => void;
   onPricesChange: (values: string[]) => void;
+  dynamicCategories?: DynamicCategory[];
 }
 
-const CATEGORIES: Array<{
-  value: ProductCategory;
+const DEFAULT_CATEGORIES: Array<{
+  value: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
@@ -24,7 +31,6 @@ const CATEGORIES: Array<{
   { value: 'GROOMING', label: 'Chăm sóc & Vệ sinh', icon: Brush },
   { value: 'CAGE_BED', label: 'Chuồng & Giường ngủ', icon: Home },
   { value: 'LEASH_COLLAR', label: 'Dây dắt & Vòng cổ', icon: Tag },
-  { value: 'MEDICAL', label: 'Y tế & Thuốc', icon: HeartPulse },
 ];
 
 const PRICE_RANGES = [
@@ -34,7 +40,7 @@ const PRICE_RANGES = [
   { value: 'over_1m', label: 'Trên 1.000.000đ' },
 ];
 
-const CATEGORY_SPECIES: Record<ProductCategory, 'DOG' | 'CAT' | 'BOTH'> = {
+const CATEGORY_SPECIES: Record<string, 'DOG' | 'CAT' | 'BOTH'> = {
   DOG_FOOD: 'DOG',
   CAT_FOOD: 'CAT',
   TOY: 'BOTH',
@@ -42,9 +48,11 @@ const CATEGORY_SPECIES: Record<ProductCategory, 'DOG' | 'CAT' | 'BOTH'> = {
   GROOMING: 'BOTH',
   CAGE_BED: 'BOTH',
   LEASH_COLLAR: 'BOTH',
-  MEDICAL: 'BOTH',
 };
 
+/**
+ * Component thanh lọc bên lề (Sidebar) hỗ trợ lọc theo loài thú cưng, danh mục động từ DB và khoảng giá.
+ */
 export default function ProductFilterSidebar({
   species,
   selectedCategories,
@@ -52,11 +60,14 @@ export default function ProductFilterSidebar({
   onSpeciesChange,
   onCategoriesChange,
   onPricesChange,
+  dynamicCategories,
 }: ProductFilterSidebarProps) {
+  /** Thao tác bật/tắt lọc theo loài thú cưng (Chó/Mèo/Tất cả) */
   const handleSpeciesToggle = (value: string) => {
     onSpeciesChange(value);
   };
 
+  /** Thao tác chọn hoặc bỏ chọn một danh mục sản phẩm cụ thể */
   const handleCategoryToggle = (catValue: string) => {
     let nextCategories: string[];
     if (selectedCategories.includes(catValue)) {
@@ -67,10 +78,12 @@ export default function ProductFilterSidebar({
     onCategoriesChange(nextCategories);
   };
 
+  /** Thao tác bỏ chọn tất cả danh mục (xem tất cả) */
   const handleAllCategoriesToggle = () => {
     onCategoriesChange([]);
   };
 
+  /** Thao tác chọn hoặc bỏ chọn một khoảng giá tiền */
   const handlePriceToggle = (priceValue: string) => {
     let nextPrices: string[];
     if (selectedPrices.includes(priceValue)) {
@@ -81,24 +94,31 @@ export default function ProductFilterSidebar({
     onPricesChange(nextPrices);
   };
 
+  /** Thao tác bỏ chọn tất cả khoảng giá (xem tất cả giá) */
   const handleAllPricesToggle = () => {
     onPricesChange([]);
   };
 
-  // Determine species disabled state based on selected categories
+  // Vô hiệu hóa lựa chọn loài nếu danh mục đã chọn bị giới hạn loài cụ thể
   const isDogSpeciesDisabled = selectedCategories.some(
-    (cat) => CATEGORY_SPECIES[cat as ProductCategory] === 'CAT'
+    (cat) => CATEGORY_SPECIES[cat] === 'CAT'
   );
   const isCatSpeciesDisabled = selectedCategories.some(
-    (cat) => CATEGORY_SPECIES[cat as ProductCategory] === 'DOG'
+    (cat) => CATEGORY_SPECIES[cat] === 'DOG'
   );
 
-  // Determine category disabled state based on selected species
-  const isCategoryDisabled = (catValue: ProductCategory) => {
+  /** Kiểm tra xem một danh mục có bị vô hiệu hóa bởi loài thú cưng đang chọn hay không */
+  const isCategoryDisabled = (catValue: string) => {
     if (species === 'DOG' && CATEGORY_SPECIES[catValue] === 'CAT') return true;
     if (species === 'CAT' && CATEGORY_SPECIES[catValue] === 'DOG') return true;
     return false;
   };
+
+  // Sử dụng danh sách danh mục động từ CSDL nếu có, ngược lại dùng danh sách mặc định
+  const categoriesToRender: Array<{ value: string; label: string; icon?: any }> =
+    dynamicCategories && dynamicCategories.length > 0
+      ? dynamicCategories
+      : DEFAULT_CATEGORIES;
 
   return (
     <aside className="sticky top-24 select-none overflow-hidden rounded-2xl border border-[#E7E3DC] bg-white shadow-[0_12px_36px_rgba(34,34,34,0.07)]">
@@ -175,9 +195,9 @@ export default function ProductFilterSidebar({
             </span>
           </label>
 
-          {CATEGORIES.map((cat) => {
+          {categoriesToRender.map((cat) => {
             const isChecked = selectedCategories.includes(cat.value);
-            const Icon = cat.icon;
+            const Icon = cat.icon || Package;
             const isCatInputDisabled = isCategoryDisabled(cat.value);
 
             return (
@@ -199,7 +219,7 @@ export default function ProductFilterSidebar({
                   className="rounded border-[#DCDAD4] text-[#E45D1C] focus:ring-[#E45D1C]/20 size-4 cursor-pointer accent-[#E45D1C] disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <span className="flex items-center gap-2">
-                  <Icon className="size-3.5 shrink-0" />
+                  <Icon className="size-3.5 shrink-0 text-[#0F766E]" />
                   {cat.label}
                 </span>
               </label>

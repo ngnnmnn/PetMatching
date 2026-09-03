@@ -40,7 +40,6 @@ const CATEGORY_LABELS: Record<ProductCategory, string> = {
   GROOMING: 'Chăm sóc & Vệ sinh',
   CAGE_BED: 'Chuồng & Nệm ngủ',
   LEASH_COLLAR: 'Vòng cổ & Dây dắt',
-  MEDICAL: 'Y tế & Thuốc',
 };
 
 function formatCurrency(value: number) {
@@ -376,9 +375,14 @@ export default function ProductDetailPage() {
     ? (!!selectedVariant.salePrice && selectedVariant.salePrice < selectedVariant.sellingPrice)
     : (!!product.salePrice && product.salePrice < product.sellingPrice);
 
+  const effectiveTotalStock =
+    product.variants && product.variants.length > 0
+      ? product.variants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
+      : (product.stock ?? 0);
+
   const currentStock = selectedVariant !== null
     ? selectedVariant.stock
-    : product.stock;
+    : effectiveTotalStock;
 
   const speciesLabel =
     product.targetSpecies === 'DOG'
@@ -387,13 +391,17 @@ export default function ProductDetailPage() {
         ? 'Cho mèo'
         : 'Mọi thú cưng';
 
-  // Gather all images (main imageUrl + product images + variant images)
+  // Gather all images (Product images first, then Variant images next)
+  const productImages = Array.from(
+    new Set([product.imageUrl, ...(product.images || [])])
+  ).filter((img): img is string => !!img);
+
   const variantImages = (product.variants || [])
     .map((v) => v.imageUrl)
     .filter((img): img is string => !!img);
 
   const allImages = Array.from(
-    new Set([product.imageUrl, ...(product.images || []), ...variantImages])
+    new Set([...productImages, ...variantImages])
   ).filter((img): img is string => !!img);
 
   return (
@@ -440,10 +448,14 @@ export default function ProductDetailPage() {
               <img
                 src={activeImage}
                 alt={product.name}
-                className={`max-h-full max-w-full object-contain transition-all duration-300 rounded-xl ${currentStock === 0 ? 'grayscale opacity-60' : ''
+                className={`max-h-full max-w-full object-contain transition-all duration-300 rounded-xl ${(currentStock === 0 || product.isActive === false) ? 'grayscale opacity-60' : ''
                   }`}
               />
-              {currentStock === 0 ? (
+              {product.isActive === false ? (
+                <span className="absolute left-4 top-4 rounded-lg bg-stone-700 px-3 py-1.5 text-xs font-black text-white shadow-md z-10">
+                  Tạm ngưng bán
+                </span>
+              ) : currentStock === 0 ? (
                 <span className="absolute left-4 top-4 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-black text-white shadow-md z-10">
                   Tạm hết hàng
                 </span>
@@ -506,6 +518,14 @@ export default function ProductDetailPage() {
                 {product.name}
               </h1>
 
+              {/* Inactive alert banner */}
+              {product.isActive === false && (
+                <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-black text-rose-800 flex items-center gap-2.5 shadow-xs animate-fadeIn">
+                  <span className="text-base">🚫</span>
+                  <span>Sản phẩm này hiện đang tạm ngưng mở bán. Quý khách tạm thời chưa thể chọn mua sản phẩm này.</span>
+                </div>
+              )}
+
               {/* Rating summary & stock */}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                 {product.reviewCount > 0 ? (
@@ -545,7 +565,11 @@ export default function ProductDetailPage() {
                 )}
                 <span className="text-gray-300">|</span>
                 <span className="font-bold flex items-center gap-1">
-                  {currentStock === null || currentStock === undefined ? (
+                  {product.isActive === false ? (
+                    <span className="text-rose-600 font-extrabold flex items-center gap-1">
+                      🚫 Tạm ngưng bán
+                    </span>
+                  ) : currentStock === null || currentStock === undefined ? (
                     <span className="text-[#0F766E] flex items-center gap-1">
                       <span className="text-xs font-bold">✓</span> Còn hàng
                     </span>
@@ -559,8 +583,8 @@ export default function ProductDetailPage() {
                 </span>
               </div>
 
-              {/* Product Variants Selector */}
-              {product.variants && product.variants.length > 0 && (
+              {/* Product Variants Selector (Only show if 2 or more variants) */}
+              {product.variants && product.variants.length > 1 && (
                 <div className="mt-5 space-y-3 animate-fadeIn bg-gray-50/50 p-4.5 rounded-2xl border border-[var(--border-color)]">
                   <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-wider">Phân loại sản phẩm:</p>
                   <div className="flex flex-wrap gap-2">
@@ -653,22 +677,22 @@ export default function ProductDetailPage() {
                 <button
                   type="button"
                   onClick={handleAddToCart}
-                  disabled={currentStock === 0 || isAddingToCart}
+                  disabled={product.isActive === false || currentStock === 0 || isAddingToCart}
                   className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl border-2 border-[#0F766E] bg-white px-6 text-sm font-black text-[#0F766E] shadow-sm transition-all duration-200 hover:bg-[#F2FAF8] active:scale-98 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200"
                 >
                   {isAddingToCart ? (
                     <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  ) : currentStock === 0 ? (
+                  ) : (product.isActive === false || currentStock === 0) ? (
                     <X className="h-4.5 w-4.5" />
                   ) : (
                     <ShoppingCart className="h-4.5 w-4.5" />
                   )}
-                  {currentStock === 0 ? 'Tạm hết hàng' : 'Thêm vào giỏ hàng'}
+                  {product.isActive === false ? 'Tạm ngưng bán' : currentStock === 0 ? 'Tạm hết hàng' : 'Thêm vào giỏ hàng'}
                 </button>
 
                 <button
                   type="button"
-                  disabled={currentStock === 0}
+                  disabled={product.isActive === false || currentStock === 0}
                   className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#E45D1C] to-[#EF6C00] px-6 text-sm font-black text-white shadow-md transition-all duration-200 hover:opacity-95 hover:shadow-lg active:scale-98 disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none cursor-pointer"
                   onClick={() => {
                     if (!product) return;
@@ -739,7 +763,7 @@ export default function ProductDetailPage() {
           <div className="mt-8 space-y-3">
             <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-1.5">
               <Sparkles className="h-4.5 w-4.5 text-[#F59E0B]" />
-              Thông số kỹ thuật
+              Thông số sản phẩm
             </h3>
             <div className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white shadow-sm">
               <table className="w-full text-left border-collapse text-sm">

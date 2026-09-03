@@ -5,9 +5,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaymentService } from './payment.service';
-import { NotificationCategory, NotificationEventType } from '@prisma/client';
-import { NotificationsService } from '../notifications/notifications.service';
-import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
 export class PaymentSyncService
@@ -18,7 +15,6 @@ export class PaymentSyncService
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
-    private readonly notifications: NotificationsService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -95,49 +91,10 @@ export class PaymentSyncService
                 ? 'CANCELLED'
                 : 'EXPIRED';
 
-            // Store orders restore stock; Spa bookings remain valid and can be paid again.
-            await this.prisma.$transaction(async (tx) => {
-              await tx.payment.update({
-                where: { id: payment.id },
-                data: { status: targetStatus },
-              });
-
-              if (payment.order) {
-                const updatedOrder = await tx.order.update({
-                  where: { id: payment.order.id },
-                  data: { status: targetStatus },
-                });
-                if (payment.order.userId) {
-                  await this.notifications.create(
-                    {
-                      userId: payment.order.userId,
-                      category: NotificationCategory.ORDER,
-                      eventType: NotificationEventType.ORDER_STATUS_CHANGED,
-                      title: 'Đơn hàng đã cập nhật',
-                      content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${ORDER_STATUS_LABELS[updatedOrder.status]}.`,
-                      targetUrl: `/orders?orderId=${updatedOrder.id}`,
-                      entityType: 'ORDER',
-                      entityId: updatedOrder.id,
-                    },
-                    tx,
-                  );
-                }
-
-                for (const item of payment.order.items) {
-                  if (item.variantId) {
-                    await tx.productVariant.update({
-                      where: { id: item.variantId },
-                      data: { stock: { increment: item.quantity } },
-                    });
-                  } else {
-                    await tx.product.update({
-                      where: { id: item.productId },
-                      data: { stock: { increment: item.quantity } },
-                    });
-                  }
-                }
-              }
-            });
+            await this.paymentService.markCancelledByOrderCode(
+              payment.orderCode,
+              targetStatus,
+            );
             console.log(
               `Payment ${payment.id} automatically marked as ${targetStatus}.`,
             );

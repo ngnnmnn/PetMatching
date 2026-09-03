@@ -18,7 +18,6 @@ describe('PaymentSyncService lifecycle', () => {
     const service = new PaymentSyncService(
       prisma as never,
       {} as never,
-      {} as never,
     );
 
     await service.onApplicationBootstrap();

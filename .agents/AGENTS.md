@@ -8,5 +8,7 @@
 ## Database Migration Rule
 - Khi thay đổi cấu trúc Database (`schema.prisma`):
   - Luôn tạo file migration SQL chuẩn trong `server/prisma/migrations/` với cú pháp an toàn tuyệt đối (`DROP TABLE IF EXISTS ... CASCADE`, `DROP COLUMN IF EXISTS ...`).
-  - Tuyệt đối không dùng `prisma db push` trực tiếp làm lệch trạng thái DB sản phẩm với Render deploy (`prisma migrate deploy`).
+## Code Commenting Rule
+- Khi sửa bất kỳ file nào (trừ file quá dài > 1000 dòng), luôn thêm comment tiếng Việt rõ ràng giải thích tác dụng của từng hàm/function được sửa hoặc thêm mới.
+
 

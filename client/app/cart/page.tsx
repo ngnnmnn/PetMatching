@@ -13,6 +13,9 @@ import {
 import AppHeader from '@/components/layout/AppHeader';
 import { useCart } from '@/context/CartContext';
 
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
@@ -53,18 +56,50 @@ export default function CartPage() {
     }
   }, [cartItems, hasInitializedSelection]);
 
-  const handleToggleSelectItem = (id: string) => {
+  const handleToggleSelectItem = (item: any) => {
+    const isProductInactive = item.product?.isActive === false;
+    const isVariantInactive = !!item.variant && item.variant.isActive === false;
+    if (isProductInactive || isVariantInactive) {
+      toast.warning(`Sản phẩm "${item.product?.name || 'này'}" hiện đang tạm ngưng bán, không thể chọn mua.`);
+      return;
+    }
     setSelectedItemIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+      prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id]
     );
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedItemIds.length === cartItems.length) {
+    const activeItems = cartItems.filter(
+      (item) => item.product?.isActive !== false && (!item.variant || item.variant.isActive !== false)
+    );
+    if (selectedItemIds.length === activeItems.length && activeItems.length > 0) {
       setSelectedItemIds([]);
     } else {
-      setSelectedItemIds(cartItems.map((item) => item.id));
+      setSelectedItemIds(activeItems.map((item) => item.id));
     }
+  };
+
+  const handleProceedToCheckout = () => {
+    if (selectedItemIds.length === 0) {
+      toast.warning('Vui lòng chọn ít nhất 1 sản phẩm để thanh toán.');
+      return;
+    }
+
+    const selectedItems = cartItems.filter((i) => selectedItemIds.includes(i.id));
+    for (const item of selectedItems) {
+      if (item.product?.isActive === false) {
+        toast.error(`Sản phẩm "${item.product.name}" hiện đang tạm ngưng bán. Vui lòng bỏ chọn hoặc xóa khỏi giỏ hàng.`);
+        return;
+      }
+      if (item.variant && item.variant.isActive === false) {
+        toast.error(`Phân loại "${item.variant.name}" của sản phẩm "${item.product.name}" hiện đang tạm ngưng bán. Vui lòng bỏ chọn hoặc xóa khỏi giỏ hàng.`);
+        return;
+      }
+    }
+
+    localStorage.setItem('petmatch_selected_cart_items', JSON.stringify(selectedItemIds));
+    localStorage.removeItem('petmatch_direct_checkout_item');
+    router.push('/checkout');
   };
 
   if (!isMounted) {
@@ -161,36 +196,51 @@ export default function CartPage() {
                       ? (item.variant.salePrice && item.variant.salePrice < item.variant.sellingPrice)
                       : (item.product.salePrice && item.product.salePrice < item.product.sellingPrice);
 
+                    const isProductInactive = item.product?.isActive === false;
+                    const isVariantInactive = !!item.variant && item.variant.isActive === false;
+                    const isInactive = isProductInactive || isVariantInactive;
+
                     return (
-                      <div key={item.id} className="p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                      <div key={item.id} className={cn("p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center transition-colors", isInactive && "bg-slate-50/80")}>
                         {/* Checkbox */}
                         <div className="flex items-center h-full sm:self-center shrink-0 pr-2">
                           <input
                             type="checkbox"
+                            disabled={isInactive}
                             checked={selectedItemIds.includes(item.id)}
-                            onChange={() => handleToggleSelectItem(item.id)}
-                            className="size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer shrink-0"
+                            onChange={() => handleToggleSelectItem(item)}
+                            className={cn(
+                              "size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] shrink-0",
+                              isInactive ? "cursor-not-allowed opacity-40 bg-gray-200" : "cursor-pointer"
+                            )}
                           />
                         </div>
 
                         {/* Product Image */}
-                        <Link href={`/product/${item.productId}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)]">
+                        <Link href={`/product/${item.productId}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)] relative">
                           <img
                             src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
-                            className="w-full h-full object-cover"
+                            className={cn("w-full h-full object-cover transition-all", isInactive && "grayscale opacity-50")}
                           />
                         </Link>
 
                         {/* Product Info */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</p>
-                          <Link href={`/product/${item.productId}`} className="block text-sm font-black text-[var(--text-main)] hover:text-primary transition line-clamp-1 mt-0.5">
+                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                            <span className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</span>
+                            {isInactive && (
+                              <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-800 border border-rose-200">
+                                🚫 Tạm ngưng bán
+                              </span>
+                            )}
+                          </div>
+                          <Link href={`/product/${item.productId}`} className={cn("block text-sm font-black transition line-clamp-1 mt-0.5", isInactive ? "text-gray-400 line-through" : "text-[var(--text-main)] hover:text-primary")}>
                             {item.product.name}
                           </Link>
                           {item.variant && (
                             <p className="text-[11px] text-[#0F766E] font-extrabold mt-0.5 bg-[#EEF8F5] px-2 py-0.5 rounded inline-block">
-                              Phân loại: {item.variant.name}
+                              Phân loại: {item.variant.name} {item.variant.isActive === false && '(Tạm ngưng)'}
                             </p>
                           )}
                           {item.product.unit && (
@@ -235,7 +285,7 @@ export default function CartPage() {
                           <button
                             type="button"
                             onClick={() => removeFromCart(item.id)}
-                            className="inline-flex size-9 items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                            className="inline-flex size-9 items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition cursor-pointer"
                             aria-label="Xóa sản phẩm"
                           >
                             <Trash2 className="size-4.5" />
@@ -284,14 +334,7 @@ export default function CartPage() {
 
                   <button
                     disabled={selectedItemIds.length === 0}
-                    onClick={() => {
-                      localStorage.setItem(
-                        'petmatch_selected_cart_items',
-                        JSON.stringify(selectedItemIds)
-                      );
-                      localStorage.removeItem('petmatch_direct_checkout_item');
-                      router.push('/checkout');
-                    }}
+                    onClick={handleProceedToCheckout}
                     className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] focus-visible:outline-none disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Mua ngay

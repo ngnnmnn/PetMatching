@@ -41,8 +41,9 @@ type User = {
   refreshToken?: string | null;
 };
 
-function cleanItemNameForPayOS(name: string): string {
-  let str = name;
+function cleanItemNameForPayOS(name?: string | null): string {
+  if (!name) return 'San pham';
+  let str = String(name);
   str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a');
   str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e');
   str = str.replace(/ì|í|ị|ỉ|ĩ/g, 'i');
@@ -58,10 +59,11 @@ function cleanItemNameForPayOS(name: string): string {
   str = str.replace(/Ỳ|Ý|Y|Ỷ|Ỹ/g, 'Y');
   str = str.replace(/Đ/g, 'D');
   str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return str
+  const cleaned = str
     .replace(/[^a-zA-Z0-9 ]/g, '')
     .substring(0, 50)
     .trim();
+  return cleaned || 'San pham';
 }
 
 @Injectable()
@@ -735,6 +737,15 @@ export class UsersService {
             );
           }
 
+          const expectedPrice = variant.salePrice ?? variant.sellingPrice;
+          if (Math.abs(expectedPrice - item.price) > 0.01) {
+            const oldStr = item.price.toLocaleString('vi-VN') + 'đ';
+            const newStr = expectedPrice.toLocaleString('vi-VN') + 'đ';
+            throw new BadRequestException(
+              `Giá của phân loại "${variant.name}" (${product.name}) đã được thay đổi từ ${oldStr} thành ${newStr}. Vui lòng kiểm tra lại đơn hàng trước khi đặt hàng.`,
+            );
+          }
+
           // Decrement variant stock
           await tx.productVariant.update({
             where: { id: item.variantId },
@@ -756,6 +767,15 @@ export class UsersService {
           ) {
             throw new BadRequestException(
               `Sản phẩm "${product.name}" chỉ còn ${product.stock} cái trong kho, không đủ đáp ứng số lượng đặt mua (${item.quantity} cái).`,
+            );
+          }
+
+          const expectedPrice = product.salePrice ?? product.sellingPrice;
+          if (Math.abs(expectedPrice - item.price) > 0.01) {
+            const oldStr = item.price.toLocaleString('vi-VN') + 'đ';
+            const newStr = expectedPrice.toLocaleString('vi-VN') + 'đ';
+            throw new BadRequestException(
+              `Giá của sản phẩm "${product.name}" đã được thay đổi từ ${oldStr} thành ${newStr}. Vui lòng kiểm tra lại đơn hàng trước khi đặt hàng.`,
             );
           }
 
@@ -807,7 +827,30 @@ export class UsersService {
         }
 
         if (voucher.type === 'FREE_SHIP') {
-          discountAmount = dto.shippingFee || 0;
+          const ship = dto.shippingFee || 0;
+          if (voucher.value && voucher.value > 0 && voucher.value <= 100) {
+            discountAmount = Math.min(ship, (ship * voucher.value) / 100);
+          } else {
+            discountAmount = ship;
+          }
+          if (voucher.maxDiscountAmount) {
+            discountAmount = Math.min(discountAmount, voucher.maxDiscountAmount);
+          }
+        } else if (voucher.type === 'PERCENTAGE') {
+          const itemsSubtotal = dto.items.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0,
+          );
+          discountAmount = (itemsSubtotal * voucher.value) / 100;
+          if (voucher.maxDiscountAmount) {
+            discountAmount = Math.min(discountAmount, voucher.maxDiscountAmount);
+          }
+        } else if (voucher.type === 'FIXED') {
+          const itemsSubtotal = dto.items.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0,
+          );
+          discountAmount = Math.min(itemsSubtotal, voucher.value);
         }
 
         appliedVoucherCode = voucher.code;

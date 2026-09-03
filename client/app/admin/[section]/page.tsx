@@ -3027,7 +3027,6 @@ function formatCategory(category?: string) {
     GROOMING: 'Chăm sóc & vệ sinh',
     CAGE_BED: 'Chuồng & đệm nằm',
     LEASH_COLLAR: 'Vòng cổ & dây dắt',
-    MEDICAL: 'Y tế & thuốc',
   };
   return category ? categories[category] ?? category : '-';
 }

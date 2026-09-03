@@ -74,15 +74,51 @@ export class ManagerService {
     return this.serializeStoreSettings(updatedStore);
   }
 
-  private async syncProductStockTx(tx: any, productId: string) {
-    const variants = await tx.productVariant.findMany({
+
+
+  private async syncProductWithVariants(productId: string, customTx?: any) {
+    const client = customTx || this.prisma;
+    const variants = await client.productVariant.findMany({
       where: { productId },
     });
-    const totalStock = variants.reduce((sum: number, v: any) => sum + v.stock, 0);
-    await tx.product.update({
+
+    if (!variants || variants.length === 0) return;
+
+    const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stock || 0), 0);
+
+    let minVariant = variants[0];
+    let minEffectivePrice = (minVariant.salePrice !== null && minVariant.salePrice !== undefined && minVariant.salePrice < minVariant.sellingPrice)
+      ? minVariant.salePrice
+      : minVariant.sellingPrice;
+
+    for (let i = 1; i < variants.length; i++) {
+      const v = variants[i];
+      const eff = (v.salePrice !== null && v.salePrice !== undefined && v.salePrice < v.sellingPrice)
+        ? v.salePrice
+        : v.sellingPrice;
+      if (eff < minEffectivePrice) {
+        minEffectivePrice = eff;
+        minVariant = v;
+      }
+    }
+
+    await client.product.update({
       where: { id: productId },
-      data: { stock: totalStock },
+      data: {
+        stock: totalStock,
+        sellingPrice: minVariant.sellingPrice,
+        salePrice: minVariant.salePrice,
+        ...(minVariant.importPrice ? { importPrice: minVariant.importPrice } : {}),
+      },
     });
+  }
+
+  private async syncProductStock(productId: string) {
+    return this.syncProductWithVariants(productId);
+  }
+
+  private async syncProductStockTx(tx: any, productId: string) {
+    return this.syncProductWithVariants(productId, tx);
   }
 
   private generateSlug(name: string): string {
@@ -299,7 +335,7 @@ export class ManagerService {
         )
       : stock;
 
-    return this.prisma.product.create({
+    const created = await this.prisma.product.create({
       data: {
         id,
         storeId: store.id,
@@ -325,6 +361,7 @@ export class ManagerService {
                 name: v.name,
                 sellingPrice: Number(v.sellingPrice),
                 salePrice: v.salePrice ? Number(v.salePrice) : null,
+                importPrice: v.importPrice ? Number(v.importPrice) : null,
                 stock: Number(v.stock || 0),
                 imageUrl: v.imageUrl || null,
                 isActive: true,
@@ -333,6 +370,9 @@ export class ManagerService {
           : undefined,
       },
     });
+
+    await this.syncProductWithVariants(created.id);
+    return created;
   }
 
   async updateProduct(id: string, dto: any) {
@@ -387,7 +427,7 @@ export class ManagerService {
       finalStock,
     );
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id },
       data: {
         name: dto.name,
@@ -407,6 +447,9 @@ export class ManagerService {
         isFeatured: dto.isFeatured,
       },
     });
+
+    await this.syncProductWithVariants(id);
+    return updated;
   }
 
   async deleteProduct(id: string) {
@@ -1645,16 +1688,7 @@ export class ManagerService {
     });
   }
 
-  private async syncProductStock(productId: string) {
-    const variants = await this.prisma.productVariant.findMany({
-      where: { productId },
-    });
-    const totalStock = variants.reduce((sum, v) => sum + v.stock, 0);
-    await this.prisma.product.update({
-      where: { id: productId },
-      data: { stock: totalStock },
-    });
-  }
+
 
   async createProductVariant(productId: string, dto: any) {
     const product = await this.prisma.product.findUnique({
@@ -1672,6 +1706,8 @@ export class ManagerService {
       dto.stock !== undefined && dto.stock !== null && dto.stock !== ''
         ? Number(dto.stock)
         : 0;
+
+    const importPrice = dto.importPrice ? Number(dto.importPrice) : null;
 
     if (isNaN(sellingPrice) || sellingPrice <= 0) {
       throw new BadRequestException('Giá bán phải là số lớn hơn 0.');
@@ -1694,6 +1730,7 @@ export class ManagerService {
         name: dto.name,
         sellingPrice,
         salePrice,
+        importPrice,
         stock,
         imageUrl: dto.imageUrl || null,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
@@ -1729,6 +1766,12 @@ export class ManagerService {
           ? Number(dto.salePrice)
           : null
         : existing.salePrice;
+    const importPrice =
+      dto.importPrice !== undefined
+        ? dto.importPrice
+          ? Number(dto.importPrice)
+          : null
+        : existing.importPrice;
     const stock =
       dto.stock !== undefined
         ? dto.stock !== null && dto.stock !== ''
@@ -1757,6 +1800,7 @@ export class ManagerService {
         name: dto.name,
         sellingPrice,
         salePrice,
+        importPrice,
         stock,
         imageUrl:
           dto.imageUrl !== undefined ? dto.imageUrl || null : existing.imageUrl,

@@ -3,6 +3,7 @@ import { PayOS } from '@payos/node';
 import { NotificationCategory, NotificationEventType, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
 export class PaymentService {
@@ -66,11 +67,19 @@ export class PaymentService {
         ? payment.orderCode
         : await this.generateOrderCode();
 
+    const rawDescription = `${params.descriptionPrefix}${orderCode}`;
+    const cleanDescription = rawDescription
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9 ]/g, '')
+      .substring(0, 25)
+      .trim();
+
     try {
       const link = await this.createPaymentLink({
         orderCode,
         amount: Math.round(payment.amount),
-        description: `${params.descriptionPrefix}${orderCode}`,
+        description: cleanDescription,
         returnUrl: params.returnUrl,
         cancelUrl: params.cancelUrl,
         items: params.items,
@@ -113,10 +122,10 @@ export class PaymentService {
         payment.status === PaymentStatus.PAID
           ? payment
           : await tx.payment.update({
-              where: { id: payment.id },
-              data: { status: PaymentStatus.PAID, paidAt: new Date() },
-              include: { order: true, spaBooking: true },
-            });
+            where: { id: payment.id },
+            data: { status: PaymentStatus.PAID, paidAt: new Date() },
+            include: { order: true, spaBooking: true },
+          });
 
       if (
         payment.order &&
@@ -181,6 +190,76 @@ export class PaymentService {
       }
 
       return paidPayment;
+    });
+  }
+
+  async markCancelledByOrderCode(
+    orderCode: number,
+    targetStatus: 'CANCELLED' | 'EXPIRED' = 'CANCELLED',
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({
+        where: { orderCode },
+        include: {
+          order: { include: { items: true } },
+          spaBooking: true,
+        },
+      });
+
+      if (!payment) return null;
+
+      // Do not cancel if already paid
+      if (payment.status === PaymentStatus.PAID) {
+        return payment;
+      }
+
+      const updatedPayment = await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: targetStatus },
+        include: { order: true, spaBooking: true },
+      });
+
+      if (
+        payment.order &&
+        ['PENDING', 'PAYMENT_ERROR'].includes(payment.order.status)
+      ) {
+        const updatedOrder = await tx.order.update({
+          where: { id: payment.order.id },
+          data: { status: targetStatus },
+        });
+
+        if (payment.order.userId) {
+          await this.notifications.create(
+            {
+              userId: payment.order.userId,
+              category: NotificationCategory.ORDER,
+              eventType: NotificationEventType.ORDER_STATUS_CHANGED,
+              title: 'Đơn hàng đã cập nhật',
+              content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã chuyển sang trạng thái ${ORDER_STATUS_LABELS[updatedOrder.status]}.`,
+              targetUrl: `/orders?orderId=${updatedOrder.id}`,
+              entityType: 'ORDER',
+              entityId: updatedOrder.id,
+            },
+            tx,
+          );
+        }
+
+        for (const item of payment.order.items) {
+          if (item.variantId) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: { stock: { increment: item.quantity } },
+            });
+          } else {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
+        }
+      }
+
+      return updatedPayment;
     });
   }
 

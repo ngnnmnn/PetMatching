@@ -60,12 +60,22 @@ export default function ProductCard({
 
   const { addToCart } = useCart();
 
-  // Initialize/Update pre-selected variant based on pet weight
+  // Initialize/Update pre-selected variant based on pet weight or lowest price
   useEffect(() => {
     if (product.variants && product.variants.length > 0) {
+      const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
+      const availableVariants = activeVariants.length > 0 ? activeVariants : product.variants;
+
+      // Find variant sorted by lowest effective price
+      const cheapestVariant = [...availableVariants].sort((a: any, b: any) => {
+        const priceA = a.salePrice ?? a.sellingPrice;
+        const priceB = b.salePrice ?? b.sellingPrice;
+        return priceA - priceB;
+      })[0];
+
       if (selectedPet && selectedPet.weight > 0) {
         const w = selectedPet.weight;
-        const matched = product.variants.find((v: any) => {
+        const matched = availableVariants.find((v: any) => {
           const nameLower = v.name.toLowerCase();
           for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
             if (w >= range.min && w <= range.max) {
@@ -77,9 +87,9 @@ export default function ProductCard({
           }
           return false;
         });
-        setSelectedVariant(matched || product.variants[0]);
+        setSelectedVariant(matched || cheapestVariant || availableVariants[0]);
       } else {
-        setSelectedVariant(product.variants[0]);
+        setSelectedVariant(cheapestVariant || availableVariants[0]);
       }
     } else {
       setSelectedVariant(null);
@@ -111,7 +121,11 @@ export default function ProductCard({
   const discount = getDiscountPercent(selectedVariant || product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
   const productImage = selectedVariant?.imageUrl || product.imageUrl || '/placeholder.svg';
-  const currentStock = selectedVariant !== null ? selectedVariant.stock : product.stock;
+  const effectiveTotalStock = product.variants && product.variants.length > 0
+    ? product.variants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
+    : (product.stock ?? 0);
+  const currentStock = selectedVariant !== null ? selectedVariant.stock : effectiveTotalStock;
+  const isOutOfStock = currentStock === 0;
   const productDetailUrl = `/product/${product.id}${selectedVariant ? `?variantId=${selectedVariant.id}` : ''}`;
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -141,14 +155,18 @@ export default function ProductCard({
               loading="lazy"
               className={cn(
                 "h-full w-full object-cover transition duration-300 group-hover:scale-105",
-                (product.stock === 0 || currentStock === 0) && "grayscale opacity-60"
+                (isOutOfStock || product.isActive === false) && "grayscale opacity-60"
               )}
             />
             <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/28 to-transparent opacity-0 transition group-hover:opacity-100" />
           </Link>
           
-          {/* Stock status, Best Seller badge, or discount badge */}
-          {(product.stock === 0 || currentStock === 0) ? (
+          {/* Stock status, Active status, Best Seller badge, or discount badge */}
+          {product.isActive === false ? (
+            <span className="absolute left-2.5 top-2.5 rounded-lg bg-stone-700 px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10 animate-fadeIn">
+              Tạm ngưng bán
+            </span>
+          ) : isOutOfStock ? (
             <span className="absolute left-2.5 top-2.5 rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10 animate-fadeIn">
               Hết hàng
             </span>
@@ -304,15 +322,20 @@ export default function ProductCard({
         <button
           type="button"
           onClick={handleAddToCart}
-          disabled={product.stock === 0 || currentStock === 0}
+          disabled={isOutOfStock || product.isActive === false}
           className={cn(
             "mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white transition focus-visible:outline-none focus-visible:ring-4 cursor-pointer",
-            (product.stock === 0 || currentStock === 0)
+            (isOutOfStock || product.isActive === false)
               ? "bg-gray-400 cursor-not-allowed opacity-80"
               : "bg-[var(--primary-color)] hover:bg-[#cf5017] focus-visible:ring-[rgba(228,93,28,0.18)]"
           )}
         >
-          {(product.stock === 0 || currentStock === 0) ? (
+          {product.isActive === false ? (
+            <>
+              <X className="size-4" />
+              Tạm ngưng bán
+            </>
+          ) : isOutOfStock ? (
             <>
               <X className="size-4" />
               Tạm hết hàng

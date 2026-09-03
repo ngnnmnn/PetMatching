@@ -35,8 +35,36 @@ import {
   DollarSign,
   Percent,
   Layers,
+  FolderKanban,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+function computeSalePrice(
+  sellingPriceNum: number,
+  discountType: 'AMOUNT' | 'PERCENT',
+  discountValueStr: string,
+): { salePrice: number | null; error?: string } {
+  if (!discountValueStr || discountValueStr.trim() === '') {
+    return { salePrice: null };
+  }
+  const val = Number(discountValueStr);
+  if (isNaN(val) || val <= 0) {
+    return { salePrice: null, error: 'Mức giảm giá phải lớn hơn 0.' };
+  }
+
+  if (discountType === 'AMOUNT') {
+    if (val >= sellingPriceNum) {
+      return { salePrice: null, error: 'Số tiền giảm phải nhỏ hơn giá bán niêm yết.' };
+    }
+    return { salePrice: sellingPriceNum - val };
+  } else {
+    if (val >= 100) {
+      return { salePrice: null, error: 'Phần trăm giảm giá phải nhỏ hơn 100%.' };
+    }
+    const discountAmount = Math.round((sellingPriceNum * val) / 100);
+    return { salePrice: sellingPriceNum - discountAmount };
+  }
+}
 import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats, ProductUnit } from '@/lib/api/manager';
 import { HanoiWardOption, shippingApi } from '@/lib/api/shipping';
 import { productsApi } from '@/lib/api/products';
@@ -65,7 +93,6 @@ const CATEGORY_MAP: Record<string, string> = {
   GROOMING: 'Vệ sinh & Chăm sóc',
   CAGE_BED: 'Chuồng & Đệm nằm',
   LEASH_COLLAR: 'Vòng cổ & Dây dắt',
-  MEDICAL: 'Y tế & Thuốc',
 };
 
 const ORDER_STATUS_MAP: Record<string, string> = {
@@ -75,6 +102,51 @@ const ORDER_STATUS_MAP: Record<string, string> = {
   SHIPPED: 'Đã gửi bên vận chuyển',
   DELIVERED: 'Đã nhận hàng',
   CANCELLED: 'Đã hủy',
+};
+
+// Floating Inline Validation Error Tooltip (Matching HTML5 validation popup style with Orange Icon)
+const FormErrorTooltip = ({
+  message,
+  align = 'left',
+  direction = 'bottom',
+}: {
+  message?: string;
+  align?: 'left' | 'right' | 'center';
+  direction?: 'bottom' | 'top';
+}) => {
+  if (!message) return null;
+  return (
+    <div
+      className={cn(
+        'absolute z-50 animate-scaleIn pointer-events-none transition-all duration-200',
+        direction === 'bottom' ? 'top-full mt-1.5' : 'bottom-full mb-1.5',
+        align === 'left' ? 'left-4' : align === 'right' ? 'right-4' : 'left-1/2 -translate-x-1/2'
+      )}
+    >
+      {/* Arrow Pointer */}
+      {direction === 'bottom' ? (
+        <>
+          <div className="absolute -top-2 left-5 h-0 w-0 border-x-[6px] border-x-transparent border-b-[8px] border-b-[#DCD6CD]" />
+          <div className="absolute -top-[7px] left-[21px] h-0 w-0 border-x-[5px] border-x-transparent border-b-[7px] border-b-white" />
+        </>
+      ) : (
+        <>
+          <div className="absolute -bottom-2 left-5 h-0 w-0 border-x-[6px] border-x-transparent border-t-[8px] border-t-[#DCD6CD]" />
+          <div className="absolute -bottom-[7px] left-[21px] h-0 w-0 border-x-[5px] border-x-transparent border-t-[7px] border-t-white" />
+        </>
+      )}
+
+      {/* Tooltip Card Box */}
+      <div className="flex items-center gap-2.5 rounded-xl border border-[#DCD6CD] bg-white px-3.5 py-2 shadow-2xl text-xs">
+        <div className="flex size-5.5 shrink-0 items-center justify-center rounded-lg bg-[#E45D1C] font-black text-white text-xs shadow-xs">
+          !
+        </div>
+        <span className="font-extrabold text-[#2C2B28] whitespace-nowrap text-xs">
+          {message}
+        </span>
+      </div>
+    </div>
+  );
 };
 
 // Parse shipping address helper
@@ -151,6 +223,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const showBatchCheckboxes = filterStatus !== 'ALL' && filterStatus !== 'DELIVERED';
   const [filterCategory, setFilterCategory] = useState('ALL');
+  const [filterActiveStatus, setFilterActiveStatus] = useState('ALL');
   const [sortBy, setSortBy] = useState('DEFAULT');
   const [productsPage, setProductsPage] = useState<number>(1);
   const [ordersPage, setOrdersPage] = useState<number>(1);
@@ -224,7 +297,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [variantForm, setVariantForm] = useState({
     name: '',
     sellingPrice: '',
-    salePrice: '',
+    importPrice: '',
+    discountType: 'AMOUNT' as 'AMOUNT' | 'PERCENT',
+    discountValue: '',
     stock: '',
     imageUrl: '',
   });
@@ -261,7 +336,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     targetSpecies: 'ALL',
     sellingPrice: '',
     importPrice: '',
-    salePrice: '',
+    discountType: 'AMOUNT' as 'AMOUNT' | 'PERCENT',
+    discountValue: '',
     stock: '',
     brand: '',
     unit: '',
@@ -270,6 +346,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     isFeatured: false,
     isActive: true,
   });
+
+  const [productErrors, setProductErrors] = useState<Record<string, string>>({});
+  const [variantErrors, setVariantErrors] = useState<Record<string, string>>({});
 
   const fetchData = async () => {
     setLoading(true);
@@ -331,7 +410,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const matchesCategory =
         filterCategory === 'ALL' ||
         product.category === filterCategory;
-      return matchesSearch && matchesStatus && matchesCategory;
+      const matchesActiveStatus =
+        filterActiveStatus === 'ALL' ||
+        (filterActiveStatus === 'ACTIVE' && product.isActive !== false) ||
+        (filterActiveStatus === 'INACTIVE' && product.isActive === false);
+      return matchesSearch && matchesStatus && matchesCategory && matchesActiveStatus;
     });
 
     if (sortBy === 'BEST_SELLER') {
@@ -339,7 +422,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
 
     return result;
-  }, [products, searchQuery, filterStatus, filterCategory, sortBy]);
+  }, [products, searchQuery, filterStatus, filterCategory, filterActiveStatus, sortBy]);
 
   const topSellingProducts = useMemo(() => {
     return [...products]
@@ -780,7 +863,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setVariantForm({
       name: '',
       sellingPrice: '',
-      salePrice: '',
+      importPrice: '',
+      discountType: 'AMOUNT',
+      discountValue: '',
       stock: '',
       imageUrl: '',
     });
@@ -814,7 +899,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       targetSpecies: 'ALL',
       sellingPrice: '',
       importPrice: '',
-      salePrice: '',
+      discountType: 'AMOUNT',
+      discountValue: '',
       stock: '',
       brand: '',
       unit: '',
@@ -854,13 +940,19 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     } else {
       setSpecList([{ key: '', value: '' }, { key: '', value: '' }]);
     }
+    const pSelling = Number(product.sellingPrice) || 0;
+    let initialDiscountVal = '';
+    if (product.salePrice && product.salePrice < pSelling) {
+      initialDiscountVal = String(pSelling - product.salePrice);
+    }
     setProductForm({
       name: product.name,
       category: product.category,
       targetSpecies: product.targetSpecies,
       sellingPrice: String(product.sellingPrice),
       importPrice: product.importPrice ? String(product.importPrice) : '',
-      salePrice: product.salePrice ? String(product.salePrice) : '',
+      discountType: 'AMOUNT',
+      discountValue: initialDiscountVal,
       stock: product.stock ? String(product.stock) : '',
       brand: product.brand || '',
       unit: product.unit || '',
@@ -909,12 +1001,20 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const handleEditVariantClick = (variant: any) => {
     setEditingVariant(variant);
+    const vSelling = Number(variant.sellingPrice) || 0;
+    let vDiscountVal = '';
+    if (variant.salePrice && variant.salePrice < vSelling) {
+      vDiscountVal = String(vSelling - variant.salePrice);
+    }
     setVariantForm({
       name: variant.name,
       sellingPrice: String(variant.sellingPrice),
-      salePrice: variant.salePrice ? String(variant.salePrice) : '',
+      importPrice: variant.importPrice ? String(variant.importPrice) : '',
+      discountType: 'AMOUNT',
+      discountValue: vDiscountVal,
       stock: String(variant.stock),
       imageUrl: variant.imageUrl || '',
+      isActive: variant.isActive !== false,
     });
   };
 
@@ -923,46 +1023,58 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setVariantForm({
       name: '',
       sellingPrice: '',
-      salePrice: '',
+      importPrice: '',
+      discountType: 'AMOUNT',
+      discountValue: '',
       stock: '',
       imageUrl: '',
+      isActive: true,
     });
   };
 
   // Submit Variant Form (for existing product variants)
   const handleVariantSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setVariantErrors({});
     const currentProduct = selectedProductForVariants || editingProduct;
     if (!currentProduct) return;
 
-    if (!variantForm.name.trim() || !variantForm.stock) {
-      toast.error('Vui lòng nhập tên phân loại và số lượng kho.');
+    const errors: Record<string, string> = {};
+    if (!variantForm.name.trim()) {
+      errors.name = 'Vui lòng điền vào trường này.';
+    }
+    const stockNum = Number(variantForm.stock);
+    if (variantForm.stock === '' || variantForm.stock === undefined || isNaN(stockNum) || stockNum < 0) {
+      errors.stock = 'Vui lòng điền vào trường này.';
+    }
+    if (!variantForm.imageUrl.trim()) {
+      errors.imageUrl = 'Vui lòng tải hoặc dán link ảnh phân loại.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setVariantErrors(errors);
       return;
     }
 
     const sellingPrice = variantForm.sellingPrice ? Number(variantForm.sellingPrice) : currentProduct.sellingPrice;
-    const stock = Number(variantForm.stock);
+    const stock = stockNum;
     if (isNaN(sellingPrice) || sellingPrice <= 0) {
-      toast.error('Giá bán phải lớn hơn 0.');
-      return;
-    }
-    if (isNaN(stock) || stock < 0) {
-      toast.error('Số lượng tồn kho không được âm.');
+      errors.sellingPrice = 'Giá bán phải lớn hơn 0.';
+      setVariantErrors(errors);
       return;
     }
 
     let salePrice: number | null = null;
-    if (variantForm.salePrice) {
-      salePrice = Number(variantForm.salePrice);
-      if (isNaN(salePrice) || salePrice <= 0) {
-        toast.error('Giá khuyến mãi phải lớn hơn 0.');
+    if (variantForm.discountValue) {
+      const res = computeSalePrice(sellingPrice, variantForm.discountType, variantForm.discountValue);
+      if (res.error) {
+        toast.error(res.error);
         return;
       }
-      if (salePrice > sellingPrice) {
-        toast.error('Giá khuyến mãi không được lớn hơn giá bán.');
-        return;
-      }
+      salePrice = res.salePrice;
     }
+
+    const importPrice = variantForm.importPrice ? Number(variantForm.importPrice) : null;
 
     setSubmittingVariant(true);
     try {
@@ -970,9 +1082,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         name: variantForm.name.trim(),
         sellingPrice,
         salePrice,
+        importPrice,
         stock,
         imageUrl: variantForm.imageUrl.trim() || null,
-        isActive: true,
+        isActive: variantForm.isActive,
       };
 
       if (editingVariant) {
@@ -1017,15 +1130,29 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   // Submit Local Variant Form (for new product creation)
   const handleLocalVariantSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!variantForm.name.trim() || !variantForm.stock) {
-      toast.error('Vui lòng nhập tên phân loại và số lượng kho.');
+    setVariantErrors({});
+
+    const errors: Record<string, string> = {};
+    if (!variantForm.name.trim()) {
+      errors.name = 'Vui lòng điền vào trường này.';
+    }
+    const stockNum = Number(variantForm.stock);
+    if (variantForm.stock === '' || variantForm.stock === undefined || isNaN(stockNum) || stockNum < 0) {
+      errors.stock = 'Vui lòng điền vào trường này.';
+    }
+    if (!variantForm.imageUrl.trim()) {
+      errors.imageUrl = 'Vui lòng tải hoặc dán link ảnh phân loại.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setVariantErrors(errors);
       return;
     }
 
     const sellingPrice = variantForm.sellingPrice
       ? Number(variantForm.sellingPrice)
       : Number(productForm.sellingPrice || 0);
-    const stock = Number(variantForm.stock);
+    const stock = stockNum;
 
     if (isNaN(sellingPrice) || sellingPrice <= 0) {
       toast.error('Giá bán phải lớn hơn 0 (Hãy điền giá bán sản phẩm chính trước hoặc điền giá biến thể).');
@@ -1037,24 +1164,25 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
 
     let salePrice: number | null = null;
-    if (variantForm.salePrice) {
-      salePrice = Number(variantForm.salePrice);
-      if (isNaN(salePrice) || salePrice <= 0) {
-        toast.error('Giá khuyến mãi phải lớn hơn 0.');
+    if (variantForm.discountValue) {
+      const res = computeSalePrice(sellingPrice, variantForm.discountType, variantForm.discountValue);
+      if (res.error) {
+        toast.error(res.error);
         return;
       }
-      if (salePrice > sellingPrice) {
-        toast.error('Giá khuyến mãi không được lớn hơn giá bán.');
-        return;
-      }
+      salePrice = res.salePrice;
     }
+
+    const importPrice = variantForm.importPrice ? Number(variantForm.importPrice) : null;
 
     const newVar = {
       name: variantForm.name.trim(),
       sellingPrice,
       salePrice,
+      importPrice,
       stock,
       imageUrl: variantForm.imageUrl.trim() || null,
+      isActive: variantForm.isActive,
     };
 
     if (editingLocalVariantIndex !== null) {
@@ -1071,9 +1199,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setVariantForm({
       name: '',
       sellingPrice: '',
-      salePrice: '',
+      importPrice: '',
+      discountType: 'AMOUNT',
+      discountValue: '',
       stock: '',
       imageUrl: '',
+      isActive: true,
     });
   };
 
@@ -1083,9 +1214,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setVariantForm({
       name: v.name,
       sellingPrice: String(v.sellingPrice),
-      salePrice: v.salePrice ? String(v.salePrice) : '',
+      importPrice: v.importPrice ? String(v.importPrice) : '',
+      discountType: 'AMOUNT',
+      discountValue: v.salePrice && v.salePrice < v.sellingPrice ? String(v.sellingPrice - v.salePrice) : '',
       stock: String(v.stock),
       imageUrl: v.imageUrl || '',
+      isActive: v.isActive !== false,
     });
   };
 
@@ -1213,43 +1347,69 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productForm.name.trim() || !productForm.sellingPrice) {
-      toast.error('Vui lòng điền đầy đủ các thông tin bắt buộc.');
+    setProductErrors({});
+    const errors: Record<string, string> = {};
+
+    const hasVariants = editingProduct
+      ? (variants && variants.length > 0)
+      : (localVariants && localVariants.length > 0);
+
+    if (!productForm.name.trim()) {
+      errors.name = 'Vui lòng điền vào trường này.';
+    }
+
+    if (!productForm.category) {
+      errors.category = 'Vui lòng điền vào trường này.';
+    }
+
+    if (!productForm.targetSpecies) {
+      errors.targetSpecies = 'Vui lòng điền vào trường này.';
+    }
+
+    const hasImages = (productForm.images && productForm.images.length > 0) || !!productForm.imageUrl.trim();
+    if (!hasImages) {
+      errors.imageUrl = 'Vui lòng tải hoặc dán link ảnh sản phẩm.';
+    }
+
+    if (!hasVariants) {
+      const sp = Number(productForm.sellingPrice);
+      if (!productForm.sellingPrice || isNaN(sp) || sp <= 0) {
+        errors.sellingPrice = 'Vui lòng điền vào trường này.';
+      }
+      const st = Number(productForm.stock);
+      if (productForm.stock === '' || productForm.stock === undefined || isNaN(st) || st < 0) {
+        errors.stock = 'Vui lòng điền vào trường này.';
+      }
+    }
+
+    if (productForm.importPrice && !hasVariants) {
+      const ip = Number(productForm.importPrice);
+      const sp = Number(productForm.sellingPrice);
+      if (isNaN(ip) || ip <= 0) {
+        errors.importPrice = 'Giá nhập phải lớn hơn 0.';
+      } else if (sp > 0 && ip > sp) {
+        errors.importPrice = 'Giá nhập không được lớn hơn giá bán.';
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setProductErrors(errors);
       return;
     }
-    const sellingPrice = Number(productForm.sellingPrice);
-    if (isNaN(sellingPrice) || sellingPrice <= 0) {
-      toast.error('Giá bán phải lớn hơn 0.');
-      return;
-    }
-    if (productForm.importPrice) {
-      const importPrice = Number(productForm.importPrice);
-      if (isNaN(importPrice) || importPrice <= 0) {
-        toast.error('Giá nhập phải lớn hơn 0.');
+
+    const effectiveSellingPrice = hasVariants
+      ? (localVariants.length > 0 ? Number(localVariants[0].sellingPrice) : Number(editingProduct?.sellingPrice || 1))
+      : Number(productForm.sellingPrice);
+
+    const sellingPrice = effectiveSellingPrice;
+    let calculatedSalePrice: number | null = null;
+    if (productForm.discountValue) {
+      const res = computeSalePrice(sellingPrice, productForm.discountType, productForm.discountValue);
+      if (res.error) {
+        toast.error(res.error);
         return;
       }
-      if (importPrice > sellingPrice) {
-        toast.error('Giá nhập không được lớn hơn giá bán.');
-        return;
-      }
-    }
-    if (productForm.salePrice) {
-      const salePrice = Number(productForm.salePrice);
-      if (isNaN(salePrice) || salePrice <= 0) {
-        toast.error('Giá khuyến mãi phải lớn hơn 0.');
-        return;
-      }
-      if (salePrice > sellingPrice) {
-        toast.error('Giá khuyến mãi không được lớn hơn giá bán.');
-        return;
-      }
-    }
-    if (productForm.stock) {
-      const stock = Number(productForm.stock);
-      if (isNaN(stock) || stock < 0) {
-        toast.error('Số lượng tồn kho không được âm.');
-        return;
-      }
+      calculatedSalePrice = res.salePrice;
     }
     setSubmittingProduct(true);
     try {
@@ -1264,10 +1424,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         name: productForm.name.trim(),
         category: productForm.category,
         targetSpecies: productForm.targetSpecies,
-        sellingPrice: Number(productForm.sellingPrice),
-        importPrice: productForm.importPrice ? Number(productForm.importPrice) : null,
-        salePrice: productForm.salePrice ? Number(productForm.salePrice) : null,
-        stock: productForm.stock ? Number(productForm.stock) : null,
+        sellingPrice: hasVariants ? (effectiveSellingPrice || 1) : Number(productForm.sellingPrice),
+        importPrice: hasVariants ? null : (productForm.importPrice ? Number(productForm.importPrice) : null),
+        salePrice: hasVariants ? null : calculatedSalePrice,
+        stock: hasVariants ? 0 : (productForm.stock ? Number(productForm.stock) : 0),
         brand: productForm.brand.trim() || undefined,
         unit: productForm.unit.trim() || undefined,
         imageUrl: productForm.imageUrl.trim() || undefined,
@@ -1328,8 +1488,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 onClick={() => setIsCategorySidebarOpen(true)}
                 className="flex items-center gap-2 rounded-xl border border-[var(--primary-color)] text-[var(--primary-color)] bg-white px-4 py-2.5 font-bold shadow-sm transition hover:bg-[var(--primary-color)]/5 cursor-pointer text-xs"
               >
-                <Plus className="size-4" />
-                Thêm danh mục mới
+                <FolderKanban className="size-4" />
+                Quản lý danh mục
               </button>
               <button
                 type="button"
@@ -1422,6 +1582,20 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   <option value="OUT_OF_STOCK">Hết hàng (0)</option>
                 </select>
               </div>
+
+              {/* Active / Sale Status Filter */}
+              <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
+                <span className="text-gray-400">Mở bán:</span>
+                <select
+                  value={filterActiveStatus}
+                  onChange={(e) => setFilterActiveStatus(e.target.value)}
+                  className="bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">Tất cả trạng thái</option>
+                  <option value="ACTIVE">🟢 Đang mở bán</option>
+                  <option value="INACTIVE">🔴 Tạm ngưng bán</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1434,8 +1608,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     <th className="px-6 py-4">Mã SP</th>
                     <th className="px-6 py-4">Tên sản phẩm</th>
                     <th className="px-6 py-4">Danh mục</th>
-                    <th className="px-6 py-4 text-right">Giá bán</th>
                     <th className="px-6 py-4 text-right">Giá nhập</th>
+                    <th className="px-6 py-4 text-right">Giá bán</th>
                     <th className="px-6 py-4 text-right">Lợi nhuận đơn vị</th>
                     <th className="px-6 py-4 text-center">Tồn kho</th>
                     <th className="px-6 py-4 text-center">Đã bán</th>
@@ -1460,12 +1634,19 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               {p.imageUrl && (
                                 <img src={p.imageUrl} alt={p.name} className="size-8 object-cover rounded border" />
                               )}
-                              <span>{p.name}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span>{p.name}</span>
+                                {p.isActive === false && (
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 text-rose-800 px-2 py-0.5 text-[10px] font-extrabold border border-rose-200 shrink-0">
+                                    🚫 Tạm ngưng bán
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-[#5C5B52]">{dynamicCategoryMap[p.category] || CATEGORY_MAP[p.category] || p.category}</td>
-                          <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(p.salePrice ?? p.sellingPrice)}</td>
                           <td className="px-6 py-4 text-right font-semibold text-[#5C5B52]">{p.importPrice ? currency.format(p.importPrice) : '-'}</td>
+                          <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(p.salePrice ?? p.sellingPrice)}</td>
                           <td className="px-6 py-4 text-right">
                             {(() => {
                               const currentPrice = p.salePrice ?? p.sellingPrice;
@@ -1484,16 +1665,26 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           <td className="px-6 py-4 text-center font-bold">{stockVal}</td>
                           <td className="px-6 py-4 text-center font-bold text-[#0F766E]">{(p as any).sales ?? 0}</td>
                           <td className="px-6 py-4 text-center">
-                            <span
-                              className={cn(
-                                'inline-flex rounded-full px-2.5 py-0.5 text-xs font-black',
-                                statusStr === 'Còn hàng' && 'bg-green-50 text-green-700',
-                                statusStr === 'Sắp hết hàng' && 'bg-amber-50 text-amber-700',
-                                statusStr === 'Hết hàng' && 'bg-red-50 text-red-700',
-                              )}
-                            >
-                              {statusStr}
-                            </span>
+                            <div className="flex flex-col items-center gap-1">
+                              <span
+                                className={cn(
+                                  'inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border',
+                                  p.isActive !== false ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                                )}
+                              >
+                                {p.isActive !== false ? '🟢 Đang mở bán' : '🚫 Tạm ngưng bán'}
+                              </span>
+                              <span
+                                className={cn(
+                                  'inline-flex rounded-full px-2 py-0.5 text-[10px] font-extrabold',
+                                  statusStr === 'Còn hàng' && 'bg-green-50 text-green-700',
+                                  statusStr === 'Sắp hết hàng' && 'bg-amber-50 text-amber-700',
+                                  statusStr === 'Hết hàng' && 'bg-red-50 text-red-700',
+                                )}
+                              >
+                                {statusStr}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-2">
@@ -1623,27 +1814,38 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                 <div className="overflow-y-auto flex-1 pr-1 grid gap-6 grid-cols-1 md:grid-cols-2">
                   {/* Left Column: Product Form */}
-                  <form onSubmit={handleProductSubmit} className="space-y-4 text-xs font-semibold">
-                    <div>
-                      <label className="block text-xs font-bold mb-1">Tên sản phẩm *</label>
+                  <form noValidate onSubmit={handleProductSubmit} className="space-y-4 text-xs font-semibold">
+                    <div className="relative">
+                      <label className="block text-xs font-bold mb-1">Tên sản phẩm <span className="text-red-500">*</span></label>
                       <input
                         type="text"
-                        required
                         placeholder="Ví dụ: Thức ăn hạt cho mèo lớn vị cá ngừ"
                         value={productForm.name}
-                        onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                        className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
+                        onChange={(e) => {
+                          setProductForm({ ...productForm, name: e.target.value });
+                          if (productErrors.name) setProductErrors({ ...productErrors, name: '' });
+                        }}
+                        className={cn(
+                          "w-full rounded-xl border bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none transition-all",
+                          productErrors.name ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                        )}
                       />
+                      <FormErrorTooltip message={productErrors.name} />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Danh mục *</label>
+                      <div className="relative">
+                        <label className="block text-xs font-bold mb-1">Danh mục <span className="text-red-500">*</span></label>
                         <select
-                          required
                           value={productForm.category}
-                          onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
-                          className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
+                          onChange={(e) => {
+                            setProductForm({ ...productForm, category: e.target.value });
+                            if (productErrors.category) setProductErrors({ ...productErrors, category: '' });
+                          }}
+                          className={cn(
+                            "w-full h-[46px] rounded-xl border bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold transition-all",
+                            productErrors.category ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                          )}
                         >
                           {categories.map((c) => (
                             <option key={c.id} value={c.slug}>
@@ -1651,71 +1853,171 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </option>
                           ))}
                         </select>
+                        <FormErrorTooltip message={productErrors.category} />
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Loài mục tiêu *</label>
+                      <div className="relative">
+                        <label className="block text-xs font-bold mb-1">Loài mục tiêu <span className="text-red-500">*</span></label>
                         <select
-                          required
                           value={productForm.targetSpecies}
-                          onChange={(e) => setProductForm({ ...productForm, targetSpecies: e.target.value })}
-                          className="w-full h-[46px] rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold"
+                          onChange={(e) => {
+                            setProductForm({ ...productForm, targetSpecies: e.target.value });
+                            if (productErrors.targetSpecies) setProductErrors({ ...productErrors, targetSpecies: '' });
+                          }}
+                          className={cn(
+                            "w-full h-[46px] rounded-xl border bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-semibold transition-all",
+                            productErrors.targetSpecies ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                          )}
                         >
                           <option value="ALL">🐾 Tất cả loài</option>
                           <option value="DOG">🐕 Chó</option>
                           <option value="CAT">🐈 Mèo</option>
                         </select>
+                        <FormErrorTooltip message={productErrors.targetSpecies} />
                       </div>
                     </div>
 
+                    {/* Notice if product has variants */}
+                    {(() => {
+                      const hasVariants = editingProduct
+                        ? (variants && variants.length > 0)
+                        : (localVariants && localVariants.length > 0);
+                      if (!hasVariants) return null;
+                      return (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs font-semibold text-amber-900 flex items-center gap-2">
+                          <span className="text-base">💡</span>
+                          <span>
+                            Sản phẩm có phân loại: <strong>Giá bán, Giá nhập, Khuyến mãi</strong> và <strong>Tồn kho</strong> được quản lý tự động từ danh sách Phân loại ở cột bên phải.
+                          </span>
+                        </div>
+                      );
+                    })()}
+
                     <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Giá bán lẻ (VND) *</label>
-                        <input
-                          type="number"
-                          required
-                          min="1"
-                          placeholder="Ví dụ: 120000"
-                          value={productForm.sellingPrice}
-                          onChange={(e) => setProductForm({ ...productForm, sellingPrice: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Giá nhập (VND)</label>
+                      <div className="relative">
+                        <label className="block text-xs font-bold mb-1">
+                          Giá nhập (VND) <span className="text-gray-400 font-normal">(Tùy chọn)</span>
+                        </label>
                         <input
                           type="number"
                           min="1"
+                          disabled={!!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0)))}
                           placeholder="Ví dụ: 90000"
                           value={productForm.importPrice}
-                          onChange={(e) => setProductForm({ ...productForm, importPrice: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
+                          onChange={(e) => {
+                            setProductForm({ ...productForm, importPrice: e.target.value });
+                            if (productErrors.importPrice) setProductErrors({ ...productErrors, importPrice: '' });
+                          }}
+                          className={cn(
+                            "w-full rounded-xl border px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-medium transition-all",
+                            (editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+                              : "bg-[#F9F8F6]",
+                            productErrors.importPrice ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                          )}
                         />
+                        <FormErrorTooltip message={productErrors.importPrice} />
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Số lượng kho *</label>
+                      <div className="relative">
+                        <label className="block text-xs font-bold mb-1">
+                          Giá bán lẻ (VND) {!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))) && <span className="text-red-500">*</span>}
+                        </label>
                         <input
                           type="number"
-                          required
+                          min="1"
+                          disabled={!!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0)))}
+                          placeholder="Ví dụ: 120000"
+                          value={productForm.sellingPrice}
+                          onChange={(e) => {
+                            setProductForm({ ...productForm, sellingPrice: e.target.value });
+                            if (productErrors.sellingPrice) setProductErrors({ ...productErrors, sellingPrice: '' });
+                          }}
+                          className={cn(
+                            "w-full rounded-xl border px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-medium transition-all",
+                            (editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+                              : "bg-[#F9F8F6]",
+                            productErrors.sellingPrice ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                          )}
+                        />
+                        <FormErrorTooltip message={productErrors.sellingPrice} />
+                      </div>
+                      <div className="relative">
+                        <label className="block text-xs font-bold mb-1">
+                          Số lượng kho {!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))) && <span className="text-red-500">*</span>}
+                        </label>
+                        <input
+                          type="number"
                           min="0"
+                          disabled={!!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0)))}
                           placeholder="Ví dụ: 100"
                           value={productForm.stock}
-                          onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
+                          onChange={(e) => {
+                            setProductForm({ ...productForm, stock: e.target.value });
+                            if (productErrors.stock) setProductErrors({ ...productErrors, stock: '' });
+                          }}
+                          className={cn(
+                            "w-full rounded-xl border px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs font-medium transition-all",
+                            (editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+                              : "bg-[#F9F8F6]",
+                            productErrors.stock ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                          )}
                         />
+                        <FormErrorTooltip message={productErrors.stock} />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-bold mb-1">Giá khuyến mãi (VND)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="Ví dụ: 99000"
-                          value={productForm.salePrice}
-                          onChange={(e) => setProductForm({ ...productForm, salePrice: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none"
-                        />
+                        <label className="block text-xs font-bold mb-1">Giảm giá khuyến mãi</label>
+                        <div className="flex gap-2">
+                          <select
+                            disabled={!!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0)))}
+                            value={productForm.discountType}
+                            onChange={(e) => setProductForm({ ...productForm, discountType: e.target.value as 'AMOUNT' | 'PERCENT' })}
+                            className={cn(
+                              "w-1/2 rounded-xl border border-[#EFEAE2] px-2 py-2.5 text-xs font-semibold focus:bg-white focus:outline-none",
+                              (editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))
+                                ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+                                : "bg-[#F9F8F6]"
+                            )}
+                          >
+                            <option value="AMOUNT">Giảm số tiền (-VND)</option>
+                            <option value="PERCENT">Giảm phần trăm (-%)</option>
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            disabled={!!((editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0)))}
+                            placeholder={productForm.discountType === 'AMOUNT' ? 'Ví dụ: 15000' : 'Ví dụ: 15'}
+                            value={productForm.discountValue}
+                            onChange={(e) => setProductForm({ ...productForm, discountValue: e.target.value })}
+                            className={cn(
+                              "w-1/2 rounded-xl border border-[#EFEAE2] px-3.5 py-2.5 text-xs font-medium focus:bg-white focus:outline-none",
+                              (editingProduct ? (variants && variants.length > 0) : (localVariants && localVariants.length > 0))
+                                ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200"
+                                : "bg-[#F9F8F6]"
+                            )}
+                          />
+                        </div>
+                        {(() => {
+                          const sp = Number(productForm.sellingPrice) || 0;
+                          if (sp > 0 && productForm.discountValue) {
+                            const res = computeSalePrice(sp, productForm.discountType, productForm.discountValue);
+                            if (res.error) {
+                              return <p className="mt-1 text-[11px] font-bold text-red-500">{res.error}</p>;
+                            }
+                            if (res.salePrice !== null) {
+                              const diff = sp - res.salePrice;
+                              return (
+                                <p className="mt-1 text-[11px] font-bold text-emerald-600">
+                                  ✓ Giá bán hiển thị: <span className="underline">{res.salePrice.toLocaleString('vi-VN')}đ</span> (Tiết kiệm {diff.toLocaleString('vi-VN')}đ)
+                                </p>
+                              );
+                            }
+                          }
+                          return null;
+                        })()}
                       </div>
                       <div>
                         <label className="block text-xs font-bold mb-1">Thương hiệu</label>
@@ -1730,7 +2032,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold mb-1">Đơn vị tính</label>
+                      <label className="block text-xs font-bold mb-1">
+                        Đơn vị tính <span className="text-gray-400 font-normal">(Không bắt buộc)</span>
+                      </label>
                       <select
                         value={productForm.unit}
                         onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
@@ -1746,38 +2050,127 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold mb-1">Ảnh chính sản phẩm *</label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-bold">
+                          Ảnh sản phẩm <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">(Tối đa 4 ảnh, ảnh đầu tiên làm bìa chính)</span>
+                        </label>
+                        <span className="text-[11px] font-bold text-[#0F766E]">
+                          {((productForm.images && productForm.images.length > 0) ? productForm.images.length : (productForm.imageUrl ? 1 : 0))}/4 ảnh
+                        </span>
+                      </div>
 
-                      {/* Live Image Preview Box */}
-                      {productForm.imageUrl && (
-                        <div className="relative aspect-video w-full max-w-[200px] overflow-hidden rounded-2xl border border-[#EFEAE2] bg-[#FAF9F7] mb-2.5 shadow-sm group">
-                          <img
-                            src={productForm.imageUrl}
-                            alt="Product Main Preview"
-                            className="h-full w-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setProductForm({ ...productForm, imageUrl: '' })}
-                            className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600 transition shadow-md cursor-pointer"
-                            title="Xóa ảnh"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      {/* 4 Image Thumbnails Grid */}
+                      <div className="grid grid-cols-4 gap-2 mb-2.5">
+                        {Array.from({ length: 4 }).map((_, idx) => {
+                          const imageList = (productForm.images && productForm.images.length > 0)
+                            ? productForm.images
+                            : (productForm.imageUrl ? [productForm.imageUrl] : []);
+                          const imgUrl = imageList[idx];
 
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "relative aspect-square rounded-xl border-2 overflow-hidden flex flex-col items-center justify-center bg-[#FAF9F7] transition-all group",
+                                imgUrl ? "border-[#0F766E]/40 shadow-2xs" : "border-dashed border-gray-250 hover:border-[#0F766E]"
+                              )}
+                            >
+                              {imgUrl ? (
+                                <>
+                                  <img src={imgUrl} alt={`Product Img ${idx + 1}`} className="h-full w-full object-cover" />
+                                  {idx === 0 && (
+                                    <span className="absolute left-1 top-1 rounded bg-[#0F766E] px-1.5 py-0.5 text-[9px] font-black text-white shadow-xs">
+                                      ★ Bìa
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = imageList.filter((_, i) => i !== idx);
+                                      setProductForm({
+                                        ...productForm,
+                                        images: updated,
+                                        imageUrl: updated[0] || '',
+                                      });
+                                    }}
+                                    className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/70 text-white hover:bg-rose-600 transition cursor-pointer"
+                                    title="Xóa ảnh này"
+                                  >
+                                    <X className="size-3" />
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => document.getElementById('integrated-product-image-file')?.click()}
+                                  className="size-full flex flex-col items-center justify-center text-gray-400 hover:text-[#0F766E] transition cursor-pointer p-1"
+                                >
+                                  <Plus className="size-5 mb-0.5" />
+                                  <span className="text-[9px] font-bold">Ảnh {idx + 1}</span>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Upload & Link Input Bar */}
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          placeholder="Link URL ảnh hoặc tải file..."
-                          value={productForm.imageUrl}
-                          onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
+                          placeholder="Nhập URL ảnh rồi ấn Thêm (Tối đa 4 ảnh)..."
+                          id="product-image-url-input"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const inputEl = e.currentTarget;
+                              const url = inputEl.value.trim();
+                              if (url) {
+                                const currentList = (productForm.images && productForm.images.length > 0)
+                                  ? productForm.images
+                                  : (productForm.imageUrl ? [productForm.imageUrl] : []);
+                                if (currentList.length >= 4) {
+                                  toast.warning('Đã đủ 4 ảnh tối đa cho sản phẩm.');
+                                  return;
+                                }
+                                const updated = [...currentList, url].slice(0, 4);
+                                setProductForm({
+                                  ...productForm,
+                                  images: updated,
+                                  imageUrl: updated[0] || '',
+                                });
+                                inputEl.value = '';
+                                toast.success('Đã thêm link ảnh thành công!');
+                              }
+                            }
+                          }}
                           className="flex-1 rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2.5 focus:bg-white focus:outline-none text-xs"
                         />
                         <button
                           type="button"
-                          onClick={() => document.getElementById('integrated-product-image-file')?.click()}
+                          onClick={() => {
+                            const inputEl = document.getElementById('product-image-url-input') as HTMLInputElement;
+                            if (inputEl && inputEl.value.trim()) {
+                              const url = inputEl.value.trim();
+                              const currentList = (productForm.images && productForm.images.length > 0)
+                                ? productForm.images
+                                : (productForm.imageUrl ? [productForm.imageUrl] : []);
+                              if (currentList.length >= 4) {
+                                toast.warning('Đã đủ 4 ảnh tối đa cho sản phẩm.');
+                                return;
+                              }
+                              const updated = [...currentList, url].slice(0, 4);
+                              setProductForm({
+                                ...productForm,
+                                images: updated,
+                                imageUrl: updated[0] || '',
+                              });
+                              inputEl.value = '';
+                              toast.success('Đã thêm link ảnh!');
+                            } else {
+                              document.getElementById('integrated-product-image-file')?.click();
+                            }
+                          }}
                           disabled={uploadingImage}
                           className="px-4 rounded-xl border border-[#0F766E] font-bold text-[#0F766E] hover:bg-[#0F766E]/5 transition flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 cursor-pointer text-xs"
                         >
@@ -1794,15 +2187,32 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           id="integrated-product-image-file"
                           type="file"
                           accept="image/*"
+                          multiple
                           className="hidden"
                           onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
+                            const files = e.target.files;
+                            if (files && files.length > 0) {
+                              const fileList = Array.from(files);
+                              const currentList = (productForm.images && productForm.images.length > 0)
+                                ? productForm.images
+                                : (productForm.imageUrl ? [productForm.imageUrl] : []);
+                              const remainingSlots = 4 - currentList.length;
+                              if (remainingSlots <= 0) {
+                                toast.warning('Đã đủ 4 ảnh tối đa cho sản phẩm.');
+                                return;
+                              }
+                              const toUpload = fileList.slice(0, remainingSlots);
                               setUploadingImage(true);
                               try {
-                                const res = await uploadImages([file], 'product');
-                                setProductForm({ ...productForm, imageUrl: res[0].url });
-                                toast.success('Tải ảnh sản phẩm thành công!');
+                                const res = await uploadImages(toUpload, 'product');
+                                const newUrls = res.map((r: any) => r.url);
+                                const updated = [...currentList, ...newUrls].slice(0, 4);
+                                setProductForm({
+                                  ...productForm,
+                                  images: updated,
+                                  imageUrl: updated[0] || '',
+                                });
+                                toast.success(`Tải thành công ${newUrls.length} ảnh sản phẩm!`);
                               } catch (err: any) {
                                 toast.error(err.message || 'Lỗi khi tải ảnh lên.');
                               } finally {
@@ -1816,7 +2226,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-bold">Thông số kỹ thuật</label>
+                        <label className="block text-xs font-bold">Thông số sản phẩm</label>
                         <button
                           type="button"
                           onClick={() => setSpecList([...specList, { key: '', value: '' }])}
@@ -1928,20 +2338,38 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         {editingVariant || editingLocalVariantIndex !== null ? 'Chỉnh sửa biến thể' : 'Thêm biến thể mới'}
                       </p>
 
-                      <div>
-                        <label className="block text-[10px] font-bold mb-1">Tên phân loại *</label>
+                      <div className="relative">
+                        <label className="block text-[10px] font-bold mb-1">Tên phân loại <span className="text-red-500">*</span></label>
                         <input
                           type="text"
                           placeholder="Ví dụ: Size S, Màu Đỏ, Hộp 500g"
                           value={variantForm.name}
-                          onChange={(e) => setVariantForm({ ...variantForm, name: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
+                          onChange={(e) => {
+                            setVariantForm({ ...variantForm, name: e.target.value });
+                            if (variantErrors.name) setVariantErrors({ ...variantErrors, name: '' });
+                          }}
+                          className={cn(
+                            "w-full rounded-xl border bg-white px-3 py-2 focus:outline-none transition-all",
+                            variantErrors.name ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                          )}
                         />
+                        <FormErrorTooltip message={variantErrors.name} />
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold mb-1">Giá bán lẻ (Để trống = Giá chính)</label>
+                          <label className="block text-[10px] font-bold mb-1">Giá nhập (VND) <span className="text-gray-400 font-normal">(Tùy chọn)</span></label>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="VND"
+                            value={variantForm.importPrice}
+                            onChange={(e) => setVariantForm({ ...variantForm, importPrice: e.target.value })}
+                            className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold mb-1">Giá bán lẻ (VND) <span className="text-gray-400 font-normal">(Để trống = Giá chính)</span></label>
                           <input
                             type="number"
                             min="1"
@@ -1951,36 +2379,73 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
                           />
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-bold mb-1">Giá khuyến mãi</label>
-                          <input
-                            type="number"
-                            min="1"
-                            placeholder="VND"
-                            value={variantForm.salePrice}
-                            onChange={(e) => setVariantForm({ ...variantForm, salePrice: e.target.value })}
-                            className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
-                          />
-                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold mb-1">Số lượng kho *</label>
+                          <label className="block text-[10px] font-bold mb-1">Giảm giá khuyến mãi</label>
+                          <div className="flex gap-1.5">
+                            <select
+                              value={variantForm.discountType}
+                              onChange={(e) => setVariantForm({ ...variantForm, discountType: e.target.value as 'AMOUNT' | 'PERCENT' })}
+                              className="w-1/2 rounded-xl border border-[#EFEAE2] bg-white px-1.5 py-2 text-[10px] font-semibold focus:outline-none"
+                            >
+                              <option value="AMOUNT">Giảm số tiền (-VND)</option>
+                              <option value="PERCENT">Giảm % (-%)</option>
+                            </select>
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder={variantForm.discountType === 'AMOUNT' ? 'Ví dụ: 15000' : 'Ví dụ: 15'}
+                              value={variantForm.discountValue}
+                              onChange={(e) => setVariantForm({ ...variantForm, discountValue: e.target.value })}
+                              className="w-1/2 rounded-xl border border-[#EFEAE2] bg-white px-2 py-2 text-[10px] focus:outline-none"
+                            />
+                          </div>
+                          {(() => {
+                            const sp = variantForm.sellingPrice
+                              ? Number(variantForm.sellingPrice)
+                              : (editingProduct ? editingProduct.sellingPrice : Number(productForm.sellingPrice || 0));
+                            if (sp > 0 && variantForm.discountValue) {
+                              const res = computeSalePrice(sp, variantForm.discountType, variantForm.discountValue);
+                              if (res.error) {
+                                return <p className="mt-1 text-[10px] font-bold text-red-500">{res.error}</p>;
+                              }
+                              if (res.salePrice !== null) {
+                                const diff = sp - res.salePrice;
+                                return (
+                                  <p className="mt-1 text-[10px] font-bold text-emerald-600">
+                                    ✓ Hiển thị: {res.salePrice.toLocaleString('vi-VN')}đ (-{diff.toLocaleString('vi-VN')}đ)
+                                  </p>
+                                );
+                              }
+                            }
+                            return null;
+                          })()}
+                        </div>
+                        <div className="relative">
+                          <label className="block text-[10px] font-bold mb-1">Số lượng kho <span className="text-red-500">*</span></label>
                           <input
                             type="number"
                             min="0"
                             placeholder="Ví dụ: 10"
                             value={variantForm.stock}
-                            onChange={(e) => setVariantForm({ ...variantForm, stock: e.target.value })}
-                            className="w-full rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 focus:outline-none"
+                            onChange={(e) => {
+                              setVariantForm({ ...variantForm, stock: e.target.value });
+                              if (variantErrors.stock) setVariantErrors({ ...variantErrors, stock: '' });
+                            }}
+                            className={cn(
+                              "w-full rounded-xl border bg-white px-3 py-2 focus:outline-none transition-all",
+                              variantErrors.stock ? "border-rose-400 ring-2 ring-rose-100" : "border-[#EFEAE2]"
+                            )}
                           />
+                          <FormErrorTooltip message={variantErrors.stock} />
                         </div>
                       </div>
 
                       {/* Separate block for variant image with live preview */}
-                      <div className="space-y-2">
-                        <label className="block text-[10px] font-bold mb-1">Ảnh biến thể (Tải file hoặc điền URL)</label>
+                      <div className="relative space-y-2">
+                        <label className="block text-[10px] font-bold mb-1">Ảnh phân loại <span className="text-red-500">*</span></label>
                         {variantForm.imageUrl && (
                           <div className="relative aspect-video w-full max-w-[120px] overflow-hidden rounded-xl border border-[#EFEAE2] bg-gray-50 mb-2">
                             <img
@@ -1998,6 +2463,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </button>
                           </div>
                         )}
+                        <FormErrorTooltip message={variantErrors.imageUrl} direction="top" />
                         <div className="flex gap-2">
                           <input
                             id="integrated-variant-image-file"
@@ -2039,6 +2505,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               'Tải ảnh'
                             )}
                           </button>
+                        </div>
+                        <div className="pt-1">
+                          <label className="flex items-center gap-2 text-[11px] font-bold text-gray-700 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={variantForm.isActive}
+                              onChange={(e) => setVariantForm({ ...variantForm, isActive: e.target.checked })}
+                              className="size-4 accent-[#0F766E] rounded cursor-pointer"
+                            />
+                            <span>🟢 Mở bán phân loại này</span>
+                          </label>
                         </div>
                       </div>
 
@@ -2084,7 +2561,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 <img src={v.imageUrl} alt="" className="size-8 rounded-lg object-cover border border-[#EFEAE2]" />
                               )}
                               <div>
-                                <p className="font-bold text-[var(--text-main)]">{v.name}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-bold text-[var(--text-main)]">{v.name}</p>
+                                  <span className={cn("text-[9px] font-black px-1.5 py-0.2 rounded border", v.isActive !== false ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200")}>
+                                    {v.isActive !== false ? 'Đang bán' : 'Tạm ngưng'}
+                                  </span>
+                                </div>
                                 <p className="text-gray-400 text-[10px]">
                                   Giá: {v.sellingPrice ? Number(v.sellingPrice).toLocaleString('vi-VN') : 'Mặc định'}đ | Kho: {v.stock}
                                 </p>
@@ -2783,15 +3265,45 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold mb-1">Giá khuyến mãi</label>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="VND"
-                          value={variantForm.salePrice}
-                          onChange={(e) => setVariantForm({ ...variantForm, salePrice: e.target.value })}
-                          className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-3.5 py-2 focus:bg-white focus:outline-none"
-                        />
+                        <label className="block text-[11px] font-bold mb-1">Giảm giá khuyến mãi</label>
+                        <div className="flex gap-1.5">
+                          <select
+                            value={variantForm.discountType}
+                            onChange={(e) => setVariantForm({ ...variantForm, discountType: e.target.value as 'AMOUNT' | 'PERCENT' })}
+                            className="w-1/2 rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-2 py-2 text-[10px] font-semibold focus:bg-white focus:outline-none"
+                          >
+                            <option value="AMOUNT">Giảm số tiền (-VND)</option>
+                            <option value="PERCENT">Giảm % (-%)</option>
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder={variantForm.discountType === 'AMOUNT' ? 'Ví dụ: 15000' : 'Ví dụ: 15'}
+                            value={variantForm.discountValue}
+                            onChange={(e) => setVariantForm({ ...variantForm, discountValue: e.target.value })}
+                            className="w-1/2 rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-2.5 py-2 text-[10px] focus:bg-white focus:outline-none"
+                          />
+                        </div>
+                        {(() => {
+                          const sp = variantForm.sellingPrice
+                            ? Number(variantForm.sellingPrice)
+                            : (selectedProductForVariants ? selectedProductForVariants.sellingPrice : Number(productForm.sellingPrice || 0));
+                          if (sp > 0 && variantForm.discountValue) {
+                            const res = computeSalePrice(sp, variantForm.discountType, variantForm.discountValue);
+                            if (res.error) {
+                              return <p className="mt-1 text-[10px] font-bold text-red-500">{res.error}</p>;
+                            }
+                            if (res.salePrice !== null) {
+                              const diff = sp - res.salePrice;
+                              return (
+                                <p className="mt-1 text-[10px] font-bold text-emerald-600">
+                                  ✓ Giá hiển thị: {res.salePrice.toLocaleString('vi-VN')}đ (-{diff.toLocaleString('vi-VN')}đ)
+                                </p>
+                              );
+                            }
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
 
@@ -5874,140 +6386,140 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         groupedServices
                           .slice((spaServicePage - 1) * SPA_SERVICE_PAGE_SIZE, spaServicePage * SPA_SERVICE_PAGE_SIZE)
                           .map((group) => {
-                          const isExpanded = !!expandedServiceGroups[group.groupKey];
-                          const activeCount = group.items.filter((i) => i.isActive).length;
+                            const isExpanded = !!expandedServiceGroups[group.groupKey];
+                            const activeCount = group.items.filter((i) => i.isActive).length;
 
-                          const priceStr = group.minPrice === group.maxPrice
-                            ? `${group.minPrice.toLocaleString('vi-VN')}đ`
-                            : `${group.minPrice.toLocaleString('vi-VN')}đ – ${group.maxPrice.toLocaleString('vi-VN')}đ`;
+                            const priceStr = group.minPrice === group.maxPrice
+                              ? `${group.minPrice.toLocaleString('vi-VN')}đ`
+                              : `${group.minPrice.toLocaleString('vi-VN')}đ – ${group.maxPrice.toLocaleString('vi-VN')}đ`;
 
-                          const durationStr = group.minDuration === group.maxDuration
-                            ? `${group.minDuration} phút`
-                            : `${group.minDuration} – ${group.maxDuration} phút`;
+                            const durationStr = group.minDuration === group.maxDuration
+                              ? `${group.minDuration} phút`
+                              : `${group.minDuration} – ${group.maxDuration} phút`;
 
-                          return (
-                            <React.Fragment key={group.groupKey}>
-                              {/* PARENT GROUP ROW */}
-                              <tr
-                                onClick={() => toggleServiceGroup(group.groupKey)}
-                                className="hover:bg-orange-50/40 transition cursor-pointer bg-white group"
-                              >
-                                <td className="px-4 py-3 font-semibold">
-                                  <div className="flex items-center gap-2">
-                                    <button type="button" className="p-0.5 text-gray-400 group-hover:text-primary transition">
-                                      {isExpanded ? <ChevronDown className="size-4 text-primary" /> : <ChevronRight className="size-4" />}
-                                    </button>
-                                    <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition">
-                                      {group.baseName}
-                                    </span>
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60">
-                                      {group.items.length} mốc kg
-                                    </span>
-                                  </div>
-                                </td>
-
-                                <td className="px-4 py-3">
-                                  <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                                    {group.categoryName}
-                                  </span>
-                                </td>
-
-                                <td className="px-4 py-3 text-center font-medium text-gray-600 text-xs">{durationStr}</td>
-                                <td className="px-4 py-3 text-right font-black text-primary text-xs">{priceStr}</td>
-                                <td className="px-4 py-3 text-center font-bold text-purple-700 text-xs">{group.totalBookings} lượt</td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${activeCount > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                    }`}>
-                                    {activeCount > 0 ? `Đang bật (${activeCount}/${group.items.length})` : 'Tắt'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleServiceGroup(group.groupKey);
-                                    }}
-                                    className="px-2.5 py-1 rounded-lg border border-primary/25 text-primary font-bold text-[11px] hover:bg-orange-50 transition inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    {isExpanded ? 'Thu gọn' : 'Xem các mốc kg'}
-                                  </button>
-                                </td>
-                              </tr>
-
-                              {/* EXPANDED SUB-SERVICES LIST */}
-                              {isExpanded && (
-                                <tr>
-                                  <td colSpan={8} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
-                                    <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
-                                      <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                                        <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
-                                          ⚖️ Danh sách mốc cân nặng: <span className="text-primary">{group.baseName}</span>
-                                        </h4>
-                                        <span className="text-[10px] text-gray-400 font-medium">
-                                          ({group.items.length} biến thể cân nặng)
-                                        </span>
-                                      </div>
-
-                                      <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-xs">
-                                          <thead>
-                                            <tr className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[10px] border-b border-gray-150">
-                                              <th className="py-2 px-3">Tên mốc dịch vụ</th>
-                                              <th className="py-2 px-3">Đối tượng</th>
-                                              <th className="py-2 px-3">Khoảng cân nặng</th>
-                                              <th className="py-2 px-3 text-center">Thời gian</th>
-                                              <th className="py-2 px-3 text-right">Đơn giá</th>
-                                              <th className="py-2 px-3 text-center">Lượt đặt</th>
-                                              <th className="py-2 px-3 text-center">Trạng thái</th>
-                                              <th className="py-2 px-3 text-center">Chỉnh sửa</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-gray-100">
-                                            {group.items.map((s: any) => {
-                                              const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
-                                              const weightText = formatWeightRange(s.petWeightMin, s.petWeightMax);
-
-                                              return (
-                                                <tr key={s.id} className="hover:bg-purple-50/30 transition">
-                                                  <td className="py-2.5 px-3 font-extrabold text-gray-900">{s.name}</td>
-                                                  <td className="py-2.5 px-3 font-semibold text-gray-700">{speciesBadge}</td>
-                                                  <td className="py-2.5 px-3 font-semibold text-gray-600">{weightText}</td>
-                                                  <td className="py-2.5 px-3 text-center font-semibold text-gray-700">{s.durationMin} phút</td>
-                                                  <td className="py-2.5 px-3 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
-                                                  <td className="py-2.5 px-3 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
-                                                  <td className="py-2.5 px-3 text-center">
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                                      }`}>
-                                                      {s.isActive ? 'Bật' : 'Tắt'}
-                                                    </span>
-                                                  </td>
-                                                  <td className="py-2.5 px-3 text-center">
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEditServiceClick(s);
-                                                      }}
-                                                      className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
-                                                      title="Chỉnh sửa dịch vụ này"
-                                                    >
-                                                      <Edit2 className="size-3.5" />
-                                                    </button>
-                                                  </td>
-                                                </tr>
-                                              );
-                                            })}
-                                          </tbody>
-                                        </table>
-                                      </div>
+                            return (
+                              <React.Fragment key={group.groupKey}>
+                                {/* PARENT GROUP ROW */}
+                                <tr
+                                  onClick={() => toggleServiceGroup(group.groupKey)}
+                                  className="hover:bg-orange-50/40 transition cursor-pointer bg-white group"
+                                >
+                                  <td className="px-4 py-3 font-semibold">
+                                    <div className="flex items-center gap-2">
+                                      <button type="button" className="p-0.5 text-gray-400 group-hover:text-primary transition">
+                                        {isExpanded ? <ChevronDown className="size-4 text-primary" /> : <ChevronRight className="size-4" />}
+                                      </button>
+                                      <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition">
+                                        {group.baseName}
+                                      </span>
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60">
+                                        {group.items.length} mốc kg
+                                      </span>
                                     </div>
                                   </td>
+
+                                  <td className="px-4 py-3">
+                                    <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                                      {group.categoryName}
+                                    </span>
+                                  </td>
+
+                                  <td className="px-4 py-3 text-center font-medium text-gray-600 text-xs">{durationStr}</td>
+                                  <td className="px-4 py-3 text-right font-black text-primary text-xs">{priceStr}</td>
+                                  <td className="px-4 py-3 text-center font-bold text-purple-700 text-xs">{group.totalBookings} lượt</td>
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${activeCount > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                      }`}>
+                                      {activeCount > 0 ? `Đang bật (${activeCount}/${group.items.length})` : 'Tắt'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleServiceGroup(group.groupKey);
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg border border-primary/25 text-primary font-bold text-[11px] hover:bg-orange-50 transition inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      {isExpanded ? 'Thu gọn' : 'Xem các mốc kg'}
+                                    </button>
+                                  </td>
                                 </tr>
-                              )}
-                            </React.Fragment>
-                          );
-                        })
+
+                                {/* EXPANDED SUB-SERVICES LIST */}
+                                {isExpanded && (
+                                  <tr>
+                                    <td colSpan={8} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
+                                      <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
+                                        <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
+                                          <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                                            ⚖️ Danh sách mốc cân nặng: <span className="text-primary">{group.baseName}</span>
+                                          </h4>
+                                          <span className="text-[10px] text-gray-400 font-medium">
+                                            ({group.items.length} biến thể cân nặng)
+                                          </span>
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-left text-xs">
+                                            <thead>
+                                              <tr className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[10px] border-b border-gray-150">
+                                                <th className="py-2 px-3">Tên mốc dịch vụ</th>
+                                                <th className="py-2 px-3">Đối tượng</th>
+                                                <th className="py-2 px-3">Khoảng cân nặng</th>
+                                                <th className="py-2 px-3 text-center">Thời gian</th>
+                                                <th className="py-2 px-3 text-right">Đơn giá</th>
+                                                <th className="py-2 px-3 text-center">Lượt đặt</th>
+                                                <th className="py-2 px-3 text-center">Trạng thái</th>
+                                                <th className="py-2 px-3 text-center">Chỉnh sửa</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                              {group.items.map((s: any) => {
+                                                const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
+                                                const weightText = formatWeightRange(s.petWeightMin, s.petWeightMax);
+
+                                                return (
+                                                  <tr key={s.id} className="hover:bg-purple-50/30 transition">
+                                                    <td className="py-2.5 px-3 font-extrabold text-gray-900">{s.name}</td>
+                                                    <td className="py-2.5 px-3 font-semibold text-gray-700">{speciesBadge}</td>
+                                                    <td className="py-2.5 px-3 font-semibold text-gray-600">{weightText}</td>
+                                                    <td className="py-2.5 px-3 text-center font-semibold text-gray-700">{s.durationMin} phút</td>
+                                                    <td className="py-2.5 px-3 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
+                                                    <td className="py-2.5 px-3 text-center font-extrabold text-purple-700">{s._count?.bookings || 0} lượt</td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                                        }`}>
+                                                        {s.isActive ? 'Bật' : 'Tắt'}
+                                                      </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                      <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleEditServiceClick(s);
+                                                        }}
+                                                        className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
+                                                        title="Chỉnh sửa dịch vụ này"
+                                                      >
+                                                        <Edit2 className="size-3.5" />
+                                                      </button>
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
                       ) : (
                         <tr>
                           <td colSpan={8} className="px-6 py-12 text-center text-gray-400">Không tìm thấy dịch vụ nào.</td>
@@ -6096,51 +6608,51 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         return filteredCategories
                           .slice((spaCategoryPage - 1) * SPA_CATEGORY_PAGE_SIZE, spaCategoryPage * SPA_CATEGORY_PAGE_SIZE)
                           .map((c: any) => (
-                          <tr key={c.id} className="hover:bg-gray-50/30 transition">
-                            <td className="px-6 py-4 space-y-1">
-                              <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
-                              <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                }`}>
-                                {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-xs font-semibold text-gray-600 max-w-[250px] truncate" title={c.description || 'Chưa có mô tả'}>
-                              {c.description || <span className="italic text-gray-400">Không có mô tả</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center font-bold text-gray-800">
-                              <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                {c._count?.services || 0} dịch vụ
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center font-extrabold text-purple-700">
-                              {c._count?.bookings || 0} lượt
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                }`}>
-                                {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleEditCategoryClick(c)}
-                                  className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
-                                  title="Chỉnh sửa danh mục"
-                                >
-                                  <Edit2 className="size-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteCategoryClick(c)}
-                                  className="p-1.5 rounded-lg border text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
-                                  title="Xóa danh mục"
-                                >
-                                  <Trash2 className="size-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ));
+                            <tr key={c.id} className="hover:bg-gray-50/30 transition">
+                              <td className="px-6 py-4 space-y-1">
+                                <span className="font-extrabold text-gray-900 block text-sm">{c.name}</span>
+                                <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${c.isMain ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  }`}>
+                                  {c.isMain ? '★ Gói dịch vụ chính' : '✦ Dịch vụ lẻ chọn thêm'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-xs font-semibold text-gray-600 max-w-[250px] truncate" title={c.description || 'Chưa có mô tả'}>
+                                {c.description || <span className="italic text-gray-400">Không có mô tả</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center font-bold text-gray-800">
+                                <span className="inline-flex rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
+                                  {c._count?.services || 0} dịch vụ
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center font-extrabold text-purple-700">
+                                {c._count?.bookings || 0} lượt
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-black ${c.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                  }`}>
+                                  {c.status === 'ACTIVE' ? 'Đang hoạt động' : 'Tắt'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleEditCategoryClick(c)}
+                                    className="p-1.5 rounded-lg border text-gray-600 hover:text-primary hover:bg-orange-50 transition"
+                                    title="Chỉnh sửa danh mục"
+                                  >
+                                    <Edit2 className="size-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCategoryClick(c)}
+                                    className="p-1.5 rounded-lg border text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                                    title="Xóa danh mục"
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ));
                       })()}
                     </tbody>
                   </table>
@@ -6231,135 +6743,135 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                         filteredBookings
                           .slice((spaBookingPage - 1) * SPA_BOOKING_PAGE_SIZE, spaBookingPage * SPA_BOOKING_PAGE_SIZE)
                           .map((b: any) => {
-                          const dateObj = new Date(b.scheduledAt);
-                          const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-                          const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                          const statusStyle = {
-                            PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
-                            CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
-                            CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
-                            ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
-                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                            IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
-                            COMPLETED: 'bg-green-50 text-green-700 border-green-200',
-                            CANCELLED: 'bg-red-50 text-red-700 border-red-200',
-                            NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
-                            LATE: 'bg-rose-50 text-rose-700 border-rose-250'
-                          }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
+                            const dateObj = new Date(b.scheduledAt);
+                            const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+                            const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                            const statusStyle = {
+                              PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+                              CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
+                              CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
+                              ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
+                              ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                              IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
+                              COMPLETED: 'bg-green-50 text-green-700 border-green-200',
+                              CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+                              NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
+                              LATE: 'bg-rose-50 text-rose-700 border-rose-250'
+                            }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
-                          const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status);
-                          const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
+                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status);
+                            const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
 
-                          return (
-                            <tr
-                              key={b.id}
-                              onClick={() => setSelectedBookingDetail(b)}
-                              className="hover:bg-gray-50/70 transition cursor-pointer"
-                            >
-                              <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
-                              <td className="px-6 py-4">
-                                <span className="font-extrabold text-gray-900 block">{timeStr}</span>
-                                <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="space-y-0.5">
-                                  <p className="font-bold text-gray-800 text-xs">{b.user?.name || 'Khách hàng'}</p>
-                                  <p className="text-[10px] text-gray-500 font-semibold">Pet: <span className="text-gray-700 font-extrabold">{b.petName || b.pet?.name || 'Thú cưng'}</span></p>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
-                                {b.discountAmount > 0 ? (
-                                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                    <span className="text-[11px] text-gray-400 line-through font-medium">
-                                      {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                                    </span>
-                                    <span className="text-xs font-black text-rose-600">
-                                      {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
-                                    </span>
-                                    <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
-                                      -10%
-                                    </span>
+                            return (
+                              <tr
+                                key={b.id}
+                                onClick={() => setSelectedBookingDetail(b)}
+                                className="hover:bg-gray-50/70 transition cursor-pointer"
+                              >
+                                <td className="px-6 py-4 font-mono font-bold text-xs text-gray-500">#{b.id.slice(-6).toUpperCase()}</td>
+                                <td className="px-6 py-4">
+                                  <span className="font-extrabold text-gray-900 block">{timeStr}</span>
+                                  <span className="text-[10px] text-gray-400 font-semibold block">{dateStr}</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-gray-800 text-xs">{b.user?.name || 'Khách hàng'}</p>
+                                    <p className="text-[10px] text-gray-500 font-semibold">Pet: <span className="text-gray-700 font-extrabold">{b.petName || b.pet?.name || 'Thú cưng'}</span></p>
                                   </div>
-                                ) : (
-                                  <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
-                                    {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                                  </p>
-                                )}
-                                {(() => {
-                                  const subList = getManagerBookingSubServices(b);
-                                  if (subList.length === 0) return null;
-                                  return (
-                                    <div className="text-[10px] text-purple-700 font-bold pt-0.5 line-clamp-1" title={subList.map((s: any) => s.name).join(', ')}>
-                                      + {subList.length} dịch vụ lẻ
+                                </td>
+                                <td className="px-6 py-4">
+                                  <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
+                                  {b.discountAmount > 0 ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                      <span className="text-[11px] text-gray-400 line-through font-medium">
+                                        {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
+                                      </span>
+                                      <span className="text-xs font-black text-rose-600">
+                                        {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
+                                      </span>
+                                      <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
+                                        -10%
+                                      </span>
                                     </div>
-                                  );
-                                })()}
-                              </td>
-                              <td className="px-6 py-4 font-semibold text-xs text-gray-700">
-                                {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
-                              </td>
-                              <td className="px-6 py-4 text-center whitespace-nowrap">
-                                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
-                                  {getSpaStatusText(b.status)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex flex-col items-center gap-1.5">
-                                  <button
-                                    onClick={() => setSelectedBookingDetail(b)}
-                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                  >
-                                    <Eye className="size-3.5" /> Xem chi tiết
-                                  </button>
-
-                                  {b.status === 'PENDING' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleConfirmBooking(b.id)}
-                                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                    >
-                                      ✓ Xác nhận
-                                    </button>
+                                  ) : (
+                                    <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                      {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                    </p>
                                   )}
-
-                                  {(b.status === 'CONFIRMED' || (b.status === 'CHECK_IN' && !b.staffId)) && (
+                                  {(() => {
+                                    const subList = getManagerBookingSubServices(b);
+                                    if (subList.length === 0) return null;
+                                    return (
+                                      <div className="text-[10px] text-purple-700 font-bold pt-0.5 line-clamp-1" title={subList.map((s: any) => s.name).join(', ')}>
+                                        + {subList.length} dịch vụ lẻ
+                                      </div>
+                                    );
+                                  })()}
+                                </td>
+                                <td className="px-6 py-4 font-semibold text-xs text-gray-700">
+                                  {b.staff ? `✨ ${b.staff.name}` : <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Chưa phân công</span>}
+                                </td>
+                                <td className="px-6 py-4 text-center whitespace-nowrap">
+                                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusStyle}`}>
+                                    {getSpaStatusText(b.status)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex flex-col items-center gap-1.5">
                                     <button
-                                      type="button"
                                       onClick={() => setSelectedBookingDetail(b)}
-                                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
                                     >
-                                      👤 Gán nhân viên
+                                      <Eye className="size-3.5" /> Xem chi tiết
                                     </button>
-                                  )}
 
-                                  {canReschedule && (
-                                    <button
-                                      onClick={() => {
-                                        setRescheduleBooking(b);
-                                        setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-                                        setSelectedRescheduleSlot('');
-                                      }}
-                                      className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                    >
-                                      <Calendar className="size-3.5" /> Đổi lịch
-                                    </button>
-                                  )}
+                                    {b.status === 'PENDING' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConfirmBooking(b.id)}
+                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      >
+                                        ✓ Xác nhận
+                                      </button>
+                                    )}
 
-                                  {isLateOfferable && (
-                                    <button
-                                      onClick={() => handleApplyLateDiscount(b.id)}
-                                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
-                                      title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
-                                    >
-                                      🎁 Giảm 10%
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
+                                    {(b.status === 'CONFIRMED' || (b.status === 'CHECK_IN' && !b.staffId)) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedBookingDetail(b)}
+                                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      >
+                                        👤 Gán nhân viên
+                                      </button>
+                                    )}
+
+                                    {canReschedule && (
+                                      <button
+                                        onClick={() => {
+                                          setRescheduleBooking(b);
+                                          setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                                          setSelectedRescheduleSlot('');
+                                        }}
+                                        className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      >
+                                        <Calendar className="size-3.5" /> Đổi lịch
+                                      </button>
+                                    )}
+
+                                    {isLateOfferable && (
+                                      <button
+                                        onClick={() => handleApplyLateDiscount(b.id)}
+                                        className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
+                                        title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
+                                      >
+                                        🎁 Giảm 10%
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                       ) : (
                         <tr>
                           <td colSpan={7} className="px-6 py-12 text-center text-gray-400">Không tìm thấy lịch hẹn phù hợp.</td>
@@ -6395,73 +6907,73 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     staffs
                       .slice((spaStaffPage - 1) * SPA_STAFF_PAGE_SIZE, spaStaffPage * SPA_STAFF_PAGE_SIZE)
                       .map((s: any) => (
-                      <div
-                        key={s.id}
-                        className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
-                      >
-                        <div className="flex items-center gap-3">
-                          {s.avatarUrl ? (
-                            <img
-                              src={s.avatarUrl}
-                              alt={s.name}
-                              className="size-12 rounded-full object-cover border"
-                            />
-                          ) : (
-                            <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
-                              {s.name.slice(0, 1).toUpperCase()}
+                        <div
+                          key={s.id}
+                          className="bg-white border border-gray-150 rounded-2xl p-6 shadow-xs flex flex-col justify-between h-full space-y-4"
+                        >
+                          <div className="flex items-center gap-3">
+                            {s.avatarUrl ? (
+                              <img
+                                src={s.avatarUrl}
+                                alt={s.name}
+                                className="size-12 rounded-full object-cover border"
+                              />
+                            ) : (
+                              <div className="size-12 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-750 text-sm border border-purple-200">
+                                {s.name.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
+                              <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
+                              <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
                             </div>
-                          )}
-                          <div>
-                            <h4 className="font-extrabold text-sm text-gray-900 leading-tight">{s.name}</h4>
-                            <p className="text-[11px] text-gray-450 font-bold leading-normal">{s.email}</p>
-                            <span className="inline-block mt-1 text-[9px] bg-purple-50 text-purple-700 font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Nhân viên Spa</span>
+                          </div>
+
+                          {/* Performance metrics breakdown */}
+                          <div className="space-y-2 border-t pt-4">
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
+                              <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                {s.onTimeRate ?? 100}%
+                              </span>
+                            </div>
+                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${s.onTimeRate ?? 100}%` }}
+                                className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-2">
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
+                                <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
+                              </div>
+                              <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
+                                <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
+                                <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
+                              </div>
+                              <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                                <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
+                                <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="border-t pt-3 flex justify-between items-center">
+                            <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
+                            <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
                           </div>
                         </div>
-
-                        {/* Performance metrics breakdown */}
-                        <div className="space-y-2 border-t pt-4">
-                          <div className="flex items-center justify-between text-xs font-bold">
-                            <span className="text-gray-500">Tỷ lệ đúng hẹn:</span>
-                            <span className={`font-black ${s.onTimeRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                              {s.onTimeRate ?? 100}%
-                            </span>
-                          </div>
-                          <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              style={{ width: `${s.onTimeRate ?? 100}%` }}
-                              className={`h-full rounded-full transition-all ${s.onTimeRate >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 pt-2">
-                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
-                              <span className="text-[10px] text-emerald-700 block font-bold">✅ Đúng hẹn</span>
-                              <span className="text-base font-black text-emerald-800 block mt-0.5">{s.onTimeCount || 0} ca</span>
-                            </div>
-                            <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
-                              <span className="text-[10px] text-rose-700 block font-bold">⚠️ Trễ hẹn</span>
-                              <span className="text-base font-black text-rose-800 block mt-0.5">{s.lateCount || 0} ca</span>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                              <span className="text-[10px] text-gray-400 block font-bold">Đã hoàn thành</span>
-                              <span className="text-sm font-black text-gray-800 block mt-0.5">{s.completedCount}</span>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-2.5 text-center">
-                              <span className="text-[10px] text-gray-400 block font-bold">Đang xử lý</span>
-                              <span className="text-sm font-black text-amber-600 block mt-0.5">{s.activeCount}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="border-t pt-3 flex justify-between items-center">
-                          <span className="text-[11px] text-gray-400 font-bold uppercase">Doanh thu tạo ra:</span>
-                          <span className="text-base font-black text-primary">{(s.revenue || 0).toLocaleString('vi-VN')}đ</span>
-                        </div>
-                      </div>
-                    ))
+                      ))
                   ) : (
                     <div className="col-span-full py-16 text-center text-gray-400 bg-white border rounded-2xl">
                       Không tìm thấy nhân viên nào ở chi nhánh này.

@@ -8,7 +8,6 @@ const ProductCategory = {
   GROOMING: 'GROOMING',
   CAGE_BED: 'CAGE_BED',
   LEASH_COLLAR: 'LEASH_COLLAR',
-  MEDICAL: 'MEDICAL',
 };
 
 const prisma = new PrismaClient();
@@ -230,23 +229,7 @@ async function main() {
       imageUrl: 'https://images.unsplash.com/photo-1588943211346-0908a1fb0b01?w=600&h=600&fit=crop',
       images: [],
     },
-    {
-      name: 'Thuoc nho gay tri ve cho meo Frontline',
-      slug: 'thuoc-nho-gay-frontline',
-      category: ProductCategory.MEDICAL,
-      targetSpecies: 'ALL',
-      brand: 'Frontline',
-      unit: '3 ong',
-      sellingPrice: 320000,
-      importPrice: 160000,
-      salePrice: 285000,
-      rating: 4.8,
-      reviewCount: 234,
-      isFeatured: false,
-      isActive: true,
-      imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&h=600&fit=crop',
-      images: [],
-    },
+
     {
       name: 'Cat ve sinh cho meo 10L huong tao',
       slug: 'cat-ve-sinh-meo-10l-huong-tao',
@@ -342,7 +325,6 @@ async function main() {
     { name: 'Chăm sóc & Vệ sinh', slug: 'GROOMING' },
     { name: 'Chuồng & Nệm ngủ', slug: 'CAGE_BED' },
     { name: 'Vòng cổ & Dây dắt', slug: 'LEASH_COLLAR' },
-    { name: 'Y tế & Thuốc', slug: 'MEDICAL' },
   ];
 
   console.log('Seeding categories...');

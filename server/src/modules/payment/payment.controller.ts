@@ -82,10 +82,22 @@ export class PaymentController {
     }
 
     // PayOS success code is "00"
-    if (body.data?.code === '00') {
+    const isSuccess = body.data?.code === '00' || verifiedData.code === '00';
+    const isCancelled =
+      body.data?.code === '01' ||
+      verifiedData.code === '01' ||
+      body.data?.status === 'CANCELLED' ||
+      (verifiedData as any).status === 'CANCELLED';
+
+    if (isSuccess) {
       await this.paymentService.markPaidByOrderCode(orderCode);
       console.log(
         `Payment ${payment.id} (code: ${orderCode}) marked as PAID via webhook.`,
+      );
+    } else if (isCancelled) {
+      await this.paymentService.markCancelledByOrderCode(orderCode, 'CANCELLED');
+      console.log(
+        `Payment ${payment.id} (code: ${orderCode}) marked as CANCELLED via webhook.`,
       );
     }
 
