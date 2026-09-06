@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompleteSpaPaymentDto, CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
 import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus, NotificationCategory, NotificationEventType, Prisma } from '@prisma/client';
@@ -12,12 +12,40 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SPA_BOOKING_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
-export class SpaService {
+export class SpaService implements OnModuleInit, OnModuleDestroy {
+  private intervalId?: NodeJS.Timeout;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
     private readonly notifications: NotificationsService,
   ) { }
+
+  /**
+   * Khởi chạy quét tự động trạng thái lịch hẹn định kỳ mỗi 60 giây
+   */
+  onModuleInit() {
+    this.intervalId = setInterval(() => {
+      this.autoUpdateBookingStatuses().catch(() => {});
+    }, 60000);
+  }
+
+  onModuleDestroy() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+    }
+  }
+
+  /**
+   * Định dạng chuỗi ngày (YYYY-MM-DD) theo múi giờ Việt Nam (Asia/Ho_Chi_Minh)
+   */
+  private getVNDateString(date: Date | string = new Date()): string {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+    }
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(d);
+  }
 
   private resolveCustomerSnapshot(booking: {
     user?: {
@@ -695,6 +723,10 @@ export class SpaService {
     });
   }
 
+  /**
+   * Nhân viên check-in cho khách hàng khi đưa thú cưng đến tiệm.
+   * Chỉ cho phép check-in vào đúng ngày hẹn hoặc sau đó (chặn check-in trước ngày hẹn).
+   */
   async staffCheckIn(staffId: string, bookingId: string) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
@@ -705,6 +737,13 @@ export class SpaService {
     }
 
     const now = new Date();
+    const todayVN = this.getVNDateString(now);
+    const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
+
+    if (todayVN < scheduledDateVN) {
+      throw new BadRequestException('Chưa đến ngày hẹn. Chỉ được phép check-in cho thú cưng vào đúng ngày hẹn hoặc sau đó.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.spaBooking.update({
         where: { id: bookingId },
@@ -718,6 +757,10 @@ export class SpaService {
     });
   }
 
+  /**
+   * Nhân viên thêm dịch vụ lẻ vào lịch hẹn đang thực hiện.
+   * Chặn thao tác với các lịch hẹn thuộc ngày trong tương lai.
+   */
   async staffAddSubServices(staffId: string, bookingId: string, subServiceIds: string[]) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
@@ -725,6 +768,14 @@ export class SpaService {
 
     if (!booking) {
       throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    const now = new Date();
+    const todayVN = this.getVNDateString(now);
+    const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
+
+    if (todayVN < scheduledDateVN) {
+      throw new BadRequestException('Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.');
     }
 
     const newSubIds = Array.from(new Set([...booking.subServiceIds, ...subServiceIds]));
@@ -781,6 +832,13 @@ export class SpaService {
 
     if (!booking) {
       throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    const todayVN = this.getVNDateString();
+    const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
+
+    if (todayVN < scheduledDateVN) {
+      throw new BadRequestException('Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.');
     }
 
     const updatedData: any = {};
@@ -1002,6 +1060,13 @@ export class SpaService {
 
     if (!booking) {
       throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    const todayVN = this.getVNDateString();
+    const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
+
+    if (todayVN < scheduledDateVN) {
+      throw new BadRequestException('Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.');
     }
     if (booking.staffId !== staffId) {
       throw new ForbiddenException('Bạn không được phép hoàn tất lịch hẹn này.');
@@ -1266,6 +1331,118 @@ export class SpaService {
         });
         await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
       }
+    });
+
+    // 4. Các lịch hẹn của các ngày trước đó (khi hết ngày) chưa hoàn thành -> Tự động chuyển về trạng thái DONE (COMPLETED) với note "nhân viên chưa hoàn thành lịch hẹn"
+    const todayVNStr = this.getVNDateString(now);
+    const startOfTodayVN = new Date(`${todayVNStr}T00:00:00+07:00`);
+
+    const overduePastBookings = await this.prisma.spaBooking.findMany({
+      where: {
+        scheduledAt: { lt: startOfTodayVN },
+        status: {
+          notIn: [
+            SpaBookingStatus.COMPLETED,
+            SpaBookingStatus.CANCELLED,
+            SpaBookingStatus.NO_SHOW,
+          ],
+        },
+      },
+    });
+
+    if (overduePastBookings.length > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const booking of overduePastBookings) {
+          const noteSuffix = 'nhân viên chưa hoàn thành lịch hẹn';
+          const updatedNote = booking.note
+            ? (booking.note.includes(noteSuffix) ? booking.note : `${booking.note} (${noteSuffix})`)
+            : noteSuffix;
+
+          const updated = await tx.spaBooking.update({
+            where: { id: booking.id },
+            data: {
+              status: SpaBookingStatus.COMPLETED,
+              note: updatedNote,
+              petConditionAfter: booking.petConditionAfter || 'Nhân viên chưa hoàn thành lịch hẹn',
+            },
+          });
+          await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+        }
+      });
+    }
+  }
+
+  /**
+   * Nhân viên gửi thông báo đến Quản lý chi nhánh khi đã đến giờ hẹn mà khách hàng vẫn chưa đến tiệm.
+   */
+  async staffNotifyManagerLate(staffUserId: string, bookingId: string) {
+    const booking = await this.prisma.spaBooking.findUnique({
+      where: { id: bookingId },
+      include: {
+        addressSpa: true,
+        user: true,
+        pet: true,
+        service: true,
+        staff: true,
+      },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Lịch hẹn không tồn tại.');
+    }
+
+    // Tìm thông tin quản lý chi nhánh phụ trách
+    let managerId = booking.addressSpa?.managerId;
+    if (!managerId) {
+      const managerUser = await this.prisma.user.findFirst({
+        where: { role: UserRole.SPA_MANAGER, accountStatus: AccountStatus.ACTIVE },
+      });
+      managerId = managerUser?.id;
+    }
+
+    if (!managerId) {
+      throw new BadRequestException('Không tìm thấy Quản lý phụ trách chi nhánh này.');
+    }
+
+    const scheduledDate = new Date(booking.scheduledAt);
+    const timeStr = scheduledDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = scheduledDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const customerName = booking.user?.name || booking.customerNameSnapshot || 'Khách hàng';
+    const customerPhone = booking.user?.phone || booking.customerPhoneSnapshot || 'Chưa có SĐT';
+    const petName = booking.petName || booking.pet?.name || 'Thú cưng';
+    const staffName = booking.staff?.name || 'Nhân viên';
+
+    return this.prisma.$transaction(async (tx) => {
+      // Cập nhật trạng thái thành LATE nếu đang là ASSIGNED hoặc CONFIRMED
+      let updatedStatus = booking.status;
+      if (booking.status === SpaBookingStatus.ASSIGNED || booking.status === SpaBookingStatus.CONFIRMED) {
+        updatedStatus = SpaBookingStatus.LATE;
+        await tx.spaBooking.update({
+          where: { id: bookingId },
+          data: { status: SpaBookingStatus.LATE },
+        });
+      }
+
+      // Tạo thông báo cho Quản lý
+      await this.notifications.create(
+        {
+          userId: managerId,
+          category: NotificationCategory.APPOINTMENT,
+          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          title: `Khách chưa đến giờ hẹn #${booking.id.slice(-6).toUpperCase()}`,
+          content: `Nhân viên ${staffName} báo cáo: Đã đến giờ hẹn (${timeStr} ngày ${dateStr}) nhưng khách hàng ${customerName} (SĐT: ${customerPhone}) cho bé ${petName} vẫn chưa đến chi nhánh.`,
+          targetUrl: `/managerSpa?tab=bookings&bookingId=${booking.id}`,
+          entityType: 'SPA_BOOKING',
+          entityId: booking.id,
+        },
+        tx,
+      );
+
+      return {
+        success: true,
+        message: 'Đã gửi thông báo đến Quản lý chi nhánh thành công.',
+        status: updatedStatus,
+      };
     });
   }
 

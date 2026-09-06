@@ -114,6 +114,7 @@ function SpaManagerConsoleContent() {
   const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
   const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
   const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
+  const [staffDeactivateWarningTarget, setStaffDeactivateWarningTarget] = useState<any | null>(null);
 
   // Cancellation states
   const [cancelBookingTarget, setCancelBookingTarget] = useState<any | null>(null);
@@ -2483,7 +2484,13 @@ function SpaManagerConsoleContent() {
                             {/* Status Toggle Button */}
                             <button
                               type="button"
-                              onClick={() => handleToggleStaffStatus(s.id)}
+                              onClick={() => {
+                                if (s.status === 'ACTIVE' && (s.activeCount > 0 || s.isBusy || s.currentBooking)) {
+                                  setStaffDeactivateWarningTarget(s);
+                                } else {
+                                  handleToggleStaffStatus(s.id);
+                                }
+                              }}
                               className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${s.status === 'ACTIVE'
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
                                 : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-300'
@@ -3250,17 +3257,72 @@ function SpaManagerConsoleContent() {
                 )}
               </div>
             ) : (
-              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2 text-xs">
+              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-3 text-xs">
                 <span className="font-extrabold text-gray-800 block text-[10px] uppercase">Nhân viên phụ trách:</span>
                 {selectedBookingDetail.staff ? (
-                  <div className="flex items-center gap-2 font-bold text-gray-900 bg-white p-2 rounded-lg border">
-                    <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
-                      {selectedBookingDetail.staff.name.slice(0, 1)}
-                    </span>
-                    <div>
-                      <p>{selectedBookingDetail.staff.name}</p>
-                      <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between font-bold text-gray-900 bg-white p-2.5 rounded-lg border">
+                      <div className="flex items-center gap-2">
+                        <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
+                          {selectedBookingDetail.staff.name.slice(0, 1)}
+                        </span>
+                        <div>
+                          <p>{selectedBookingDetail.staff.name}</p>
+                          <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded border border-purple-200">
+                        Đang phụ trách
+                      </span>
                     </div>
+
+                    {/* Cho phép đổi nhân viên cho lịch đã gán */}
+                    {['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) && (
+                      <div className="pt-2 border-t border-gray-200 space-y-2">
+                        <span className="text-[10px] font-extrabold text-indigo-900 block uppercase">🔄 Đổi sang nhân viên khác:</span>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={selectedAssignStaffMap[selectedBookingDetail.id] || ''}
+                            onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
+                            className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
+                          >
+                            <option value="">-- Chọn nhân viên mới --</option>
+                            {(availableStaffsMap[selectedBookingDetail.id] || [])
+                              .filter((st: any) => st.id !== selectedBookingDetail.staff?.id && st.id !== selectedBookingDetail.staffId)
+                              .map((st: any) => (
+                                <option key={st.id} value={st.id}>
+                                  👤 {st.name} ({st.email || 'NV Rảnh'})
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={!selectedAssignStaffMap[selectedBookingDetail.id] || assigningLoading}
+                            onClick={async () => {
+                              const newStaffId = selectedAssignStaffMap[selectedBookingDetail.id];
+                              if (!newStaffId) return;
+                              setAssigningLoading(true);
+                              try {
+                                const res = await spaApi.reassignStaff(selectedBookingDetail.id, newStaffId);
+                                toast.success('Đã đổi nhân viên phụ trách thành công!');
+                                setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: '' }));
+                                refreshData();
+                                if (res.data) {
+                                  setSelectedBookingDetail((prev: any) => ({ ...prev, ...res.data, staff: res.data.staff || res.data.user }));
+                                }
+                              } catch (err: any) {
+                                toast.error(err.response?.data?.message || 'Lỗi khi đổi nhân viên.');
+                              } finally {
+                                setAssigningLoading(false);
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer shrink-0"
+                          >
+                            {assigningLoading ? 'Đang đổi...' : 'Xác nhận đổi'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : ['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) ? (
                   <div className="space-y-2">
@@ -3282,6 +3344,30 @@ function SpaManagerConsoleContent() {
                           </option>
                         ))}
                       </select>
+                      {['ASSIGNED', 'CONFIRMED'].includes(selectedBookingDetail.status) && selectedAssignStaffMap[selectedBookingDetail.id] && (
+                        <button
+                          type="button"
+                          disabled={assigningLoading}
+                          onClick={async () => {
+                            const newStaffId = selectedAssignStaffMap[selectedBookingDetail.id];
+                            if (!newStaffId) return;
+                            setAssigningLoading(true);
+                            try {
+                              await spaApi.assignStaff(selectedBookingDetail.id, newStaffId);
+                              toast.success('Đã phân công nhân viên thành công!');
+                              refreshData();
+                              setSelectedBookingDetail(null);
+                            } catch (err: any) {
+                              toast.error(err.response?.data?.message || 'Lỗi phân công.');
+                            } finally {
+                              setAssigningLoading(false);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition cursor-pointer shrink-0"
+                        >
+                          Gán ngay
+                        </button>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -3626,6 +3712,57 @@ function SpaManagerConsoleContent() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Staff Deactivate Warning Modal */}
+      {staffDeactivateWarningTarget && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-amber-200">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="size-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <AlertCircle className="size-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900">Cảnh báo tắt tài khoản nhân viên</h3>
+                <p className="text-xs text-amber-700 font-bold">Nhân viên đang có lịch hẹn làm việc</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-1.5">
+              <p>
+                Nhân viên <span className="font-black text-gray-900">{staffDeactivateWarningTarget.name}</span> hiện đang có{' '}
+                <span className="font-black text-amber-700">{staffDeactivateWarningTarget.activeCount || 1}</span> lịch hẹn đang xử lý/phân công
+                {staffDeactivateWarningTarget.currentBooking?.petName ? (
+                  <span> (đang làm việc cho bé <span className="font-extrabold">{staffDeactivateWarningTarget.currentBooking.petName}</span>)</span>
+                ) : ''}.
+              </p>
+              <p className="font-semibold text-gray-600 pt-1">
+                Nếu bạn tắt tài khoản này, nhân viên sẽ không thể đăng nhập hoặc nhận việc. Hãy chắc chắn bạn sẽ phân công lại các lịch hẹn này cho nhân viên khác.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setStaffDeactivateWarningTarget(null)}
+                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-100 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const s = staffDeactivateWarningTarget;
+                  setStaffDeactivateWarningTarget(null);
+                  await handleToggleStaffStatus(s.id);
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs shadow-sm cursor-pointer"
+              >
+                Xác nhận tắt tài khoản
+              </button>
+            </div>
           </div>
         </div>
       )}

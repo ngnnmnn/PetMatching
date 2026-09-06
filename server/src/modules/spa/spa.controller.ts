@@ -136,6 +136,18 @@ export class SpaController {
     return this.spaService.completeStaffBooking(req.user.id, bookingId, dto);
   }
 
+  /**
+   * Nhân viên gửi thông báo đến Quản lý khi đến giờ hẹn mà khách hàng vẫn chưa đến
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('staff/bookings/:id/notify-late')
+  staffNotifyManagerLate(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+  ) {
+    return this.spaService.staffNotifyManagerLate(req.user.id, bookingId);
+  }
+
   // =============================================================
   // SPA MANAGER ENDPOINTS
   // =============================================================

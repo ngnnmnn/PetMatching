@@ -61,6 +61,8 @@ export const spaApi = {
     `/spa/staff/bookings/${id}/complete-payment`,
     data,
   ),
+  /** Nhân viên gửi thông báo đến Quản lý khi khách hàng trễ giờ hẹn */
+  notifyManagerCustomerLate: (id: string) => api.post<any>(`/spa/staff/bookings/${id}/notify-late`),
 
   // Spa Manager API Methods
   getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),
