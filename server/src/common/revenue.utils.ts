@@ -9,25 +9,45 @@ const notRefundedPayment: Prisma.PaymentNullableScalarRelationFilter = {
   isNot: { status: PaymentStatus.REFUNDED },
 };
 
-export function recognizedStoreRevenueWhere(
-  storeId?: string,
-): Prisma.OrderWhereInput {
+function recognizedStoreRevenueBaseWhere(): Prisma.OrderWhereInput {
   return {
-    storeId: storeId ?? '__missing__',
     status: OrderStatus.DELIVERED,
     payment: notRefundedPayment,
     OR: [{ refundStatus: null }, { refundStatus: { not: 'REFUNDED' } }],
   };
 }
 
+function recognizedSpaRevenueBaseWhere(): Prisma.SpaBookingWhereInput {
+  return {
+    status: SpaBookingStatus.COMPLETED,
+    payment: notRefundedPayment,
+  };
+}
+
+export function recognizedStoreRevenueWhere(
+  storeId?: string,
+): Prisma.OrderWhereInput {
+  return {
+    ...recognizedStoreRevenueBaseWhere(),
+    storeId: storeId ?? '__missing__',
+  };
+}
+
+export function recognizedAllStoreRevenueWhere(): Prisma.OrderWhereInput {
+  return recognizedStoreRevenueBaseWhere();
+}
+
 export function recognizedSpaRevenueWhere(
   addressSpaId?: string,
 ): Prisma.SpaBookingWhereInput {
   return {
+    ...recognizedSpaRevenueBaseWhere(),
     addressSpaId: addressSpaId ?? '__missing__',
-    status: SpaBookingStatus.COMPLETED,
-    payment: notRefundedPayment,
   };
+}
+
+export function recognizedAllSpaRevenueWhere(): Prisma.SpaBookingWhereInput {
+  return recognizedSpaRevenueBaseWhere();
 }
 
 export function isRecognizedSpaBooking(booking: {

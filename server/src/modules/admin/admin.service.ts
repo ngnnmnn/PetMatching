@@ -25,9 +25,16 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import {
+  getSpaBookingRevenue,
+  recognizedAllSpaRevenueWhere,
+  recognizedAllStoreRevenueWhere,
   recognizedSpaRevenueWhere,
   recognizedStoreRevenueWhere,
 } from '../../common/revenue.utils';
+import {
+  buildDashboardBuckets,
+  resolveDashboardRange,
+} from './dashboard-range.utils';
 import {
   COMMUNITY_STANDARDS_BLOCK_MESSAGE,
   formatMatchingReportReason,
@@ -84,11 +91,10 @@ export class AdminService {
     private readonly cloudinary: CloudinaryService,
   ) {}
 
-  async getDashboard() {
-    const [primaryStore, primarySpa] = await Promise.all([
-      this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }),
-      this.prisma.addressSpa.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }),
-    ]);
+  async getDashboard(
+    query: { range?: string; from?: string; to?: string } = {},
+  ) {
+    const period = resolveDashboardRange(query);
     const [
       totalUsers,
       totalPets,
@@ -110,9 +116,8 @@ export class AdminService {
       totalSpaServices,
       totalSpaBookings,
       pendingSpaBookings,
-      storeRevenue,
-      spaRevenue,
-      legacySpaRevenue,
+      recognizedStoreOrders,
+      recognizedSpaBookings,
       recentUsers,
       recentPets,
       recentDocuments,
@@ -120,7 +125,9 @@ export class AdminService {
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.pet.count(),
-      this.prisma.pet.count({ where: { verificationBadge: VerificationBadge.VERIFIED } }),
+      this.prisma.pet.count({
+        where: { verificationBadge: VerificationBadge.VERIFIED },
+      }),
       this.prisma.petDocument.count({
         where: { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
       }),
@@ -137,27 +144,52 @@ export class AdminService {
       this.prisma.product.count({ where: { isActive: true } }),
       this.prisma.product.count({ where: { stock: 0 } }),
       this.prisma.addressSpa.count(),
-      this.prisma.addressSpa.count({ where: { status: ApprovalStatus.ACTIVE } }),
-      this.prisma.addressSpa.count({ where: { status: ApprovalStatus.PENDING } }),
+      this.prisma.addressSpa.count({
+        where: { status: ApprovalStatus.ACTIVE },
+      }),
+      this.prisma.addressSpa.count({
+        where: { status: ApprovalStatus.PENDING },
+      }),
       this.prisma.spaService.count(),
       this.prisma.spaBooking.count(),
-      this.prisma.spaBooking.count({ where: { status: SpaBookingStatus.PENDING } }),
-      this.prisma.order.aggregate({
-        where: recognizedStoreRevenueWhere(primaryStore?.id),
-        _sum: { totalAmount: true },
+      this.prisma.spaBooking.count({
+        where: { status: SpaBookingStatus.PENDING },
       }),
-      this.prisma.spaBooking.aggregate({
-        where: recognizedSpaRevenueWhere(primarySpa?.id),
-        _sum: { totalPrice: true },
+      this.prisma.order.findMany({
+        where: {
+          ...recognizedAllStoreRevenueWhere(),
+          createdAt: {
+            gte: period.previousFrom,
+            lt: period.toExclusive,
+          },
+        },
+        select: { id: true, totalAmount: true, createdAt: true },
       }),
-      this.prisma.spaBooking.aggregate({
-        where: { ...recognizedSpaRevenueWhere(primarySpa?.id), totalPrice: 0 },
-        _sum: { priceSnapshot: true },
+      this.prisma.spaBooking.findMany({
+        where: {
+          ...recognizedAllSpaRevenueWhere(),
+          createdAt: {
+            gte: period.previousFrom,
+            lt: period.toExclusive,
+          },
+        },
+        select: {
+          id: true,
+          totalPrice: true,
+          priceSnapshot: true,
+          createdAt: true,
+        },
       }),
       this.prisma.user.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
-        select: { id: true, name: true, email: true, role: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          createdAt: true,
+        },
       }),
       this.prisma.pet.findMany({
         orderBy: { createdAt: 'desc' },
@@ -198,10 +230,68 @@ export class AdminService {
       }),
     ]);
 
+    const currentStoreOrders = recognizedStoreOrders.filter(
+      (order) => order.createdAt >= period.from,
+    );
+    const previousStoreOrders = recognizedStoreOrders.filter(
+      (order) => order.createdAt < period.from,
+    );
+    const currentSpaBookings = recognizedSpaBookings.filter(
+      (booking) => booking.createdAt >= period.from,
+    );
+    const previousSpaBookings = recognizedSpaBookings.filter(
+      (booking) => booking.createdAt < period.from,
+    );
+
+    const sumStoreRevenue = (orders: typeof recognizedStoreOrders) =>
+      orders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const sumSpaRevenue = (bookings: typeof recognizedSpaBookings) =>
+      bookings.reduce((sum, booking) => sum + getSpaBookingRevenue(booking), 0);
+
+    const storeRevenue = sumStoreRevenue(currentStoreOrders);
+    const spaRevenue = sumSpaRevenue(currentSpaBookings);
+    const previousRevenue =
+      sumStoreRevenue(previousStoreOrders) + sumSpaRevenue(previousSpaBookings);
+    const totalRevenue = storeRevenue + spaRevenue;
+    const revenueChangePercent =
+      previousRevenue > 0
+        ? ((totalRevenue - previousRevenue) / previousRevenue) * 100
+        : totalRevenue > 0
+          ? 100
+          : 0;
+
+    const revenueSeries = buildDashboardBuckets(period).map((bucket) => {
+      const bucketStoreOrders = currentStoreOrders.filter(
+        (order) =>
+          order.createdAt >= bucket.from &&
+          order.createdAt < bucket.toExclusive,
+      );
+      const bucketSpaBookings = currentSpaBookings.filter(
+        (booking) =>
+          booking.createdAt >= bucket.from &&
+          booking.createdAt < bucket.toExclusive,
+      );
+      const bucketStoreRevenue = sumStoreRevenue(bucketStoreOrders);
+      const bucketSpaRevenue = sumSpaRevenue(bucketSpaBookings);
+
+      return {
+        period: bucket.key,
+        label: bucket.label,
+        storeRevenue: bucketStoreRevenue,
+        spaRevenue: bucketSpaRevenue,
+        totalRevenue: bucketStoreRevenue + bucketSpaRevenue,
+        transactions: bucketStoreOrders.length + bucketSpaBookings.length,
+      };
+    });
+
     return {
       stats: {
         users: { total: totalUsers },
-        pets: { total: totalPets, verified: verifiedPets, pendingVerification: pendingPetDocuments },
+        pets: {
+          total: totalPets,
+          verified: verifiedPets,
+          pendingVerification: pendingPetDocuments,
+        },
         matching: { totalMatches, pendingReports: pendingMatchingReports },
         store: {
           totalStores,
@@ -212,7 +302,7 @@ export class AdminService {
           pendingOrders: pendingStoreOrders,
           activeProducts,
           outOfStockProducts,
-          revenue: storeRevenue._sum.totalAmount ?? 0,
+          revenue: storeRevenue,
         },
         spa: {
           totalBranches: totalSpaBranches,
@@ -221,8 +311,26 @@ export class AdminService {
           totalServices: totalSpaServices,
           totalBookings: totalSpaBookings,
           pendingBookings: pendingSpaBookings,
-          revenue: (spaRevenue._sum.totalPrice ?? 0) + (legacySpaRevenue._sum.priceSnapshot ?? 0),
+          revenue: spaRevenue,
         },
+      },
+      analytics: {
+        range: {
+          key: period.key,
+          label: period.label,
+          from: period.from.toISOString(),
+          to: new Date(period.toExclusive.getTime() - 1).toISOString(),
+          granularity: period.granularity,
+        },
+        revenue: {
+          total: totalRevenue,
+          store: storeRevenue,
+          spa: spaRevenue,
+          previousTotal: previousRevenue,
+          changePercent: revenueChangePercent,
+        },
+        revenueSeries,
+        updatedAt: new Date().toISOString(),
       },
       recentActivities: {
         users: recentUsers,

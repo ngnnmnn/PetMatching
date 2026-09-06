@@ -37,6 +37,11 @@ export type RestorePetReason =
 
 export type Species = 'DOG' | 'CAT';
 
+export type AdminDashboardParams = {
+  range?: '7d' | '30d' | '90d' | '12m' | 'custom';
+  from?: string;
+  to?: string;
+};
 export interface BreedRule {
   id: string;
   species: Species;
@@ -90,7 +95,7 @@ export type UpdateBreedPayload = {
 };
 
 export const adminApi = {
-  dashboard: () => api.get('/admin/dashboard'),
+  dashboard: (params?: AdminDashboardParams) => api.get('/admin/dashboard', { params }),
   users: () => api.get('/admin/users'),
   updateUserRole: (id: string, role: AdminRole) => api.patch(`/admin/users/${id}/role`, { role }),
   grantSpaManager: (id: string, allowReassignment = false) =>

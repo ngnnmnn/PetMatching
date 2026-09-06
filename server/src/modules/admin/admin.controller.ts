@@ -47,8 +47,12 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Get('dashboard')
-  getDashboard() {
-    return this.adminService.getDashboard();
+  getDashboard(
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.adminService.getDashboard({ range, from, to });
   }
 
   @Get('users')
