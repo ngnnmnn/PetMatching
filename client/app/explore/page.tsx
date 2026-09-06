@@ -598,6 +598,7 @@ export default function UnifiedMatchingHubPage() {
               ) : (
                 <SwipeCardContainer
                   pet={currentSwipeCandidate}
+                  femalePet={selectedPet}
                   getAge={getAge}
                   onPass={() => {
                     handlePass(currentSwipeCandidate.id);
@@ -624,6 +625,7 @@ export default function UnifiedMatchingHubPage() {
                 <CandidateCardGrid
                   key={pet.id}
                   pet={pet}
+                  femalePet={selectedPet}
                   getAge={getAge}
                   onPass={() => handlePass(pet.id)}
                   onRequestOpen={() => setRequestingPet(pet)}
@@ -963,9 +965,14 @@ export default function UnifiedMatchingHubPage() {
                         <Sparkles className="size-3.5" /> {selectedCandidateDetail.compatibilityScore}% Phù hợp
                       </span>
                     )}
-                    {(selectedCandidateDetail.vaccineVerified || selectedCandidateDetail.pedigreeVerified) && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/95 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-md">
-                        ✓ Đã xác minh
+                    {selectedCandidateDetail.pedigreeVerified && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/95 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-md">
+                        🧬 Phả hệ VKA
+                      </span>
+                    )}
+                    {selectedCandidateDetail.vaccineVerified && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-600/95 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-md">
+                        💉 Đã tiêm ngừa
                       </span>
                     )}
                   </div>
@@ -1259,6 +1266,7 @@ export default function UnifiedMatchingHubPage() {
 
 function SwipeCardContainer({
   pet,
+  femalePet,
   getAge,
   onPass,
   onRequestOpen,
@@ -1266,6 +1274,7 @@ function SwipeCardContainer({
   onViewScoreDetail,
 }: {
   pet: Pet;
+  femalePet?: Pet;
   getAge: (b: string) => string;
   onPass: () => void;
   onRequestOpen: () => void;
@@ -1284,14 +1293,23 @@ function SwipeCardContainer({
     return Array.from(new Set(list));
   }, [pet]);
 
+  const isDraggingRef = useRef(false);
+
+  // Tính độ chênh lệch cân nặng giữa đực và cái để đánh giá an toàn sinh nở
+  const weightDiff = femalePet?.weight ? Number((pet.weight - femalePet.weight).toFixed(1)) : null;
+
   useEffect(() => {
     setActivePhotoIdx(0);
   }, [pet.id]);
 
+  /**
+   * Xử lý kết thúc kéo thẻ: nếu kéo sang phải > 100px thì mở modal gửi yêu cầu,
+   * kéo sang trái < -100px thì bỏ qua (pass) ứng viên.
+   */
   const handleDragEnd = (_: any, info: any) => {
-    if (info.offset.x > 120) {
+    if (info.offset.x > 100) {
       onRequestOpen();
-    } else if (info.offset.x < -120) {
+    } else if (info.offset.x < -100) {
       onPass();
     }
   };
@@ -1301,16 +1319,33 @@ function SwipeCardContainer({
       style={{ x, rotate, opacity }}
       drag="x"
       dragConstraints={{ left: 0, right: 0 }}
-      onDragEnd={handleDragEnd}
+      dragElastic={0.8}
+      onDragStart={() => {
+        isDraggingRef.current = true;
+      }}
+      onDragEnd={(_e, info) => {
+        handleDragEnd(_e, info);
+        setTimeout(() => {
+          isDraggingRef.current = false;
+        }, 120);
+      }}
       className="relative overflow-hidden rounded-3xl border bg-card shadow-2xl cursor-grab active:cursor-grabbing touch-none select-none"
     >
-      {/* Aspect 4/5 tall photo */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-muted cursor-pointer group">
+      {/* Aspect 4/5 tall photo - bọc ảnh và xử lý click xem chi tiết chỉ khi không kéo thẻ */}
+      <div
+        className="relative aspect-[4/5] overflow-hidden bg-muted cursor-pointer group select-none"
+        onClick={() => {
+          if (!isDraggingRef.current) {
+            onViewDetail();
+          }
+        }}
+      >
         <img
           src={petImages[activePhotoIdx] || pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'}
           alt={`${pet.name} - Ảnh ${activePhotoIdx + 1}`}
-          className="size-full object-cover transition-all duration-300"
-          onClick={onViewDetail}
+          className="size-full object-cover transition-all duration-300 pointer-events-none select-none"
+          draggable={false}
+          onDragStart={(e) => e.preventDefault()}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
@@ -1323,7 +1358,9 @@ function SwipeCardContainer({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActivePhotoIdx(idx);
+                  if (!isDraggingRef.current) {
+                    setActivePhotoIdx(idx);
+                  }
                 }}
                 className="h-1 flex-1 rounded-full bg-black/40 overflow-hidden backdrop-blur-xs transition-all hover:h-1.5"
                 title={`Xem ảnh ${idx + 1}`}
@@ -1347,31 +1384,49 @@ function SwipeCardContainer({
         {petImages.length > 1 && (
           <>
             <div
-              className="absolute inset-y-0 left-0 w-1/3 z-10 cursor-pointer"
+              className="absolute inset-y-0 left-0 w-1/4 z-10 cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                setActivePhotoIdx((prev) => (prev > 0 ? prev - 1 : petImages.length - 1));
+                if (!isDraggingRef.current) {
+                  setActivePhotoIdx((prev) => (prev > 0 ? prev - 1 : petImages.length - 1));
+                }
               }}
               title="Ảnh trước"
             />
             <div
-              className="absolute inset-y-0 right-0 w-1/3 z-10 cursor-pointer"
+              className="absolute inset-y-0 right-0 w-1/4 z-10 cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                setActivePhotoIdx((prev) => (prev < petImages.length - 1 ? prev + 1 : 0));
+                if (!isDraggingRef.current) {
+                  setActivePhotoIdx((prev) => (prev < petImages.length - 1 ? prev + 1 : 0));
+                }
               }}
               title="Ảnh tiếp theo"
             />
           </>
         )}
 
-        {/* Top Badges */}
+        {/* Top Badges - Huy hiệu xác minh & Điểm tương thích */}
         <div className="absolute top-5 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
-          {petImages.length > 1 ? (
-            <span className="rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-black text-white backdrop-blur-md border border-white/10 pointer-events-auto">
-              📷 {activePhotoIdx + 1}/{petImages.length}
-            </span>
-          ) : <span />}
+          <div className="flex flex-wrap items-center gap-1.5 pointer-events-auto">
+            {petImages.length > 1 && (
+              <span className="rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-black text-white backdrop-blur-md border border-white/10">
+                📷 {activePhotoIdx + 1}/{petImages.length}
+              </span>
+            )}
+
+            {/* Chỉ hiển thị trực tiếp loại giấy tờ đã được duyệt */}
+            {pet.pedigreeVerified && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-amber-400/30">
+                🧬 Phả hệ VKA
+              </span>
+            )}
+            {pet.vaccineVerified && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-600/90 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-blue-400/30">
+                💉 Đã tiêm ngừa
+              </span>
+            )}
+          </div>
 
           <button
             type="button"
@@ -1380,16 +1435,16 @@ function SwipeCardContainer({
               if (onViewScoreDetail) onViewScoreDetail();
               else onViewDetail();
             }}
-            className="pointer-events-auto flex items-center justify-center rounded-2xl bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md hover:bg-black/80 transition-all cursor-pointer group/score hover:scale-105"
+            className="pointer-events-auto flex items-center justify-center rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white px-3.5 py-1.5 shadow-lg shadow-orange-500/30 border border-white/25 hover:brightness-110 transition-all cursor-pointer group/score hover:scale-105"
             title="Bấm để xem phân tích chi tiết độ phù hợp"
           >
-            <Sparkles className="mr-1.5 size-4 text-primary group-hover/score:rotate-12 transition-transform" />
-            <span className="text-xs font-black text-primary">{pet.compatibilityScore || 95}% Phù hợp</span>
+            <Sparkles className="mr-1.5 size-4 text-white fill-white/20 group-hover/score:rotate-12 transition-transform" />
+            <span className="text-xs font-black text-white tracking-wide">{pet.compatibilityScore || 95}% Phù hợp</span>
           </button>
         </div>
 
-        {/* Bottom Content Overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 text-white space-y-2 pointer-events-none z-10">
+        {/* Bottom Content Overlay - Thông tin quan trọng cho chủ pet cái */}
+        <div className="absolute bottom-0 left-0 right-0 p-6 text-white space-y-2.5 pointer-events-none z-10">
           <div className="flex items-baseline gap-3">
             <h2 className="text-3xl font-black drop-shadow-md">{pet.name}</h2>
             <span className="text-lg font-bold text-white/90">{getAge(pet.birthday)}</span>
@@ -1399,19 +1454,44 @@ function SwipeCardContainer({
           </p>
 
           <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
+            {/* Khoảng cách di chuyển */}
             <span className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow">
               📍 {pet.distanceKm != null && pet.distanceKm <= 1 ? `Cùng khu vực (${pet.distanceKm} km)` : `Cách ${pet.distanceKm ?? 5} km`}
             </span>
-            <span className="rounded-lg bg-black/40 px-2.5 py-1 backdrop-blur-md">
+
+            {/* Cân nặng & chỉ báo mức độ an toàn sinh nở */}
+            <span className={cn(
+              "rounded-lg px-2.5 py-1 backdrop-blur-md shadow flex items-center gap-1",
+              weightDiff != null && Math.abs(weightDiff) <= 2
+                ? "bg-emerald-600/90 text-white font-black"
+                : weightDiff != null && weightDiff > 5
+                ? "bg-rose-600/90 text-white font-black"
+                : "bg-black/50 text-white font-bold",
+            )}>
               ⚖️ {pet.weight} kg
+              {weightDiff != null && (
+                <span className="text-[10px] font-extrabold opacity-95">
+                  ({Math.abs(weightDiff) <= 1
+                    ? 'Cùng cỡ · An toàn'
+                    : weightDiff > 0 && weightDiff <= 3
+                    ? `+${weightDiff}kg · An toàn`
+                    : weightDiff < 0 && weightDiff >= -3
+                    ? `${weightDiff}kg · An toàn`
+                    : weightDiff > 5
+                    ? `+${weightDiff}kg · Cần lưu ý`
+                    : `${weightDiff > 0 ? '+' : ''}${weightDiff}kg`})
+                </span>
+              )}
             </span>
+
+            {/* Điều kiện & chi phí phối giống */}
             {pet.breedingOption && (
-              <span className="rounded-lg bg-primary/90 px-2.5 py-1 text-white shadow">
+              <span className="rounded-lg bg-primary/95 px-2.5 py-1 text-white shadow font-black">
                 💰{' '}
                 {pet.breedingOption === 'CASH'
                   ? pet.breedingFee ? `${pet.breedingFee.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
                   : pet.breedingOption === 'SHARE_LITTER'
-                  ? `Chia ${pet.shareLitterCount || 1} con`
+                  ? `Chia ${pet.shareLitterCount || 1} con non`
                   : 'Thỏa thuận'}
               </span>
             )}
@@ -1456,6 +1536,7 @@ function SwipeCardContainer({
 
 function CandidateCardGrid({
   pet,
+  femalePet,
   getAge,
   onPass,
   onRequestOpen,
@@ -1463,19 +1544,37 @@ function CandidateCardGrid({
   onViewScoreDetail,
 }: {
   pet: Pet;
+  femalePet?: Pet;
   getAge: (b: string) => string;
   onPass: () => void;
   onRequestOpen: () => void;
   onViewDetail: () => void;
   onViewScoreDetail?: () => void;
 }) {
+  const weightDiff = femalePet?.weight ? Number((pet.weight - femalePet.weight).toFixed(1)) : null;
+
   return (
     <article className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative aspect-[4/3] overflow-hidden bg-muted cursor-pointer" onClick={onViewDetail}>
         <img src={pet.avatarUrl || pet.avatar || pet.gallery?.[0] || '/placeholder.svg'} alt={pet.name} className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+
+        {/* Top Badges */}
+        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5 pointer-events-none">
+          {pet.pedigreeVerified && (
+            <span className="rounded-md bg-amber-500/90 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow">
+              🧬 VKA
+            </span>
+          )}
+          {pet.vaccineVerified && (
+            <span className="rounded-md bg-blue-600/90 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow">
+              💉 Đã tiêm
+            </span>
+          )}
+        </div>
+
         <div
-          className="absolute right-3 top-3 bg-black/60 backdrop-blur-md rounded-xl px-2.5 py-1 text-xs font-black text-primary hover:scale-105 transition-transform cursor-pointer"
+          className="absolute right-3 top-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl px-2.5 py-1 text-xs font-black shadow-md border border-white/25 hover:scale-105 transition-transform cursor-pointer"
           onClick={(e) => {
             e.stopPropagation();
             if (onViewScoreDetail) onViewScoreDetail();
@@ -1493,8 +1592,30 @@ function CandidateCardGrid({
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
           <span className="font-semibold text-foreground">📍 {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km`})</span>
-          <span>⚖️ {pet.weight} kg</span>
+          <span className={cn(
+            "px-2 py-0.5 rounded-md font-bold text-xs",
+            weightDiff != null && Math.abs(weightDiff) <= 2
+              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              : "text-foreground font-semibold",
+          )}>
+            ⚖️ {pet.weight} kg {weightDiff != null && `(${weightDiff > 0 ? '+' : ''}${weightDiff}kg)`}
+          </span>
         </div>
+
+        {/* Breeding option in Grid */}
+        {pet.breedingOption && (
+          <div className="text-xs font-bold text-primary flex items-center gap-1.5">
+            <span>💰</span>
+            <span>
+              {pet.breedingOption === 'CASH'
+                ? pet.breedingFee ? `Phí: ${pet.breedingFee.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
+                : pet.breedingOption === 'SHARE_LITTER'
+                ? `Chia đàn: ${pet.shareLitterCount || 1} con non`
+                : 'Hình thức: Thỏa thuận đôi bên'}
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2 pt-1">
           <Button variant="outline" className="rounded-xl font-bold" onClick={onPass}><X className="mr-1 size-4" /> Bỏ qua</Button>
           <Button className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={onRequestOpen}><Heart className="mr-1 size-4" /> Yêu cầu</Button>
