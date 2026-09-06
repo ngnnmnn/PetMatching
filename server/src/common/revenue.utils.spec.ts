@@ -2,6 +2,8 @@ import { OrderStatus, PaymentStatus, SpaBookingStatus } from '@prisma/client';
 import {
   getSpaBookingRevenue,
   isRecognizedSpaBooking,
+  recognizedAllSpaRevenueWhere,
+  recognizedAllStoreRevenueWhere,
   recognizedSpaRevenueWhere,
   recognizedStoreRevenueWhere,
 } from './revenue.utils';
@@ -19,6 +21,18 @@ describe('revenue utils', () => {
   it('scopes spa revenue to completed, non-refunded bookings', () => {
     expect(recognizedSpaRevenueWhere('spa-1')).toEqual({
       addressSpaId: 'spa-1',
+      status: SpaBookingStatus.COMPLETED,
+      payment: { isNot: { status: PaymentStatus.REFUNDED } },
+    });
+  });
+
+  it('can recognize revenue across every store and spa branch', () => {
+    expect(recognizedAllStoreRevenueWhere()).toEqual({
+      status: OrderStatus.DELIVERED,
+      payment: { isNot: { status: PaymentStatus.REFUNDED } },
+      OR: [{ refundStatus: null }, { refundStatus: { not: 'REFUNDED' } }],
+    });
+    expect(recognizedAllSpaRevenueWhere()).toEqual({
       status: SpaBookingStatus.COMPLETED,
       payment: { isNot: { status: PaymentStatus.REFUNDED } },
     });
