@@ -302,6 +302,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     discountValue: '',
     stock: '',
     imageUrl: '',
+    isActive: true,
   });
 
   const [showVariantsEditor, setShowVariantsEditor] = useState(false);
@@ -342,6 +343,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     brand: '',
     unit: '',
     imageUrl: '',
+    images: [] as string[],
     description: '',
     isFeatured: false,
     isActive: true,
@@ -868,6 +870,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountValue: '',
       stock: '',
       imageUrl: '',
+      isActive: true,
     });
     setEditingVariant(null);
     setEditingLocalVariantIndex(null);
@@ -905,6 +908,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       brand: '',
       unit: '',
       imageUrl: '',
+      images: [],
       description: '',
       isFeatured: false,
       isActive: true,
@@ -957,6 +961,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       brand: product.brand || '',
       unit: product.unit || '',
       imageUrl: product.imageUrl || '',
+      images: (product as any).images || (product.imageUrl ? [product.imageUrl] : []),
       description: product.description || '',
       isFeatured: product.isFeatured,
       isActive: product.isActive,
@@ -1228,14 +1233,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     setLocalVariants(updated);
     toast.success('Xóa biến thể thành công!');
     if (editingLocalVariantIndex === index) {
-      setEditingLocalVariantIndex(null);
-      setVariantForm({
-        name: '',
-        sellingPrice: '',
-        salePrice: '',
-        stock: '',
-        imageUrl: '',
-      });
+      resetVariantState();
     }
   };
 
@@ -2525,7 +2523,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             type="button"
                             onClick={editingProduct ? handleCancelEditVariant : () => {
                               setEditingLocalVariantIndex(null);
-                              setVariantForm({ name: '', sellingPrice: '', salePrice: '', stock: '', imageUrl: '' });
+                              setVariantForm({
+                                name: '',
+                                sellingPrice: '',
+                                importPrice: '',
+                                discountType: 'AMOUNT',
+                                discountValue: '',
+                                stock: '',
+                                imageUrl: '',
+                                isActive: true,
+                              });
                             }}
                             className="rounded-xl border px-3 py-1.5 font-bold hover:bg-gray-50 transition text-[10px]"
                           >
