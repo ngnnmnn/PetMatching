@@ -502,7 +502,6 @@ export default function SpaStaff() {
     if (activeTab === 'ALL') return true;
     if (activeTab === 'CONFIRMED') return b.status === 'CONFIRMED';
     if (activeTab === 'CHECK_IN') return b.status === 'CHECK_IN' || b.status === 'ARRIVED';
-    if (activeTab === 'ASSIGNED') return b.status === 'ASSIGNED';
     if (activeTab === 'IN_PROGRESS') return b.status === 'IN_PROGRESS';
     if (activeTab === 'LATE') return b.status === 'LATE';
     if (activeTab === 'COMPLETED') return b.status === 'COMPLETED';
@@ -519,8 +518,6 @@ export default function SpaStaff() {
       case 'CHECK_IN':
       case 'ARRIVED':
         return { text: 'Khách đã đến', class: 'bg-teal-100 border-teal-300 text-teal-800' };
-      case 'ASSIGNED':
-        return { text: 'Đã phân công', class: 'bg-indigo-100 border-indigo-300 text-indigo-800' };
       case 'IN_PROGRESS':
         return { text: 'Đang thực hiện', class: 'bg-orange-100 border-orange-300 text-orange-800' };
       case 'LATE':
@@ -720,7 +717,6 @@ export default function SpaStaff() {
               { id: 'ALL', label: 'Tất cả' },
               { id: 'CONFIRMED', label: 'Đã xác nhận' },
               { id: 'CHECK_IN', label: 'Khách đã đến' },
-              { id: 'ASSIGNED', label: 'Đã phân công' },
               { id: 'IN_PROGRESS', label: 'Đang thực hiện' },
               { id: 'LATE', label: 'Trễ hẹn' },
               { id: 'COMPLETED', label: 'Hoàn thành' }
@@ -1012,7 +1008,7 @@ export default function SpaStaff() {
                         <div className="rounded-xl bg-orange-50/70 border border-orange-200 p-4 space-y-3">
                           <div className="flex items-center justify-between border-b border-orange-200/80 pb-2">
                             <span className="text-[10px] text-orange-700 block uppercase font-black tracking-wider">⚡ Chi Tiết Dịch Vụ</span>
-                            {!isFuture && (booking.status === 'ASSIGNED' || booking.status === 'CHECK_IN' || booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED') && (
+                            {!isFuture && (booking.status === 'CHECK_IN' || booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED') && (
                               <Button
                                 variant="ghost"
                                 onClick={() => {
@@ -1090,7 +1086,7 @@ export default function SpaStaff() {
                               Lịch hẹn được xếp vào ngày <strong>{new Date(booking.scheduledAt).toLocaleDateString('vi-VN')}</strong>.
                             </p>
                           </div>
-                        ) : (booking.status === 'CONFIRMED' || booking.status === 'ASSIGNED' || booking.status === 'LATE' || booking.status === 'PENDING') ? (
+                        ) : (booking.status === 'CONFIRMED' || booking.status === 'LATE' || booking.status === 'PENDING') ? (
                           <div className="flex flex-col items-center justify-center p-6 bg-amber-50/70 rounded-2xl border border-amber-200/80 space-y-3">
                             <p className="text-xs text-amber-900 font-bold text-center">
                               ⚠️ Khách hàng chưa Check-in. Vui lòng Check-in cho khách trước khi bắt đầu ca làm!

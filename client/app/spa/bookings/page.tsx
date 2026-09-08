@@ -80,8 +80,11 @@ export default function SpaHistory() {
     return [];
   };
 
+  /**
+   * Kiểm tra xem khách hàng có thể đổi lịch hẹn hay không
+   */
   const canUserReschedule = (booking: SpaBookingType) => {
-    if (!['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(booking.status)) return false;
+    if (!['PENDING', 'CONFIRMED'].includes(booking.status)) return false;
     if ((booking.rescheduleCount || 0) >= 2) return false;
     const timeVal = booking.scheduledAt || booking.timeStartExpected;
     if (!timeVal) return false;
@@ -89,8 +92,11 @@ export default function SpaHistory() {
     return (scheduledTime - Date.now()) >= 30 * 60 * 1000;
   };
 
+  /**
+   * Kiểm tra xem khách hàng có thể hủy lịch hẹn hay không
+   */
   const canUserCancel = (booking: SpaBookingType) => {
-    if (!['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(booking.status)) return false;
+    if (!['PENDING', 'CONFIRMED'].includes(booking.status)) return false;
     const timeVal = booking.scheduledAt || booking.timeStartExpected;
     if (!timeVal) return false;
     const scheduledTime = new Date(timeVal).getTime();
@@ -383,12 +389,7 @@ export default function SpaHistory() {
             Khách đã đến
           </span>
         );
-      case 'ASSIGNED':
-        return (
-          <span className="rounded-full bg-indigo-50 border border-indigo-200 px-3 py-1 text-xs font-bold text-indigo-800">
-            Đã phân công
-          </span>
-        );
+
       case 'IN_PROGRESS':
         return (
           <span className="rounded-full bg-orange-50 border border-orange-200 px-3 py-1 text-xs font-bold text-orange-800">
@@ -510,23 +511,9 @@ export default function SpaHistory() {
                     <div className="flex items-center gap-3">
                       <div className="text-right">
                         <span className="text-xs text-[var(--text-muted)] block sm:inline mr-1">Tổng cộng:</span>
-                        {booking.discountAmount && booking.discountAmount > 0 ? (
-                          <div className="inline-flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs text-gray-400 line-through font-normal">
-                              {((booking.totalPrice || 0) + (booking.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                            </span>
-                            <span className="text-lg font-black text-rose-600">
-                              {(booking.totalPrice || 0).toLocaleString('vi-VN')}đ
-                            </span>
-                            <span className="inline-flex items-center text-[10px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded border border-rose-200">
-                              -10%
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-lg font-black text-primary">
-                            {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                          </span>
-                        )}
+                        <span className="text-lg font-black text-primary">
+                          {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                        </span>
                       </div>
                       <Button
                         variant="outline"
@@ -951,23 +938,9 @@ export default function SpaHistory() {
                   <span className="text-xs text-gray-400 block font-semibold">TỔNG TIỀN THANH TOÁN</span>
                 </div>
                 <div className="text-right">
-                  {selectedBooking.discountAmount && selectedBooking.discountAmount > 0 ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-400 line-through font-normal">
-                        {((selectedBooking.totalPrice || 0) + (selectedBooking.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                      </span>
-                      <span className="text-2xl font-black text-rose-400">
-                        {(selectedBooking.totalPrice || 0).toLocaleString('vi-VN')}đ
-                      </span>
-                      <span className="text-[10px] bg-rose-500/20 text-rose-300 font-bold px-2 py-0.5 rounded border border-rose-500/30">
-                        -10%
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-2xl font-black text-white">
-                      {(selectedBooking.totalPrice || selectedBooking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                    </span>
-                  )}
+                  <span className="text-2xl font-black text-white">
+                    {(selectedBooking.totalPrice || selectedBooking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                  </span>
                 </div>
               </div>
             </div>

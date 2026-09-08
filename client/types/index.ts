@@ -279,7 +279,6 @@ export interface SpaBookingType {
     | "CONFIRMED"
     | "CHECK_IN"
     | "ARRIVED"
-    | "ASSIGNED"
     | "IN_PROGRESS"
     | "COMPLETED"
     | "CANCELLED"
@@ -287,7 +286,6 @@ export interface SpaBookingType {
     | "LATE";
   priceSnapshot: number | null;
   totalPrice?: number;
-  discountAmount?: number;
   payment?: Payment | null;
   timeStartExpected?: string | null;
   timeEndExpected?: string | null;

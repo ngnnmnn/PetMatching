@@ -78,6 +78,9 @@ export class PetsService {
     };
   }
 
+  /**
+   * Kiểm tra và chuẩn bị các lịch Spa trước khi xóa Pet/User (chặn xóa nếu có lịch đang hoạt động)
+   */
   async prepareSpaBookingsForDeletion(
     tx: Prisma.TransactionClient,
     where: Prisma.SpaBookingWhereInput,
@@ -86,7 +89,6 @@ export class PetsService {
     const activeStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
       SpaBookingStatus.CHECK_IN,
       SpaBookingStatus.ARRIVED,
       SpaBookingStatus.LATE,

@@ -78,16 +78,15 @@ export const spaApi = {
   getManagerBookings: (branchId: string) => api.get<any[]>(`/spa/manager/bookings?branchId=${branchId}`),
   rescheduleBooking: (id: string, scheduledAt: string) => api.patch<any>(`/spa/manager/bookings/${id}/reschedule`, { scheduledAt }),
   reassignStaff: (id: string, staffId: string) => api.patch<any>(`/spa/manager/bookings/${id}/reassign`, { staffId }),
-  applyLateDiscount: (id: string) => api.patch<any>(`/spa/manager/bookings/${id}/late-discount`),
   updateManagerBookingServices: (id: string, mainServiceId: string, subServiceIds?: string[]) =>
     api.patch<any>(`/spa/manager/bookings/${id}/update-services`, { mainServiceId, subServiceIds }),
   getManagerStaffPerformance: (branchId: string, filter?: string) =>
     api.get<any[]>(`/spa/manager/staff-performance?branchId=${branchId}${filter ? `&filter=${filter}` : ''}`),
-  confirmBooking: (id: string) => api.patch<any>(`/spa/manager/bookings/${id}/confirm`),
+  /** Quản lý xác nhận lịch hẹn kèm phân công nhân viên */
+  confirmBooking: (id: string, staffId: string) => api.patch<any>(`/spa/manager/bookings/${id}/confirm`, { staffId }),
   cancelManagerBooking: (id: string, reason: string) =>
     api.patch<any>(`/spa/manager/bookings/${id}/cancel`, { reason }),
   getAvailableStaffForBooking: (id: string) => api.get<any[]>(`/spa/manager/bookings/${id}/available-staff`),
-  assignStaff: (id: string, staffId: string) => api.patch<any>(`/spa/manager/bookings/${id}/assign`, { staffId }),
   getManagerStaffs: (branchId: string) => api.get<any[]>(`/spa/manager/staffs?branchId=${branchId}`),
   createManagerStaff: (data: { username: string; password: string; fullname: string; phone: string; branchId?: string }) =>
     api.post<any>('/spa/manager/staffs', data),

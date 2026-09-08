@@ -111,8 +111,11 @@ function SpaManagerConsoleContent() {
   const [managerStaffs, setManagerStaffs] = useState<any[]>([]);
   const [availableStaffsMap, setAvailableStaffsMap] = useState<Record<string, any[]>>({});
   const [selectedAssignStaffMap, setSelectedAssignStaffMap] = useState<Record<string, string>>({});
-  const [assignConfirmBooking, setAssignConfirmBooking] = useState<any | null>(null);
-  const [assignConfirmStaff, setAssignConfirmStaff] = useState<{ id: string; name: string } | null>(null);
+  const [confirmBookingTarget, setConfirmBookingTarget] = useState<any | null>(null);
+  const [confirmSelectedStaffId, setConfirmSelectedStaffId] = useState<string>('');
+  const [confirmAvailableStaffs, setConfirmAvailableStaffs] = useState<any[]>([]);
+  const [loadingConfirmStaffs, setLoadingConfirmStaffs] = useState<boolean>(false);
+  const [confirmLoading, setConfirmLoading] = useState<boolean>(false);
   const [assigningLoading, setAssigningLoading] = useState<boolean>(false);
   const [staffDeactivateWarningTarget, setStaffDeactivateWarningTarget] = useState<any | null>(null);
 
@@ -147,7 +150,7 @@ function SpaManagerConsoleContent() {
     if (b.subServiceIds && b.subServiceIds.length > 0) {
       const mainPrice = b.priceSnapshot || b.service?.price || 0;
       const total = b.totalPrice ?? b.priceSnapshot ?? 0;
-      return Math.max(0, total - mainPrice - (b.discountAmount || 0));
+      return Math.max(0, total - mainPrice);
     }
     return 0;
   };
@@ -162,8 +165,6 @@ function SpaManagerConsoleContent() {
       case 'CHECK_IN':
       case 'ARRIVED':
         return 'Khách đã đến';
-      case 'ASSIGNED':
-        return 'Đã phân công';
       case 'IN_PROGRESS':
         return 'Đang thực hiện';
       case 'COMPLETED':
@@ -637,7 +638,7 @@ function SpaManagerConsoleContent() {
             if (currentTab === 'dashboard') {
               spaApi.getManagerDashboardStats(selectedBranchId).then((sRes) => {
                 if (sRes.data) setStats(sRes.data);
-              }).catch(() => {});
+              }).catch(() => { });
             }
           }
         }
@@ -693,15 +694,15 @@ function SpaManagerConsoleContent() {
     const now = new Date();
     const currentMins = now.getHours() * 60 + now.getMinutes();
 
-    let curBookingDate = '';
-    let curBookingTime = '';
-    if (rescheduleBooking?.scheduledAt) {
-      const parts = rescheduleBooking.scheduledAt.split('T');
-      curBookingDate = parts[0];
-      if (parts[1]) {
-        curBookingTime = parts[1].slice(0, 5);
-      }
-    }
+    const curBookingDate = rescheduleBooking?.scheduledAt
+      ? getLocalDateString(new Date(rescheduleBooking.scheduledAt))
+      : '';
+    const curBookingTime = rescheduleBooking?.scheduledAt
+      ? (() => {
+        const d = new Date(rescheduleBooking.scheduledAt);
+        return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      })()
+      : '';
 
     return rescheduleSlots
       .map((slot) => {
@@ -773,20 +774,50 @@ function SpaManagerConsoleContent() {
     }
   }, [selectedBookingDetail]);
 
-  // Confirm booking to CONFIRMED
-  const handleConfirmBooking = async (bookingId: string) => {
+  /**
+   * Mở modal xác nhận lịch hẹn và tự động tải danh sách nhân viên rảnh cho ca làm
+   */
+  const handleOpenConfirmModal = async (b: any) => {
+    setConfirmBookingTarget(b);
+    setConfirmSelectedStaffId('');
+    setLoadingConfirmStaffs(true);
     try {
-      await spaApi.confirmBooking(bookingId);
-      toast.success('Xác nhận lịch hẹn thành công!');
+      const res = await spaApi.getAvailableStaffForBooking(b.id);
+      const staffList = res.data || [];
+      setConfirmAvailableStaffs(staffList);
+      if (staffList.length > 0) {
+        setConfirmSelectedStaffId(staffList[0].id);
+      }
+    } catch (err: any) {
+      toast.error('Lỗi khi tải danh sách nhân viên rảnh.');
+      setConfirmAvailableStaffs([]);
+    } finally {
+      setLoadingConfirmStaffs(false);
+    }
+  };
 
-      // Load available staff immediately
-      const stRes = await spaApi.getAvailableStaffForBooking(bookingId);
-      setAvailableStaffsMap(prev => ({ ...prev, [bookingId]: stRes.data || [] }));
-
-      // Refresh page data
+  /**
+   * Xác nhận lịch hẹn kèm bắt buộc chọn nhân viên phụ trách
+   */
+  const handleConfirmBookingSubmit = async () => {
+    if (!confirmBookingTarget || !confirmSelectedStaffId) {
+      toast.error('Vui lòng chọn nhân viên phụ trách trước khi xác nhận.');
+      return;
+    }
+    setConfirmLoading(true);
+    try {
+      await spaApi.confirmBooking(confirmBookingTarget.id, confirmSelectedStaffId);
+      toast.success('Xác nhận lịch hẹn và phân công nhân viên thành công!');
+      setConfirmBookingTarget(null);
+      setConfirmSelectedStaffId('');
+      if (selectedBookingDetail?.id === confirmBookingTarget.id) {
+        setSelectedBookingDetail(null);
+      }
       refreshData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Lỗi khi xác nhận lịch hẹn.');
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -811,23 +842,6 @@ function SpaManagerConsoleContent() {
       toast.error(err.response?.data?.message || 'Lỗi khi hủy lịch hẹn.');
     } finally {
       setCancelLoading(false);
-    }
-  };
-
-  // Assign staff to booking
-  const handleAssignStaff = async () => {
-    if (!assignConfirmBooking || !assignConfirmStaff) return;
-    setAssigningLoading(true);
-    try {
-      await spaApi.assignStaff(assignConfirmBooking.id, assignConfirmStaff.id);
-      toast.success(`Đã phân công lịch hẹn cho ${assignConfirmStaff.name}!`);
-      setAssignConfirmBooking(null);
-      setAssignConfirmStaff(null);
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi phân công nhân viên.');
-    } finally {
-      setAssigningLoading(false);
     }
   };
 
@@ -859,17 +873,6 @@ function SpaManagerConsoleContent() {
       toast.error(err.response?.data?.message || 'Lỗi khi đổi lịch hẹn.');
     } finally {
       setSubmittingReschedule(false);
-    }
-  };
-
-  // Apply late discount 10%
-  const handleApplyLateDiscount = async (bookingId: string) => {
-    try {
-      await spaApi.applyLateDiscount(bookingId);
-      toast.success('Đã tự động giảm 10% giá đơn hàng do trễ hẹn!');
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi áp dụng giảm giá.');
     }
   };
 
@@ -1309,11 +1312,10 @@ function SpaManagerConsoleContent() {
     const total = filteredBookings.length;
     const pending = filteredBookings.filter((b) => b.status === 'PENDING').length;
     const needStaff = filteredBookings.filter((b) => (b.status === 'CONFIRMED' || b.status === 'CHECK_IN' || b.status === 'ARRIVED') && !b.staffId).length;
-    const assigned = filteredBookings.filter((b) => b.status === 'ASSIGNED').length;
     const inProgress = filteredBookings.filter((b) => b.status === 'IN_PROGRESS').length;
     const completed = filteredBookings.filter((b) => b.status === 'COMPLETED').length;
     const cancelled = filteredBookings.filter((b) => b.status === 'CANCELLED' || b.status === 'NO_SHOW').length;
-    return { total, pending, needStaff, assigned, inProgress, completed, cancelled };
+    return { total, pending, needStaff, inProgress, completed, cancelled };
   }, [filteredBookings]);
 
   if (branches.length === 0 && !loading) {
@@ -1500,7 +1502,6 @@ function SpaManagerConsoleContent() {
                           CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
                           CHECK_IN: { label: 'Đã Check-in', color: 'bg-teal-500' },
                           ARRIVED: { label: 'Khách đã đến', color: 'bg-teal-600' },
-                          ASSIGNED: { label: 'Đã phân công', color: 'bg-indigo-500' },
                           IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
                           COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
                           CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
@@ -1568,7 +1569,6 @@ function SpaManagerConsoleContent() {
                           const statusStyle = {
                             PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
                             CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
-                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
                             IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                             COMPLETED: 'bg-green-50 text-green-700 border-green-200',
                             CANCELLED: 'bg-red-50 text-red-700 border-red-200',
@@ -1587,23 +1587,9 @@ function SpaManagerConsoleContent() {
                               </td>
                               <td className="px-6 py-4">
                                 <p className="font-bold text-gray-800 text-xs">{b.serviceName}</p>
-                                {b.discountAmount > 0 ? (
-                                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                    <span className="text-[11px] text-gray-400 line-through font-medium">
-                                      {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                                    </span>
-                                    <span className="text-xs font-black text-rose-600">
-                                      {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
-                                    </span>
-                                    <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
-                                      -10%
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
-                                    {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
-                                  </p>
-                                )}
+                                <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                  {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
+                                </p>
                               </td>
                               <td className="px-6 py-4 text-xs italic text-gray-500 max-w-[200px] truncate" title={b.note}>
                                 {b.note ? `"${b.note}"` : '—'}
@@ -2040,7 +2026,6 @@ function SpaManagerConsoleContent() {
                         <option value="PENDING">🚨 Chờ xác nhận</option>
                         <option value="CONFIRMED">👤 Đã xác nhận</option>
                         <option value="CHECK_IN">📍 Khách đã đến</option>
-                        <option value="ASSIGNED">✨ Đã phân công</option>
                         <option value="IN_PROGRESS">🔄 Đang thực hiện</option>
                         <option value="COMPLETED">✅ Đã hoàn thành</option>
                         <option value="CANCELLED">❌ Đã hủy</option>
@@ -2193,7 +2178,6 @@ function SpaManagerConsoleContent() {
                               CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
                               CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
                               ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
-                              ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
                               IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                               COMPLETED: 'bg-green-50 text-green-700 border-green-200',
                               CANCELLED: 'bg-red-50 text-red-700 border-red-200',
@@ -2201,8 +2185,7 @@ function SpaManagerConsoleContent() {
                               LATE: 'bg-rose-50 text-rose-700 border-rose-250'
                             }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
-                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
-                            const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
+                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
                             const isSelectedFromUrl = bookingIdParam === b.id;
                             const isHighlighted = b.isNewLive || isSelectedFromUrl;
 
@@ -2237,23 +2220,9 @@ function SpaManagerConsoleContent() {
                                 </td>
                                 <td className="px-6 py-4">
                                   <p className="font-bold text-gray-800 text-xs">{b.service?.name || (b.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}</p>
-                                  {b.discountAmount > 0 ? (
-                                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                      <span className="text-[11px] text-gray-400 line-through font-medium">
-                                        {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                                      </span>
-                                      <span className="text-xs font-black text-rose-600">
-                                        {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
-                                      </span>
-                                      <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
-                                        -10%
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
-                                      {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                                    </p>
-                                  )}
+                                  <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                    {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                  </p>
                                   {(() => {
                                     const subList = getManagerBookingSubServices(b);
                                     if (subList.length === 0) return null;
@@ -2285,7 +2254,7 @@ function SpaManagerConsoleContent() {
                                       <div className="flex items-center gap-1">
                                         <button
                                           type="button"
-                                          onClick={() => handleConfirmBooking(b.id)}
+                                          onClick={() => handleOpenConfirmModal(b)}
                                           className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
                                         >
                                           ✓ Xác nhận
@@ -2303,18 +2272,8 @@ function SpaManagerConsoleContent() {
                                       </div>
                                     )}
 
-                                    {b.status === 'CONFIRMED' && !b.staffId && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedBookingDetail(b)}
-                                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                      >
-                                        👤 Gán nhân viên
-                                      </button>
-                                    )}
-
                                     <div className="flex items-center gap-1" >
-                                      {['CONFIRMED', 'ASSIGNED'].includes(b.status) && (
+                                      {b.status === 'CONFIRMED' && (
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -2331,7 +2290,10 @@ function SpaManagerConsoleContent() {
                                         <button
                                           onClick={() => {
                                             setRescheduleBooking(b);
-                                            setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                                            const currentDate = new Date(b.scheduledAt || Date.now());
+                                            const minDate = new Date();
+                                            const initialDate = currentDate >= minDate ? currentDate : minDate;
+                                            setRescheduleDate(getLocalDateString(initialDate));
                                             setSelectedRescheduleSlot('');
                                           }}
                                           className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-750 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 transition shadow-2xs cursor-pointer"
@@ -2696,31 +2658,101 @@ function SpaManagerConsoleContent() {
         </>
       )}
 
-      {/* CONFIRMATION POPUP FOR STAFF ASSIGNMENT */}
-      {assignConfirmBooking && assignConfirmStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 relative animate-in zoom-in-95 duration-150">
-            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Xác nhận phân công</h3>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Bạn có chắc chắn muốn phân công lịch hẹn dịch vụ <span className="font-extrabold text-primary">{assignConfirmBooking.serviceName}</span> cho kỹ thuật viên <span className="font-extrabold text-purple-700">{assignConfirmStaff.name}</span> không?
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
+      {/* CONFIRMATION & STAFF ASSIGNMENT MODAL */}
+      {confirmBookingTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 relative animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-amber-500 text-white text-xs font-black">✓</span>
+                Xác nhận lịch hẹn & Gán nhân viên
+              </h3>
               <button
-                disabled={assigningLoading}
-                onClick={() => {
-                  setAssignConfirmBooking(null);
-                  setAssignConfirmStaff(null);
-                }}
+                type="button"
+                onClick={() => setConfirmBookingTarget(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs bg-amber-50/50 p-3.5 rounded-xl border border-amber-200">
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-bold">Khách hàng:</span>
+                <span className="font-extrabold text-gray-900">{confirmBookingTarget.user?.name || confirmBookingTarget.customerName || 'Khách hàng'} ({confirmBookingTarget.user?.phone || 'Chưa có SĐT'})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-bold">Thú cưng:</span>
+                <span className="font-extrabold text-gray-900">{confirmBookingTarget.petName || confirmBookingTarget.pet?.name || 'Thú cưng'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-bold">Dịch vụ:</span>
+                <span className="font-extrabold text-primary">{confirmBookingTarget.service?.name || confirmBookingTarget.serviceName || 'Dịch vụ Spa'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-bold">Thời gian hẹn:</span>
+                <span className="font-extrabold text-indigo-900">
+                  {new Date(confirmBookingTarget.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {new Date(confirmBookingTarget.scheduledAt).toLocaleDateString('vi-VN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Staff Selection (Mandatory) */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-gray-800 uppercase tracking-wider block">
+                Chọn nhân viên phụ trách ca làm <span className="text-red-500">*</span>
+              </label>
+
+              {loadingConfirmStaffs ? (
+                <div className="flex items-center justify-center p-4 border rounded-xl bg-gray-50 text-gray-500 text-xs font-bold gap-2">
+                  <Loader2 className="size-4 animate-spin text-primary" />
+                  Đang kiểm tra danh sách nhân viên rảnh...
+                </div>
+              ) : confirmAvailableStaffs.length > 0 ? (
+                <div className="space-y-2">
+                  <select
+                    value={confirmSelectedStaffId}
+                    onChange={(e) => setConfirmSelectedStaffId(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-xs font-bold text-gray-800 focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+                  >
+                    <option value="">-- Chọn nhân viên phụ trách --</option>
+                    {confirmAvailableStaffs.map((st: any) => (
+                      <option key={st.id} value={st.id}>
+                        👤 {st.name} ({st.email || 'Nhân viên rảnh'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-bold">
+                  ⚠️ Không có nhân viên nào đang rảnh trong khung giờ này. Vui lòng kiểm tra lại ca làm việc hoặc đổi lịch hẹn với khách.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t">
+              <button
+                type="button"
+                disabled={confirmLoading}
+                onClick={() => setConfirmBookingTarget(null)}
                 className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
               >
-                Hủy
+                Hủy bỏ
               </button>
               <button
-                disabled={assigningLoading}
-                onClick={handleAssignStaff}
-                className="px-4 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer"
+                type="button"
+                disabled={confirmLoading || !confirmSelectedStaffId}
+                onClick={handleConfirmBookingSubmit}
+                className="px-4 py-2 bg-primary hover:bg-[#cf5017] disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
               >
-                {assigningLoading ? 'Đang giao...' : 'Đồng ý'}
+                {confirmLoading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Đang xác nhận...
+                  </>
+                ) : (
+                  '✓ Xác nhận & Gán nhân viên'
+                )}
               </button>
             </div>
           </div>
@@ -2806,99 +2838,6 @@ function SpaManagerConsoleContent() {
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl font-black text-xs shadow-sm transition cursor-pointer"
               >
                 {cancelLoading ? 'Đang xử lý...' : 'Xác nhận hủy lịch'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* RESCHEDULE MODAL */}
-      {rescheduleBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-md bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-5 my-8 relative animate-in zoom-in-95 duration-150">
-            <button
-              onClick={() => setRescheduleBooking(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              <X className="size-5" />
-            </button>
-
-            <div>
-              <h3 className="text-base font-black text-gray-900">Đổi lịch hẹn Spa</h3>
-              <p className="text-xs text-gray-450 mt-1 font-semibold">Khách hàng: {rescheduleBooking.user?.name || 'Khách hàng'} ({rescheduleBooking.petName || 'Bé cưng'}) • Dịch vụ: {rescheduleBooking.service?.name}</p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold uppercase">1. Chọn ngày mới</label>
-                <input
-                  type="date"
-                  value={rescheduleDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onKeyDown={(e) => e.preventDefault()}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    if (!val || val >= todayStr) {
-                      setRescheduleDate(val);
-                    } else {
-                      setRescheduleDate(todayStr);
-                    }
-                    setSelectedRescheduleSlot('');
-                  }}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-sm font-bold text-gray-700 bg-white cursor-pointer"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[11px] text-gray-400 font-bold uppercase">2. Chọn khung giờ khả dụng</label>
-                {loadingRescheduleSlots ? (
-                  <div className="flex justify-center py-6">
-                    <Loader2 className="size-6 animate-spin text-primary" />
-                  </div>
-                ) : rescheduleSlots.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {rescheduleSlots.map((slot: any) => (
-                      <button
-                        key={slot.time}
-                        disabled={!slot.isAvailable}
-                        onClick={() => setSelectedRescheduleSlot(slot.time)}
-                        className={`py-2 px-1 border rounded-lg text-center transition flex flex-col items-center justify-center ${!slot.isAvailable
-                          ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                          : selectedRescheduleSlot === slot.time
-                            ? 'bg-primary border-primary text-white shadow-sm font-bold'
-                            : 'bg-white border-gray-200 text-gray-700 hover:border-primary'
-                          }`}
-                      >
-                        <span className="text-xs font-black">{slot.time}</span>
-                        {slot.isAvailable && (
-                          <span className={`text-[9px] mt-0.5 ${selectedRescheduleSlot === slot.time ? 'text-white' : 'text-gray-400'}`}>
-                            {slot.remainingSlots} chỗ
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-450 italic py-2">Chọn ngày để xem các khung giờ.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                disabled={submittingReschedule}
-                onClick={() => setRescheduleBooking(null)}
-                className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                disabled={submittingReschedule || !selectedRescheduleSlot}
-                onClick={handleRescheduleSubmit}
-                className="px-5 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] disabled:opacity-50"
-              >
-                {submittingReschedule ? 'Đang đổi...' : 'Xác nhận đổi lịch'}
               </button>
             </div>
           </div>
@@ -3140,78 +3079,62 @@ function SpaManagerConsoleContent() {
               </button>
             </div>
 
-            {/* Customer & Pet Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-gray-50 p-3.5 rounded-xl border border-gray-150">
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-gray-400 block uppercase">Khách hàng</span>
-                <p className="font-extrabold text-gray-900">{selectedBookingDetail.user?.name || 'Khách hàng'}</p>
-                {selectedBookingDetail.user?.phone && (
-                  <p className="text-gray-600 font-semibold">📞 SĐT: {selectedBookingDetail.user.phone}</p>
-                )}
-                {selectedBookingDetail.user?.email && (
-                  <p className="text-gray-500 font-medium truncate">{selectedBookingDetail.user.email}</p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-gray-400 block uppercase">Thú cưng</span>
-                <p className="font-extrabold text-purple-950">🐾 {selectedBookingDetail.petName || selectedBookingDetail.pet?.name || 'Thú cưng'}</p>
-                <p className="text-gray-600 font-semibold">
-                  {selectedBookingDetail.petSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {selectedBookingDetail.petWeight || 3}kg
-                </p>
-              </div>
-            </div>
-
-            {/* Date & Time */}
-            <div className="p-3.5 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="text-[10px] font-bold text-purple-800 uppercase block">Thời gian hẹn</span>
-                <span className="font-black text-sm text-purple-950">
-                  {new Date(selectedBookingDetail.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedBookingDetail.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                </span>
-              </div>
+            <div className="p-3 border-b border-gray-100">
               <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${{
                 PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
                 CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
                 CHECK_IN: 'bg-teal-100 text-teal-800 border-teal-300',
                 ARRIVED: 'bg-teal-100 text-teal-800 border-teal-300',
-                ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
                 IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
                 COMPLETED: 'bg-green-100 text-green-800 border-green-300',
                 CANCELLED: 'bg-red-100 text-red-800 border-red-300',
                 NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
-                LATE: 'bg-rose-100 text-rose-800 border-rose-300',
-              }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800'
-                }`}>
+                LATE: 'bg-rose-100 text-rose-800 border-rose-300'
+              }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800 border-gray-300'}`}>
                 {getSpaStatusText(selectedBookingDetail.status)}
               </span>
             </div>
 
-            {/* Services List */}
-            <div className="space-y-2 text-xs">
-              <span className="font-extrabold text-gray-800 uppercase text-[10px] tracking-wider block">Dịch vụ chính & Dịch vụ phụ:</span>
-              <div className="p-3 bg-white border border-gray-200 rounded-xl space-y-2">
-                <div className="flex justify-between items-center font-black text-gray-900">
-                  <span>✂️ Dịch vụ chính: {selectedBookingDetail.service?.name || (selectedBookingDetail.mainServiceResolved as any)?.name || 'Gói Chăm Sóc Spa'}</span>
-                  <span>{(selectedBookingDetail.service?.price || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
+            {/* Information Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {/* Customer info */}
+              <div className="space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-150">
+                <span className="text-[10px] font-extrabold text-gray-400 block uppercase">Thông tin khách hàng & Thú cưng</span>
+                <p><strong className="text-gray-700">Khách hàng:</strong> {selectedBookingDetail.user?.name || 'Khách vãng lai'}</p>
+                <p><strong className="text-gray-700">Số điện thoại:</strong> {selectedBookingDetail.user?.phone || 'Chưa cập nhật'}</p>
+                <p><strong className="text-gray-700">Thú cưng:</strong> {selectedBookingDetail.petName || selectedBookingDetail.pet?.name || 'Chưa rõ'}</p>
+                <p><strong className="text-gray-700">Cân nặng:</strong> {selectedBookingDetail.petWeight || selectedBookingDetail.pet?.weight || '—'} kg</p>
+                {selectedBookingDetail.note && (
+                  <p className="italic text-gray-500 pt-1 border-t border-gray-200">
+                    <strong>Ghi chú:</strong> "{selectedBookingDetail.note}"
+                  </p>
+                )}
+              </div>
+
+              {/* Service & Price */}
+              <div className="space-y-2 p-3 bg-purple-50/50 rounded-xl border border-purple-100 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] font-extrabold text-purple-600 block uppercase">Dịch vụ & Chi phí</span>
+                  <p className="font-extrabold text-gray-900 mt-1">
+                    {selectedBookingDetail.service?.name || (selectedBookingDetail.mainServiceResolved as any)?.name || 'Dịch vụ chính'}
+                  </p>
+                  <p className="text-gray-500 font-semibold">
+                    Giá gốc: {(selectedBookingDetail.priceSnapshot || selectedBookingDetail.service?.price || 0).toLocaleString('vi-VN')}đ
+                  </p>
                 </div>
 
+                {/* Sub Services in Detail Modal */}
                 {(() => {
                   const subList = getManagerBookingSubServices(selectedBookingDetail);
-                  if (subList.length === 0) {
-                    return <p className="text-[11px] text-gray-400 italic pt-1.5 border-t border-gray-150">Không có dịch vụ lẻ đi kèm.</p>;
-                  }
+                  if (subList.length === 0) return null;
                   return (
-                    <div className="space-y-1.5 pt-2 border-t border-gray-150">
-                      <span className="text-[10px] font-extrabold text-purple-900 block uppercase">
-                        Dịch vụ lẻ chọn thêm ({subList.length}):
-                      </span>
-                      <div className="space-y-1">
-                        {subList.map((sub: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center bg-green-50/70 p-2 rounded-lg border border-green-150 text-xs">
-                            <span className="font-extrabold text-gray-900 flex items-center gap-1.5">
-                              <span className="size-1.5 rounded-full bg-green-600 shrink-0" />
-                              {sub.name}
+                    <div className="pt-2 border-t border-purple-100 space-y-1">
+                      <span className="text-[10px] font-extrabold text-purple-700 block uppercase">Dịch vụ phụ đi kèm ({subList.length}):</span>
+                      <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+                        {subList.map((sub: any, sIdx: number) => (
+                          <div key={sub.id || sIdx} className="flex justify-between items-center text-[11px] bg-white/70 px-2 py-1 rounded border border-purple-100">
+                            <span className="font-bold text-gray-800 truncate pr-2">
+                              • {sub.name || 'Dịch vụ lẻ'}
                             </span>
                             <span className="text-green-700 font-black">+ {(sub.price || 0).toLocaleString('vi-VN')}đ</span>
                           </div>
@@ -3223,23 +3146,7 @@ function SpaManagerConsoleContent() {
 
                 <div className="pt-2 border-t border-gray-200 flex justify-between items-center font-black text-sm text-purple-950">
                   <span>Tổng thanh toán:</span>
-                  <div className="flex items-center gap-2">
-                    {selectedBookingDetail.discountAmount > 0 ? (
-                      <>
-                        <span className="text-xs text-gray-400 line-through font-normal">
-                          {((selectedBookingDetail.totalPrice || 0) + (selectedBookingDetail.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                        </span>
-                        <span className="text-sm font-black text-rose-600">
-                          {(selectedBookingDetail.totalPrice || 0).toLocaleString('vi-VN')}đ
-                        </span>
-                        <span className="text-[10px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.5 rounded border border-rose-200">
-                          -10% (Trễ phục vụ &gt;30p)
-                        </span>
-                      </>
-                    ) : (
-                      <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
-                    )}
-                  </div>
+                  <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
                 </div>
               </div>
             </div>
@@ -3251,22 +3158,22 @@ function SpaManagerConsoleContent() {
                   <span>✕ Lịch hẹn đã bị hủy</span>
                 </div>
                 {selectedBookingDetail.cancelReason && (
-                  <p className="text-gray-700 text-xs">
-                    <span className="font-bold text-gray-900">Lý do hủy:</span> {selectedBookingDetail.cancelReason}
+                  <p className="text-gray-700 bg-white/80 p-2 rounded-lg border border-red-150">
+                    <strong>Lý do hủy:</strong> {selectedBookingDetail.cancelReason}
                   </p>
                 )}
               </div>
             ) : (
-              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-3 text-xs">
-                <span className="font-extrabold text-gray-800 block text-[10px] uppercase">Nhân viên phụ trách:</span>
+              <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2 text-xs">
+                <span className="text-[10px] font-extrabold text-indigo-700 block uppercase">Nhân viên phụ trách ca làm</span>
                 {selectedBookingDetail.staff ? (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between font-bold text-gray-900 bg-white p-2.5 rounded-lg border">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="size-7 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
-                          {selectedBookingDetail.staff.name.slice(0, 1)}
-                        </span>
-                        <div>
+                        <div className="size-8 rounded-full bg-indigo-100 flex items-center justify-center font-black text-indigo-700 text-xs">
+                          {selectedBookingDetail.staff.name?.slice(0, 1) || 'NV'}
+                        </div>
+                        <div className="font-bold text-gray-900">
                           <p>{selectedBookingDetail.staff.name}</p>
                           <p className="text-[10px] text-gray-500 font-normal">{selectedBookingDetail.staff.email}</p>
                         </div>
@@ -3276,8 +3183,8 @@ function SpaManagerConsoleContent() {
                       </span>
                     </div>
 
-                    {/* Cho phép đổi nhân viên cho lịch đã gán */}
-                    {['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) && (
+                    {/* Cho phép đổi nhân viên cho lịch đã xác nhận */}
+                    {['PENDING', 'CONFIRMED'].includes(selectedBookingDetail.status) && (
                       <div className="pt-2 border-t border-gray-200 space-y-2">
                         <span className="text-[10px] font-extrabold text-indigo-900 block uppercase">🔄 Đổi sang nhân viên khác:</span>
                         <div className="flex items-center gap-2">
@@ -3324,61 +3231,15 @@ function SpaManagerConsoleContent() {
                       </div>
                     )}
                   </div>
-                ) : ['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) ? (
-                  <div className="space-y-2">
-                    <p className="text-amber-800 font-bold italic text-[11px]">⚠️ Đơn chưa được phân công nhân viên phụ trách ca làm.</p>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={selectedAssignStaffMap[selectedBookingDetail.id] || ''}
-                        onChange={(e) => setSelectedAssignStaffMap(prev => ({ ...prev, [selectedBookingDetail.id]: e.target.value }))}
-                        className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold focus:outline-none"
-                      >
-                        <option value="">
-                          {(availableStaffsMap[selectedBookingDetail.id] || []).length === 0
-                            ? '-- Không có nhân viên rảnh ca làm này --'
-                            : '-- Chọn nhân viên chưa có ca làm --'}
-                        </option>
-                        {(availableStaffsMap[selectedBookingDetail.id] || []).map((st: any) => (
-                          <option key={st.id} value={st.id}>
-                            👤 {st.name} ({st.email || 'NV Rảnh'})
-                          </option>
-                        ))}
-                      </select>
-                      {['ASSIGNED', 'CONFIRMED'].includes(selectedBookingDetail.status) && selectedAssignStaffMap[selectedBookingDetail.id] && (
-                        <button
-                          type="button"
-                          disabled={assigningLoading}
-                          onClick={async () => {
-                            const newStaffId = selectedAssignStaffMap[selectedBookingDetail.id];
-                            if (!newStaffId) return;
-                            setAssigningLoading(true);
-                            try {
-                              await spaApi.assignStaff(selectedBookingDetail.id, newStaffId);
-                              toast.success('Đã phân công nhân viên thành công!');
-                              refreshData();
-                              setSelectedBookingDetail(null);
-                            } catch (err: any) {
-                              toast.error(err.response?.data?.message || 'Lỗi phân công.');
-                            } finally {
-                              setAssigningLoading(false);
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition cursor-pointer shrink-0"
-                        >
-                          Gán ngay
-                        </button>
-                      )}
-                    </div>
-                  </div>
                 ) : (
-                  <p className="text-gray-500 italic text-[11px]">Không thể phân công nhân viên cho lịch hẹn ở trạng thái này.</p>
+                  <p className="text-amber-800 font-bold italic text-[11px]">⚠️ Đơn chưa phân công nhân viên.</p>
                 )}
               </div>
             )}
 
             {/* Modal Actions */}
             <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t">
-              {['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(selectedBookingDetail.status) && (
+              {['PENDING', 'CONFIRMED'].includes(selectedBookingDetail.status) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -3396,61 +3257,28 @@ function SpaManagerConsoleContent() {
               {selectedBookingDetail.status === 'PENDING' && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    try {
-                      await spaApi.confirmBooking(selectedBookingDetail.id);
-                      const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
-                      if (staffIdToAssign) {
-                        await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
-                        toast.success('Đã xác nhận đơn hàng và phân công nhân viên!');
-                      } else {
-                        toast.success('Đã xác nhận đơn hàng thành công!');
-                      }
-                      setSelectedBookingDetail(null);
-                      refreshData();
-                    } catch (err: any) {
-                      toast.error(err.response?.data?.message || 'Lỗi xác nhận.');
-                    }
+                  onClick={() => {
+                    const b = selectedBookingDetail;
+                    setSelectedBookingDetail(null);
+                    handleOpenConfirmModal(b);
                   }}
                   className="bg-primary hover:bg-primary/90 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
                 >
-                  {selectedAssignStaffMap[selectedBookingDetail.id] ? '✓&👤 Xác nhận & Phân công NV' : '✓ Xác nhận lịch hẹn'}
+                  ✓ Xác nhận & Gán NV
                 </button>
               )}
 
-              {selectedBookingDetail.status === 'CONFIRMED' && !selectedBookingDetail.staffId && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
-                    if (!staffIdToAssign) {
-                      toast.error('Vui lòng chọn nhân viên trước khi xác nhận.');
-                      return;
-                    }
-                    try {
-                      await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
-                      toast.success('Đã phân công nhân viên thành công!');
-                      setSelectedBookingDetail(null);
-                      refreshData();
-                    } catch (err: any) {
-                      toast.error(err.response?.data?.message || 'Lỗi phân công.');
-                    }
-                  }}
-                  disabled={!selectedAssignStaffMap[selectedBookingDetail.id]}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
-                >
-                  👤 Phân công Nhân viên
-                </button>
-              )}
-
-              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(selectedBookingDetail.status) && (selectedBookingDetail.rescheduleCount || 0) < 2 && (
+              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(selectedBookingDetail.status) && (selectedBookingDetail.rescheduleCount || 0) < 2 && (
                 <button
                   type="button"
                   onClick={() => {
                     const b = selectedBookingDetail;
                     setSelectedBookingDetail(null);
                     setRescheduleBooking(b);
-                    setRescheduleDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                    const currentDate = new Date(b.scheduledAt || Date.now());
+                    const minDate = new Date();
+                    const initialDate = currentDate >= minDate ? currentDate : minDate;
+                    setRescheduleDate(getLocalDateString(initialDate));
                     setSelectedRescheduleSlot('');
                   }}
                   className="border border-purple-300 text-purple-800 hover:bg-purple-50 font-black text-xs h-9 px-3 gap-1 rounded-lg transition cursor-pointer flex items-center"

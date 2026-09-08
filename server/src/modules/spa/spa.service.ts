@@ -283,7 +283,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             in: [
               SpaBookingStatus.PENDING,
               SpaBookingStatus.CONFIRMED,
-              SpaBookingStatus.ASSIGNED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
               SpaBookingStatus.LATE,
@@ -329,7 +328,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             in: [
               SpaBookingStatus.PENDING,
               SpaBookingStatus.CONFIRMED,
-              SpaBookingStatus.ASSIGNED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
               SpaBookingStatus.LATE,
@@ -368,7 +366,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const bookingStatus = validStaffId ? SpaBookingStatus.ASSIGNED : SpaBookingStatus.PENDING;
+    const bookingStatus = SpaBookingStatus.PENDING;
 
     return this.prisma.$transaction(async (tx) => {
       const booking = await tx.spaBooking.create({ data: {
@@ -390,7 +388,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         status: bookingStatus,
         priceSnapshot: mainService ? mainService.price : totalPrice,
         totalPrice,
-        discountAmount: 0,
         timeStartExpected,
         timeEndExpected,
         note: dto.note,
@@ -517,7 +514,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       // Only fallback to recompute if totalPrice is missing
       const mainPrice = b.priceSnapshot || b.service?.price || 0;
       const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
-      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal);
 
       return {
         ...b,
@@ -544,16 +541,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Bạn không có quyền hủy lịch hẹn này.');
     }
 
-    // Allow cancellation ONLY when status is PENDING, CONFIRMED, or ASSIGNED (same as rescheduling)
+    // Allow cancellation ONLY when status is PENDING or CONFIRMED (same as rescheduling)
     const allowedStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
     ];
 
     if (!allowedStatuses.includes(booking.status)) {
       throw new BadRequestException(
-        'Chỉ có thể hủy lịch khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+        'Chỉ có thể hủy lịch khi lịch hẹn ở trạng thái Chờ xác nhận hoặc Đã xác nhận.',
       );
     }
 
@@ -692,10 +688,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       const subServicesTotal = subServices.length > 0
         ? subServices.reduce((sum, s) => sum + ((s as any)?.price || 0), 0)
         : 0;
-      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal - (b.discountAmount || 0));
+      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal);
 
       // Compute sub-revenue: if sub-services can't be resolved, compute from totalPrice - mainPrice
-      const subRevenue = Math.max(0, totalPrice - mainPrice - (b.discountAmount || 0));
+      const subRevenue = Math.max(0, totalPrice - mainPrice);
 
       // Build sub-services display list:
       // - If IDs resolve → use actual objects
@@ -789,7 +785,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const mainPrice = mainService ? mainService.price : (booking.priceSnapshot || 0);
     const subPriceTotal = subServices.reduce((sum, s) => sum + s.price, 0);
-    const totalPrice = Math.max(0, mainPrice + subPriceTotal - (booking.discountAmount || 0));
+    const totalPrice = Math.max(0, mainPrice + subPriceTotal);
 
     return this.prisma.$transaction(async (tx) => {
       await tx.payment.updateMany({
@@ -984,7 +980,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
 
       // 3. Tính toán lại tổng tiền và cập nhật snapshot giá
-      const calculatedTotalPrice = Math.max(0, newMainPrice + newSubTotalPrice - (booking.discountAmount || 0));
+      const calculatedTotalPrice = Math.max(0, newMainPrice + newSubTotalPrice);
       updatedData.priceSnapshot = newMainPrice;
       updatedData.totalPrice = calculatedTotalPrice;
     }
@@ -1270,7 +1266,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           in: [
             SpaBookingStatus.PENDING,
             SpaBookingStatus.CONFIRMED,
-            SpaBookingStatus.ASSIGNED,
             SpaBookingStatus.LATE,
           ],
         },
@@ -1284,10 +1279,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    // 2. ASSIGNED -> LATE if scheduledAt in past (0 to 30 mins ago) and not yet in progress
+    // 2. CONFIRMED -> LATE if scheduledAt in past (0 to 30 mins ago) and not yet in progress
     const lateBookings = await this.prisma.spaBooking.findMany({
       where: {
-        status: SpaBookingStatus.ASSIGNED,
+        status: SpaBookingStatus.CONFIRMED,
         scheduledAt: { lt: now, gte: thirtyMinsAgo },
       },
     });
@@ -1298,42 +1293,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    // 3. Customer ARRIVED / CHECK_IN but 30+ minutes past scheduledAt without staff moving to IN_PROGRESS -> AUTO DISCOUNT 10%
-    const overdueArrivedBookings = await this.prisma.spaBooking.findMany({
-      where: {
-        status: {
-          in: [
-            SpaBookingStatus.ARRIVED,
-            SpaBookingStatus.CHECK_IN,
-          ],
-        },
-        scheduledAt: { lt: thirtyMinsAgo },
-        discountAmount: { lte: 0 },
-      },
-    });
-    if (overdueArrivedBookings.length > 0) await this.prisma.$transaction(async (tx) => {
-      for (const booking of overdueArrivedBookings) {
-        const basePrice = (booking.totalPrice || 0) + (booking.discountAmount || 0) || (booking.priceSnapshot || 0);
-        const discountAmount = Math.round(basePrice * 0.1);
-        const newTotalPrice = Math.max(0, basePrice - discountAmount);
-
-        await tx.payment.updateMany({
-          where: { spaBookingId: booking.id, status: { not: PaymentStatus.PAID } },
-          data: { amount: newTotalPrice },
-        });
-
-        const updated = await tx.spaBooking.update({
-          where: { id: booking.id },
-          data: {
-            discountAmount,
-            totalPrice: newTotalPrice,
-          },
-        });
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
-      }
-    });
-
-    // 4. Các lịch hẹn của các ngày trước đó (khi hết ngày) chưa hoàn thành -> Tự động chuyển về trạng thái DONE (COMPLETED) với note "nhân viên chưa hoàn thành lịch hẹn"
+    // 3. Các lịch hẹn của các ngày trước đó (khi hết ngày) chưa hoàn thành -> Tự động chuyển về trạng thái DONE (COMPLETED) với note "nhân viên chưa hoàn thành lịch hẹn"
     const todayVNStr = this.getVNDateString(now);
     const startOfTodayVN = new Date(`${todayVNStr}T00:00:00+07:00`);
 
@@ -1413,9 +1373,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const staffName = booking.staff?.name || 'Nhân viên';
 
     return this.prisma.$transaction(async (tx) => {
-      // Cập nhật trạng thái thành LATE nếu đang là ASSIGNED hoặc CONFIRMED
+      // Cập nhật trạng thái thành LATE nếu đang là CONFIRMED
       let updatedStatus = booking.status;
-      if (booking.status === SpaBookingStatus.ASSIGNED || booking.status === SpaBookingStatus.CONFIRMED) {
+      if (booking.status === SpaBookingStatus.CONFIRMED) {
         updatedStatus = SpaBookingStatus.LATE;
         await tx.spaBooking.update({
           where: { id: bookingId },
@@ -1479,7 +1439,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         status: true,
         totalPrice: true,
         priceSnapshot: true,
-        discountAmount: true,
         serviceId: true,
         mainServiceId: true,
         subServiceIds: true,
@@ -1686,7 +1645,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         staffId: b.staffId,
         staffName: b.staff?.name || null,
         totalPrice: b.totalPrice,
-        discountAmount: b.discountAmount,
       })),
     };
   }
@@ -2056,8 +2014,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       // Use DB totalPrice (actual price paid), fall back to computed only if null
       const mainPrice = b.priceSnapshot || mainServiceResolved?.price || 0;
       const resolvedSubTotal = resolvedSubServices.reduce((sum, s) => sum + (s?.price || 0), 0);
-      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + resolvedSubTotal - (b.discountAmount || 0));
-      const subRevenue = Math.max(0, totalPrice - mainPrice - (b.discountAmount || 0));
+      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + resolvedSubTotal);
+      const subRevenue = Math.max(0, totalPrice - mainPrice);
 
       // Build sub-services display:
       // - If IDs resolved → show real services
@@ -2120,11 +2078,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const allowedAssignStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
+      SpaBookingStatus.CHECK_IN,
+      SpaBookingStatus.LATE,
+      SpaBookingStatus.ARRIVED,
     ];
     if (!allowedAssignStatuses.includes(booking.status)) {
       throw new BadRequestException(
-        'Chỉ có thể phân công khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+        'Chỉ có thể đổi nhân viên khi lịch hẹn ở trạng thái chưa hoàn thành hoặc chưa bị hủy.',
       );
     }
 
@@ -2148,7 +2108,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         id: { not: bookingId },
         status: {
           in: [
-            SpaBookingStatus.ASSIGNED,
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.CHECK_IN,
@@ -2166,16 +2125,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.spaBooking.update({
         where: { id: bookingId },
-        data: { staffId: staff.userId, status: SpaBookingStatus.ASSIGNED },
+        data: { staffId: staff.userId },
       });
-      if (booking.status !== updated.status || booking.staffId !== updated.staffId) {
+      if (booking.staffId !== updated.staffId) {
         await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
         await this.notifications.create({
           userId: staff.userId,
           category: NotificationCategory.APPOINTMENT,
           eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
           title: 'Bạn được phân công lịch Spa',
-          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-8).toUpperCase()}.`,
+          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-6).toUpperCase()}.`,
           targetUrl: `/spa/staff?bookingId=${bookingId}`,
           entityType: 'SPA_BOOKING',
           entityId: bookingId,
@@ -2185,39 +2144,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async managerApplyLateDiscount(managerId: string, bookingId: string) {
-    const booking = await this.prisma.spaBooking.findUnique({
-      where: { id: bookingId },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Lịch hẹn không tồn tại.');
-    }
-
-    const branch = await this.prisma.addressSpa.findFirst({
-      where: { id: booking.addressSpaId!, managerId },
-    });
-    if (!branch) {
-      throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
-    }
-
-    // Default 10% discount if past 30 mins from scheduledAt and not completed/cancelled
-    const discountAmount = Math.round((booking.totalPrice || booking.priceSnapshot || 0) * 0.1);
-    const newTotalPrice = Math.max(0, (booking.totalPrice || booking.priceSnapshot || 0) - discountAmount);
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.payment.updateMany({
-        where: { spaBookingId: bookingId, status: { not: PaymentStatus.PAID } },
-        data: { amount: newTotalPrice },
-      });
-      return tx.spaBooking.update({
-        where: { id: bookingId },
-        data: { discountAmount, totalPrice: newTotalPrice },
-        include: { payment: true },
-      });
-    });
-  }
-
+  /**
+   * Quản lý Spa đổi lịch hẹn cho khách hàng và gửi thông báo đến khách hàng & nhân viên phụ trách
+   */
   async rescheduleBooking(managerId: string, bookingId: string, scheduledAt: string) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
@@ -2276,7 +2205,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             in: [
               SpaBookingStatus.PENDING,
               SpaBookingStatus.CONFIRMED,
-              SpaBookingStatus.ASSIGNED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
               SpaBookingStatus.LATE,
@@ -2316,31 +2244,73 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const updated = await this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        scheduledAt: newStart,
-        timeStartExpected: newStart,
-        timeEndExpected: newEnd,
-        reminderSentAt: null,
-        staffId: nextStaffId,
-        status: nextStatus,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: {
+          scheduledAt: newStart,
+          timeStartExpected: newStart,
+          timeEndExpected: newEnd,
+          reminderSentAt: null,
+          staffId: nextStaffId,
+          status: nextStatus,
+        },
+      });
+
+      await tx.$executeRaw`
+        UPDATE "spa_bookings"
+        SET "rescheduleCount" = COALESCE("rescheduleCount", 0) + 1
+        WHERE id = ${bookingId}
+      `;
+
+      const timeStr = newStart.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = newStart.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+      // Gửi thông báo đến khách hàng
+      if (booking.userId) {
+        await this.notifications.create(
+          {
+            userId: booking.userId,
+            category: NotificationCategory.APPOINTMENT,
+            eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+            title: 'Lịch Spa của bạn đã được thay đổi',
+            content: `Quản lý Spa đã dời lịch hẹn #${bookingId.slice(-6).toUpperCase()} (Bé ${booking.petName || 'thú cưng'}) sang lúc ${timeStr} ngày ${dateStr}.`,
+            targetUrl: `/spa/bookings?bookingId=${bookingId}`,
+            entityType: 'SPA_BOOKING',
+            entityId: bookingId,
+          },
+          tx,
+        );
+      }
+
+      // Gửi thông báo đến nhân viên phụ trách nếu có
+      if (nextStaffId) {
+        await this.notifications.create(
+          {
+            userId: nextStaffId,
+            category: NotificationCategory.APPOINTMENT,
+            eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+            title: 'Lịch hẹn Spa được dời thời gian',
+            content: `Lịch Spa #${bookingId.slice(-6).toUpperCase()} bạn phụ trách đã được dời sang lúc ${timeStr} ngày ${dateStr}.`,
+            targetUrl: `/spa/staff?bookingId=${bookingId}`,
+            entityType: 'SPA_BOOKING',
+            entityId: bookingId,
+          },
+          tx,
+        );
+      }
+
+      const finalBooking = await tx.spaBooking.findUnique({
+        where: { id: bookingId },
+      });
+
+      return finalBooking || updated;
     });
-
-    await this.prisma.$executeRaw`
-      UPDATE "spa_bookings"
-      SET "rescheduleCount" = COALESCE("rescheduleCount", 0) + 1
-      WHERE id = ${bookingId}
-    `;
-
-    const finalBooking = await this.prisma.spaBooking.findUnique({
-      where: { id: bookingId },
-    });
-
-    return finalBooking || updated;
   }
 
+  /**
+   * Khách hàng (User) đổi lịch hẹn và gửi thông báo đến Quản lý chi nhánh Spa & nhân viên phụ trách
+   */
   async userRescheduleBooking(userId: string, bookingId: string, scheduledAt: string) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
@@ -2358,16 +2328,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.');
     }
 
-    // Allow rescheduling ONLY when status is PENDING, CONFIRMED, or ASSIGNED
+    // Allow rescheduling ONLY when status is PENDING or CONFIRMED
     const allowedStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
     ];
 
     if (!allowedStatuses.includes(booking.status)) {
       throw new BadRequestException(
-        'Chỉ có thể đổi lịch khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+        'Chỉ có thể đổi lịch khi lịch hẹn ở trạng thái Chờ xác nhận hoặc Đã xác nhận.',
       );
     }
 
@@ -2424,7 +2393,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             in: [
               SpaBookingStatus.PENDING,
               SpaBookingStatus.CONFIRMED,
-              SpaBookingStatus.ASSIGNED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
               SpaBookingStatus.LATE,
@@ -2464,29 +2432,72 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const updated = await this.prisma.spaBooking.update({
-      where: { id: bookingId },
-      data: {
-        scheduledAt: newStart,
-        timeStartExpected: newStart,
-        timeEndExpected: newEnd,
-        reminderSentAt: null,
-        staffId: nextStaffId,
-        status: nextStatus,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.spaBooking.update({
+        where: { id: bookingId },
+        data: {
+          scheduledAt: newStart,
+          timeStartExpected: newStart,
+          timeEndExpected: newEnd,
+          reminderSentAt: null,
+          staffId: nextStaffId,
+          status: nextStatus,
+        },
+      });
+
+      await tx.$executeRaw`
+        UPDATE "spa_bookings"
+        SET "rescheduleCount" = COALESCE("rescheduleCount", 0) + 1
+        WHERE id = ${bookingId}
+      `;
+
+      const timeStr = newStart.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = newStart.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+      // Gửi thông báo đến Quản lý chi nhánh
+      const branch = booking.addressSpaId
+        ? await tx.addressSpa.findUnique({ where: { id: booking.addressSpaId } })
+        : null;
+      if (branch?.managerId) {
+        const customerName = booking.customerNameSnapshot || 'Khách hàng';
+        await this.notifications.create(
+          {
+            userId: branch.managerId,
+            category: NotificationCategory.APPOINTMENT,
+            eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+            title: 'Khách hàng yêu cầu đổi lịch Spa',
+            content: `Khách hàng ${customerName} đã dời lịch hẹn #${bookingId.slice(-6).toUpperCase()} (Bé ${booking.petName || 'thú cưng'}) sang lúc ${timeStr} ngày ${dateStr}.`,
+            targetUrl: `/managerSpa?tab=bookings&bookingId=${bookingId}`,
+            entityType: 'SPA_BOOKING',
+            entityId: bookingId,
+          },
+          tx,
+        );
+      }
+
+      // Gửi thông báo đến nhân viên phụ trách nếu có
+      if (nextStaffId) {
+        await this.notifications.create(
+          {
+            userId: nextStaffId,
+            category: NotificationCategory.APPOINTMENT,
+            eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+            title: 'Lịch hẹn Spa đã đổi thời gian',
+            content: `Khách hàng đã dời lịch hẹn #${bookingId.slice(-6).toUpperCase()} sang lúc ${timeStr} ngày ${dateStr}.`,
+            targetUrl: `/spa/staff?bookingId=${bookingId}`,
+            entityType: 'SPA_BOOKING',
+            entityId: bookingId,
+          },
+          tx,
+        );
+      }
+
+      const finalBooking = await tx.spaBooking.findUnique({
+        where: { id: bookingId },
+      });
+
+      return finalBooking || updated;
     });
-
-    await this.prisma.$executeRaw`
-      UPDATE "spa_bookings"
-      SET "rescheduleCount" = COALESCE("rescheduleCount", 0) + 1
-      WHERE id = ${bookingId}
-    `;
-
-    const finalBooking = await this.prisma.spaBooking.findUnique({
-      where: { id: bookingId },
-    });
-
-    return finalBooking || updated;
   }
 
   async managerUpdateBookingServices(managerId: string, bookingId: string, mainServiceId: string, subServiceIds: string[] = []) {
@@ -2508,7 +2519,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const mainPrice = mainService.price;
     const subPriceTotal = subServices.reduce((sum, s) => sum + s.price, 0);
-    const totalPrice = Math.max(0, mainPrice + subPriceTotal - (booking.discountAmount || 0));
+    const totalPrice = Math.max(0, mainPrice + subPriceTotal);
 
     const mainDuration = mainService.durationMax || mainService.durationMin || 30;
     const subDurationTotal = subServices.reduce((sum, s) => sum + (s.durationMax || s.durationMin || 15), 0);
@@ -2584,7 +2595,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
-  async confirmBooking(managerId: string, bookingId: string) {
+  /**
+   * Quản lý Spa xác nhận lịch hẹn (Bắt buộc phân công nhân viên ngay khi xác nhận)
+   */
+  async confirmBooking(managerId: string, bookingId: string, staffId: string) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
     });
@@ -2599,14 +2613,80 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
     }
 
+    const staffIdTrimmed = staffId?.trim();
+    if (!staffIdTrimmed) {
+      throw new BadRequestException('Vui lòng chọn nhân viên kỹ thuật phụ trách khi xác nhận lịch hẹn.');
+    }
+
+    const staff = await this.prisma.spaStaff.findFirst({
+      where: {
+        OR: [{ userId: staffIdTrimmed }, { id: staffIdTrimmed }],
+        addressSpaId: booking.addressSpaId,
+        status: 'ACTIVE',
+      },
+      include: {
+        user: { select: { id: true, name: true } },
+      },
+    });
+    if (!staff) {
+      throw new BadRequestException('Nhân viên không thuộc chi nhánh này hoặc đang không hoạt động.');
+    }
+
+    const start = booking.timeStartExpected || new Date(booking.scheduledAt);
+    const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
+
+    const activeBookings = await this.prisma.spaBooking.findMany({
+      where: {
+        staffId: staff.userId,
+        id: { not: bookingId },
+        status: {
+          in: [
+            SpaBookingStatus.CONFIRMED,
+            SpaBookingStatus.IN_PROGRESS,
+            SpaBookingStatus.CHECK_IN,
+            SpaBookingStatus.LATE,
+          ],
+        },
+      },
+      include: {
+        service: { select: { durationMin: true, durationMax: true } },
+      },
+    });
+
+    const busy = isStaffBusy(activeBookings, start, end);
+    if (busy) {
+      throw new BadRequestException('Nhân viên được chọn đang bận trong khung giờ của lịch hẹn.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.spaBooking.update({
         where: { id: bookingId },
-        data: { status: SpaBookingStatus.CONFIRMED },
+        data: { staffId: staff.userId, status: SpaBookingStatus.CONFIRMED },
       });
-      if (booking.status !== updated.status) {
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
-      }
+
+      // Thông báo đến khách hàng
+      await this.notifyBooking(
+        tx,
+        updated,
+        NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+        `Lịch hẹn Spa của bạn đã được xác nhận và phân công nhân viên ${staff.user?.name || 'kỹ thuật viên'} phụ trách.`,
+      );
+
+      // Thông báo đến nhân viên được gán
+      await this.notifications.create(
+        {
+          userId: staff.userId,
+          category: NotificationCategory.APPOINTMENT,
+          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          title: 'Bạn được phân công lịch Spa',
+          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-6).toUpperCase()}.`,
+          targetUrl: `/spa/staff?bookingId=${bookingId}`,
+          entityType: 'SPA_BOOKING',
+          entityId: bookingId,
+        },
+        tx,
+      );
+
       return updated;
     });
   }
@@ -2635,11 +2715,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const allowedStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
     ];
     if (!allowedStatuses.includes(booking.status)) {
       throw new BadRequestException(
-        'Chỉ có thể hủy lịch khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
+        'Chỉ có thể hủy lịch khi lịch hẹn ở trạng thái Chờ xác nhận hoặc Đã xác nhận.',
       );
     }
 
@@ -2694,7 +2773,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const allowedAssignStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
       SpaBookingStatus.CHECK_IN,
       SpaBookingStatus.LATE,
       SpaBookingStatus.ARRIVED,
@@ -2725,7 +2803,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         id: { not: bookingId },
         status: {
           in: [
-            SpaBookingStatus.ASSIGNED,
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.CHECK_IN,
@@ -2753,92 +2830,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     return availableStaffs;
-  }
-
-  async assignStaffToBooking(managerId: string, bookingId: string, staffId: string) {
-    const booking = await this.prisma.spaBooking.findUnique({
-      where: { id: bookingId },
-    });
-    if (!booking) {
-      throw new NotFoundException('Lịch hẹn không tồn tại.');
-    }
-
-    const branch = await this.prisma.addressSpa.findFirst({
-      where: { id: booking.addressSpaId!, managerId },
-    });
-    if (!branch) {
-      throw new ForbiddenException('Bạn không quản lý chi nhánh này.');
-    }
-
-    const allowedAssignStatuses: SpaBookingStatus[] = [
-      SpaBookingStatus.PENDING,
-      SpaBookingStatus.CONFIRMED,
-      SpaBookingStatus.ASSIGNED,
-    ];
-    if (!allowedAssignStatuses.includes(booking.status)) {
-      throw new BadRequestException(
-        'Chỉ có thể phân công khi lịch hẹn ở trạng thái Chờ xác nhận, Đã xác nhận hoặc Đã phân công.',
-      );
-    }
-
-    const staff = await this.prisma.spaStaff.findFirst({
-      where: {
-        OR: [{ userId: staffId }, { id: staffId }],
-        addressSpaId: booking.addressSpaId,
-        status: 'ACTIVE',
-      },
-    });
-    if (!staff) {
-      throw new BadRequestException('Nhân viên không thuộc chi nhánh này hoặc đang không hoạt động.');
-    }
-
-    const start = booking.timeStartExpected || new Date(booking.scheduledAt);
-    const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
-
-    const activeBookings = await this.prisma.spaBooking.findMany({
-      where: {
-        staffId: staff.userId,
-        id: { not: bookingId },
-        status: {
-          in: [
-            SpaBookingStatus.ASSIGNED,
-            SpaBookingStatus.IN_PROGRESS,
-            SpaBookingStatus.CONFIRMED,
-            SpaBookingStatus.CHECK_IN,
-            SpaBookingStatus.LATE,
-          ],
-        },
-      },
-      include: {
-        service: { select: { durationMin: true, durationMax: true } },
-      },
-    });
-
-    const busy = isStaffBusy(activeBookings, start, end);
-    if (busy) {
-      throw new BadRequestException('Nhân viên này đang bận trong khoảng thời gian của ca làm việc.');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.spaBooking.update({
-        where: { id: bookingId },
-        data: { staffId: staff.userId, status: SpaBookingStatus.ASSIGNED },
-      });
-      if (booking.status !== updated.status || booking.staffId !== updated.staffId) {
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
-        await this.notifications.create({
-          userId: staff.userId,
-          category: NotificationCategory.APPOINTMENT,
-          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
-          title: 'Bạn được phân công lịch Spa',
-          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-8).toUpperCase()}.`,
-          targetUrl: `/spa/staff?bookingId=${bookingId}`,
-          entityType: 'SPA_BOOKING',
-          entityId: bookingId,
-        }, tx);
-      }
-      return updated;
-    });
   }
 
   async createManagerStaff(managerId: string, dto: CreateStaffDto) {
@@ -2965,7 +2956,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       const staffBookings = bookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
       const completed = staffBookings.filter((b) => b.status === SpaBookingStatus.COMPLETED);
       const active = staffBookings.filter((b) =>
-        b.status === SpaBookingStatus.ASSIGNED ||
         b.status === SpaBookingStatus.IN_PROGRESS ||
         b.status === SpaBookingStatus.CHECK_IN ||
         b.status === SpaBookingStatus.LATE
@@ -3127,7 +3117,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           in: [
             SpaBookingStatus.PENDING,
             SpaBookingStatus.CONFIRMED,
-            SpaBookingStatus.ASSIGNED,
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CHECK_IN,
             SpaBookingStatus.LATE,
@@ -3165,7 +3154,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             in: [
               SpaBookingStatus.PENDING,
               SpaBookingStatus.CONFIRMED,
-              SpaBookingStatus.ASSIGNED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
               SpaBookingStatus.LATE,

@@ -54,7 +54,6 @@ export class SpaReminderService
             in: [
               SpaBookingStatus.PENDING,
               SpaBookingStatus.CONFIRMED,
-              SpaBookingStatus.ASSIGNED,
             ],
           },
         },

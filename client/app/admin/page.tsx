@@ -143,11 +143,11 @@ const RANGE_OPTIONS: Array<{
   key: Exclude<DashboardRangeKey, "custom">;
   label: string;
 }> = [
-  { key: "7d", label: "7 ngày" },
-  { key: "30d", label: "30 ngày" },
-  { key: "90d", label: "90 ngày" },
-  { key: "12m", label: "12 tháng" },
-];
+    { key: "7d", label: "7 ngày" },
+    { key: "30d", label: "30 ngày" },
+    { key: "90d", label: "90 ngày" },
+    { key: "12m", label: "12 tháng" },
+  ];
 
 export default function AdminDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -287,7 +287,7 @@ export default function AdminDashboardPage() {
   );
 
   const hasRevenue =
-    data?.analytics.revenueSeries.some((item) => item.totalRevenue > 0) ??
+    data?.analytics?.revenueSeries?.some((item) => item.totalRevenue > 0) ??
     false;
   const customRangeInvalid = !customFrom || !customTo || customFrom > customTo;
 
@@ -329,7 +329,9 @@ export default function AdminDashboardPage() {
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Clock3 className="size-3.5" /> Cập nhật{" "}
-            {formatDateTime(data.analytics.updatedAt)}
+            {data.analytics?.updatedAt
+              ? formatDateTime(data.analytics.updatedAt)
+              : "Vừa xong"}
           </p>
         </div>
 
@@ -340,11 +342,10 @@ export default function AdminDashboardPage() {
                 key={option.key}
                 type="button"
                 onClick={() => selectPreset(option.key)}
-                className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                  params.range === option.key && !showCustomRange
+                className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${params.range === option.key && !showCustomRange
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
+                  }`}
               >
                 {option.label}
               </button>
@@ -352,11 +353,10 @@ export default function AdminDashboardPage() {
             <button
               type="button"
               onClick={() => setShowCustomRange((current) => !current)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                params.range === "custom" || showCustomRange
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${params.range === "custom" || showCustomRange
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+                }`}
             >
               <CalendarDays className="size-3.5" /> Tùy chọn
             </button>
@@ -424,12 +424,12 @@ export default function AdminDashboardPage() {
       >
         <MetricCard
           label="Tổng doanh thu"
-          value={currency.format(data.analytics.revenue.total)}
-          detail={`Store ${formatCompactMoney(data.analytics.revenue.store)} · Spa ${formatCompactMoney(data.analytics.revenue.spa)}`}
+          value={currency.format(data.analytics?.revenue?.total ?? 0)}
+          detail={`Store ${formatCompactMoney(data.analytics?.revenue?.store ?? 0)} · Spa ${formatCompactMoney(data.analytics?.revenue?.spa ?? 0)}`}
           icon={CircleDollarSign}
           tone="primary"
-          badge={<ChangeBadge value={data.analytics.revenue.changePercent} />}
-          context={data.analytics.range.label}
+          badge={<ChangeBadge value={data.analytics?.revenue?.changePercent ?? 0} />}
+          context={data.analytics?.range?.label ?? ""}
         />
         <MetricCard
           label="Hệ sinh thái"
@@ -473,7 +473,7 @@ export default function AdminDashboardPage() {
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Doanh thu được ghi nhận trong{" "}
-                {data.analytics.range.label.toLowerCase()}.
+                {(data.analytics?.range?.label ?? "").toLowerCase()}.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted-foreground">
@@ -488,7 +488,7 @@ export default function AdminDashboardPage() {
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={data.analytics.revenueSeries}
+                data={data.analytics?.revenueSeries ?? []}
                 margin={{ top: 8, right: 4, left: -16, bottom: 0 }}
               >
                 <CartesianGrid
