@@ -5368,8 +5368,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
       case 'CHECK_IN':
       case 'ARRIVED':
         return 'Khách đã đến';
-      case 'ASSIGNED':
-        return 'Đã phân công';
       case 'IN_PROGRESS':
         return 'Đang thực hiện';
       case 'COMPLETED':
@@ -6179,7 +6177,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                           CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
                           CHECK_IN: { label: 'Đã Check-in', color: 'bg-teal-500' },
                           ARRIVED: { label: 'Khách đã đến', color: 'bg-teal-600' },
-                          ASSIGNED: { label: 'Đã phân công', color: 'bg-indigo-500' },
                           IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
                           COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
                           CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
@@ -6253,7 +6250,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                           const statusStyle = {
                             PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
                             CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
-                            ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
                             IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                             COMPLETED: 'bg-green-50 text-green-700 border-green-200',
                             CANCELLED: 'bg-red-50 text-red-700 border-red-200',
@@ -6720,7 +6716,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                     <option value="PENDING">Chờ xác nhận</option>
                     <option value="CONFIRMED">Đã xác nhận</option>
                     <option value="CHECK_IN">Khách đã đến</option>
-                    <option value="ASSIGNED">Đã phân công</option>
                     <option value="IN_PROGRESS">Đang thực hiện</option>
                     <option value="COMPLETED">Đã hoàn thành</option>
                     <option value="CANCELLED">Đã hủy</option>
@@ -6758,7 +6753,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
                               CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
                               ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
-                              ASSIGNED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
                               IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                               COMPLETED: 'bg-green-50 text-green-700 border-green-200',
                               CANCELLED: 'bg-red-50 text-red-700 border-red-200',
@@ -6766,7 +6760,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                               LATE: 'bg-rose-50 text-rose-700 border-rose-250'
                             }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
-                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(b.status);
+                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(b.status);
                             const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
 
                             return (
@@ -7348,7 +7342,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
                 CHECK_IN: 'bg-teal-100 text-teal-800 border-teal-300',
                 ARRIVED: 'bg-teal-100 text-teal-800 border-teal-300',
-                ASSIGNED: 'bg-indigo-100 text-indigo-800 border-indigo-300',
                 IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
                 COMPLETED: 'bg-green-100 text-green-800 border-green-300',
                 CANCELLED: 'bg-red-100 text-red-800 border-red-300',
@@ -7487,7 +7480,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 </button>
               )}
 
-              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'ASSIGNED', 'LATE'].includes(selectedBookingDetail.status) && (
+              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(selectedBookingDetail.status) && (
                 <button
                   type="button"
                   onClick={() => {

@@ -66,6 +66,13 @@ export class AddSubServicesDto {
   subServiceIds: string[];
 }
 
+/** DTO yêu cầu chọn nhân viên khi Quản lý xác nhận lịch hẹn */
+export class ManagerConfirmBookingDto {
+  @IsNotEmpty({ message: 'Vui lòng chọn nhân viên khi xác nhận lịch hẹn.' })
+  @IsString()
+  staffId: string;
+}
+
 export class ManagerReassignDto {
   @IsNotEmpty()
   @IsString()

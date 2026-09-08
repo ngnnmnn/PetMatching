@@ -392,7 +392,8 @@ async function main() {
       staffId: staffUser.id,
       petName: 'Titan',
       scheduledAt: date2,
-      status: SpaBookingStatus.ASSIGNED,
+      // Lịch hẹn đã phân công nhân viên có trạng thái là CONFIRMED
+      status: SpaBookingStatus.CONFIRMED,
       priceSnapshot: demoPrice,
       totalPrice: demoPrice,
       note: 'Titan nặng 30kg, cần 2 nhân viên hỗ trợ',

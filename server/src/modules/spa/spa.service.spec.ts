@@ -174,7 +174,7 @@ describe('SpaService getAvailability and slot deduction', () => {
         id: 'b-1',
         addressSpaId: 'branch-1',
         staffId: 'user-staff-1',
-        status: SpaBookingStatus.ASSIGNED,
+        status: SpaBookingStatus.CONFIRMED,
         scheduledAt: new Date('2026-08-20T10:00:00'),
         timeStartExpected: new Date('2026-08-20T10:00:00'),
         timeEndExpected: new Date('2026-08-20T10:45:00'),
@@ -246,7 +246,7 @@ describe('SpaService getAvailability and slot deduction', () => {
         id: 'b-1',
         addressSpaId: 'branch-1',
         staffId: 'user-staff-1',
-        status: SpaBookingStatus.ASSIGNED,
+        status: SpaBookingStatus.CONFIRMED,
         scheduledAt: new Date('2028-08-20T10:00:00'),
         timeStartExpected: new Date('2028-08-20T10:00:00'),
         timeEndExpected: new Date('2028-08-20T10:30:00'),
@@ -408,66 +408,7 @@ describe('SpaService getAvailability and slot deduction', () => {
   });
 });
 
-describe('SpaService autoUpdateBookingStatuses late discount', () => {
-  it('automatically applies 10% discount when customer arrived and 30+ mins past scheduledAt without in-progress status', async () => {
-    const fortyMinsAgo = new Date(Date.now() - 40 * 60 * 1000);
-    const overdueBooking = {
-      id: 'b-arrived-late',
-      status: SpaBookingStatus.ARRIVED,
-      scheduledAt: fortyMinsAgo,
-      totalPrice: 200_000,
-      priceSnapshot: 200_000,
-      discountAmount: 0,
-    };
 
-    const updateBookingMock = jest.fn().mockResolvedValue({
-      ...overdueBooking,
-      discountAmount: 20_000,
-      totalPrice: 180_000,
-    });
-    const updatePaymentMock = jest.fn().mockResolvedValue({ count: 1 });
-
-    const prisma = {
-      spaBooking: {
-        findMany: jest.fn().mockImplementation(({ where }) => {
-          if (where?.status?.in?.includes(SpaBookingStatus.ARRIVED)) {
-            return Promise.resolve([overdueBooking]);
-          }
-          return Promise.resolve([]);
-        }),
-      },
-      $transaction: jest.fn().mockImplementation(async (callback) => {
-        return callback({
-          spaBooking: { update: updateBookingMock },
-          payment: { updateMany: updatePaymentMock },
-        });
-      }),
-    };
-
-    const service = new SpaService(
-      prisma as unknown as PrismaService,
-      {} as PaymentService,
-      {} as any,
-    );
-    Object.defineProperty(service, 'notifyBooking', {
-      value: jest.fn(),
-    });
-
-    await service.autoUpdateBookingStatuses();
-
-    expect(updateBookingMock).toHaveBeenCalledWith({
-      where: { id: 'b-arrived-late' },
-      data: {
-        discountAmount: 20_000,
-        totalPrice: 180_000,
-      },
-    });
-    expect(updatePaymentMock).toHaveBeenCalledWith({
-      where: { spaBookingId: 'b-arrived-late', status: { not: PaymentStatus.PAID } },
-      data: { amount: 180_000 },
-    });
-  });
-});
 
 describe('SpaService updateStaffBooking', () => {
   /**
@@ -600,7 +541,7 @@ describe('SpaService staff checkin date restriction & notify late', () => {
         findUnique: jest.fn().mockResolvedValue({
           id: 'booking-late-1',
           scheduledAt: new Date(Date.now() - 3600000),
-          status: 'ASSIGNED',
+          status: 'CONFIRMED',
           addressSpa: { managerId: 'manager-1' },
           user: { name: 'Nguyễn Văn A', phone: '0912345678' },
           pet: { name: 'Miu' },
@@ -654,7 +595,6 @@ describe('SpaService auto update overdue past bookings', () => {
         findMany: jest.fn()
           .mockResolvedValueOnce([]) // noShow
           .mockResolvedValueOnce([]) // late
-          .mockResolvedValueOnce([]) // discount
           .mockResolvedValueOnce([   // past overdue
             {
               id: 'booking-past-1',

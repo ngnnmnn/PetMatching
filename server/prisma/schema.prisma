@@ -538,7 +538,6 @@ model SpaBooking {
   status                SpaBookingStatus @default(PENDING)
   priceSnapshot         Float?
   totalPrice            Float            @default(0)
-  discountAmount        Float            @default(0)
   timeStartExpected     DateTime?
   timeEndExpected       DateTime?
   timeStartReal         DateTime?
@@ -893,7 +892,6 @@ enum SpaBookingStatus {
   CONFIRMED
   CHECK_IN
   ARRIVED
-  ASSIGNED
   IN_PROGRESS
   COMPLETED
   CANCELLED

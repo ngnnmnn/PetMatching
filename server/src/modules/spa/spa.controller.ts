@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerCancelBookingDto, RescheduleBookingDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerCancelBookingDto, RescheduleBookingDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto, ManagerConfirmBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -247,25 +247,6 @@ export class SpaController {
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
-  @Patch('manager/bookings/:id/late-discount')
-  managerApplyLateDiscount(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') bookingId: string,
-  ) {
-    return this.spaService.managerApplyLateDiscount(req.user.id, bookingId);
-  }
-
-  @UseGuards(JwtAuthGuard, SpaManagerGuard)
-  @Patch('manager/bookings/:id/update-services')
-  managerUpdateBookingServices(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') bookingId: string,
-    @Body() dto: ManagerUpdateServicesDto,
-  ) {
-    return this.spaService.managerUpdateBookingServices(req.user.id, bookingId, dto.mainServiceId, dto.subServiceIds);
-  }
-
-  @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/staff-performance')
   getManagerStaffPerformance(
     @Req() req: AuthenticatedRequest,
@@ -275,10 +256,17 @@ export class SpaController {
     return this.spaService.getManagerStaffPerformance(req.user.id, branchId, filter);
   }
 
+  /**
+   * Quản lý Spa xác nhận lịch hẹn (bắt buộc phân công nhân viên ngay khi xác nhận)
+   */
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Patch('manager/bookings/:id/confirm')
-  confirmBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
-    return this.spaService.confirmBooking(req.user.id, bookingId);
+  confirmBooking(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') bookingId: string,
+    @Body() dto: ManagerConfirmBookingDto,
+  ) {
+    return this.spaService.confirmBooking(req.user.id, bookingId, dto.staffId);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
@@ -295,16 +283,6 @@ export class SpaController {
   @Get('manager/bookings/:id/available-staff')
   getAvailableStaffForBooking(@Req() req: AuthenticatedRequest, @Param('id') bookingId: string) {
     return this.spaService.getAvailableStaffForBooking(req.user.id, bookingId);
-  }
-
-  @UseGuards(JwtAuthGuard, SpaManagerGuard)
-  @Patch('manager/bookings/:id/assign')
-  assignStaffToBooking(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') bookingId: string,
-    @Body('staffId') staffId: string,
-  ) {
-    return this.spaService.assignStaffToBooking(req.user.id, bookingId, staffId);
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
