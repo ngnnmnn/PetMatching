@@ -5003,8 +5003,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       return (
         <div className="max-w-2xl space-y-6 animate-fadeIn">
           <div>
-            <h2 className="text-xl font-black">Cấu hình chi nhánh cửa hàng</h2>
-            <p className="text-sm font-semibold text-[var(--text-muted)]">Thiết lập các thông tin chi nhánh cửa hàng thực tế hiển thị lên ứng dụng.</p>
+            <h2 className="text-xl font-black">Cấu hình cửa hàng</h2>
+            <p className="text-sm font-semibold text-[var(--text-muted)]">Thiết lập thông tin cửa hàng hiển thị trên ứng dụng.</p>
           </div>
 
           <form onSubmit={handleUpdateSettings} className="rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-sm space-y-5">
@@ -5139,7 +5139,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 Chào mừng trở lại, Quản lý Cửa hàng!
               </h2>
               <p className="mt-2 max-w-xl text-sm font-semibold text-[#A3A299]">
-                Theo dõi hoạt động bán hàng, kiểm soát tồn kho sản phẩm thú cưng và tối ưu doanh số chi nhánh trong thời gian thực.
+                Theo dõi hoạt động bán hàng, kiểm soát tồn kho sản phẩm thú cưng và tối ưu doanh số cửa hàng trong thời gian thực.
               </p>
             </div>
           </section>
@@ -5200,7 +5200,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-black">{stats?.totalProductsSold ?? 0} món</p>
-              <p className="mt-1 text-xs font-bold text-blue-600">Tổng doanh số toàn chi nhánh</p>
+              <p className="mt-1 text-xs font-bold text-blue-600">Tổng doanh số cửa hàng</p>
             </div>
 
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition">

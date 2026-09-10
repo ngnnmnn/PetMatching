@@ -5,11 +5,8 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
-  ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
   BarChart3,
-  CalendarDays,
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
@@ -30,10 +27,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { adminApi, type AdminDashboardParams } from "@/lib/api/admin";
+import { adminApi } from "@/lib/api/admin";
+import {
+  DashboardTimeControls,
+  RevenueGrowthBadge,
+} from "@/components/admin/dashboard-time-controls";
+import { useAdminDashboardRange } from "@/components/admin/admin-dashboard-range-context";
 
 type RevenuePoint = {
-  period: string;
   label: string;
   storeRevenue: number;
   spaRevenue: number;
@@ -41,7 +42,6 @@ type RevenuePoint = {
   transactions: number;
 };
 
-type DashboardRangeKey = "7d" | "30d" | "90d" | "12m" | "custom";
 type ActivityFilter = "all" | "users" | "pets" | "verification" | "matching";
 
 type DashboardData = {
@@ -49,34 +49,31 @@ type DashboardData = {
     users: { total: number };
     pets: { total: number; verified: number; pendingVerification: number };
     matching: { totalMatches: number; pendingReports: number };
+    moderation: {
+      createdToday: number;
+      overdue24Hours: number;
+    };
     store: {
-      totalStores: number;
-      activeStores: number;
-      pendingStores: number;
-      totalProducts: number;
+      status: string | null;
       totalOrders: number;
       pendingOrders: number;
       activeProducts: number;
       outOfStockProducts: number;
-      revenue: number;
     };
     spa: {
-      totalBranches: number;
-      activeBranches: number;
-      pendingBranches: number;
+      status: string | null;
       totalServices: number;
       totalBookings: number;
       pendingBookings?: number;
-      revenue: number;
     };
   };
   analytics: {
     range: {
-      key: DashboardRangeKey;
       label: string;
       from: string;
       to: string;
-      granularity: "day" | "week" | "month";
+      previousFrom: string;
+      previousTo: string;
     };
     revenue: {
       total: number;
@@ -139,22 +136,10 @@ const currency = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
-const RANGE_OPTIONS: Array<{
-  key: Exclude<DashboardRangeKey, "custom">;
-  label: string;
-}> = [
-    { key: "7d", label: "7 ngày" },
-    { key: "30d", label: "30 ngày" },
-    { key: "90d", label: "90 ngày" },
-    { key: "12m", label: "12 tháng" },
-  ];
-
 export default function AdminDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [params, setParams] = useState<AdminDashboardParams>({ range: "30d" });
-  const [customFrom, setCustomFrom] = useState(() => dateInputOffset(-29));
-  const [customTo, setCustomTo] = useState(() => dateInputOffset(0));
-  const [showCustomRange, setShowCustomRange] = useState(false);
+  const { timeRange: params, setTimeRange: setParams } =
+    useAdminDashboardRange();
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -182,53 +167,30 @@ export default function AdminDashboardPage() {
     return () => window.clearTimeout(timer);
   }, [loadDashboard]);
 
-  const pendingCount = useMemo(() => {
-    if (!data) return 0;
-    return (
-      data.stats.pets.pendingVerification +
-      data.stats.matching.pendingReports +
-      data.stats.store.pendingOrders +
-      (data.stats.spa.pendingBookings ?? 0)
-    );
-  }, [data]);
+  const pendingCount = data
+    ? data.stats.pets.pendingVerification + data.stats.matching.pendingReports
+    : 0;
 
-  const pendingItems = useMemo(() => {
-    if (!data) return [];
-    return [
-      {
-        label: "Giấy tờ thú cưng",
-        description: "Hồ sơ chờ xác minh",
-        value: data.stats.pets.pendingVerification,
-        href: "/admin/pets?verification=pending",
-        icon: ClipboardCheck,
-        tone: "warning" as const,
-      },
-      {
-        label: "Báo cáo ghép đôi",
-        description: "Phản ánh đang mở",
-        value: data.stats.matching.pendingReports,
-        href: "/admin/reports?status=PENDING",
-        icon: AlertTriangle,
-        tone: "danger" as const,
-      },
-      {
-        label: "Đơn hàng",
-        description: "Đơn chờ xử lý",
-        value: data.stats.store.pendingOrders,
-        href: "/admin/store-orders",
-        icon: ShoppingBag,
-        tone: "primary" as const,
-      },
-      {
-        label: "Lịch Spa",
-        description: "Lịch chờ xác nhận",
-        value: data.stats.spa.pendingBookings ?? 0,
-        href: "/admin/spa-bookings",
-        icon: Stethoscope,
-        tone: "teal" as const,
-      },
-    ];
-  }, [data]);
+  const pendingItems = data
+    ? [
+        {
+          label: "Giấy tờ thú cưng",
+          description: "Hồ sơ chờ xác minh",
+          value: data.stats.pets.pendingVerification,
+          href: "/admin/pets?verification=pending",
+          icon: ClipboardCheck,
+          tone: "warning" as const,
+        },
+        {
+          label: "Báo cáo ghép đôi",
+          description: "Phản ánh đang mở",
+          value: data.stats.matching.pendingReports,
+          href: "/admin/reports?status=PENDING",
+          icon: AlertTriangle,
+          tone: "danger" as const,
+        },
+      ]
+    : [];
 
   const activities = useMemo<ActivityItem[]>(() => {
     if (!data) return [];
@@ -289,18 +251,6 @@ export default function AdminDashboardPage() {
   const hasRevenue =
     data?.analytics?.revenueSeries?.some((item) => item.totalRevenue > 0) ??
     false;
-  const customRangeInvalid = !customFrom || !customTo || customFrom > customTo;
-
-  const selectPreset = (range: Exclude<DashboardRangeKey, "custom">) => {
-    setShowCustomRange(false);
-    setParams({ range });
-  };
-
-  const applyCustomRange = () => {
-    if (customRangeInvalid) return;
-    setParams({ range: "custom", from: customFrom, to: customTo });
-  };
-
   if (loading) return <DashboardSkeleton />;
   if (error && !data) {
     return (
@@ -335,74 +285,12 @@ export default function AdminDashboardPage() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-card p-1 shadow-sm">
-            {RANGE_OPTIONS.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => selectPreset(option.key)}
-                className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${params.range === option.key && !showCustomRange
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-              >
-                {option.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setShowCustomRange((current) => !current)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${params.range === "custom" || showCustomRange
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-            >
-              <CalendarDays className="size-3.5" /> Tùy chọn
-            </button>
-            <button
-              type="button"
-              onClick={() => void loadDashboard(true)}
-              disabled={refreshing}
-              aria-label="Làm mới dữ liệu"
-              className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg border text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
-          </div>
-          {showCustomRange && (
-            <div className="flex flex-wrap items-center justify-end gap-2 rounded-xl border bg-card p-3 shadow-sm">
-              <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                Từ
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(event) => setCustomFrom(event.target.value)}
-                  className="h-9 rounded-lg border bg-background px-2 text-xs text-foreground"
-                />
-              </label>
-              <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                Đến
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={(event) => setCustomTo(event.target.value)}
-                  className="h-9 rounded-lg border bg-background px-2 text-xs text-foreground"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={customRangeInvalid}
-                onClick={applyCustomRange}
-                className="h-9 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Áp dụng
-              </button>
-            </div>
-          )}
-        </div>
+        <DashboardTimeControls
+          value={params}
+          onChange={setParams}
+          onRefresh={() => void loadDashboard(true)}
+          refreshing={refreshing}
+        />
       </header>
 
       {error && (
@@ -428,16 +316,27 @@ export default function AdminDashboardPage() {
           detail={`Store ${formatCompactMoney(data.analytics?.revenue?.store ?? 0)} · Spa ${formatCompactMoney(data.analytics?.revenue?.spa ?? 0)}`}
           icon={CircleDollarSign}
           tone="primary"
-          badge={<ChangeBadge value={data.analytics?.revenue?.changePercent ?? 0} />}
+          badge={
+            <RevenueGrowthBadge
+              comparison={{
+                range: data.analytics?.range,
+                revenue: {
+                  current: data.analytics?.revenue?.total ?? 0,
+                  previous: data.analytics?.revenue?.previousTotal ?? 0,
+                  changePercent: data.analytics?.revenue?.changePercent ?? 0,
+                },
+              }}
+            />
+          }
           context={data.analytics?.range?.label ?? ""}
         />
         <MetricCard
-          label="Hệ sinh thái"
+          label="Người dùng"
           value={data.stats.users.total.toLocaleString("vi-VN")}
           detail={`${data.stats.pets.total.toLocaleString("vi-VN")} thú cưng · ${data.stats.pets.verified} đã xác minh`}
           icon={UsersRound}
           tone="teal"
-          context="Người dùng đã đăng ký"
+          context="Tài khoản đã đăng ký"
         />
         <MetricCard
           label="Lượt ghép đôi"
@@ -448,12 +347,12 @@ export default function AdminDashboardPage() {
           context="Toàn hệ thống"
         />
         <MetricCard
-          label="Cần xử lý"
+          label="Cần kiểm duyệt"
           value={pendingCount.toLocaleString("vi-VN")}
           detail={
             pendingCount > 0
-              ? "Các hàng chờ cần Admin kiểm tra"
-              : "Không có công việc tồn đọng"
+              ? "Giấy tờ và báo cáo Matching đang chờ"
+              : "Không có tác vụ kiểm duyệt tồn đọng"
           }
           icon={pendingCount > 0 ? AlertTriangle : CheckCircle2}
           tone={pendingCount > 0 ? "danger" : "teal"}
@@ -548,18 +447,32 @@ export default function AdminDashboardPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-destructive">
-                Ưu tiên hôm nay
+                Trung tâm kiểm duyệt
               </p>
               <h2 className="mt-1 text-xl font-bold tracking-tight">
-                Hàng chờ xử lý
+                Tác vụ cần Admin duyệt
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Đi thẳng đến các tác vụ đang mở.
+                Giấy tờ thú cưng và báo cáo Matching đang mở.
               </p>
             </div>
             <span className="flex min-w-10 items-center justify-center rounded-xl bg-destructive/10 px-3 py-2 text-sm font-bold text-destructive">
               {pendingCount}
             </span>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <ModerationSummary
+              label="Mới hôm nay"
+              value={data.stats.moderation.createdToday}
+              tone="primary"
+            />
+            <ModerationSummary
+              label="Tồn quá 24 giờ"
+              value={data.stats.moderation.overdue24Hours}
+              tone={
+                data.stats.moderation.overdue24Hours > 0 ? "danger" : "muted"
+              }
+            />
           </div>
           <div className="mt-5 grid gap-3">
             {pendingItems.map((item) => (
@@ -600,8 +513,14 @@ export default function AdminDashboardPage() {
           <SystemAreaCard
             icon={ShoppingBag}
             title="Cửa hàng"
-            description={`${data.stats.store.activeStores}/${data.stats.store.totalStores} cửa hàng hoạt động`}
-            href="/admin/store-orders"
+            description={
+              data.stats.store.status === "ACTIVE"
+                ? "Cửa hàng đang hoạt động"
+                : data.stats.store.status
+                  ? "Cửa hàng đang tạm ngừng"
+                  : "Chưa cấu hình cửa hàng"
+            }
+            href="/admin/store-overview"
             tone="primary"
             metrics={[
               { label: "Đơn hàng", value: data.stats.store.totalOrders },
@@ -621,8 +540,14 @@ export default function AdminDashboardPage() {
           <SystemAreaCard
             icon={Stethoscope}
             title="Spa"
-            description={`${data.stats.spa.activeBranches}/${data.stats.spa.totalBranches} chi nhánh hoạt động`}
-            href="/admin/spa-bookings"
+            description={
+              data.stats.spa.status === "ACTIVE"
+                ? "Spa đang hoạt động"
+                : data.stats.spa.status
+                  ? "Spa đang tạm ngừng"
+                  : "Chưa cấu hình Spa"
+            }
+            href="/admin/spa-overview"
             tone="teal"
             metrics={[
               { label: "Lịch đặt", value: data.stats.spa.totalBookings },
@@ -633,9 +558,8 @@ export default function AdminDashboardPage() {
               },
               { label: "Dịch vụ", value: data.stats.spa.totalServices },
               {
-                label: "Chi nhánh chờ",
-                value: data.stats.spa.pendingBranches,
-                alert: data.stats.spa.pendingBranches > 0,
+                label: "Doanh thu",
+                value: formatCompactMoney(data.analytics.revenue.spa),
               },
             ]}
           />
@@ -716,8 +640,8 @@ function MetricCard({
     <article className="rounded-2xl border bg-card p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-muted-foreground">{label}</p>
-          <p className="mt-2 truncate text-2xl font-bold tracking-tight text-foreground">
+          <p className="text-sm font-bold text-muted-foreground">{label}</p>
+          <p className="mt-2 truncate text-2xl font-extrabold tracking-tight text-foreground">
             {value}
           </p>
         </div>
@@ -729,12 +653,10 @@ function MetricCard({
       </div>
       <div className="mt-4 flex min-h-10 items-end justify-between gap-3 border-t pt-3">
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-muted-foreground">
+          <p className="truncate text-xs font-semibold text-muted-foreground">
             {detail}
           </p>
-          <p className="mt-1 text-xs font-semibold text-foreground">
-            {context}
-          </p>
+          <p className="mt-1 text-xs font-bold text-foreground">{context}</p>
         </div>
         {badge}
       </div>
@@ -742,15 +664,26 @@ function MetricCard({
   );
 }
 
-function ChangeBadge({ value }: { value: number }) {
-  const positive = value >= 0;
-  const Icon = positive ? ArrowUpRight : ArrowDownRight;
+function ModerationSummary({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "primary" | "danger" | "muted";
+}) {
+  const tones = {
+    primary: "border-primary/20 bg-primary/5 text-primary",
+    danger: "border-destructive/20 bg-destructive/5 text-destructive",
+    muted: "border-border bg-muted/40 text-muted-foreground",
+  };
+
   return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${positive ? "bg-chart-2/10 text-chart-2" : "bg-destructive/10 text-destructive"}`}
-    >
-      <Icon className="size-3.5" /> {Math.abs(value).toFixed(1)}%
-    </span>
+    <div className={`rounded-xl border px-3 py-3 ${tones[tone]}`}>
+      <p className="text-xl font-extrabold">{value.toLocaleString("vi-VN")}</p>
+      <p className="mt-1 text-xs font-semibold">{label}</p>
+    </div>
   );
 }
 
@@ -767,13 +700,11 @@ function PendingLink({
   value: number;
   href: string;
   icon: typeof ShoppingBag;
-  tone: "warning" | "danger" | "primary" | "teal";
+  tone: "warning" | "danger";
 }) {
   const tones = {
     warning: "bg-chart-4/15 text-foreground",
     danger: "bg-destructive/10 text-destructive",
-    primary: "bg-primary/10 text-primary",
-    teal: "bg-chart-2/10 text-chart-2",
   };
   return (
     <Link
@@ -1083,15 +1014,6 @@ function formatRelativeDate(value: string) {
   if (diffDays === 1) return "Hôm qua";
   if (diffDays > 1 && diffDays < 7) return `${diffDays} ngày trước`;
   return date.toLocaleDateString("vi-VN");
-}
-
-function dateInputOffset(offsetDays: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function formatRole(role?: string) {

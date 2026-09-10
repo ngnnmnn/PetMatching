@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import axios from 'axios';
-import Link from 'next/link';
 import Image from 'next/image';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2, Mail, PackageOpen, PawPrint, Search, ShieldAlert, UserCheck, UsersRound, UserX, XCircle, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
+import {
+  SpaOverviewPanel,
+  StoreOverviewPanel,
+} from '@/components/admin/business-overview-panels';
+import { useAdminDashboardRange } from '@/components/admin/admin-dashboard-range-context';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -69,7 +73,7 @@ const complaintStatusOptions = [
   ['DISMISSED', 'Không vi phạm'],
   ['INSUFFICIENT_EVIDENCE', 'Chưa đủ bằng chứng'],
 ] as const;
-const readOnlySections = new Set(['stores', 'system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-bookings']);
+const readOnlySections = new Set(['system-profile', 'store-overview', 'store-products', 'store-orders', 'spa-overview', 'spa-services', 'spa-bookings']);
 
 const sectionConfig: Record<string, {
   title: string;
@@ -96,20 +100,6 @@ const sectionConfig: Record<string, {
     loader: adminApi.pets,
     columns: [],
   },
-  stores: {
-    title: 'Tổng quan cửa hàng',
-    description: 'Theo dõi thông tin và các chỉ số hoạt động của cửa hàng PetMatching duy nhất.',
-    loader: adminApi.stores,
-    columns: [
-      { key: 'name', label: 'Tên cửa hàng' },
-      { key: 'manager', label: 'Nhân sự quản lý', render: (row) => row.manager?.name ?? 'Chưa phân công' },
-      { key: 'phone', label: 'Điện thoại' },
-      { key: 'address', label: 'Địa chỉ' },
-      { key: 'status', label: 'Trạng thái', render: (row) => formatStatus(row.status) },
-      { key: '_count', label: 'Sản phẩm', render: (row) => row._count?.products ?? 0 },
-      { key: 'orders', label: 'Đơn hàng', render: (row) => row._count?.orders ?? 0 },
-    ],
-  },
   'system-profile': {
     title: 'Thông tin hệ thống',
     description: 'Quản lý thông tin chung và trạng thái vận hành của PetMatching tại một nơi duy nhất.',
@@ -118,7 +108,7 @@ const sectionConfig: Record<string, {
   },
   'store-overview': {
     title: 'Tổng quan cửa hàng',
-    description: 'Dashboard mini theo dõi nhanh hoạt động kinh doanh của PetMatching Store.',
+    description: 'Theo dõi doanh thu, đơn hàng, tồn kho và hiệu quả sản phẩm của PetMatching Store.',
     loader: adminApi.storeDashboard,
     columns: [],
   },
@@ -126,18 +116,7 @@ const sectionConfig: Record<string, {
     title: 'Sản phẩm',
     description: 'Giám sát danh mục, giá bán, tồn kho và trạng thái sản phẩm của PetMatching Store.',
     loader: adminApi.storeProducts,
-    columns: [
-      { key: 'id', label: 'Mã sản phẩm' },
-      { key: 'name', label: 'Tên sản phẩm' },
-      { key: 'category', label: 'Danh mục' },
-      { key: 'brand', label: 'Thương hiệu' },
-      { key: 'sellingPrice', label: 'Giá bán', render: (row) => moneyCell({ price: row.sellingPrice }) },
-      { key: 'importPrice', label: 'Giá nhập', render: (row) => row.importPrice ? moneyCell({ price: row.importPrice }) : '-' },
-      { key: 'salePrice', label: 'Giá ưu đãi', render: (row) => row.salePrice ? moneyCell({ price: row.salePrice }) : '-' },
-      { key: 'stock', label: 'Tồn kho' },
-      { key: 'isActive', label: 'Trạng thái', render: (row) => row.isActive ? 'Đang bán' : 'Ngừng bán' },
-      { key: 'updatedAt', label: 'Cập nhật', render: dateCell },
-    ],
+    columns: [],
   },
   'store-orders': {
     title: 'Đơn hàng',
@@ -154,7 +133,7 @@ const sectionConfig: Record<string, {
   },
   'spa-overview': {
     title: 'Tổng quan Spa',
-    description: 'Dashboard mini theo dõi nhanh toàn bộ hoạt động của Spa PetMatching.',
+    description: 'Theo dõi doanh thu, lịch hẹn, dịch vụ và năng lực vận hành của Spa PetMatching.',
     loader: adminApi.spaDashboard,
     columns: [],
   },
@@ -204,6 +183,7 @@ export default function AdminSectionPage() {
   const [complaintStatus, setComplaintStatus] = useState('PENDING');
   const [reportSearch, setReportSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const { timeRange: overviewTimeRange, setTimeRange: setOverviewTimeRange } = useAdminDashboardRange();
   const [petVerificationFilter, setPetVerificationFilter] = useState<PetVerificationFilter>(
     requestedSection === 'pet-verifications' || searchParams.get('verification') === 'pending' ? 'PENDING' : 'ALL',
   );
@@ -217,11 +197,16 @@ export default function AdminSectionPage() {
     setCurrentPage(1);
     setLoading(true);
     setError('');
-    config.loader()
+    const loader = section === 'store-overview'
+      ? () => adminApi.storeDashboard(overviewTimeRange)
+      : section === 'spa-overview'
+        ? () => adminApi.spaDashboard(overviewTimeRange)
+        : config.loader;
+    loader()
       .then((response) => setRows(normalizeRows(section, response.data)))
       .catch(() => setError('Không thể tải dữ liệu cho mục quản trị này.'))
       .finally(() => setLoading(false));
-  }, [config, section]);
+  }, [config, overviewTimeRange, section]);
 
   useEffect(() => {
     // Loading remote section data is the synchronization performed by this effect.
@@ -466,9 +451,19 @@ export default function AdminSectionPage() {
         ) : section === 'system-profile' ? (
           <SystemProfileForm key={String(rows[0]?.id ?? 'loading')} profile={rows[0]} onSaved={load} />
         ) : section === 'store-overview' ? (
-          <StoreOverviewPanel data={rows[0]} />
+          <StoreOverviewPanel
+            data={rows[0]}
+            timeRange={overviewTimeRange}
+            onTimeRangeChange={setOverviewTimeRange}
+            onRefresh={load}
+          />
         ) : section === 'spa-overview' ? (
-          <SpaOverviewPanel data={rows[0]} />
+          <SpaOverviewPanel
+            data={rows[0]}
+            timeRange={overviewTimeRange}
+            onTimeRangeChange={setOverviewTimeRange}
+            onRefresh={load}
+          />
         ) : section === 'spa-services' ? (
           <SpaServicesPanel services={rows} />
         ) : section === 'store-products' ? (
@@ -1739,110 +1734,6 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
   );
 }
 
-function StoreOverviewPanel({ data }: { data?: Row }) {
-  const stats = data?.stats ?? {};
-  const shortcuts = [
-    { label: 'Sản phẩm', value: stats.activeProducts ?? 0, href: '/admin/store-products' },
-    { label: 'Đơn hàng hôm nay', value: stats.todayOrders ?? 0, href: '/admin/store-orders' },
-    { label: 'Hết hàng', value: stats.outOfStockProducts ?? 0, href: '/admin/store-products' },
-    { label: 'Thông tin hệ thống', value: data?.store?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/system-profile' },
-  ];
-
-  return (
-    <div className="grid gap-6 p-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {shortcuts.map((item) => (
-          <Link key={`${item.href}-${item.label}`} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md">
-            <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{item.label}</p>
-            <p className="mt-2 text-2xl font-black text-[#172033]">{item.value}</p>
-            <p className="mt-3 text-xs font-black text-primary">Xem chi tiết →</p>
-          </Link>
-        ))}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <MiniStat label="Đơn chờ xử lý" value={stats.pendingOrders ?? 0} />
-        <MiniStat label="Đã giao" value={stats.completedOrders ?? 0} />
-        <MiniStat label="Doanh thu đơn đã giao" value={moneyCell({ price: stats.revenue ?? 0 })} />
-      </div>
-
-      <section className="overflow-hidden rounded-xl border border-[#D8E0EA]">
-        <div className="flex items-center justify-between border-b border-[#E5EAF0] bg-[#F7F9FB] px-5 py-4">
-          <div>
-            <h3 className="font-black text-[#172033]">Đơn hàng gần đây</h3>
-            <p className="mt-1 text-xs font-semibold text-[#64748B]">Năm đơn hàng mới nhất của cửa hàng.</p>
-          </div>
-          <Link href="/admin/store-orders" className="text-sm font-black text-primary">Xem tất cả</Link>
-        </div>
-        <div className="divide-y divide-[#E5EAF0]">
-          {(data?.recentOrders ?? []).map((order: Row) => (
-            <div key={order.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center">
-              <div>
-                <p className="font-black text-[#172033]">{order.user?.name ?? 'Khách hàng'}</p>
-                <p className="mt-1 text-xs font-semibold text-[#64748B]">#{order.id}</p>
-              </div>
-              <p className="text-sm font-semibold text-[#475569]">{order.items?.reduce((sum: number, item: Row) => sum + (item.quantity ?? 0), 0) ?? 0} sản phẩm</p>
-              <p className="text-sm font-black text-[#172033]">{moneyCell(order)}</p>
-              <span className="text-sm font-bold text-primary">{formatStatus(order.status)}</span>
-            </div>
-          ))}
-          {!data?.recentOrders?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có đơn hàng.</p>}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function SpaOverviewPanel({ data }: { data?: Row }) {
-  const stats = data?.stats ?? {};
-  const shortcuts = [
-    { label: 'Dịch vụ Spa', value: stats.services ?? 0, href: '/admin/spa-services' },
-    { label: 'Lịch đặt hôm nay', value: stats.todayBookings ?? 0, href: '/admin/spa-bookings' },
-    { label: 'Thông tin hệ thống', value: data?.spa?.status === 'ACTIVE' ? 'Đang mở' : 'Tạm ngừng', href: '/admin/system-profile' },
-  ];
-
-  return (
-    <div className="grid gap-6 p-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {shortcuts.map((item) => (
-          <Link key={item.href} href={item.href} className="rounded-xl border border-[#D8E0EA] bg-white p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md">
-            <p className="text-xs font-black uppercase tracking-wider text-[#64748B]">{item.label}</p>
-            <p className="mt-2 text-2xl font-black text-[#172033]">{item.value}</p>
-            <p className="mt-3 text-xs font-black text-primary">Xem chi tiết →</p>
-          </Link>
-        ))}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <MiniStat label="Chờ xử lý" value={stats.pendingBookings ?? 0} />
-        <MiniStat label="Đã hoàn thành" value={stats.completedBookings ?? 0} />
-        <MiniStat label="Doanh thu spa" value={moneyCell({ price: stats.revenue ?? 0 })} />
-      </div>
-
-      <section className="overflow-hidden rounded-xl border border-[#D8E0EA]">
-        <div className="flex items-center justify-between border-b border-[#E5EAF0] bg-[#F7F9FB] px-5 py-4">
-          <div>
-            <h3 className="font-black text-[#172033]">Lịch sắp tới</h3>
-            <p className="mt-1 text-xs font-semibold text-[#64748B]">Năm lịch gần nhất của Spa.</p>
-          </div>
-          <Link href="/admin/spa-bookings" className="text-sm font-black text-primary">Xem tất cả</Link>
-        </div>
-        <div className="divide-y divide-[#E5EAF0]">
-          {(data?.upcomingBookings ?? []).map((booking: Row) => (
-            <div key={booking.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center">
-              <p className="font-black text-[#172033]">{booking.user?.name ?? 'Khách hàng'}</p>
-              <p className="text-sm font-semibold text-[#475569]">{booking.service?.name ?? 'Dịch vụ Spa'}</p>
-              <p className="text-sm font-semibold text-[#64748B]">{booking.staff?.name ?? 'Chưa phân công'}</p>
-              <p className="text-sm font-bold text-primary">{dateCell(booking)}</p>
-            </div>
-          ))}
-          {!data?.upcomingBookings?.length && <p className="px-5 py-10 text-center text-sm font-semibold text-[#64748B]">Chưa có lịch sắp tới.</p>}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function StoreField({
   label,
   value,
@@ -2522,9 +2413,6 @@ async function loadMatchingReports(): Promise<{ data: Row[] }> {
 
 function normalizeRows(section: string, data: Row[] | Row): Row[] {
   if (['system-profile', 'store-overview', 'spa-overview'].includes(section) && !Array.isArray(data)) return [data];
-  if (section === 'stores' && Array.isArray(data)) {
-    return data.length ? [data[0]] : [];
-  }
 
   return Array.isArray(data) ? data : [];
 }

@@ -42,6 +42,7 @@ export type AdminDashboardParams = {
   from?: string;
   to?: string;
 };
+
 export interface BreedRule {
   id: string;
   species: Species;
@@ -134,15 +135,14 @@ export const adminApi = {
   updateBreed: (id: string, data: UpdateBreedPayload) =>
     api.patch<Breed>(`/admin/breeds/${id}`, data),
   deleteBreed: (id: string) => api.delete(`/admin/breeds/${id}`),
-  stores: () => api.get('/admin/stores'),
   systemProfile: () => api.get('/admin/system-profile'),
   updateSystemProfile: (data: { name: string; description?: string; address: string; phone: string; storeStatus: ApprovalStatus; spaStatus: ApprovalStatus }) =>
     api.put('/admin/system-profile', data),
-  storeDashboard: () => api.get('/admin/store-dashboard'),
+  storeDashboard: (params?: AdminDashboardParams) => api.get('/admin/store-dashboard', { params }),
   storeProducts: () => api.get('/admin/store-products'),
   storeOrders: () => api.get('/admin/store-orders'),
   spas: () => api.get('/admin/spas'),
-  spaDashboard: () => api.get('/admin/spa-dashboard'),
+  spaDashboard: (params?: AdminDashboardParams) => api.get('/admin/spa-dashboard', { params }),
   spaServices: () => api.get('/admin/spa-services'),
   spaBookings: () => api.get('/admin/spa-bookings'),
   complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),

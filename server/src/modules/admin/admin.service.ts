@@ -26,8 +26,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import {
   getSpaBookingRevenue,
-  recognizedAllSpaRevenueWhere,
-  recognizedAllStoreRevenueWhere,
   recognizedSpaRevenueWhere,
   recognizedStoreRevenueWhere,
 } from '../../common/revenue.utils';
@@ -83,6 +81,27 @@ const REPORT_SPAM_SUSPECTED_7D = 5;
 
 type AdminDb = PrismaService | Prisma.TransactionClient;
 
+function calculateRevenueGrowth(currentRevenue: number, previousRevenue: number) {
+  if (previousRevenue > 0) {
+    return ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+  }
+  return currentRevenue > 0 ? 100 : 0;
+}
+
+function serializeDashboardRange(
+  period: ReturnType<typeof resolveDashboardRange>,
+) {
+  return {
+    label: period.label,
+    from: period.from.toISOString(),
+    to: new Date(period.toExclusive.getTime() - 1).toISOString(),
+    previousFrom: period.previousFrom.toISOString(),
+    previousTo: new Date(
+      period.previousToExclusive.getTime() - 1,
+    ).toISOString(),
+  };
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -95,6 +114,25 @@ export class AdminService {
     query: { range?: string; from?: string; to?: string } = {},
   ) {
     const period = resolveDashboardRange(query);
+    const [store, spa] = await Promise.all([
+      this.prisma.store.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, status: true },
+      }),
+      this.prisma.addressSpa.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, status: true },
+      }),
+    ]);
+    const storeFilter = { storeId: store?.id ?? '__missing__' };
+    const spaFilter = { addressSpaId: spa?.id ?? '__missing__' };
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const overdueThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const [
       totalUsers,
       totalPets,
@@ -102,17 +140,14 @@ export class AdminService {
       pendingPetDocuments,
       totalMatches,
       pendingMatchingReports,
-      totalStores,
-      activeStores,
-      pendingStores,
-      totalProducts,
+      todayPetDocuments,
+      todayMatchingReports,
+      overduePetDocuments,
+      overdueMatchingReports,
       totalOrders,
       pendingStoreOrders,
       activeProducts,
       outOfStockProducts,
-      totalSpaBranches,
-      activeSpaBranches,
-      pendingSpaBranches,
       totalSpaServices,
       totalSpaBookings,
       pendingSpaBookings,
@@ -123,7 +158,9 @@ export class AdminService {
       recentDocuments,
       recentMatchingReports,
     ] = await Promise.all([
-      this.prisma.user.count(),
+      this.prisma.user.count({
+        where: { role: { not: UserRole.ADMIN } },
+      }),
       this.prisma.pet.count(),
       this.prisma.pet.count({
         where: { verificationBadge: VerificationBadge.VERIFIED },
@@ -135,46 +172,62 @@ export class AdminService {
       this.prisma.petReport.count({
         where: { status: { in: OPEN_MATCHING_REPORT_STATUSES } },
       }),
-      this.prisma.store.count(),
-      this.prisma.store.count({ where: { status: ApprovalStatus.ACTIVE } }),
-      this.prisma.store.count({ where: { status: ApprovalStatus.PENDING } }),
-      this.prisma.product.count(),
-      this.prisma.order.count(),
-      this.prisma.order.count({ where: { status: OrderStatus.PENDING } }),
-      this.prisma.product.count({ where: { isActive: true } }),
-      this.prisma.product.count({ where: { stock: 0 } }),
-      this.prisma.addressSpa.count(),
-      this.prisma.addressSpa.count({
-        where: { status: ApprovalStatus.ACTIVE },
+      this.prisma.petDocument.count({
+        where: {
+          status: { in: ACTIONABLE_DOCUMENT_STATUSES },
+          createdAt: { gte: startOfToday },
+        },
       }),
-      this.prisma.addressSpa.count({
-        where: { status: ApprovalStatus.PENDING },
+      this.prisma.petReport.count({
+        where: {
+          status: { in: OPEN_MATCHING_REPORT_STATUSES },
+          createdAt: { gte: startOfToday },
+        },
       }),
+      this.prisma.petDocument.count({
+        where: {
+          status: { in: ACTIONABLE_DOCUMENT_STATUSES },
+          createdAt: { lt: overdueThreshold },
+        },
+      }),
+      this.prisma.petReport.count({
+        where: {
+          status: { in: OPEN_MATCHING_REPORT_STATUSES },
+          createdAt: { lt: overdueThreshold },
+        },
+      }),
+      this.prisma.order.count({ where: storeFilter }),
+      this.prisma.order.count({
+        where: { ...storeFilter, status: OrderStatus.PENDING },
+      }),
+      this.prisma.product.count({
+        where: { ...storeFilter, isActive: true },
+      }),
+      this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
       this.prisma.spaService.count(),
-      this.prisma.spaBooking.count(),
+      this.prisma.spaBooking.count({ where: spaFilter }),
       this.prisma.spaBooking.count({
-        where: { status: SpaBookingStatus.PENDING },
+        where: { ...spaFilter, status: SpaBookingStatus.PENDING },
       }),
       this.prisma.order.findMany({
         where: {
-          ...recognizedAllStoreRevenueWhere(),
+          ...recognizedStoreRevenueWhere(store?.id),
           createdAt: {
             gte: period.previousFrom,
             lt: period.toExclusive,
           },
         },
-        select: { id: true, totalAmount: true, createdAt: true },
+        select: { totalAmount: true, createdAt: true },
       }),
       this.prisma.spaBooking.findMany({
         where: {
-          ...recognizedAllSpaRevenueWhere(),
+          ...recognizedSpaRevenueWhere(spa?.id),
           createdAt: {
             gte: period.previousFrom,
             lt: period.toExclusive,
           },
         },
         select: {
-          id: true,
           totalPrice: true,
           priceSnapshot: true,
           createdAt: true,
@@ -253,12 +306,7 @@ export class AdminService {
     const previousRevenue =
       sumStoreRevenue(previousStoreOrders) + sumSpaRevenue(previousSpaBookings);
     const totalRevenue = storeRevenue + spaRevenue;
-    const revenueChangePercent =
-      previousRevenue > 0
-        ? ((totalRevenue - previousRevenue) / previousRevenue) * 100
-        : totalRevenue > 0
-          ? 100
-          : 0;
+    const revenueChangePercent = calculateRevenueGrowth(totalRevenue, previousRevenue);
 
     const revenueSeries = buildDashboardBuckets(period).map((bucket) => {
       const bucketStoreOrders = currentStoreOrders.filter(
@@ -275,7 +323,6 @@ export class AdminService {
       const bucketSpaRevenue = sumSpaRevenue(bucketSpaBookings);
 
       return {
-        period: bucket.key,
         label: bucket.label,
         storeRevenue: bucketStoreRevenue,
         spaRevenue: bucketSpaRevenue,
@@ -293,35 +340,26 @@ export class AdminService {
           pendingVerification: pendingPetDocuments,
         },
         matching: { totalMatches, pendingReports: pendingMatchingReports },
+        moderation: {
+          createdToday: todayPetDocuments + todayMatchingReports,
+          overdue24Hours: overduePetDocuments + overdueMatchingReports,
+        },
         store: {
-          totalStores,
-          activeStores,
-          pendingStores,
-          totalProducts,
+          status: store?.status ?? null,
           totalOrders,
           pendingOrders: pendingStoreOrders,
           activeProducts,
           outOfStockProducts,
-          revenue: storeRevenue,
         },
         spa: {
-          totalBranches: totalSpaBranches,
-          activeBranches: activeSpaBranches,
-          pendingBranches: pendingSpaBranches,
+          status: spa?.status ?? null,
           totalServices: totalSpaServices,
           totalBookings: totalSpaBookings,
           pendingBookings: pendingSpaBookings,
-          revenue: spaRevenue,
         },
       },
       analytics: {
-        range: {
-          key: period.key,
-          label: period.label,
-          from: period.from.toISOString(),
-          to: new Date(period.toExclusive.getTime() - 1).toISOString(),
-          granularity: period.granularity,
-        },
+        range: serializeDashboardRange(period),
         revenue: {
           total: totalRevenue,
           store: storeRevenue,
@@ -1254,23 +1292,6 @@ export class AdminService {
     return { success: true };
   }
 
-  async getStores(_query: { status?: ApprovalStatus }) {
-    const [store, totalProducts, totalOrders] = await Promise.all([
-      this.prisma.store.findFirst({
-        orderBy: { createdAt: 'asc' },
-        include: {
-          manager: { select: { id: true, name: true, email: true, role: true } },
-        },
-      }),
-      this.prisma.product.count(),
-      this.prisma.order.count(),
-    ]);
-
-    return store
-      ? [{ ...store, _count: { products: totalProducts, orders: totalOrders } }]
-      : [];
-  }
-
   async getSystemProfile() {
     const [store, spa] = await Promise.all([
       this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } }),
@@ -1308,14 +1329,31 @@ export class AdminService {
       throw new BadRequestException('Tên, địa chỉ và số điện thoại không được để trống.');
     }
 
+    const [store, spa] = await Promise.all([
+      this.prisma.store.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }),
+      this.prisma.addressSpa.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }),
+    ]);
+    if (!store || !spa) {
+      throw new NotFoundException('Không tìm thấy dữ liệu Store hoặc Spa để cập nhật.');
+    }
+
     await this.prisma.$transaction(async (tx) => {
-      const [stores, spas] = await Promise.all([
-        tx.store.updateMany({ data: { ...shared, status: dto.storeStatus } }),
-        tx.addressSpa.updateMany({ data: { ...shared, status: dto.spaStatus } }),
+      await Promise.all([
+        tx.store.update({
+          where: { id: store.id },
+          data: { ...shared, status: dto.storeStatus },
+        }),
+        tx.addressSpa.update({
+          where: { id: spa.id },
+          data: { ...shared, status: dto.spaStatus },
+        }),
       ]);
-      if (!stores.count || !spas.count) {
-        throw new NotFoundException('Không tìm thấy dữ liệu Store hoặc Spa để cập nhật.');
-      }
     });
 
     const profile = { ...shared, storeStatus: dto.storeStatus, spaStatus: dto.spaStatus };
@@ -1323,22 +1361,47 @@ export class AdminService {
     return profile;
   }
 
-  getStoreProducts(storeId?: string) {
+  async getStoreProducts() {
+    const store = await this.prisma.store.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
     return this.prisma.product.findMany({
-      where: storeId ? { storeId } : undefined,
+      where: { storeId: store?.id ?? '__missing__' },
       orderBy: { createdAt: 'desc' },
-      include: { store: { select: { id: true, name: true, status: true } } },
+      select: {
+        id: true,
+        name: true,
+        brand: true,
+        category: true,
+        imageUrl: true,
+        sellingPrice: true,
+        importPrice: true,
+        salePrice: true,
+        stock: true,
+        isActive: true,
+        updatedAt: true,
+      },
     });
   }
 
-  getStoreOrders(storeId?: string) {
+  async getStoreOrders() {
+    const store = await this.prisma.store.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
     return this.prisma.order.findMany({
-      where: storeId ? { storeId } : undefined,
+      where: { storeId: store?.id ?? '__missing__' },
       orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        store: { select: { id: true, name: true, status: true } },
-        items: { include: { product: { select: { id: true, name: true, imageUrl: true } } } },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        createdAt: true,
+        user: { select: { name: true } },
+        items: { select: { quantity: true } },
       },
     });
   }
@@ -1355,99 +1418,395 @@ export class AdminService {
     });
   }
 
-  async getStoreDashboard() {
+  async getStoreDashboard(
+    query: { range?: string; from?: string; to?: string } = {},
+  ) {
+    const period = resolveDashboardRange(query);
     const store = await this.prisma.store.findFirst({
       orderBy: { createdAt: 'asc' },
-      include: { manager: { select: { id: true, name: true, email: true } } },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        status: true,
+        manager: { select: { name: true } },
+      },
     });
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     const storeFilter = store ? { storeId: store.id } : { storeId: '__missing__' };
 
-    const [products, activeProducts, outOfStockProducts, todayOrders, pendingOrders, completedOrders, revenue, recentOrders] =
-      await Promise.all([
-        this.prisma.product.count({ where: storeFilter }),
-        this.prisma.product.count({ where: { ...storeFilter, isActive: true } }),
-        this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
-        this.prisma.order.count({ where: { ...storeFilter, createdAt: { gte: startOfDay, lte: endOfDay } } }),
-        this.prisma.order.count({ where: { ...storeFilter, status: OrderStatus.PENDING } }),
-        this.prisma.order.count({ where: { ...storeFilter, status: OrderStatus.DELIVERED } }),
-        this.prisma.order.aggregate({
-          where: recognizedStoreRevenueWhere(store?.id),
-          _sum: { totalAmount: true },
-        }),
-        this.prisma.order.findMany({
-          where: storeFilter,
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-          include: {
-            user: { select: { name: true } },
-            items: { select: { quantity: true } },
+    const [
+      products,
+      activeProducts,
+      outOfStockProducts,
+      lowStockProducts,
+      todayOrders,
+      totalOrders,
+      pendingOrders,
+      processingOrders,
+      completedOrders,
+      cancelledOrders,
+      itemsSold,
+      periodRevenueOrders,
+      topProductGroups,
+      recentOrders,
+    ] = await Promise.all([
+      this.prisma.product.count({ where: storeFilter }),
+      this.prisma.product.count({ where: { ...storeFilter, isActive: true } }),
+      this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
+      this.prisma.product.count({
+        where: { ...storeFilter, stock: { gt: 0, lte: 10 } },
+      }),
+      this.prisma.order.count({
+        where: {
+          ...storeFilter,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+      }),
+      this.prisma.order.count({ where: storeFilter }),
+      this.prisma.order.count({
+        where: { ...storeFilter, status: OrderStatus.PENDING },
+      }),
+      this.prisma.order.count({
+        where: {
+          ...storeFilter,
+          status: {
+            in: [OrderStatus.PACKED, OrderStatus.PROCESSING, OrderStatus.SHIPPED],
           },
-        }),
-      ]);
+        },
+      }),
+      this.prisma.order.count({
+        where: { ...storeFilter, status: OrderStatus.DELIVERED },
+      }),
+      this.prisma.order.count({
+        where: {
+          ...storeFilter,
+          status: {
+            in: [OrderStatus.CANCELLED, OrderStatus.EXPIRED, OrderStatus.PAYMENT_ERROR],
+          },
+        },
+      }),
+      this.prisma.orderItem.aggregate({
+        where: {
+          order: {
+            ...recognizedStoreRevenueWhere(store?.id),
+            createdAt: { gte: period.from, lt: period.toExclusive },
+          },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          ...recognizedStoreRevenueWhere(store?.id),
+          createdAt: { gte: period.previousFrom, lt: period.toExclusive },
+        },
+        select: { createdAt: true, totalAmount: true },
+      }),
+      this.prisma.orderItem.groupBy({
+        by: ['productId'],
+        where: {
+          order: {
+            ...recognizedStoreRevenueWhere(store?.id),
+            createdAt: { gte: period.from, lt: period.toExclusive },
+          },
+        },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take: 5,
+      }),
+      this.prisma.order.findMany({
+        where: storeFilter,
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          status: true,
+          totalAmount: true,
+          createdAt: true,
+          user: { select: { name: true } },
+          items: {
+            select: { quantity: true, product: { select: { name: true } } },
+          },
+        },
+      }),
+    ]);
+
+    const topProductIds = topProductGroups.map((item) => item.productId);
+    const topProductNames = topProductIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: topProductIds } },
+          select: { id: true, name: true, stock: true },
+        })
+      : [];
+    const productById = new Map(topProductNames.map((product) => [product.id, product]));
+    const topProducts = topProductGroups.map((item) => ({
+      ...productById.get(item.productId),
+      id: item.productId,
+      sold: item._sum.quantity ?? 0,
+    }));
+    const currentRevenueOrders = periodRevenueOrders.filter(
+      (order) => order.createdAt >= period.from,
+    );
+    const previousRevenueOrders = periodRevenueOrders.filter(
+      (order) => order.createdAt < period.from,
+    );
+    const sumRevenue = (orders: typeof periodRevenueOrders) =>
+      orders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const recognizedRevenue = sumRevenue(currentRevenueOrders);
+    const recognizedOrders = currentRevenueOrders.length;
+    const previousRevenue = sumRevenue(previousRevenueOrders);
+    const revenueChangePercent = calculateRevenueGrowth(recognizedRevenue, previousRevenue);
+    const revenueSeries = buildDashboardBuckets(period).map((bucket) => ({
+      label: bucket.label,
+      revenue: sumRevenue(currentRevenueOrders.filter(
+        (order) => order.createdAt >= bucket.from && order.createdAt < bucket.toExclusive,
+      )),
+    }));
 
     return {
-      store,
+      store: store
+        ? {
+            name: store.name,
+            address: store.address,
+            status: store.status,
+            manager: store.manager,
+          }
+        : null,
       stats: {
         products,
         activeProducts,
         outOfStockProducts,
+        lowStockProducts,
         todayOrders,
+        totalOrders,
         pendingOrders,
-        completedOrders,
-        revenue: revenue._sum.totalAmount ?? 0,
+        processingOrders,
+        recognizedOrders,
+        revenue: recognizedRevenue,
+        itemsSold: itemsSold._sum.quantity ?? 0,
       },
+      analytics: {
+        range: serializeDashboardRange(period),
+        revenue: {
+          current: recognizedRevenue,
+          previous: previousRevenue,
+          changePercent: revenueChangePercent,
+        },
+      },
+      revenueSeries,
+      statusDistribution: [
+        { status: OrderStatus.PENDING, value: pendingOrders },
+        { status: OrderStatus.PROCESSING, value: processingOrders },
+        { status: OrderStatus.DELIVERED, value: completedOrders },
+        { status: OrderStatus.CANCELLED, value: cancelledOrders },
+      ],
+      topProducts,
       recentOrders,
     };
   }
 
-  async getSpaDashboard() {
+  async getSpaDashboard(
+    query: { range?: string; from?: string; to?: string } = {},
+  ) {
+    const period = resolveDashboardRange(query);
     const spa = await this.prisma.addressSpa.findFirst({
       orderBy: { createdAt: 'asc' },
-      include: { manager: { select: { id: true, name: true, email: true } } },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        status: true,
+        manager: { select: { name: true } },
+      },
     });
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     const addressFilter = spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' };
 
-    const [services, todayBookings, pendingBookings, completedBookings, revenue, legacyRevenue, upcomingBookings] =
-      await Promise.all([
-        this.prisma.spaService.count({ where: { isActive: true } }),
-        this.prisma.spaBooking.count({ where: { ...addressFilter, scheduledAt: { gte: startOfDay, lte: endOfDay } } }),
-        this.prisma.spaBooking.count({ where: { ...addressFilter, status: SpaBookingStatus.PENDING } }),
-        this.prisma.spaBooking.count({ where: { ...addressFilter, status: SpaBookingStatus.COMPLETED } }),
-        this.prisma.spaBooking.aggregate({
-          where: recognizedSpaRevenueWhere(spa?.id),
-          _sum: { totalPrice: true },
-        }),
-        this.prisma.spaBooking.aggregate({
-          where: { ...recognizedSpaRevenueWhere(spa?.id), totalPrice: 0 },
-          _sum: { priceSnapshot: true },
-        }),
-        this.prisma.spaBooking.findMany({
-          where: { ...addressFilter, scheduledAt: { gte: now } },
-          orderBy: { scheduledAt: 'asc' },
-          take: 5,
-          include: {
-            user: { select: { name: true } },
-            staff: { select: { name: true } },
-            service: { select: { name: true } },
+    const [
+      services,
+      inactiveServices,
+      staffCount,
+      activeStaffCount,
+      todayBookings,
+      totalBookings,
+      pendingBookings,
+      confirmedBookings,
+      inProgressBookings,
+      completedBookings,
+      cancelledBookings,
+      lateBookings,
+      periodRevenueBookings,
+      recognizedServiceGroups,
+      legacyServiceGroups,
+      upcomingBookings,
+    ] = await Promise.all([
+      this.prisma.spaService.count({ where: { isActive: true } }),
+      this.prisma.spaService.count({ where: { isActive: false } }),
+      this.prisma.spaStaff.count({
+        where: spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' },
+      }),
+      this.prisma.spaStaff.count({
+        where: {
+          ...(spa ? { addressSpaId: spa.id } : { addressSpaId: '__missing__' }),
+          status: 'ACTIVE',
+        },
+      }),
+      this.prisma.spaBooking.count({
+        where: {
+          ...addressFilter,
+          scheduledAt: { gte: startOfDay, lte: endOfDay },
+        },
+      }),
+      this.prisma.spaBooking.count({ where: addressFilter }),
+      this.prisma.spaBooking.count({
+        where: { ...addressFilter, status: SpaBookingStatus.PENDING },
+      }),
+      this.prisma.spaBooking.count({
+        where: { ...addressFilter, status: SpaBookingStatus.CONFIRMED },
+      }),
+      this.prisma.spaBooking.count({
+        where: {
+          ...addressFilter,
+          status: {
+            in: [SpaBookingStatus.CHECK_IN, SpaBookingStatus.ARRIVED, SpaBookingStatus.IN_PROGRESS],
           },
-        }),
-      ]);
+        },
+      }),
+      this.prisma.spaBooking.count({
+        where: { ...addressFilter, status: SpaBookingStatus.COMPLETED },
+      }),
+      this.prisma.spaBooking.count({
+        where: {
+          ...addressFilter,
+          status: {
+            in: [SpaBookingStatus.CANCELLED, SpaBookingStatus.NO_SHOW],
+          },
+        },
+      }),
+      this.prisma.spaBooking.count({
+        where: { ...addressFilter, status: SpaBookingStatus.LATE },
+      }),
+      this.prisma.spaBooking.findMany({
+        where: {
+          ...recognizedSpaRevenueWhere(spa?.id),
+          createdAt: { gte: period.previousFrom, lt: period.toExclusive },
+        },
+        select: { createdAt: true, totalPrice: true, priceSnapshot: true },
+      }),
+      this.prisma.spaBooking.groupBy({
+        by: ['serviceId'],
+        where: {
+          ...recognizedSpaRevenueWhere(spa?.id),
+          serviceId: { not: null },
+          createdAt: { gte: period.from, lt: period.toExclusive },
+        },
+        _count: { _all: true },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.spaBooking.groupBy({
+        by: ['serviceId'],
+        where: {
+          ...recognizedSpaRevenueWhere(spa?.id),
+          serviceId: { not: null },
+          totalPrice: 0,
+          createdAt: { gte: period.from, lt: period.toExclusive },
+        },
+        _sum: { priceSnapshot: true },
+      }),
+      this.prisma.spaBooking.findMany({
+        where: { ...addressFilter, scheduledAt: { gte: now } },
+        orderBy: { scheduledAt: 'asc' },
+        take: 5,
+        select: {
+          id: true,
+          scheduledAt: true,
+          user: { select: { name: true } },
+          staff: { select: { name: true } },
+          service: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    const serviceIds = recognizedServiceGroups.map((item) => item.serviceId).filter((id): id is string => Boolean(id));
+    const serviceNames = serviceIds.length
+      ? await this.prisma.spaService.findMany({
+          where: { id: { in: serviceIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const serviceNameById = new Map(serviceNames.map((service) => [service.id, service.name]));
+    const legacyRevenueByService = new Map(legacyServiceGroups.map((item) => [item.serviceId, item._sum.priceSnapshot ?? 0]));
+    const topServices = recognizedServiceGroups
+      .map((item) => ({
+        id: item.serviceId ?? 'legacy-service',
+        name: serviceNameById.get(item.serviceId ?? '') ?? 'Dịch vụ Spa',
+        bookings: item._count._all,
+        revenue: (item._sum.totalPrice ?? 0) + (legacyRevenueByService.get(item.serviceId) ?? 0),
+      }))
+      .sort((left, right) => right.revenue - left.revenue)
+      .slice(0, 5);
+    const currentRevenueBookings = periodRevenueBookings.filter(
+      (booking) => booking.createdAt >= period.from,
+    );
+    const previousRevenueBookings = periodRevenueBookings.filter(
+      (booking) => booking.createdAt < period.from,
+    );
+    const sumRevenue = (bookings: typeof periodRevenueBookings) =>
+      bookings.reduce((sum, booking) => sum + getSpaBookingRevenue(booking), 0);
+    const recognizedRevenue = sumRevenue(currentRevenueBookings);
+    const recognizedBookings = currentRevenueBookings.length;
+    const previousRevenue = sumRevenue(previousRevenueBookings);
+    const revenueChangePercent = calculateRevenueGrowth(recognizedRevenue, previousRevenue);
+    const revenueSeries = buildDashboardBuckets(period).map((bucket) => ({
+      label: bucket.label,
+      revenue: sumRevenue(currentRevenueBookings.filter(
+        (booking) => booking.createdAt >= bucket.from && booking.createdAt < bucket.toExclusive,
+      )),
+    }));
 
     return {
-      spa,
+      spa: spa
+        ? {
+            name: spa.name,
+            address: spa.address,
+            status: spa.status,
+            manager: spa.manager,
+          }
+        : null,
       stats: {
         services,
+        inactiveServices,
+        staffCount,
+        activeStaffCount,
         todayBookings,
+        totalBookings,
         pendingBookings,
-        completedBookings,
-        revenue: (revenue._sum.totalPrice ?? 0) + (legacyRevenue._sum.priceSnapshot ?? 0),
+        inProgressBookings,
+        recognizedBookings,
+        revenue: recognizedRevenue,
       },
+      analytics: {
+        range: serializeDashboardRange(period),
+        revenue: {
+          current: recognizedRevenue,
+          previous: previousRevenue,
+          changePercent: revenueChangePercent,
+        },
+      },
+      revenueSeries,
+      statusDistribution: [
+        { status: SpaBookingStatus.PENDING, value: pendingBookings },
+        { status: SpaBookingStatus.CONFIRMED, value: confirmedBookings },
+        { status: SpaBookingStatus.IN_PROGRESS, value: inProgressBookings },
+        { status: SpaBookingStatus.COMPLETED, value: completedBookings },
+        { status: SpaBookingStatus.CANCELLED, value: cancelledBookings },
+        { status: SpaBookingStatus.LATE, value: lateBookings },
+      ],
+      topServices,
       upcomingBookings,
     };
   }

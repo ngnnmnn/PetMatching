@@ -33,10 +33,6 @@ export function recognizedStoreRevenueWhere(
   };
 }
 
-export function recognizedAllStoreRevenueWhere(): Prisma.OrderWhereInput {
-  return recognizedStoreRevenueBaseWhere();
-}
-
 export function recognizedSpaRevenueWhere(
   addressSpaId?: string,
 ): Prisma.SpaBookingWhereInput {
@@ -44,10 +40,6 @@ export function recognizedSpaRevenueWhere(
     ...recognizedSpaRevenueBaseWhere(),
     addressSpaId: addressSpaId ?? '__missing__',
   };
-}
-
-export function recognizedAllSpaRevenueWhere(): Prisma.SpaBookingWhereInput {
-  return recognizedSpaRevenueBaseWhere();
 }
 
 export function isRecognizedSpaBooking(booking: {
