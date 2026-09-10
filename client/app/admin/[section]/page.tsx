@@ -31,7 +31,6 @@ import {
   AccountStatus,
   AdminRole,
   adminApi,
-  ApprovalStatus,
   ComplaintAction,
   DocumentStatus,
   HidePetReason,
@@ -101,8 +100,8 @@ const sectionConfig: Record<string, {
     columns: [],
   },
   'system-profile': {
-    title: 'Thông tin hệ thống',
-    description: 'Quản lý thông tin chung và trạng thái vận hành của PetMatching tại một nơi duy nhất.',
+    title: 'Hồ sơ thương hiệu',
+    description: 'Quản lý nội dung giới thiệu và thông tin liên hệ hiển thị trên các dịch vụ PetMatching.',
     loader: adminApi.systemProfile,
     columns: [],
   },
@@ -272,12 +271,7 @@ export default function AdminSectionPage() {
       };
     }
     if (section === 'system-profile') {
-      const profile = rows[0];
-      return {
-        total: 1,
-        active: [profile?.storeStatus, profile?.spaStatus].filter((status) => status === 'ACTIVE').length,
-        pending: [profile?.storeStatus, profile?.spaStatus].filter((status) => status !== 'ACTIVE').length,
-      };
+      return { total: 1, active: 1, pending: 1 };
     }
     if (section === 'store-overview') {
       const stats = rows[0]?.stats ?? {};
@@ -398,7 +392,7 @@ export default function AdminSectionPage() {
       <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-sm">
         <div className="absolute inset-y-0 left-0 w-1.5 bg-primary" />
         <div className="absolute -right-16 -top-20 size-52 rounded-full bg-primary/10" />
-        <div className="relative grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className={`relative grid gap-5 p-6 ${section === 'system-profile' ? '' : 'lg:grid-cols-[minmax(0,1fr)_360px]'}`}>
           <div className="flex min-w-0 items-start gap-4">
             <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               {section === 'users' ? <UsersRound className="size-5" /> : section === 'store-products' ? <PackageOpen className="size-5" /> : <ShieldAlert className="size-5" />}
@@ -409,11 +403,13 @@ export default function AdminSectionPage() {
               <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#64748B]">{config.description}</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 self-center">
-            <MiniStat label={section === 'system-profile' ? 'Cơ sở' : section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : section === 'spa-services' ? 'Dịch vụ' : 'Tổng'} value={titleStats.total} />
-            <MiniStat label={section === 'system-profile' ? 'Đang hoạt động' : ['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : section === 'pets' ? 'Đã xác minh' : 'Hoạt động'} value={titleStats.active} />
-            <MiniStat label={section === 'system-profile' || section === 'spa-services' ? 'Tạm ngừng' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
-          </div>
+          {section !== 'system-profile' && (
+            <div className="grid grid-cols-3 gap-3 self-center">
+              <MiniStat label={section === 'spa-overview' ? 'Lịch hôm nay' : section === 'store-overview' ? 'Đơn hôm nay' : section === 'spa-services' ? 'Dịch vụ' : 'Tổng'} value={titleStats.total} />
+              <MiniStat label={['spa-overview', 'store-overview'].includes(section) ? 'Hoàn thành' : section === 'store-products' ? 'Đang bán' : section === 'spa-services' ? 'Đang mở' : section === 'reports' ? 'Đã xử lý' : section === 'pets' ? 'Đã xác minh' : 'Hoạt động'} value={titleStats.active} />
+              <MiniStat label={section === 'spa-services' ? 'Tạm ngừng' : section === 'store-products' ? 'Hết hàng' : 'Chờ xử lý'} value={titleStats.pending} />
+            </div>
+          )}
         </div>
       </section>
 
@@ -1674,8 +1670,6 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
     description: profile?.description ?? '',
     address: profile?.address ?? '',
     phone: profile?.phone ?? '',
-    storeStatus: (profile?.storeStatus ?? 'ACTIVE') as ApprovalStatus,
-    spaStatus: (profile?.spaStatus ?? 'ACTIVE') as ApprovalStatus,
   }));
   const [saving, setSaving] = useState(false);
 
@@ -1684,7 +1678,12 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const data = { ...form, name: form.name.trim(), address: form.address.trim(), phone: form.phone.trim() };
+    const data = {
+      name: form.name.trim(),
+      description: form.description.trim(),
+      address: form.address.trim(),
+      phone: form.phone.trim(),
+    };
     if (!data.name || !data.address || !data.phone) {
       toast.error('Vui lòng nhập tên, địa chỉ và số điện thoại.');
       return;
@@ -1704,30 +1703,29 @@ function SystemProfileForm({ profile, onSaved }: { profile?: Row; onSaved: () =>
 
   return (
     <form onSubmit={submit} className="grid gap-6 p-6">
-      <div className="rounded-xl border border-[#BFE1DC] bg-[#EFFAF8] p-4">
-        <p className="text-sm font-black text-primary">Một cơ sở PetMatching duy nhất</p>
-        <p className="mt-1 text-sm font-semibold leading-6 text-[#476861]">
-          Thông tin bên dưới được dùng thống nhất cho Store và Spa, trong khi trạng thái vận hành được điều khiển độc lập.
+      <div className="border-b border-[#E5EAF0] pb-5">
+        <h3 className="text-base font-black text-[#172033]">Thông tin thương hiệu</h3>
+        <p className="mt-1 text-sm font-semibold leading-6 text-[#64748B]">
+          Cập nhật thông tin chính thức để khách hàng nhận diện và liên hệ với PetMatching.
         </p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
         <StoreField label="Tên thương hiệu" required value={form.name} onChange={(value) => update('name', value)} />
-        <StoreField label="Số điện thoại" required value={form.phone} onChange={(value) => update('phone', value)} />
+        <StoreField label="Số điện thoại liên hệ" required value={form.phone} onChange={(value) => update('phone', value)} />
       </div>
-      <StoreField label="Địa chỉ" required value={form.address} onChange={(value) => update('address', value)} />
+      <div className="grid gap-5 md:grid-cols-2">
+        <StoreField label="Email liên hệ" type="email" readOnly value="petmatch@fpt.edu.vn" />
+        <StoreField label="Địa chỉ liên hệ" required value={form.address} onChange={(value) => update('address', value)} />
+      </div>
       <label className="grid gap-2 text-sm font-black text-[#172033]">
-        Mô tả chung
+        Giới thiệu thương hiệu
         <textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows={4} className="resize-none rounded-lg border border-[#D8E0EA] bg-white p-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" />
       </label>
-      <div className="grid gap-5 md:grid-cols-2">
-        <StatusField label="Trạng thái Store" value={form.storeStatus} onChange={(value) => update('storeStatus', value)} />
-        <StatusField label="Trạng thái nhận lịch Spa" value={form.spaStatus} onChange={(value) => update('spaStatus', value)} />
-      </div>
-      <div className="flex items-center justify-between gap-4 border-t border-[#E5EAF0] pt-5">
-        <p className="text-xs font-semibold text-[#64748B]">Mọi thay đổi được áp dụng đồng thời cho Store và Spa.</p>
+      <div className="flex flex-col gap-4 border-t border-[#E5EAF0] pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs font-semibold text-[#64748B]">Các thay đổi sẽ được đồng bộ tại những khu vực hiển thị liên quan.</p>
         <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-black text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">
           {saving && <Loader2 className="size-4 animate-spin" />}
-          Lưu thông tin
+          Lưu thay đổi
         </button>
       </div>
     </form>
@@ -1739,20 +1737,26 @@ function StoreField({
   value,
   onChange,
   required = false,
+  type = 'text',
+  readOnly = false,
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   required?: boolean;
+  type?: 'text' | 'email' | 'tel';
+  readOnly?: boolean;
 }) {
   return (
     <label className="grid gap-2 text-sm font-black text-[#172033]">
-      {label}{required && <span className="text-red-600"> *</span>}
+      <span>{label}{required && <span className="text-red-600"> *</span>}</span>
       <input
+        type={type}
         value={value}
         required={required}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+        readOnly={readOnly}
+        onChange={(event) => onChange?.(event.target.value)}
+        className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-semibold outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 read-only:cursor-default read-only:bg-[#F7F9FB] read-only:text-[#64748B] read-only:focus:border-[#D8E0EA] read-only:focus:ring-0"
       />
     </label>
   );
@@ -3005,18 +3009,6 @@ function formatPetModerationReason(reason?: string) {
   };
 
   return reason ? reasons[reason] ?? reason : '-';
-}
-
-function StatusField({ label, value, onChange }: { label: string; value: ApprovalStatus; onChange: (value: string) => void }) {
-  return (
-    <label className="grid gap-2 text-sm font-black text-[#172033]">
-      {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-bold outline-none focus:border-primary focus:ring-4 focus:ring-primary/10">
-        <option value="ACTIVE">Đang hoạt động</option>
-        <option value="SUSPENDED">Tạm ngừng</option>
-      </select>
-    </label>
-  );
 }
 
 function DocumentImageGallery({ imageUrls, documentTitle }: { imageUrls: string[]; documentTitle: string }) {

@@ -1303,8 +1303,6 @@ export class AdminService {
       description: store?.description || spa?.description || '',
       address: store?.address?.trim() || spa?.address?.trim() || '',
       phone: store?.phone?.trim() || spa?.phone?.trim() || '',
-      storeStatus: store?.status ?? ApprovalStatus.ACTIVE,
-      spaStatus: spa?.status ?? ApprovalStatus.ACTIVE,
     };
   }
 
@@ -1315,8 +1313,6 @@ export class AdminService {
       description?: string;
       address: string;
       phone: string;
-      storeStatus: ApprovalStatus;
-      spaStatus: ApprovalStatus;
     },
   ) {
     const shared = {
@@ -1347,18 +1343,17 @@ export class AdminService {
       await Promise.all([
         tx.store.update({
           where: { id: store.id },
-          data: { ...shared, status: dto.storeStatus },
+          data: shared,
         }),
         tx.addressSpa.update({
           where: { id: spa.id },
-          data: { ...shared, status: dto.spaStatus },
+          data: shared,
         }),
       ]);
     });
 
-    const profile = { ...shared, storeStatus: dto.storeStatus, spaStatus: dto.spaStatus };
-    await this.audit(actor.id, 'ADMIN_UPDATE_SYSTEM_PROFILE', 'SystemProfile', 'shared', profile);
-    return profile;
+    await this.audit(actor.id, 'ADMIN_UPDATE_SYSTEM_PROFILE', 'SystemProfile', 'shared', shared);
+    return shared;
   }
 
   async getStoreProducts() {
