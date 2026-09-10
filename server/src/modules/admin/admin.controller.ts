@@ -251,11 +251,6 @@ export class AdminController {
     );
   }
 
-  @Get('stores')
-  getStores(@Query('status') status?: ApprovalStatus) {
-    return this.adminService.getStores({ status });
-  }
-
   @Get('system-profile')
   getSystemProfile() {
     return this.adminService.getSystemProfile();
@@ -277,18 +272,22 @@ export class AdminController {
   }
 
   @Get('store-dashboard')
-  getStoreDashboard() {
-    return this.adminService.getStoreDashboard();
+  getStoreDashboard(
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.adminService.getStoreDashboard({ range, from, to });
   }
 
   @Get('store-products')
-  getStoreProducts(@Query('storeId') storeId?: string) {
-    return this.adminService.getStoreProducts(storeId);
+  getStoreProducts() {
+    return this.adminService.getStoreProducts();
   }
 
   @Get('store-orders')
-  getStoreOrders(@Query('storeId') storeId?: string) {
-    return this.adminService.getStoreOrders(storeId);
+  getStoreOrders() {
+    return this.adminService.getStoreOrders();
   }
 
   @Get('spas')
@@ -297,8 +296,12 @@ export class AdminController {
   }
 
   @Get('spa-dashboard')
-  getSpaDashboard() {
-    return this.adminService.getSpaDashboard();
+  getSpaDashboard(
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.adminService.getSpaDashboard({ range, from, to });
   }
 
   @Get('spa-services')

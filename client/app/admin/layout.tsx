@@ -17,6 +17,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AdminDashboardRangeProvider } from '@/components/admin/admin-dashboard-range-context';
 
 const navGroups = [
   {
@@ -73,6 +74,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Account details are persisted outside React and can only be hydrated in the browser.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentUser(user);
   }, [router]);
 
@@ -171,7 +174,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <AdminDashboardRangeProvider>
+          <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        </AdminDashboardRangeProvider>
       </div>
     </div>
   );
