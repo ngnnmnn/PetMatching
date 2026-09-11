@@ -13,6 +13,7 @@ import {
   Layers,
   Maximize2,
   PawPrint,
+  RotateCcw,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -23,6 +24,14 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import AppHeader from '@/components/layout/AppHeader';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -99,6 +108,8 @@ type MatchingRequest = {
 type FilterState = {
   species: 'ALL' | 'DOG' | 'CAT';
   breed: string;
+  weightMin?: number;
+  weightMax?: number;
   ageMin: number;
   ageMax: number;
   distanceRadius: number;
@@ -113,6 +124,8 @@ type FilterState = {
 const initialFilters: FilterState = {
   species: 'ALL',
   breed: 'ALL',
+  weightMin: undefined,
+  weightMax: undefined,
   ageMin: 1,
   ageMax: 5,
   distanceRadius: 0,
@@ -149,6 +162,7 @@ export default function UnifiedMatchingHubPage() {
   // Filter Drawer & Modals State
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
+  const [availableBreeds, setAvailableBreeds] = useState<{ id: string; name: string }[]>([]);
   const [selectedCandidateDetail, setSelectedCandidateDetail] = useState<Pet | null>(null);
   const [candidateImageIndex, setCandidateImageIndex] = useState(0);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -233,9 +247,34 @@ export default function UnifiedMatchingHubPage() {
       .finally(() => setLoadingPets(false));
   }, []);
 
+  // Tải danh mục giống chính thức theo loài của thú cưng đang chọn
+  useEffect(() => {
+    if (!selectedPet?.species) return;
+    api
+      .get<{ id: string; name: string }[]>('/breeds', {
+        params: { species: selectedPet.species },
+      })
+      .then((res) => setAvailableBreeds(res.data || []))
+      .catch(() => setAvailableBreeds([]));
+  }, [selectedPet?.species]);
+
+  // Đếm số lượng tiêu chí lọc nâng cao đang được áp dụng
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (filters.distanceRadius > 0) count++;
+    if (filters.purebredOnly) count++;
+    if (filters.vaccinatedOnly) count++;
+    if (filters.verifiedOnly) count++;
+    if (filters.breed && filters.breed !== 'ALL') count++;
+    if (filters.weightMin !== undefined && filters.weightMin > 0) count++;
+    if (filters.weightMax !== undefined && filters.weightMax > 0) count++;
+    return count;
+  }, [filters]);
+
   // Load Candidates for female pet
   const handleSelectPet = useCallback(
-    async (targetPet: Pet) => {
+    async (targetPet: Pet, overrideFilters?: FilterState) => {
+      const activeFilters = overrideFilters || filters;
       setSelectedPetId(targetPet.id);
       if (targetPet.gender === 'FEMALE') {
         setLoadingCandidates(true);
@@ -243,12 +282,15 @@ export default function UnifiedMatchingHubPage() {
           const candRes = await api.get<{ data: Pet[] }>('/matching/candidates', {
             params: {
               femalePetId: targetPet.id,
-              species: filters.species !== 'ALL' ? filters.species : undefined,
-              breed: filters.breed !== 'ALL' ? filters.breed : undefined,
-              purebredOnly: filters.purebredOnly || undefined,
-              vaccinatedOnly: filters.vaccinatedOnly || undefined,
-              verifiedOnly: filters.verifiedOnly || undefined,
-              maxDistanceKm: filters.distanceRadius > 0 ? String(filters.distanceRadius) : undefined,
+              species: activeFilters.species !== 'ALL' ? activeFilters.species : undefined,
+              breed: activeFilters.breed !== 'ALL' ? activeFilters.breed : undefined,
+              hasPedigreeOnly: activeFilters.purebredOnly ? 'true' : undefined,
+              purebredOnly: activeFilters.purebredOnly ? 'true' : undefined,
+              vaccinatedOnly: activeFilters.vaccinatedOnly ? 'true' : undefined,
+              verifiedOnly: activeFilters.verifiedOnly ? 'true' : undefined,
+              weightMin: activeFilters.weightMin !== undefined ? String(activeFilters.weightMin) : undefined,
+              weightMax: activeFilters.weightMax !== undefined ? String(activeFilters.weightMax) : undefined,
+              maxDistanceKm: activeFilters.distanceRadius > 0 ? String(activeFilters.distanceRadius) : undefined,
             },
           });
           setCandidates(candRes.data?.data || []);
@@ -558,7 +600,13 @@ export default function UnifiedMatchingHubPage() {
                     className="rounded-xl font-bold gap-2 border-2"
                     onClick={() => setIsFilterOpen(true)}
                   >
-                    <SlidersHorizontal className="size-4 text-primary" /> Bộ lọc nâng cao
+                    <SlidersHorizontal className="size-4 text-primary" />
+                    Bộ lọc nâng cao
+                    {activeFiltersCount > 0 && (
+                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-black text-primary-foreground">
+                        {activeFiltersCount}
+                      </span>
+                    )}
                   </Button>
 
             </div>
@@ -772,12 +820,102 @@ export default function UnifiedMatchingHubPage() {
         {isFilterOpen && (
           <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm">
             <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="w-full max-w-md bg-card shadow-2xl flex flex-col h-full">
+              {/* Header */}
               <div className="flex items-center justify-between border-b p-4">
-                <h3 className="font-extrabold text-base">Bộ lọc Tìm kiếm Nâng cao</h3>
-                <Button variant="ghost" size="icon" onClick={() => setIsFilterOpen(false)}><X className="size-5" /></Button>
+                <div className="flex items-center gap-2">
+                  <SlidersHorizontal className="size-4 text-primary" />
+                  <h3 className="font-extrabold text-base">Bộ lọc Tìm kiếm Nâng cao</h3>
+                  {activeFiltersCount > 0 && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                      {activeFiltersCount} đang chọn
+                    </span>
+                  )}
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setIsFilterOpen(false)}>
+                  <X className="size-5" />
+                </Button>
               </div>
+
+              {/* Body */}
               <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                {/* 1. Giống thú cưng */}
                 <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Giống thú cưng
+                  </label>
+                  <Select
+                    value={filters.breed}
+                    onValueChange={(val) => setFilters((prev) => ({ ...prev, breed: val }))}
+                  >
+                    <SelectTrigger className="w-full rounded-xl border-2">
+                      <SelectValue placeholder="Chọn giống" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Tất cả các giống</SelectItem>
+                      {selectedPet?.breed && (
+                        <SelectItem value={selectedPet.breed}>
+                          🐾 Cùng giống ({selectedPet.breed})
+                        </SelectItem>
+                      )}
+                      {availableBreeds
+                        .filter((b) => b.name !== selectedPet?.breed)
+                        .map((b) => (
+                          <SelectItem key={b.id} value={b.name}>
+                            {b.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 2. Khoảng Cân nặng */}
+                <div className="space-y-2 pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Khoảng Cân nặng (kg)
+                    </label>
+                    <span className="text-[11px] text-muted-foreground">
+                      {selectedPet?.species === 'CAT' ? 'Chuẩn mèo: 1.5 - 15 kg' : 'Chuẩn chó: 1.5 - 100 kg'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 items-center">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground font-semibold block mb-1">Tối thiểu (Min)</span>
+                      <Input
+                        type="number"
+                        min="1.5"
+                        max={selectedPet?.species === 'CAT' ? '15' : '100'}
+                        step="0.5"
+                        placeholder="Từ kg"
+                        value={filters.weightMin ?? ''}
+                        onChange={(e) => {
+                          const val = e.target.value ? Number(e.target.value) : undefined;
+                          setFilters((prev) => ({ ...prev, weightMin: val }));
+                        }}
+                        className="rounded-xl border-2"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground font-semibold block mb-1">Tối đa (Max)</span>
+                      <Input
+                        type="number"
+                        min="1.5"
+                        max={selectedPet?.species === 'CAT' ? '15' : '100'}
+                        step="0.5"
+                        placeholder="Đến kg"
+                        value={filters.weightMax ?? ''}
+                        onChange={(e) => {
+                          const val = e.target.value ? Number(e.target.value) : undefined;
+                          setFilters((prev) => ({ ...prev, weightMax: val }));
+                        }}
+                        className="rounded-xl border-2"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Bán kính khoảng cách */}
+                <div className="space-y-2 pt-4 border-t">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn Hà Nội)'}
                   </label>
@@ -787,8 +925,8 @@ export default function UnifiedMatchingHubPage() {
                     max="50"
                     step="5"
                     value={filters.distanceRadius}
-                    onChange={(e) => setFilters({ ...filters, distanceRadius: Number(e.target.value) })}
-                    className="w-full accent-primary"
+                    onChange={(e) => setFilters((prev) => ({ ...prev, distanceRadius: Number(e.target.value) }))}
+                    className="w-full accent-primary cursor-pointer"
                   />
                   <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
                     <span>Gần nhất</span>
@@ -797,23 +935,73 @@ export default function UnifiedMatchingHubPage() {
                     <span>Toàn Hà Nội</span>
                   </div>
                 </div>
-                <div className="space-y-2 pt-4 border-t">
-                  <label className="flex items-center justify-between text-xs font-bold cursor-pointer">
-                    <span>Chỉ hiển thị Thuần chủng</span>
-                    <input type="checkbox" checked={filters.purebredOnly} onChange={(e) => setFilters({ ...filters, purebredOnly: e.target.checked })} className="size-4 accent-primary" />
+
+                {/* 4. Tiêu chuẩn hồ sơ & chứng nhận */}
+                <div className="space-y-3 pt-4 border-t">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">
+                    Tiêu chuẩn hồ sơ & Giấy tờ
+                  </span>
+                  <label className="flex items-center justify-between text-xs font-bold cursor-pointer rounded-xl border p-3 hover:bg-muted/40 transition-colors">
+                    <div>
+                      <p>Chỉ hiển thị Thuần chủng</p>
+                      <p className="text-[10px] text-muted-foreground font-normal">Có giấy phả hệ VKA/TICA/VNCA</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={filters.purebredOnly}
+                      onChange={(e) => setFilters((prev) => ({ ...prev, purebredOnly: e.target.checked }))}
+                      className="size-4 accent-primary"
+                    />
                   </label>
-                  <label className="flex items-center justify-between text-xs font-bold cursor-pointer">
-                    <span>Chỉ hiển thị đã Tiêm chủng</span>
-                    <input type="checkbox" checked={filters.vaccinatedOnly} onChange={(e) => setFilters({ ...filters, vaccinatedOnly: e.target.checked })} className="size-4 accent-primary" />
+                  <label className="flex items-center justify-between text-xs font-bold cursor-pointer rounded-xl border p-3 hover:bg-muted/40 transition-colors">
+                    <div>
+                      <p>Chỉ hiển thị Đã tiêm chủng</p>
+                      <p className="text-[10px] text-muted-foreground font-normal">Đã tiêm vaccine phòng dại & bệnh định kỳ</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={filters.vaccinatedOnly}
+                      onChange={(e) => setFilters((prev) => ({ ...prev, vaccinatedOnly: e.target.checked }))}
+                      className="size-4 accent-primary"
+                    />
                   </label>
-                  <label className="flex items-center justify-between text-xs font-bold cursor-pointer">
-                    <span>Chỉ hiển thị Hồ sơ Đã xác thực (Verified)</span>
-                    <input type="checkbox" checked={filters.verifiedOnly} onChange={(e) => setFilters({ ...filters, verifiedOnly: e.target.checked })} className="size-4 accent-primary" />
+                  <label className="flex items-center justify-between text-xs font-bold cursor-pointer rounded-xl border p-3 hover:bg-muted/40 transition-colors">
+                    <div>
+                      <p>Chỉ hiển thị Hồ sơ Đã xác thực (Verified)</p>
+                      <p className="text-[10px] text-muted-foreground font-normal">Giấy tờ đã được Admin kiểm duyệt và cấp tích xanh</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={filters.verifiedOnly}
+                      onChange={(e) => setFilters((prev) => ({ ...prev, verifiedOnly: e.target.checked }))}
+                      className="size-4 accent-primary"
+                    />
                   </label>
                 </div>
               </div>
-              <div className="p-4 border-t">
-                <Button className="w-full rounded-xl font-bold py-6" onClick={() => { setIsFilterOpen(false); if (selectedPet) handleSelectPet(selectedPet); }}>Áp dụng bộ lọc</Button>
+
+              {/* Footer Actions */}
+              <div className="p-4 border-t grid grid-cols-2 gap-3 bg-muted/20">
+                <Button
+                  variant="outline"
+                  className="rounded-xl font-bold py-6 gap-2"
+                  onClick={() => {
+                    setFilters(initialFilters);
+                    setIsFilterOpen(false);
+                    if (selectedPet) handleSelectPet(selectedPet, initialFilters);
+                  }}
+                >
+                  <RotateCcw className="size-4" /> Đặt lại
+                </Button>
+                <Button
+                  className="rounded-xl font-bold py-6 shadow-md shadow-primary/20"
+                  onClick={() => {
+                    setIsFilterOpen(false);
+                    if (selectedPet) handleSelectPet(selectedPet, filters);
+                  }}
+                >
+                  Áp dụng bộ lọc
+                </Button>
               </div>
             </motion.div>
           </div>

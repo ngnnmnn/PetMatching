@@ -1296,6 +1296,7 @@ export class AdminService {
   // BREED CATALOG MANAGEMENT
   // =============================================================
 
+  // Lấy danh mục giống chính thức do admin quản lý
   async getAdminBreeds(query: { species?: Species; search?: string }) {
     const search = query.search?.trim();
     const officialBreeds = await this.prisma.breed.findMany({
@@ -1330,7 +1331,7 @@ export class AdminService {
 
     return {
       official: officialBreeds,
-      custom: customBreeds,
+      custom: [],
     };
   }
 

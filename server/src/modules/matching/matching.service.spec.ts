@@ -440,6 +440,44 @@ describe('MatchingService pet eligibility', () => {
     });
   });
 
+  // Kiểm tra bộ lọc ứng viên nâng cao: tiêm chủng, thuần chủng, giống và khoảng cân nặng
+  it('applies advanced filters including vaccinatedOnly, purebredOnly, breed, and custom weight range', async () => {
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue(activeFemale),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      match: { findMany: jest.fn().mockResolvedValue([]) },
+      breedRule: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as NotificationsService,
+    );
+
+    await service.getCandidates(activeFemale.ownerId, {
+      femalePetId: activeFemale.id,
+      breed: 'Corgi',
+      purebredOnly: 'true',
+      vaccinatedOnly: 'true',
+      weightMin: '5',
+      weightMax: '15',
+    });
+
+    const findManyCall = prisma.pet.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(findManyCall.where).toMatchObject({
+      breed: 'Corgi',
+      hasPedigree: true,
+      isVaccinated: true,
+      weight: { gte: 5, lte: 15 },
+    });
+  });
+
   it('rejects an underweight female pet before querying candidates', async () => {
     const prisma = {
       pet: {
