@@ -2,7 +2,6 @@ import api from '@/lib/axios';
 
 export type AdminRole = 'USER' | 'ADMIN' | 'MODERATOR' | 'STORE_MANAGER' | 'SPA_MANAGER' | 'SPA_STAFF';
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED';
-export type ApprovalStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
 export type DocumentStatus = 'PENDING' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'NEED_MORE_INFO';
 export type ComplaintAction =
   | 'DISMISS'
@@ -136,7 +135,7 @@ export const adminApi = {
     api.patch<Breed>(`/admin/breeds/${id}`, data),
   deleteBreed: (id: string) => api.delete(`/admin/breeds/${id}`),
   systemProfile: () => api.get('/admin/system-profile'),
-  updateSystemProfile: (data: { name: string; description?: string; address: string; phone: string; storeStatus: ApprovalStatus; spaStatus: ApprovalStatus }) =>
+  updateSystemProfile: (data: { name: string; description?: string; address: string; phone: string }) =>
     api.put('/admin/system-profile', data),
   storeDashboard: (params?: AdminDashboardParams) => api.get('/admin/store-dashboard', { params }),
   storeProducts: () => api.get('/admin/store-products'),
@@ -144,7 +143,10 @@ export const adminApi = {
   spas: () => api.get('/admin/spas'),
   spaDashboard: (params?: AdminDashboardParams) => api.get('/admin/spa-dashboard', { params }),
   spaServices: () => api.get('/admin/spa-services'),
-  spaBookings: () => api.get('/admin/spa-bookings'),
+  spaBookings: (branchId?: string) =>
+    api.get('/admin/spa-bookings', {
+      params: branchId ? { branchId } : undefined,
+    }),
   complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),
   resolveComplaint: (id: string, action: ComplaintAction, adminNote?: string) =>
     api.patch(`/admin/complaints/${id}/resolve`, { action, adminNote }),

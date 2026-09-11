@@ -264,8 +264,6 @@ export class AdminController {
       description?: string;
       address: string;
       phone: string;
-      storeStatus: ApprovalStatus;
-      spaStatus: ApprovalStatus;
     },
   ) {
     return this.adminService.updateSystemProfile(request.user, dto);

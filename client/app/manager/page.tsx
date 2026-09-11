@@ -5641,25 +5641,12 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
     }
   };
 
-  // Confirm booking to CONFIRMED
-  const handleConfirmBooking = async (bookingId: string) => {
-    try {
-      await spaApi.confirmBooking(bookingId);
-      toast.success('Xác nhận lịch hẹn thành công!');
-      const stRes = await spaApi.getAvailableStaffForBooking(bookingId);
-      setAvailableStaffsMap(prev => ({ ...prev, [bookingId]: stRes.data || [] }));
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi xác nhận lịch hẹn.');
-    }
-  };
-
   // Assign staff to booking
   const handleAssignStaff = async () => {
     if (!assignConfirmBooking || !assignConfirmStaff) return;
     setAssigningLoading(true);
     try {
-      await spaApi.assignStaff(assignConfirmBooking.id, assignConfirmStaff.id);
+      await spaApi.reassignStaff(assignConfirmBooking.id, assignConfirmStaff.id);
       toast.success(`Đã phân công lịch hẹn cho ${assignConfirmStaff.name}!`);
       setAssignConfirmBooking(null);
       setAssignConfirmStaff(null);
@@ -5699,17 +5686,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
       toast.error(err.response?.data?.message || 'Lỗi khi đổi lịch hẹn.');
     } finally {
       setSubmittingReschedule(false);
-    }
-  };
-
-  // Apply late discount 10%
-  const handleApplyLateDiscount = async (bookingId: string) => {
-    try {
-      await spaApi.applyLateDiscount(bookingId);
-      toast.success('Đã tự động giảm 10% giá đơn hàng do trễ hẹn!');
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi áp dụng giảm giá.');
     }
   };
 
@@ -6761,8 +6737,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                             }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
                             const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(b.status);
-                            const isLateOfferable = (b.status === 'CHECK_IN' || b.status === 'ARRIVED' || b.status === 'LATE') && !b.discountAmount;
-
                             return (
                               <tr
                                 key={b.id}
@@ -6782,23 +6756,9 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                 </td>
                                 <td className="px-6 py-4">
                                   <p className="font-bold text-gray-800 text-xs">{b.service?.name || 'Dịch vụ Spa'}</p>
-                                  {b.discountAmount > 0 ? (
-                                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                      <span className="text-[11px] text-gray-400 line-through font-medium">
-                                        {((b.totalPrice || 0) + (b.discountAmount || 0)).toLocaleString('vi-VN')}đ
-                                      </span>
-                                      <span className="text-xs font-black text-rose-600">
-                                        {(b.totalPrice || 0).toLocaleString('vi-VN')}đ
-                                      </span>
-                                      <span className="inline-flex items-center text-[9px] bg-rose-50 text-rose-700 font-bold px-1.5 py-0.2 rounded border border-rose-200">
-                                        -10%
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
-                                      {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                                    </p>
-                                  )}
+                                  <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
+                                    {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                  </p>
                                   {(() => {
                                     const subList = getManagerBookingSubServices(b);
                                     if (subList.length === 0) return null;
@@ -6829,7 +6789,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                     {b.status === 'PENDING' && (
                                       <button
                                         type="button"
-                                        onClick={() => handleConfirmBooking(b.id)}
+                                        onClick={() => setSelectedBookingDetail(b)}
                                         className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 transition shadow-2xs cursor-pointer"
                                       >
                                         ✓ Xác nhận
@@ -6859,15 +6819,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                                       </button>
                                     )}
 
-                                    {isLateOfferable && (
-                                      <button
-                                        onClick={() => handleApplyLateDiscount(b.id)}
-                                        className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-extrabold transition cursor-pointer"
-                                        title="Khách chờ >30p chưa được làm: Giảm giá 10% tự động"
-                                      >
-                                        🎁 Giảm 10%
-                                      </button>
-                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -7434,15 +7385,14 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                 <button
                   type="button"
                   onClick={async () => {
+                    const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
+                    if (!staffIdToAssign) {
+                      toast.error('Vui lòng chọn nhân viên trước khi xác nhận.');
+                      return;
+                    }
                     try {
-                      await spaApi.confirmBooking(selectedBookingDetail.id);
-                      const staffIdToAssign = selectedAssignStaffMap[selectedBookingDetail.id];
-                      if (staffIdToAssign) {
-                        await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
-                        toast.success('Đã xác nhận đơn hàng và phân công nhân viên!');
-                      } else {
-                        toast.success('Đã xác nhận đơn hàng thành công!');
-                      }
+                      await spaApi.confirmBooking(selectedBookingDetail.id, staffIdToAssign);
+                      toast.success('Đã xác nhận lịch hẹn và phân công nhân viên!');
                       setSelectedBookingDetail(null);
                       refreshData();
                     } catch (err: any) {
@@ -7451,7 +7401,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                   }}
                   className="bg-primary hover:bg-primary/90 text-white font-black text-xs h-9 px-4 rounded-lg shadow-sm transition cursor-pointer"
                 >
-                  {selectedAssignStaffMap[selectedBookingDetail.id] ? '✓&👤 Xác nhận & Phân công NV' : '✓ Xác nhận lịch hẹn'}
+                  ✓ Xác nhận & phân công nhân viên
                 </button>
               )}
 
@@ -7465,7 +7415,7 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
                       return;
                     }
                     try {
-                      await spaApi.assignStaff(selectedBookingDetail.id, staffIdToAssign);
+                      await spaApi.reassignStaff(selectedBookingDetail.id, staffIdToAssign);
                       toast.success('Đã phân công nhân viên thành công!');
                       setSelectedBookingDetail(null);
                       refreshData();

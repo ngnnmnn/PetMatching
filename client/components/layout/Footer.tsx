@@ -80,7 +80,9 @@ export default function Footer() {
             )}
             <li className="flex items-center gap-2.5 pt-1">
               <Mail className="h-4 w-4 shrink-0 text-[var(--primary-color)]" />
-              <span>petmatch@fpt.edu.vn</span>
+              <a href="mailto:petmatch@fpt.edu.vn" className="transition hover:text-white">
+                petmatch@fpt.edu.vn
+              </a>
             </li>
           </ul>
         </div>
