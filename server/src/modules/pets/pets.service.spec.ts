@@ -117,9 +117,16 @@ describe('PetsService profile details and updates', () => {
         count: jest.fn().mockResolvedValue(0),
       },
     };
+    // Mock prisma client bao gồm bảng pet và breed để phục vụ test tạo hồ sơ
     const prisma = {
       pet: { findUnique: detailFindUnique, create: createPet },
-      breed: { findFirst: jest.fn().mockResolvedValue({ id: 'breed-1' }) },
+      breed: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'breed-1',
+          name: 'Poodle',
+          isActive: true,
+        }),
+      },
       $transaction: jest
         .fn()
         .mockImplementation((callback: (client: TransactionMock) => unknown) =>
@@ -159,7 +166,7 @@ describe('PetsService profile details and updates', () => {
     });
   });
 
-  // Xác nhận createPet trả về Promise bị từ chối khi cân nặng nằm ngoài giới hạn hồ sơ.
+  // Kiểm tra từ chối tạo hồ sơ thú cưng nếu cân nặng nằm ngoài ngưỡng cho phép
   it.each([
     [Species.DOG, 0.1],
     [Species.DOG, 160.1],

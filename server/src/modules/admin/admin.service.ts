@@ -1218,6 +1218,7 @@ export class AdminService {
     });
   }
 
+  // Tạo mới quy tắc phối giống (hỗ trợ cấm ghép đôi isBlocked)
   async createBreedRule(actor: AdminActor, dto: CreateBreedRuleDto) {
     const data = this.normalizeBreedRule(dto);
     await this.ensureBreedRulePairAvailable(
@@ -1237,6 +1238,7 @@ export class AdminService {
     return rule;
   }
 
+  // Cập nhật quy tắc phối giống (hỗ trợ cấm ghép đôi isBlocked)
   async updateBreedRule(
     actor: AdminActor,
     ruleId: string,
@@ -1265,6 +1267,7 @@ export class AdminService {
     return rule;
   }
 
+  // Xóa một quy tắc phối giống
   async deleteBreedRule(actor: AdminActor, ruleId: string) {
     const rule = await this.ensureBreedRuleExists(ruleId);
     await this.prisma.breedRule.delete({ where: { id: ruleId } });
@@ -1319,6 +1322,7 @@ export class AdminService {
     };
   }
 
+  // Thêm giống mới vào danh mục (thiết lập phân loại thuần chủng/lai và cờ phả hệ)
   async createBreed(actor: AdminActor, dto: CreateBreedDto) {
     const name = dto.name.trim().replace(/\s+/g, ' ');
     const existing = await this.prisma.breed.findUnique({
@@ -1330,10 +1334,15 @@ export class AdminService {
       );
     }
 
+    const breedType = dto.breedType ?? 'PUREBRED';
+    const allowPedigree = dto.allowPedigree !== undefined ? dto.allowPedigree : breedType !== 'HYBRID';
+
     const breed = await this.prisma.breed.create({
       data: {
         species: dto.species,
         name,
+        breedType,
+        allowPedigree,
         isActive: dto.isActive ?? true,
       },
     });
@@ -1341,23 +1350,41 @@ export class AdminService {
     await this.audit(actor.id, 'ADMIN_CREATE_BREED', 'Breed', breed.id, {
       species: dto.species,
       name,
+      breedType,
+      allowPedigree,
     });
     return breed;
   }
 
+  // Cập nhật thông tin giống (tên, phân loại thuần chủng/lai, quyền nộp phả hệ, trạng thái)
   async updateBreed(actor: AdminActor, id: string, dto: UpdateBreedDto) {
     const existing = await this.prisma.breed.findUnique({ where: { id } });
     if (!existing)
       throw new NotFoundException('Không tìm thấy giống thú cưng.');
 
-    const name = dto.name
-      ? dto.name.trim().replace(/\s+/g, ' ')
-      : existing.name;
+    const name = dto.name ? dto.name.trim().replace(/\s+/g, ' ') : existing.name;
+    const species = dto.species ?? existing.species;
+
+    if (name !== existing.name || species !== existing.species) {
+      const duplicate = await this.prisma.breed.findFirst({
+        where: {
+          id: { not: id },
+          species,
+          name: { equals: name, mode: 'insensitive' },
+        },
+      });
+      if (duplicate) {
+        throw new BadRequestException('Giống thú cưng này đã tồn tại trong danh mục.');
+      }
+    }
 
     const breed = await this.prisma.breed.update({
       where: { id },
       data: {
+        ...(dto.species ? { species: dto.species } : {}),
         ...(dto.name ? { name } : {}),
+        ...(dto.breedType ? { breedType: dto.breedType } : {}),
+        ...(dto.allowPedigree !== undefined ? { allowPedigree: dto.allowPedigree } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
@@ -2566,6 +2593,7 @@ export class AdminService {
       breedA,
       breedB,
       isCompatible: dto.isCompatible,
+      isBlocked: dto.isBlocked ?? false,
       offspringName: dto.offspringName?.trim() || null,
       warningNote: dto.warningNote?.trim() || null,
       isActive: dto.isActive ?? true,

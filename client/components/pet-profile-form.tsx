@@ -58,17 +58,17 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     lng: 105.8542,
   })
 
-  // Danh sách giống lấy từ database (chỉ admin mới thêm giống mới)
-  const [dbBreeds, setDbBreeds] = useState<string[]>([])
+  // Danh sách giống lấy từ database (kèm phân loại thuần chủng/lai & cờ cho phép phả hệ)
+  const [dbBreeds, setDbBreeds] = useState<{ id: string; name: string; breedType: 'PUREBRED' | 'HYBRID'; allowPedigree: boolean }[]>([])
 
   // Lấy danh sách giống từ API khi chọn loài (chỉ giống do admin thêm vào)
   useEffect(() => {
     if (!formData.species) return
     const species = formData.species.toUpperCase()
     api
-      .get<{ id: string; name: string }[]>('/breeds', { params: { species } })
+      .get<{ id: string; name: string; breedType: 'PUREBRED' | 'HYBRID'; allowPedigree: boolean }[]>('/breeds', { params: { species } })
       .then((res) => {
-        setDbBreeds(res.data?.map((b) => b.name) ?? [])
+        setDbBreeds(res.data ?? [])
       })
       .catch(() => {
         setDbBreeds([])
@@ -76,6 +76,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   }, [formData.species])
 
   const breeds = dbBreeds
+  const selectedBreedInfo = dbBreeds.find((b) => b.name === formData.breed)
+  const isPedigreeAllowed = selectedBreedInfo ? selectedBreedInfo.allowPedigree : true
 
   const handleImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -463,7 +465,18 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 <Select
                   value={formData.breed}
                   onValueChange={(value) => {
-                    setFormData({ ...formData, breed: value })
+                    const selected = breeds.find((b) => b.name === value)
+                    if (selected && !selected.allowPedigree) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        breed: value,
+                        hasPedigree: false,
+                        pedigreeNumber: "",
+                      }))
+                      setPedigreePhotos([])
+                    } else {
+                      setFormData((prev) => ({ ...prev, breed: value }))
+                    }
                   }}
                   disabled={!formData.species}
                 >
@@ -471,9 +484,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     <SelectValue placeholder={formData.species ? "Chọn giống" : "Vui lòng chọn loài trước"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {breeds.map((breed) => (
-                      <SelectItem key={breed} value={breed}>
-                        {breed}
+                    {breeds.map((b) => (
+                      <SelectItem key={b.id} value={b.name}>
+                        {b.name} {b.breedType === 'HYBRID' ? '(Giống lai)' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -836,9 +849,11 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               <div
                 className={cn(
                   "rounded-2xl border-2 p-4 transition-all space-y-3",
-                  formData.hasPedigree
-                    ? "border-primary/40 bg-primary/5 shadow-xs"
-                    : "border-border/80 bg-muted/20"
+                  !isPedigreeAllowed
+                    ? "border-muted bg-muted/20 opacity-80"
+                    : formData.hasPedigree
+                      ? "border-primary/40 bg-primary/5 shadow-xs"
+                      : "border-border/80 bg-muted/20"
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -846,9 +861,11 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     <div
                       className={cn(
                         "flex size-10 items-center justify-center rounded-xl shrink-0 font-bold transition-colors",
-                        formData.hasPedigree
-                          ? "bg-primary text-primary-foreground shadow-xs"
-                          : "bg-muted text-muted-foreground"
+                        !isPedigreeAllowed
+                          ? "bg-muted text-muted-foreground"
+                          : formData.hasPedigree
+                            ? "bg-primary text-primary-foreground shadow-xs"
+                            : "bg-muted text-muted-foreground"
                       )}
                     >
                       <Award className="size-5" />
@@ -856,22 +873,30 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-black text-foreground">Giấy tờ phả hệ thuần chủng</span>
-                        {formData.hasPedigree && (
+                        {!isPedigreeAllowed ? (
+                          <span className="rounded-full bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20 px-2 py-0.5 text-[10px] font-bold">
+                            Không áp dụng
+                          </span>
+                        ) : formData.hasPedigree ? (
                           <span className="rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 text-[10px] font-bold">
                             Thuần chủng
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Chứng nhận phả hệ cấp bởi VKA, FCI, TICA, WCF hoặc hiệp hội quốc tế.
+                        {!isPedigreeAllowed
+                          ? `Giống ${formData.breed || 'này'} là giống lai/bản địa, không hỗ trợ khai báo phả hệ VKA/TICA.`
+                          : "Chứng nhận phả hệ cấp bởi VKA, FCI, TICA, WCF hoặc hiệp hội quốc tế."}
                       </p>
                     </div>
                   </div>
 
                   <Switch
                     id="pedigree"
-                    checked={formData.hasPedigree}
+                    disabled={!isPedigreeAllowed}
+                    checked={isPedigreeAllowed && formData.hasPedigree}
                     onCheckedChange={(checked) => {
+                      if (!isPedigreeAllowed) return
                       setFormData({ ...formData, hasPedigree: checked })
                       if (!checked) {
                         setPedigreePhotos([])
@@ -880,6 +905,15 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     }}
                   />
                 </div>
+
+                {!isPedigreeAllowed && (
+                  <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs font-medium text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+                    <Info className="mt-0.5 size-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                    <p>
+                      <strong>Giống lai / bản địa:</strong> Không áp dụng chứng nhận phả hệ VKA/TICA. Bạn chỉ cần hoàn thiện Sổ tiêm phòng &amp; Giấy khám sức khỏe để tham gia kết đôi an toàn!
+                    </p>
+                  </div>
+                )}
 
                 {formData.hasPedigree && (
                   <div className="pt-2 border-t border-border/60 space-y-3">

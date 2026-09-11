@@ -153,8 +153,32 @@ export class MatchingService {
       },
     };
 
+    // --- Hard constraint: Lọc bỏ hoàn toàn các giống bị cấm ghép đôi tuyệt đối (Hard Block) ---
+    const blockedBreedRules = await this.prisma.breedRule.findMany({
+      where: {
+        species: femalePet.species,
+        isActive: true,
+        isBlocked: true,
+        OR: [
+          { breedA: femalePet.breed },
+          { breedB: femalePet.breed },
+        ],
+      },
+      select: { breedA: true, breedB: true },
+    });
+    const blockedBreeds = blockedBreedRules.map((rule) =>
+      rule.breedA === femalePet.breed ? rule.breedB : rule.breedA,
+    );
+
     if (dto.breed && dto.breed.trim().toLowerCase() !== 'all') {
-      where.breed = dto.breed.trim();
+      const selectedBreed = dto.breed.trim();
+      // Nếu giống được lọc nằm trong danh sách cấm ghép đôi với pet cái -> không có ứng viên hợp lệ
+      if (blockedBreeds.includes(selectedBreed)) {
+        return { data: [] };
+      }
+      where.breed = selectedBreed;
+    } else if (blockedBreeds.length > 0) {
+      where.breed = { notIn: blockedBreeds };
     }
     if (dto.location && dto.location.trim().toLowerCase() !== 'all') {
       where.location = dto.location.trim();
@@ -364,6 +388,9 @@ export class MatchingService {
     // --- Hard constraint: kiểm tra tuổi cả hai bên ---
     this.assertMinimumAge(femalePet);
     this.assertMinimumAge(malePet);
+
+    // --- Hard constraint: chặn các cặp giống bị cấm ghép đôi tuyệt đối (Hard Block) ---
+    await this.assertNotBlockedBreedPair(femalePet, malePet);
 
     const request = await this.prisma.$transaction(async (tx) => {
       await this.lockUserPair(tx, userId, malePet.ownerId);
@@ -1483,6 +1510,30 @@ export class MatchingService {
       warnings,
       breedInfo,
     };
+  }
+
+  /**
+   * Kiểm tra và chặn các cặp giống bị đánh dấu cấm ghép đôi tuyệt đối (Hard Block)
+   */
+  private async assertNotBlockedBreedPair(femalePet: Pet, malePet: Pet) {
+    const blockedRule = await this.prisma.breedRule.findFirst({
+      where: {
+        species: femalePet.species,
+        isActive: true,
+        isBlocked: true,
+        OR: [
+          { breedA: femalePet.breed, breedB: malePet.breed },
+          { breedA: malePet.breed, breedB: femalePet.breed },
+        ],
+      },
+    });
+
+    if (blockedRule) {
+      throw new BadRequestException(
+        blockedRule.warningNote ||
+          `Cặp giống ${femalePet.breed} và ${malePet.breed} bị cấm ghép đôi theo quy chuẩn an toàn di truyền thú y.`,
+      );
+    }
   }
 
   /**

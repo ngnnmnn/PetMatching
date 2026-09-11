@@ -6,6 +6,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class BreedsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Lấy danh sách giống đang hoạt động kèm phân loại thuần chủng/lai và quyền nộp phả hệ
   getBreeds(species?: Species) {
     return this.prisma.breed.findMany({
       where: {
@@ -17,6 +18,8 @@ export class BreedsService {
         id: true,
         species: true,
         name: true,
+        breedType: true,
+        allowPedigree: true,
       },
     });
   }

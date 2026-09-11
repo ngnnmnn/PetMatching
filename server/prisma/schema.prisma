@@ -73,14 +73,17 @@ model PasswordResetToken {
 }
 
 model Breed {
-  id        String   @id @default(cuid())
-  species   Species
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  species       Species
+  name          String
+  breedType     BreedType @default(PUREBRED)
+  allowPedigree Boolean   @default(true)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([species, name])
+  @@index([species, breedType])
   @@map("breeds")
 }
 
@@ -260,6 +263,8 @@ model BreedRule {
   /// true  = tương thích tốt (cross-breed compatible, +20 điểm)
   /// false = không khuyến nghị (genetic risk, -10 điểm)
   isCompatible  Boolean  @default(true)
+  /// Cấm ghép đôi tuyệt đối (Hard Block: ẩn hoàn toàn khỏi Explore và chặn gửi yêu cầu)
+  isBlocked     Boolean  @default(false)
   /// Tên giống con dự kiến nếu lai (vd: "Corgi Gold", "F1 Hybrid")
   offspringName String?
   /// Ghi chú cảnh báo nếu có rủi ro di truyền
@@ -271,6 +276,7 @@ model BreedRule {
 
   @@unique([breedA, breedB, species])
   @@index([species, isActive])
+  @@index([species, isBlocked])
   @@map("breed_rules")
 }
 
@@ -851,6 +857,14 @@ enum DocumentStatus {
   APPROVED
   REJECTED
   NEED_MORE_INFO
+}
+
+/// Phân loại giống thú cưng:
+/// PUREBRED - Thuần chủng (được nộp giấy phả hệ VKA/TICA)
+/// HYBRID   - Giống lai / bản địa (không áp dụng phả hệ thuần chủng)
+enum BreedType {
+  PUREBRED
+  HYBRID
 }
 
 enum ApprovalStatus {

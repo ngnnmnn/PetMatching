@@ -1,6 +1,7 @@
 import {
   AccountStatus,
   ApprovalStatus,
+  BreedType,
   ComplaintAction,
   ComplaintStatus,
   DocumentStatus,
@@ -172,6 +173,11 @@ export class CreateBreedRuleDto {
   @IsBoolean()
   isCompatible!: boolean;
 
+  /// Cấm ghép đôi tuyệt đối (Hard Block: ẩn hoàn toàn khỏi Explore và chặn gửi yêu cầu kết nối)
+  @IsOptional()
+  @IsBoolean()
+  isBlocked?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(150)
@@ -198,17 +204,42 @@ export class CreateBreedDto {
   @MaxLength(100)
   name!: string;
 
+  /// Phân loại: PUREBRED (Thuần chủng) hoặc HYBRID (Giống lai / bản địa)
+  @IsOptional()
+  @IsEnum(BreedType)
+  breedType?: BreedType;
+
+  /// Cho phép nộp và xác minh giấy chứng nhận phả hệ VKA/TICA
+  @IsOptional()
+  @IsBoolean()
+  allowPedigree?: boolean;
+
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }
 
+// DTO cập nhật thông tin giống thú cưng
 export class UpdateBreedDto {
+  @IsOptional()
+  @IsEnum(Species)
+  species?: Species;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   name?: string;
+
+  /// Phân loại: PUREBRED (Thuần chủng) hoặc HYBRID (Giống lai / bản địa)
+  @IsOptional()
+  @IsEnum(BreedType)
+  breedType?: BreedType;
+
+  /// Cho phép nộp và xác minh giấy chứng nhận phả hệ VKA/TICA
+  @IsOptional()
+  @IsBoolean()
+  allowPedigree?: boolean;
 
   @IsOptional()
   @IsBoolean()

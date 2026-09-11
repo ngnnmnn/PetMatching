@@ -23,6 +23,7 @@ import {
   type Breed,
   type BreedRule,
   type BreedRulePayload,
+  type BreedType,
   type Species,
 } from '@/lib/api/admin';
 import { Button } from '@/components/ui/button';
@@ -30,11 +31,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
+// Giá trị khởi tạo mặc định cho form tạo quy tắc giống
 const emptyRuleForm: BreedRulePayload = {
   species: 'DOG',
   breedA: '',
   breedB: '',
   isCompatible: true,
+  isBlocked: false,
   offspringName: '',
   warningNote: '',
   isActive: true,
@@ -63,9 +66,18 @@ export default function BreedRulesPage() {
   const [speciesBreed, setSpeciesBreed] = useState<'ALL' | Species>('ALL');
   const [breedFormOpen, setBreedFormOpen] = useState(false);
   const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
-  const [breedForm, setBreedForm] = useState<{ species: Species; name: string; isActive: boolean }>({
+  // Form quản lý giống: hỗ trợ phân loại thuần chủng/lai và cờ phả hệ
+  const [breedForm, setBreedForm] = useState<{
+    species: Species;
+    name: string;
+    breedType: BreedType;
+    allowPedigree: boolean;
+    isActive: boolean;
+  }>({
     species: 'DOG',
     name: '',
+    breedType: 'PUREBRED',
+    allowPedigree: true,
     isActive: true,
   });
   const [deletingBreed, setDeletingBreed] = useState<Breed | null>(null);
@@ -141,6 +153,7 @@ export default function BreedRulesPage() {
     setRuleFormOpen(true);
   };
 
+  // Mở modal sửa quy tắc lai giống - đồng bộ cả cờ cấm tuyệt đối isBlocked
   const openEditRule = (rule: BreedRule) => {
     setEditingRule(rule);
     setRuleForm({
@@ -148,6 +161,7 @@ export default function BreedRulesPage() {
       breedA: rule.breedA,
       breedB: rule.breedB,
       isCompatible: rule.isCompatible,
+      isBlocked: rule.isBlocked ?? false,
       offspringName: rule.offspringName ?? '',
       warningNote: rule.warningNote ?? '',
       isActive: rule.isActive,
@@ -155,6 +169,7 @@ export default function BreedRulesPage() {
     setRuleFormOpen(true);
   };
 
+  // Lưu hoặc cập nhật quy tắc giống (hỗ trợ lưu cả trạng thái Hard Block)
   const submitRule = async (event: FormEvent) => {
     event.preventDefault();
     if (!ruleForm.breedA.trim() || !ruleForm.breedB.trim()) {
@@ -165,8 +180,8 @@ export default function BreedRulesPage() {
       toast.error('Hai giống trong một quy tắc phải khác nhau.');
       return;
     }
-    if (!ruleForm.isCompatible && !ruleForm.warningNote?.trim()) {
-      toast.error('Quy tắc không khuyến nghị cần có nội dung cảnh báo.');
+    if ((!ruleForm.isCompatible || ruleForm.isBlocked) && !ruleForm.warningNote?.trim()) {
+      toast.error('Quy tắc cấm hoặc không khuyến nghị cần có nội dung cảnh báo.');
       return;
     }
 
@@ -188,6 +203,7 @@ export default function BreedRulesPage() {
     }
   };
 
+  // Bật/tắt trạng thái hoạt động của quy tắc
   const toggleRuleActive = async (rule: BreedRule) => {
     try {
       await adminApi.updateBreedRule(rule.id, {
@@ -195,6 +211,7 @@ export default function BreedRulesPage() {
         breedA: rule.breedA,
         breedB: rule.breedB,
         isCompatible: rule.isCompatible,
+        isBlocked: rule.isBlocked ?? false,
         offspringName: rule.offspringName ?? '',
         warningNote: rule.warningNote ?? '',
         isActive: !rule.isActive,
@@ -206,6 +223,7 @@ export default function BreedRulesPage() {
     }
   };
 
+  // Xóa vĩnh viễn một quy tắc giống
   const confirmDeleteRule = async () => {
     if (!deletingRule) return;
     try {
@@ -218,27 +236,33 @@ export default function BreedRulesPage() {
     }
   };
 
-  // Breed Catalog Handlers
+  // Mở modal tạo giống mới trong danh mục chính thức
   const openCreateBreed = (prefilledName?: string, prefilledSpecies?: Species) => {
     setEditingBreed(null);
     setBreedForm({
       species: prefilledSpecies || 'DOG',
       name: prefilledName || '',
+      breedType: 'PUREBRED',
+      allowPedigree: true,
       isActive: true,
     });
     setBreedFormOpen(true);
   };
 
+  // Mở modal chỉnh sửa giống đã có trong danh mục
   const openEditBreed = (breed: Breed) => {
     setEditingBreed(breed);
     setBreedForm({
       species: breed.species,
       name: breed.name,
+      breedType: breed.breedType || 'PUREBRED',
+      allowPedigree: breed.allowPedigree ?? true,
       isActive: breed.isActive,
     });
     setBreedFormOpen(true);
   };
 
+  // Xử lý submit form tạo mới hoặc cập nhật giống (hỗ trợ phân loại thuần chủng/lai và phả hệ)
   const submitBreed = async (event: FormEvent) => {
     event.preventDefault();
     if (!breedForm.name.trim()) {
@@ -248,17 +272,28 @@ export default function BreedRulesPage() {
 
     setSavingBreed(true);
     try {
+      const payload = {
+        species: breedForm.species,
+        name: breedForm.name.trim(),
+        breedType: breedForm.breedType,
+        allowPedigree: breedForm.allowPedigree,
+        isActive: breedForm.isActive,
+      };
+
       if (editingBreed) {
-        await adminApi.updateBreed(editingBreed.id, breedForm);
+        await adminApi.updateBreed(editingBreed.id, payload);
         toast.success('Đã cập nhật giống thú cưng.');
       } else {
-        await adminApi.createBreed(breedForm);
+        await adminApi.createBreed(payload);
         toast.success('Đã thêm giống mới vào danh mục chính thức.');
       }
       setBreedFormOpen(false);
       await loadBreeds();
     } catch (error: any) {
-      toast.error(error?.response?.data?.message ?? 'Không thể lưu giống.');
+      const msg = Array.isArray(error?.response?.data?.message)
+        ? error.response.data.message.join(', ')
+        : error?.response?.data?.message ?? 'Không thể lưu giống.';
+      toast.error(msg);
     } finally {
       setSavingBreed(false);
     }
@@ -408,7 +443,26 @@ export default function BreedRulesPage() {
                           🐈
                         </span>
                       )}
-                      <h3 className="font-extrabold text-sm truncate">{breed.name}</h3>
+                      <div className="min-w-0">
+                        <h3 className="font-extrabold text-sm truncate">{breed.name}</h3>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span
+                            className={cn(
+                              'px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-tight',
+                              breed.breedType === 'HYBRID'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                                : 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300',
+                            )}
+                          >
+                            {breed.breedType === 'HYBRID' ? 'Giống lai' : 'Thuần chủng'}
+                          </span>
+                          {!breed.allowPedigree && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-tight bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                              Khóa phả hệ
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     <span
                       className={cn(
@@ -532,20 +586,26 @@ export default function BreedRulesPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">
                           {rule.species === 'DOG' ? '🐕 Giống Chó' : '🐈 Giống Mèo'}
                         </span>
-                        <span
-                          className={cn(
-                            'px-2 py-0.5 rounded-full text-[10px] font-black',
-                            rule.isCompatible
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-rose-100 text-rose-800',
-                          )}
-                        >
-                          {rule.isCompatible ? '✓ Tương thích (+20đ)' : '⚠ Cảnh báo (-10đ)'}
-                        </span>
+                        {rule.isBlocked ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white flex items-center gap-1 shadow-xs">
+                            <ShieldAlert className="size-3" /> CẤM GHÉP ĐÔI (HARD BLOCK)
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              'px-2 py-0.5 rounded-full text-[10px] font-black',
+                              rule.isCompatible
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-rose-100 text-rose-800',
+                            )}
+                          >
+                            {rule.isCompatible ? '✓ Tương thích (+20đ)' : '⚠ Cảnh báo (-10đ)'}
+                          </span>
+                        )}
                       </div>
 
                       <h3 className="font-extrabold text-base leading-tight">
@@ -653,7 +713,58 @@ export default function BreedRulesPage() {
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer pt-2">
+              {/* Phân loại giống: Thuần chủng vs Giống lai */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Phân loại giống *</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBreedForm({ ...breedForm, breedType: 'PUREBRED', allowPedigree: true })}
+                    className={cn(
+                      'p-3 rounded-2xl border font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all',
+                      breedForm.breedType === 'PUREBRED'
+                        ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                        : 'border-border hover:border-border/80',
+                    )}
+                  >
+                    <span>⭐ Thuần chủng</span>
+                    <span className="text-[10px] font-normal text-muted-foreground">Có phả hệ quốc tế</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBreedForm({ ...breedForm, breedType: 'HYBRID', allowPedigree: false })}
+                    className={cn(
+                      'p-3 rounded-2xl border font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all',
+                      breedForm.breedType === 'HYBRID'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200 shadow-xs'
+                        : 'border-border hover:border-border/80',
+                    )}
+                  >
+                    <span>🐾 Giống lai / Bản địa</span>
+                    <span className="text-[10px] font-normal text-muted-foreground">Không xét phả hệ</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tùy chọn cho phép nộp chứng nhận phả hệ */}
+              <div className="rounded-2xl border bg-muted/20 p-3 space-y-1.5">
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={breedForm.allowPedigree}
+                    onChange={(e) => setBreedForm({ ...breedForm, allowPedigree: e.target.checked })}
+                    className="size-4 accent-primary"
+                  />
+                  <span>Cho phép người dùng nộp chứng nhận phả hệ (VKA/TICA)</span>
+                </label>
+                <p className="text-[11px] text-muted-foreground pl-6">
+                  {breedForm.allowPedigree
+                    ? 'Người dùng nuôi giống này có thể bật tùy chọn thuần chủng và tải ảnh giấy phả hệ.'
+                    : 'Hệ thống sẽ khóa phần nộp phả hệ khi tạo hồ sơ cho giống này (chỉ cần sổ tiêm & khám sức khỏe).'}
+                </p>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer pt-1">
                 <input
                   type="checkbox"
                   checked={breedForm.isActive}
@@ -757,10 +868,10 @@ export default function BreedRulesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setRuleForm({ ...ruleForm, isCompatible: true })}
+                    onClick={() => setRuleForm({ ...ruleForm, isCompatible: true, isBlocked: false })}
                     className={cn(
                       'p-3 rounded-2xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all',
-                      ruleForm.isCompatible ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-border',
+                      ruleForm.isCompatible && !ruleForm.isBlocked ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-border',
                     )}
                   >
                     <ShieldCheck className="size-4 text-emerald-600" /> Tương thích (+20đ)
@@ -773,9 +884,45 @@ export default function BreedRulesPage() {
                       !ruleForm.isCompatible ? 'border-rose-500 bg-rose-50 text-rose-800' : 'border-border',
                     )}
                   >
-                    <ShieldAlert className="size-4 text-rose-600" /> Khuyên tránh (-10đ)
+                    <ShieldAlert className="size-4 text-rose-600" /> Khuyên tránh / Cấm
                   </button>
                 </div>
+              </div>
+
+              {/* Tùy chọn Hard Block (Cấm ghép đôi tuyệt đối) */}
+              <div
+                className={cn(
+                  'rounded-2xl border-2 p-3.5 space-y-2 transition-all',
+                  ruleForm.isBlocked
+                    ? 'border-destructive/60 bg-destructive/10'
+                    : 'border-border/80 bg-muted/20',
+                )}
+              >
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={ruleForm.isBlocked}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setRuleForm({
+                        ...ruleForm,
+                        isBlocked: checked,
+                        isCompatible: checked ? false : ruleForm.isCompatible,
+                        warningNote:
+                          checked && !ruleForm.warningNote
+                            ? 'Cấm ghép đôi tuyệt đối do rủi ro di truyền hoặc chênh lệch thể trạng nguy hiểm.'
+                            : ruleForm.warningNote,
+                      });
+                    }}
+                    className="size-4 accent-destructive"
+                  />
+                  <span className="text-xs font-black text-destructive uppercase tracking-wide flex items-center gap-1.5">
+                    <ShieldAlert className="size-4" /> Cấm ghép đôi tuyệt đối (Hard Block)
+                  </span>
+                </label>
+                <p className="text-[11px] text-muted-foreground leading-relaxed pl-6.5">
+                  Khi bật, hai giống này sẽ <strong>bị ẩn 100% khỏi trang Khám phá (Explore)</strong> của nhau và <strong>chặn hoàn toàn việc gửi yêu cầu ghép đôi</strong> để đảm bảo an toàn sinh học.
+                </p>
               </div>
 
               <div className="space-y-2">

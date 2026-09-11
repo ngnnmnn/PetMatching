@@ -23,7 +23,8 @@ export type HidePetReason =
   | "OTHER";
 export type RestorePetReason = "INFORMATION_VERIFIED" | "REPORT_RESOLVED" | "DOCUMENTS_APPROVED" | "ADMIN_REVIEW" | "OTHER";
 
-export type Species = "DOG" | "CAT";
+export type Species = 'DOG' | 'CAT';
+export type BreedType = 'PUREBRED' | 'HYBRID';
 
 export type AdminDashboardParams = {
   range?: "7d" | "30d" | "90d" | "12m" | "custom";
@@ -37,6 +38,7 @@ export interface BreedRule {
   breedA: string;
   breedB: string;
   isCompatible: boolean;
+  isBlocked: boolean; // Khóa cứng / cấm ghép đôi hoàn toàn
   offspringName: string | null;
   warningNote: string | null;
   isActive: boolean;
@@ -44,7 +46,11 @@ export interface BreedRule {
   updatedAt: string;
 }
 
-export type BreedRulePayload = Pick<BreedRule, "species" | "breedA" | "breedB" | "isCompatible" | "isActive"> & {
+export type BreedRulePayload = Pick<
+  BreedRule,
+  'species' | 'breedA' | 'breedB' | 'isCompatible' | 'isActive'
+> & {
+  isBlocked?: boolean;
   offspringName?: string;
   warningNote?: string;
 };
@@ -53,6 +59,8 @@ export interface Breed {
   id: string;
   species: Species;
   name: string;
+  breedType: BreedType; // Thuần chủng hoặc giống lai
+  allowPedigree: boolean; // Cho phép nộp giấy tờ phả hệ
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -72,11 +80,16 @@ export interface BreedCatalogResponse {
 export type CreateBreedPayload = {
   species: Species;
   name: string;
+  breedType?: BreedType;
+  allowPedigree?: boolean;
   isActive?: boolean;
 };
 
 export type UpdateBreedPayload = {
+  species?: Species;
   name?: string;
+  breedType?: BreedType;
+  allowPedigree?: boolean;
   isActive?: boolean;
 };
 

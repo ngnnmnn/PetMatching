@@ -528,6 +528,75 @@ describe('MatchingService pet eligibility', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  // Kiểm tra loại trừ hoàn toàn giống bị cấm ghép đôi tuyệt đối (Hard Block) khỏi Explore
+  it('excludes hard-blocked breeds from candidates query', async () => {
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue(activeFemale),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      match: { findMany: jest.fn().mockResolvedValue([]) },
+      breedRule: {
+        findMany: jest.fn().mockResolvedValue([
+          { breedA: 'Poodle', breedB: 'Chihuahua', isBlocked: true },
+        ]),
+      },
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as NotificationsService,
+    );
+
+    await service.getCandidates(activeFemale.ownerId, {
+      femalePetId: activeFemale.id,
+    });
+
+    const findManyCall = prisma.pet.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(findManyCall.where.breed).toEqual({
+      notIn: ['Chihuahua'],
+    });
+  });
+
+  // Kiểm tra chặn gửi yêu cầu ghép đôi giữa cặp giống bị cấm tuyệt đối (Hard Block)
+  it('rejects createRequest when the breed pair is hard-blocked', async () => {
+    const prisma = {
+      pet: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(activeFemale)
+          .mockResolvedValueOnce(activeMale),
+      },
+      breedRule: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'rule-block',
+          breedA: activeFemale.breed,
+          breedB: activeMale.breed,
+          isBlocked: true,
+          warningNote: 'Cặp giống bị cấm ghép đôi do rủi ro dị tật.',
+        }),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new MatchingService(
+      prisma as unknown as PrismaService,
+      {} as CloudinaryService,
+      {} as NotificationsService,
+    );
+
+    await expect(
+      service.createRequest(activeFemale.ownerId, {
+        femalePetId: activeFemale.id,
+        malePetId: activeMale.id,
+      }),
+    ).rejects.toThrow('Cặp giống bị cấm ghép đôi do rủi ro dị tật.');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('MatchingService moderation', () => {
