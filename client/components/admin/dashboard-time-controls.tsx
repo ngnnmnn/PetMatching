@@ -81,7 +81,7 @@ export function DashboardTimeControls({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-[#D8E0EA] bg-white p-1 shadow-sm">
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-[#D8E0EA] bg-white p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {rangeOptions.map((option) => (
           <button
             key={option.value}

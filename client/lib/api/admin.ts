@@ -143,7 +143,10 @@ export const adminApi = {
   spas: () => api.get('/admin/spas'),
   spaDashboard: (params?: AdminDashboardParams) => api.get('/admin/spa-dashboard', { params }),
   spaServices: () => api.get('/admin/spa-services'),
-  spaBookings: () => api.get('/admin/spa-bookings'),
+  spaBookings: (branchId?: string) =>
+    api.get('/admin/spa-bookings', {
+      params: branchId ? { branchId } : undefined,
+    }),
   complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),
   resolveComplaint: (id: string, action: ComplaintAction, adminNote?: string) =>
     api.patch(`/admin/complaints/${id}/resolve`, { action, adminNote }),

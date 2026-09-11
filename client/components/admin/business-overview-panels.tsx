@@ -108,6 +108,7 @@ type SpaOverviewData = {
   }>;
   upcomingBookings?: Array<{
     id: string;
+    status: string;
     scheduledAt: string;
     user?: { name?: string | null } | null;
     staff?: { name?: string | null } | null;

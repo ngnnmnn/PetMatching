@@ -635,3 +635,132 @@ describe('AdminService complaints', () => {
     );
   });
 });
+
+describe('AdminService spa bookings', () => {
+  it('filters by the actual Spa address and resolves main and sub-services', async () => {
+    const booking = {
+      id: 'booking-1',
+      addressSpaId: 'branch-1',
+      mainServiceId: 'service-main',
+      subServiceIds: ['service-extra'],
+      service: null,
+    };
+    const spaBooking = {
+      findMany: jest.fn().mockResolvedValue([booking]),
+    };
+    const spaService = {
+      findMany: jest.fn().mockResolvedValue([
+        { id: 'service-main', name: 'Tắm và sấy', price: 200000 },
+        { id: 'service-extra', name: 'Cắt móng', price: 50000 },
+      ]),
+    };
+    const service = new AdminService(
+      { spaBooking, spaService } as unknown as PrismaService,
+      { create: jest.fn() } as any,
+      { destroyByUrl: jest.fn() } as any,
+    );
+
+    const result = await service.getSpaBookings('branch-1');
+
+    expect(spaBooking.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { addressSpaId: 'branch-1' },
+      orderBy: { scheduledAt: 'desc' },
+      include: expect.objectContaining({
+        addressSpa: expect.any(Object),
+        pet: expect.any(Object),
+        payment: expect.any(Object),
+        feedback: expect.any(Object),
+      }),
+    }));
+    expect(spaService.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: { in: ['service-main', 'service-extra'] } },
+    }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      mainServiceResolved: expect.objectContaining({ id: 'service-main' }),
+      subServices: [expect.objectContaining({ id: 'service-extra' })],
+    }));
+  });
+
+  it('does not query related services when a booking has no service identifiers', async () => {
+    const spaBooking = {
+      findMany: jest.fn().mockResolvedValue([{
+        id: 'booking-1',
+        mainServiceId: null,
+        subServiceIds: [],
+        service: { id: 'legacy-service', name: 'Gói Spa' },
+      }]),
+    };
+    const spaService = { findMany: jest.fn() };
+    const service = new AdminService(
+      { spaBooking, spaService } as unknown as PrismaService,
+      { create: jest.fn() } as any,
+      { destroyByUrl: jest.fn() } as any,
+    );
+
+    const result = await service.getSpaBookings();
+
+    expect(spaService.findMany).not.toHaveBeenCalled();
+    expect(result[0].mainServiceResolved).toEqual({
+      id: 'legacy-service',
+      name: 'Gói Spa',
+    });
+    expect(result[0].subServices).toEqual([]);
+  });
+});
+
+describe('AdminService store orders', () => {
+  it('scopes orders to the configured store and returns read-only operational details', async () => {
+    const store = {
+      findFirst: jest.fn().mockResolvedValue({ id: 'store-1' }),
+    };
+    const order = {
+      findMany: jest.fn().mockResolvedValue([{ id: 'order-1' }]),
+    };
+    const service = new AdminService(
+      { store, order } as unknown as PrismaService,
+      { create: jest.fn() } as any,
+      { destroyByUrl: jest.fn() } as any,
+    );
+
+    const result = await service.getStoreOrders();
+
+    expect(store.findFirst).toHaveBeenCalledWith({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    expect(order.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { storeId: 'store-1' },
+      orderBy: { createdAt: 'desc' },
+      select: expect.objectContaining({
+        customerNameSnapshot: true,
+        shippingAddress: true,
+        deliveryProofUrl: true,
+        refundStatus: true,
+        payment: expect.any(Object),
+        items: expect.objectContaining({
+          select: expect.objectContaining({
+            product: expect.any(Object),
+            variant: expect.any(Object),
+          }),
+        }),
+        reviews: expect.any(Object),
+      }),
+    }));
+    expect(result).toEqual([{ id: 'order-1' }]);
+  });
+
+  it('returns no orders when the system has no configured store', async () => {
+    const store = { findFirst: jest.fn().mockResolvedValue(null) };
+    const order = { findMany: jest.fn().mockResolvedValue([]) };
+    const service = new AdminService(
+      { store, order } as unknown as PrismaService,
+      { create: jest.fn() } as any,
+      { destroyByUrl: jest.fn() } as any,
+    );
+
+    await expect(service.getStoreOrders()).resolves.toEqual([]);
+    expect(order.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { storeId: '__missing__' },
+    }));
+  });
+});
