@@ -132,34 +132,44 @@ const dateTime = new Intl.DateTimeFormat("vi-VN", {
   timeStyle: "short",
 });
 
+const chartColors = {
+  amber: "#F59E0B", blue: "#3B82F6", violet: "#8B5CF6",
+  emerald: "#10B981", rose: "#F43F5E", orange: "#F97316",
+} as const;
+
+const chartTooltipStyle = {
+  borderRadius: 12, borderColor: "var(--border)", backgroundColor: "var(--popover)",
+  color: "var(--popover-foreground)", fontSize: 12, fontWeight: 600,
+} as const;
+
 const storeStatusMeta: Record<string, StatusMeta> = {
-  PENDING: { label: "Chờ xử lý", color: "bg-amber-500", chartColor: "#F59E0B" },
-  PACKED: { label: "Đang xử lý", color: "bg-blue-500", chartColor: "#3B82F6" },
+  PENDING: { label: "Chờ xử lý", color: "bg-amber-500", chartColor: chartColors.amber },
+  PACKED: { label: "Đang xử lý", color: "bg-blue-500", chartColor: chartColors.blue },
   PROCESSING: {
     label: "Đang xử lý",
     color: "bg-blue-500",
-    chartColor: "#3B82F6",
+    chartColor: chartColors.blue,
   },
   SHIPPED: {
     label: "Đang giao",
     color: "bg-violet-500",
-    chartColor: "#8B5CF6",
+    chartColor: chartColors.violet,
   },
   DELIVERED: {
     label: "Đã hoàn thành",
     color: "bg-emerald-500",
-    chartColor: "#10B981",
+    chartColor: chartColors.emerald,
   },
   CANCELLED: {
     label: "Không thành công",
     color: "bg-rose-500",
-    chartColor: "#F43F5E",
+    chartColor: chartColors.rose,
   },
-  EXPIRED: { label: "Đã hết hạn", color: "bg-rose-500", chartColor: "#F43F5E" },
+  EXPIRED: { label: "Đã hết hạn", color: "bg-rose-500", chartColor: chartColors.rose },
   PAYMENT_ERROR: {
     label: "Lỗi thanh toán",
     color: "bg-rose-500",
-    chartColor: "#F43F5E",
+    chartColor: chartColors.rose,
   },
 };
 
@@ -167,44 +177,44 @@ const spaStatusMeta: Record<string, StatusMeta> = {
   PENDING: {
     label: "Chờ xác nhận",
     color: "bg-amber-500",
-    chartColor: "#F59E0B",
+    chartColor: chartColors.amber,
   },
   CONFIRMED: {
     label: "Đã xác nhận",
     color: "bg-blue-500",
-    chartColor: "#3B82F6",
+    chartColor: chartColors.blue,
   },
   CHECK_IN: {
     label: "Đã check-in",
     color: "bg-violet-500",
-    chartColor: "#8B5CF6",
+    chartColor: chartColors.violet,
   },
   ARRIVED: {
     label: "Khách đã đến",
     color: "bg-violet-500",
-    chartColor: "#8B5CF6",
+    chartColor: chartColors.violet,
   },
   IN_PROGRESS: {
     label: "Đang thực hiện",
     color: "bg-violet-500",
-    chartColor: "#8B5CF6",
+    chartColor: chartColors.violet,
   },
   COMPLETED: {
     label: "Hoàn thành",
     color: "bg-emerald-500",
-    chartColor: "#10B981",
+    chartColor: chartColors.emerald,
   },
   CANCELLED: {
     label: "Đã hủy / vắng",
     color: "bg-rose-500",
-    chartColor: "#F43F5E",
+    chartColor: chartColors.rose,
   },
   NO_SHOW: {
     label: "Khách vắng mặt",
     color: "bg-rose-500",
-    chartColor: "#F43F5E",
+    chartColor: chartColors.rose,
   },
-  LATE: { label: "Trễ hẹn", color: "bg-orange-500", chartColor: "#F97316" },
+  LATE: { label: "Trễ hẹn", color: "bg-orange-500", chartColor: chartColors.orange },
 };
 
 type StatusMeta = { label: string; color: string; chartColor: string };
@@ -466,7 +476,7 @@ export function SpaOverviewPanel({
 }
 
 function OverviewShell({ children }: { children: ReactNode }) {
-  return <div className="grid gap-5 bg-[#F7F9FB] p-5 sm:p-6">{children}</div>;
+  return <div className="grid gap-5 bg-muted/30 p-5 sm:p-6">{children}</div>;
 }
 
 function OverviewRangeFilter({
@@ -481,12 +491,12 @@ function OverviewRangeFilter({
   onRefresh: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-[#D8E0EA] bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-2xl border border-border bg-background px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p className="text-sm font-black text-[#172033]">
+        <p className="text-sm font-black text-foreground">
           Khoảng thời gian báo cáo
         </p>
-        <p className="mt-0.5 text-xs font-semibold text-[#64748B]">
+        <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
           {rangeLabel
             ? `${rangeLabel} · Áp dụng cho số liệu kinh doanh`
             : "Đang tải dữ liệu"}
@@ -521,18 +531,18 @@ function OverviewMetric({
   const content = (
     <>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-bold text-[#526074]">{label}</p>
+        <p className="text-sm font-bold text-muted-foreground">{label}</p>
         <span
           className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${metricTones[tone]}`}
         >
           <Icon className="size-5" />
         </span>
       </div>
-      <p className="mt-3 truncate text-2xl font-black tracking-tight text-[#172033]">
+      <p className="mt-3 truncate text-2xl font-black tracking-tight text-foreground">
         {value}
       </p>
       <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-        <p className="truncate text-xs font-semibold text-[#64748B]">
+        <p className="truncate text-xs font-semibold text-muted-foreground">
           {detail}
         </p>
         {badge}
@@ -540,7 +550,7 @@ function OverviewMetric({
     </>
   );
   const className =
-    "rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md";
+    "rounded-2xl border border-border bg-background p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md";
 
   return href ? (
     <Link href={href} className={className}>
@@ -559,14 +569,14 @@ function RevenueChart({
   data: RevenuePoint[];
 }) {
   return (
-    <section className="min-w-0 rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-border bg-background p-5 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-black uppercase tracking-wider text-primary">
             Xu hướng doanh thu
           </p>
-          <h3 className="mt-1 text-lg font-black text-[#172033]">{title}</h3>
-          <p className="mt-1 text-xs font-semibold text-[#64748B]">
+          <h3 className="mt-1 text-lg font-black text-foreground">{title}</h3>
+          <p className="mt-1 text-xs font-semibold text-muted-foreground">
             Chỉ ghi nhận giao dịch đã hoàn thành, không hoàn tiền.
           </p>
         </div>
@@ -582,31 +592,26 @@ function RevenueChart({
           >
             <CartesianGrid
               vertical={false}
-              stroke="#E5EAF0"
+              stroke="var(--border)"
               strokeDasharray="4 4"
             />
             <XAxis
               dataKey="label"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "#64748B", fontSize: 11, fontWeight: 600 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11, fontWeight: 600 }}
             />
             <YAxis
               axisLine={false}
               tickLine={false}
               tickFormatter={(value) => compactMoney.format(Number(value))}
-              tick={{ fill: "#64748B", fontSize: 11, fontWeight: 600 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11, fontWeight: 600 }}
             />
             <Tooltip
-              cursor={{ fill: "#F1F5F9" }}
+              cursor={{ fill: "var(--muted)", opacity: 0.5 }}
               formatter={(value) => [money.format(Number(value)), "Doanh thu"]}
               labelFormatter={(label) => `Ngày ${label}`}
-              contentStyle={{
-                borderRadius: 12,
-                borderColor: "#D8E0EA",
-                fontSize: 12,
-                fontWeight: 600,
-              }}
+              contentStyle={chartTooltipStyle}
             />
             <Bar
               dataKey="revenue"
@@ -635,13 +640,13 @@ function BusinessHealthCard({
   rows: Array<{ label: string; value: string | number }>;
 }) {
   return (
-    <section className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-border bg-background p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-wider text-primary">
             Tình trạng vận hành
           </p>
-          <h3 className="mt-1 truncate text-lg font-black text-[#172033]">
+          <h3 className="mt-1 truncate text-lg font-black text-foreground">
             {title}
           </h3>
         </div>
@@ -654,7 +659,7 @@ function BusinessHealthCard({
           {active ? "Đang mở" : "Tạm ngừng"}
         </span>
       </div>
-      <div className="mt-4 grid gap-2 text-xs font-semibold text-[#64748B]">
+      <div className="mt-4 grid gap-2 text-xs font-semibold text-muted-foreground">
         <p className="flex gap-2">
           <MapPin className="mt-0.5 size-3.5 shrink-0 text-primary" />
           <span>{address || "Chưa cập nhật địa chỉ"}</span>
@@ -664,14 +669,14 @@ function BusinessHealthCard({
           <span>{manager || "Chưa phân công quản lý"}</span>
         </p>
       </div>
-      <div className="mt-5 divide-y divide-[#E5EAF0] border-y border-[#E5EAF0]">
+      <div className="mt-5 divide-y divide-border border-y border-border">
         {rows.map((row) => (
           <div
             key={row.label}
             className="flex items-center justify-between gap-4 py-3 text-sm"
           >
-            <span className="font-semibold text-[#64748B]">{row.label}</span>
-            <span className="font-black text-[#172033]">{row.value}</span>
+            <span className="font-semibold text-muted-foreground">{row.label}</span>
+            <span className="font-black text-foreground">{row.value}</span>
           </div>
         ))}
       </div>
@@ -698,11 +703,11 @@ function StatusBreakdown({
 }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   return (
-    <section className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-border bg-background p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-black text-[#172033]">{title}</h3>
-          <p className="mt-1 text-xs font-semibold text-[#64748B]">
+          <h3 className="text-base font-black text-foreground">{title}</h3>
+          <p className="mt-1 text-xs font-semibold text-muted-foreground">
             {description}
           </p>
         </div>
@@ -727,7 +732,7 @@ function StatusBreakdown({
                   {data.map((item) => (
                     <Cell
                       key={item.status}
-                      fill={meta[item.status]?.chartColor ?? "#94A3B8"}
+                      fill={meta[item.status]?.chartColor ?? "var(--muted-foreground)"}
                     />
                   ))}
                 </Pie>
@@ -737,21 +742,16 @@ function StatusBreakdown({
                     meta[String(context.payload.status)]?.label ??
                       context.payload.status,
                   ]}
-                  contentStyle={{
-                    borderRadius: 10,
-                    borderColor: "#D8E0EA",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
+                  contentStyle={chartTooltipStyle}
                 />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="absolute inset-4 rounded-full border-[28px] border-[#EEF2F6]" />
+            <div className="absolute inset-4 rounded-full border-[28px] border-border" />
           )}
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl font-black text-[#172033]">{total}</span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+            <span className="text-3xl font-black text-foreground">{total}</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               Tổng
             </span>
           </div>
@@ -760,9 +760,9 @@ function StatusBreakdown({
           {data.map((item) => (
             <div
               key={item.status}
-              className="flex min-w-0 items-center justify-between gap-3 border-b border-[#EEF2F6] py-2"
+              className="flex min-w-0 items-center justify-between gap-3 border-b border-border py-2"
             >
-              <span className="flex min-w-0 items-center gap-2 text-xs font-bold text-[#526074]">
+              <span className="flex min-w-0 items-center gap-2 text-xs font-bold text-muted-foreground">
                 <span
                   className={`size-2.5 shrink-0 rounded-full ${meta[item.status]?.color ?? "bg-slate-400"}`}
                 />
@@ -770,7 +770,7 @@ function StatusBreakdown({
                   {meta[item.status]?.label ?? item.status}
                 </span>
               </span>
-              <span className="text-sm font-black text-[#172033]">
+              <span className="text-sm font-black text-foreground">
                 {item.value}
               </span>
             </div>
@@ -800,9 +800,9 @@ function RankedList({
   empty: string;
 }) {
   return (
-    <section className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-border bg-background p-5 shadow-sm">
       <SectionHeading title={title} description={description} href={href} />
-      <div className="mt-4 divide-y divide-[#E5EAF0]">
+      <div className="mt-4 divide-y divide-border">
         {rows.map((row, index) => (
           <div
             key={row.id}
@@ -812,10 +812,10 @@ function RankedList({
               {index + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-[#172033]">
+              <p className="truncate text-sm font-bold text-foreground">
                 {row.title}
               </p>
-              <p className="mt-0.5 truncate text-xs font-semibold text-[#64748B]">
+              <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
                 {row.description}
               </p>
             </div>
@@ -851,24 +851,24 @@ function RecentList({
   empty: string;
 }) {
   return (
-    <section className="rounded-2xl border border-[#D8E0EA] bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-border bg-background p-5 shadow-sm">
       <SectionHeading title={title} description={description} href={href} />
-      <div className="mt-4 divide-y divide-[#E5EAF0]">
+      <div className="mt-4 divide-y divide-border">
         {rows.map((row) => (
           <div
             key={row.id}
             className="grid gap-3 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1.4fr)_minmax(160px,.8fr)_auto] sm:items-center"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-[#172033]">
+              <p className="truncate text-sm font-bold text-foreground">
                 {row.title}
               </p>
-              <p className="mt-0.5 truncate text-xs font-semibold text-[#64748B]">
+              <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
                 {row.description}
               </p>
             </div>
             <div>
-              <p className="flex items-center gap-1.5 text-xs font-bold text-[#526074]">
+              <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                 <Clock3 className="size-3.5 text-primary" />
                 {row.date}
               </p>
@@ -877,7 +877,7 @@ function RecentList({
               </p>
             </div>
             {row.value && (
-              <p className="text-sm font-black text-[#172033]">{row.value}</p>
+              <p className="text-sm font-black text-foreground">{row.value}</p>
             )}
           </div>
         ))}
@@ -899,8 +899,8 @@ function SectionHeading({
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <h3 className="text-base font-black text-[#172033]">{title}</h3>
-        <p className="mt-1 text-xs font-semibold text-[#64748B]">
+        <h3 className="text-base font-black text-foreground">{title}</h3>
+        <p className="mt-1 text-xs font-semibold text-muted-foreground">
           {description}
         </p>
       </div>
@@ -922,7 +922,7 @@ function EmptyLine({
   text: string;
 }) {
   return (
-    <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center text-[#64748B]">
+    <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center text-muted-foreground">
       <Icon className="size-6" />
       <p className="text-sm font-semibold">{text}</p>
     </div>

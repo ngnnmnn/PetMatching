@@ -1,8 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, type ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   CalendarDays,
@@ -19,7 +18,16 @@ import {
   UserRound,
   WalletCards,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import {
+  ADMIN_PAYMENT_STATUS_META,
+  AdminDetailField as DetailField,
+  AdminDetailGrid as DetailGrid,
+  AdminDetailSection as DetailSection,
+  AdminFilterSelect as FilterSelect,
+  AdminStatusBadge,
+  AdminSummaryCard as SummaryCard,
+  AdminTextBlock as TextBlock,
+} from "@/components/admin/admin-ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -137,37 +145,6 @@ const ORDER_STATUS_META: Record<string, { label: string; className: string }> =
     },
   };
 
-const PAYMENT_META: Record<string, { label: string; className: string }> = {
-  PAID: {
-    label: "Đã thanh toán",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  },
-  PENDING: {
-    label: "Chờ thanh toán",
-    className: "border-amber-200 bg-amber-50 text-amber-700",
-  },
-  CANCELLED: {
-    label: "Đã hủy thanh toán",
-    className: "border-slate-200 bg-slate-50 text-slate-700",
-  },
-  EXPIRED: {
-    label: "Thanh toán hết hạn",
-    className: "border-red-200 bg-red-50 text-red-700",
-  },
-  PAYMENT_ERROR: {
-    label: "Thanh toán lỗi",
-    className: "border-red-200 bg-red-50 text-red-700",
-  },
-  REFUNDED: {
-    label: "Đã hoàn tiền",
-    className: "border-violet-200 bg-violet-50 text-violet-700",
-  },
-  UNPAID: {
-    label: "Chưa thanh toán",
-    className: "border-slate-200 bg-slate-50 text-slate-600",
-  },
-};
-
 export function StoreOrdersPanel({
   orders,
   onRefresh,
@@ -272,13 +249,13 @@ export function StoreOrdersPanel({
 
   return (
     <div>
-      <div className="border-b border-[#E5EAF0] bg-[#FBFCFD] p-5">
+      <div className="border-b border-border bg-muted/20 p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-black text-[#172033]">
+            <p className="text-sm font-black text-foreground">
               Giám sát đơn hàng
             </p>
-            <p className="mt-1 text-xs font-semibold text-[#64748B]">
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
               Dữ liệu chỉ đọc; việc xử lý và cập nhật đơn thuộc quyền quản lý
               cửa hàng.
             </p>
@@ -333,7 +310,7 @@ export function StoreOrdersPanel({
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="relative xl:col-span-2">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={search}
               onChange={(event) =>
@@ -347,40 +324,42 @@ export function StoreOrdersPanel({
             value={status}
             onChange={(value) => updateFilter(() => setStatus(value))}
             ariaLabel="Lọc theo trạng thái đơn"
-          >
-            <option value="ALL">Tất cả trạng thái</option>
-            <option value="FULFILLMENT">Đang xử lý và giao</option>
-            {Object.entries(ORDER_STATUS_META).map(([value, meta]) => (
-              <option key={value} value={value}>
-                {meta.label}
-              </option>
-            ))}
-          </FilterSelect>
+            options={[
+              { value: "ALL", label: "Tất cả trạng thái" },
+              { value: "FULFILLMENT", label: "Đang xử lý và giao" },
+              ...Object.entries(ORDER_STATUS_META).map(([value, meta]) => ({
+                value,
+                label: meta.label,
+              })),
+            ]}
+          />
           <FilterSelect
             value={paymentStatus}
             onChange={(value) => updateFilter(() => setPaymentStatus(value))}
             ariaLabel="Lọc theo thanh toán"
-          >
-            <option value="ALL">Tất cả thanh toán</option>
-            <option value="PAID">Đã thanh toán</option>
-            <option value="PENDING">Chờ thanh toán</option>
-            <option value="REFUNDED">Đã hoàn tiền</option>
-            <option value="CANCELLED">Đã hủy thanh toán</option>
-            <option value="UNPAID">Chưa có thanh toán</option>
-          </FilterSelect>
+            options={[
+              { value: "ALL", label: "Tất cả thanh toán" },
+              { value: "PAID", label: "Đã thanh toán" },
+              { value: "PENDING", label: "Chờ thanh toán" },
+              { value: "REFUNDED", label: "Đã hoàn tiền" },
+              { value: "CANCELLED", label: "Đã hủy thanh toán" },
+              { value: "UNPAID", label: "Chưa có thanh toán" },
+            ]}
+          />
           <FilterSelect
             value={dateFilter}
             onChange={(value) =>
               updateFilter(() => setDateFilter(value as DateFilter))
             }
             ariaLabel="Lọc theo ngày đặt"
-          >
-            <option value="ALL">Tất cả thời gian</option>
-            <option value="TODAY">Hôm nay</option>
-            <option value="THIS_WEEK">Tuần này</option>
-            <option value="THIS_MONTH">Tháng này</option>
-            <option value="CUSTOM">Khoảng ngày</option>
-          </FilterSelect>
+            options={[
+              { value: "ALL", label: "Tất cả thời gian" },
+              { value: "TODAY", label: "Hôm nay" },
+              { value: "THIS_WEEK", label: "Tuần này" },
+              { value: "THIS_MONTH", label: "Tháng này" },
+              { value: "CUSTOM", label: "Khoảng ngày" },
+            ]}
+          />
           {dateFilter === "CUSTOM" && (
             <>
               <Input
@@ -401,7 +380,7 @@ export function StoreOrdersPanel({
               />
             </>
           )}
-          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#475569]">
+          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-bold text-foreground/75">
             <input
               type="checkbox"
               checked={attentionOnly}
@@ -425,10 +404,10 @@ export function StoreOrdersPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-b border-[#E5EAF0] px-5 py-3 text-xs font-semibold text-[#64748B]">
+      <div className="flex items-center justify-between border-b border-border px-5 py-3 text-xs font-semibold text-muted-foreground">
         <span>
           Tìm thấy{" "}
-          <strong className="text-[#172033]">{filteredOrders.length}</strong>{" "}
+          <strong className="text-foreground">{filteredOrders.length}</strong>{" "}
           đơn hàng
         </span>
         <span>Chỉ xem</span>
@@ -436,7 +415,7 @@ export function StoreOrdersPanel({
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1220px] border-collapse text-left">
-          <thead className="bg-[#F7F9FB]">
+          <thead className="bg-muted/30">
             <tr>
               {[
                 "Mã đơn / Ngày đặt",
@@ -451,14 +430,14 @@ export function StoreOrdersPanel({
               ].map((label) => (
                 <th
                   key={label}
-                  className="px-4 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]"
+                  className="px-4 py-4 text-[11px] font-black uppercase tracking-wider text-muted-foreground"
                 >
                   {label}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E5EAF0]">
+          <tbody className="divide-y divide-border">
             {pageOrders.map((order, index) => {
               const delivery = parseShippingAddress(order.shippingAddress);
               const attentionReasons = getOrderAttentionReasons(order);
@@ -466,30 +445,30 @@ export function StoreOrdersPanel({
               return (
                 <tr
                   key={order.id ?? `store-order-${index}`}
-                  className="cursor-pointer align-top transition hover:bg-[#FAFBFC]"
+                  className="cursor-pointer align-top transition hover:bg-muted/20"
                   onClick={() => setSelectedOrder(order)}
                 >
                   <td className="px-4 py-4">
                     <p className="font-mono text-xs font-black text-primary">
                       #{getOrderCode(order)}
                     </p>
-                    <p className="mt-1 text-sm font-black text-[#172033]">
+                    <p className="mt-1 text-sm font-black text-foreground">
                       {formatTime(order.createdAt)}
                     </p>
-                    <p className="text-xs font-semibold text-[#64748B]">
+                    <p className="text-xs font-semibold text-muted-foreground">
                       {formatDate(order.createdAt)}
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <p className="max-w-44 truncate text-sm font-black text-[#172033]">
+                    <p className="max-w-44 truncate text-sm font-black text-foreground">
                       {getCustomerName(order)}
                     </p>
-                    <p className="mt-1 max-w-44 truncate text-xs font-semibold text-[#64748B]">
+                    <p className="mt-1 max-w-44 truncate text-xs font-semibold text-muted-foreground">
                       {getCustomerPhone(order) ?? "Chưa có số điện thoại"}
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <p className="max-w-52 text-sm font-bold text-[#334155]">
+                    <p className="max-w-52 text-sm font-bold text-foreground/85">
                       {order.items?.[0]?.product?.name ?? "Sản phẩm"}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-violet-700">
@@ -500,10 +479,10 @@ export function StoreOrdersPanel({
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <p className="max-w-52 truncate text-sm font-bold text-[#334155]">
+                    <p className="max-w-52 truncate text-sm font-bold text-foreground/85">
                       {delivery.address}
                     </p>
-                    <p className="mt-1 max-w-52 truncate text-xs text-[#64748B]">
+                    <p className="mt-1 max-w-52 truncate text-xs text-muted-foreground">
                       {delivery.name} · {delivery.phone}
                     </p>
                   </td>
@@ -511,12 +490,12 @@ export function StoreOrdersPanel({
                     <OrderStatusBadge status={order.status} />
                   </td>
                   <td className="px-4 py-4">
-                    <p className="text-xs font-bold text-[#475569]">
+                    <p className="text-xs font-bold text-foreground/75">
                       {formatPaymentMethod(order.payment?.method)}
                     </p>
                     <PaymentBadge status={getPaymentStatus(order)} />
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm font-black text-[#172033]">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm font-black text-foreground">
                     {formatMoney(order.totalAmount ?? 0)}
                   </td>
                   <td className="px-4 py-4">
@@ -532,13 +511,13 @@ export function StoreOrdersPanel({
                           </p>
                         ))}
                         {attentionReasons.length > 2 && (
-                          <p className="text-xs font-bold text-[#64748B]">
+                          <p className="text-xs font-bold text-muted-foreground">
                             +{attentionReasons.length - 2} cảnh báo khác
                           </p>
                         )}
                       </div>
                     ) : (
-                      <span className="text-xs font-semibold text-[#94A3B8]">
+                      <span className="text-xs font-semibold text-muted-foreground/70">
                         Ổn định
                       </span>
                     )}
@@ -563,7 +542,7 @@ export function StoreOrdersPanel({
               <tr>
                 <td
                   colSpan={9}
-                  className="px-5 py-14 text-center text-sm font-semibold text-[#64748B]"
+                  className="px-5 py-14 text-center text-sm font-semibold text-muted-foreground"
                 >
                   Không có đơn hàng phù hợp với bộ lọc.
                 </td>
@@ -573,8 +552,8 @@ export function StoreOrdersPanel({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5EAF0] px-5 py-4">
-        <p className="text-xs font-semibold text-[#64748B]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+        <p className="text-xs font-semibold text-muted-foreground">
           Trang {activePage}/{totalPages} · {filteredOrders.length} đơn hàng
         </p>
         <div className="flex gap-2">
@@ -628,13 +607,13 @@ function StoreOrderDetailDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[1120px]">
-        <DialogHeader className="relative border-b border-orange-100 bg-linear-to-r from-orange-50 via-white to-white px-6 py-5 pr-14 text-left sm:px-8 sm:py-6 sm:pr-16">
+        <DialogHeader className="relative border-b border-orange-100 bg-linear-to-r from-orange-50 via-background to-background px-6 py-5 pr-14 text-left sm:px-8 sm:py-6 sm:pr-16">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-primary">
                 Chi tiết đơn hàng · Chỉ xem
               </p>
-              <DialogTitle className="mt-2 flex flex-wrap items-center gap-3 text-2xl font-black text-[#172033] sm:text-3xl">
+              <DialogTitle className="mt-2 flex flex-wrap items-center gap-3 text-2xl font-black text-foreground sm:text-3xl">
                 Đơn #{getOrderCode(order)}{" "}
                 <OrderStatusBadge status={order.status} />
               </DialogTitle>
@@ -643,8 +622,8 @@ function StoreOrderDetailDialog({
                 {formatDateTime(order.updatedAt)}
               </DialogDescription>
             </div>
-            <div className="shrink-0 rounded-xl border border-orange-200 bg-white px-4 py-3 shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">
+            <div className="shrink-0 rounded-xl border border-orange-200 bg-background px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                 Tổng thanh toán
               </p>
               <p className="mt-1 text-xl font-black text-primary">
@@ -654,7 +633,7 @@ function StoreOrderDetailDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 gap-4 overflow-y-auto bg-[#F7F9FB] p-4 sm:p-6 lg:grid-cols-2 lg:gap-5">
+        <div className="grid min-h-0 gap-4 overflow-y-auto bg-muted/30 p-4 sm:p-6 lg:grid-cols-2 lg:gap-5">
           {attentionReasons.length > 0 && (
             <section className="rounded-xl border border-red-200 bg-red-50 p-4 lg:col-span-2">
               <h3 className="flex items-center gap-2 text-sm font-black text-red-800">
@@ -731,7 +710,7 @@ function StoreOrderDetailDialog({
                 })}
               </div>
             ) : (
-              <p className="text-sm font-semibold text-[#64748B]">
+              <p className="text-sm font-semibold text-muted-foreground">
                 Đơn hàng đã kết thúc ở trạng thái{" "}
                 <strong>
                   {ORDER_STATUS_META[order.status ?? ""]?.label ?? order.status}
@@ -746,10 +725,10 @@ function StoreOrderDetailDialog({
             title={`Sản phẩm (${getTotalItems(order)})`}
             wide
           >
-            <div className="overflow-x-auto rounded-xl border border-[#E5EAF0]">
+            <div className="overflow-x-auto rounded-xl border border-border">
               <table className="w-full min-w-[680px] text-left text-sm">
-                <thead className="bg-[#F7F9FB]">
-                  <tr className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">
+                <thead className="bg-muted/30">
+                  <tr className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                     <th className="px-4 py-3">Sản phẩm</th>
                     <th className="px-4 py-3">Biến thể</th>
                     <th className="px-4 py-3 text-center">Số lượng</th>
@@ -757,13 +736,13 @@ function StoreOrderDetailDialog({
                     <th className="px-4 py-3 text-right">Thành tiền</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E5EAF0]">
+                <tbody className="divide-y divide-border">
                   {(order.items ?? []).map((item, index) => (
                     <tr key={item.id ?? index}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {item.product?.imageUrl ? (
-                            <div className="relative size-11 shrink-0 overflow-hidden rounded-lg border bg-white">
+                            <div className="relative size-11 shrink-0 overflow-hidden rounded-lg border bg-background">
                               <Image
                                 src={item.product.imageUrl}
                                 alt={item.product.name ?? "Sản phẩm"}
@@ -779,10 +758,10 @@ function StoreOrderDetailDialog({
                             </div>
                           )}
                           <div>
-                            <p className="font-bold text-[#172033]">
+                            <p className="font-bold text-foreground">
                               {item.product?.name ?? "Sản phẩm đã xóa"}
                             </p>
-                            <p className="text-xs font-semibold text-[#64748B]">
+                            <p className="text-xs font-semibold text-muted-foreground">
                               {[item.product?.brand, item.product?.unit]
                                 .filter(Boolean)
                                 .join(" · ") || "-"}
@@ -790,7 +769,7 @@ function StoreOrderDetailDialog({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-[#475569]">
+                      <td className="px-4 py-3 font-semibold text-foreground/75">
                         {item.variant?.name ?? "-"}
                       </td>
                       <td className="px-4 py-3 text-center font-black">
@@ -825,8 +804,8 @@ function StoreOrderDetailDialog({
                 value={-(order.discountAmount ?? 0)}
                 discount
               />
-              <div className="flex items-center justify-between border-t border-[#E5EAF0] pt-3">
-                <span className="font-black text-[#172033]">Tổng cộng</span>
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="font-black text-foreground">Tổng cộng</span>
                 <span className="text-lg font-black text-primary">
                   {formatMoney(order.totalAmount ?? 0)}
                 </span>
@@ -843,7 +822,7 @@ function StoreOrderDetailDialog({
               <DetailField
                 label="Trạng thái"
                 value={
-                  PAYMENT_META[getPaymentStatus(order)]?.label ??
+                  ADMIN_PAYMENT_STATUS_META[getPaymentStatus(order)]?.label ??
                   getPaymentStatus(order)
                 }
               />
@@ -874,7 +853,7 @@ function StoreOrderDetailDialog({
               <div className="grid gap-4 md:grid-cols-[minmax(0,320px)_1fr]">
                 {order.deliveryProofUrl && (
                   <div>
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-[#64748B]">
+                    <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                       Ảnh giao hàng
                     </p>
                     <div className="relative h-48 overflow-hidden rounded-xl border bg-slate-50">
@@ -928,7 +907,7 @@ function StoreOrderDetailDialog({
                 />
                 {order.refundProofUrl && (
                   <div className="sm:col-span-2">
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-[#64748B]">
+                    <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                       Chứng từ hoàn tiền
                     </p>
                     <div className="relative h-48 max-w-md overflow-hidden rounded-xl border bg-slate-50">
@@ -953,17 +932,17 @@ function StoreOrderDetailDialog({
                 {order.reviews?.map((review, index) => (
                   <div
                     key={review.id ?? index}
-                    className="rounded-xl border border-[#E5EAF0] bg-[#FBFCFD] p-4"
+                    className="rounded-xl border border-border bg-muted/20 p-4"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-black text-[#172033]">
+                      <p className="font-black text-foreground">
                         {review.product?.name ?? "Sản phẩm"}
                       </p>
                       <span className="whitespace-nowrap text-sm font-black text-amber-600">
                         {review.rating ?? 0}/5 ★
                       </span>
                     </div>
-                    <p className="mt-2 text-sm font-semibold text-[#475569]">
+                    <p className="mt-2 text-sm font-semibold text-foreground/75">
                       {review.comment || "Không có nhận xét."}
                     </p>
                     {(review.images?.length ?? 0) > 0 && (
@@ -971,7 +950,7 @@ function StoreOrderDetailDialog({
                         {review.images?.map((imageUrl, imageIndex) => (
                           <div
                             key={`${imageUrl}-${imageIndex}`}
-                            className="relative size-14 overflow-hidden rounded-lg border bg-white"
+                            className="relative size-14 overflow-hidden rounded-lg border bg-background"
                           >
                             <Image
                               src={imageUrl}
@@ -985,14 +964,14 @@ function StoreOrderDetailDialog({
                         ))}
                       </div>
                     )}
-                    <p className="mt-2 text-xs text-[#94A3B8]">
+                    <p className="mt-2 text-xs text-muted-foreground/70">
                       {formatDateTime(review.createdAt)}
                     </p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm font-semibold text-[#94A3B8]">
+              <p className="text-sm font-semibold text-muted-foreground/70">
                 Khách hàng chưa đánh giá sản phẩm trong đơn này.
               </p>
             )}
@@ -1003,133 +982,6 @@ function StoreOrderDetailDialog({
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  icon: Icon,
-  tone = "default",
-  onClick,
-}: {
-  label: string;
-  value: number;
-  icon: LucideIcon;
-  tone?: "default" | "amber" | "blue" | "green" | "red";
-  onClick: () => void;
-}) {
-  const tones = {
-    default: "border-slate-200 bg-white text-slate-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    blue: "border-blue-200 bg-blue-50 text-blue-700",
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    red: "border-red-200 bg-red-50 text-red-700",
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-3 rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tones[tone]}`}
-    >
-      <span className="flex size-9 items-center justify-center rounded-lg bg-white/80">
-        <Icon className="size-4" />
-      </span>
-      <span>
-        <span className="block text-xl font-black">{value}</span>
-        <span className="block text-[11px] font-black uppercase tracking-wide">
-          {label}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function FilterSelect({
-  value,
-  onChange,
-  ariaLabel,
-  children,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  ariaLabel: string;
-  children: ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      aria-label={ariaLabel}
-      className="h-10 rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#475569] outline-none focus:border-primary"
-    >
-      {children}
-    </select>
-  );
-}
-
-function DetailSection({
-  icon: Icon,
-  title,
-  wide = false,
-  children,
-}: {
-  icon: LucideIcon;
-  title: string;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      className={`min-w-0 rounded-2xl border border-[#DDE4EC] bg-white p-4 shadow-xs sm:p-5 ${wide ? "lg:col-span-2" : ""}`}
-    >
-      <h3 className="mb-4 flex items-center gap-2.5 text-sm font-black text-[#172033]">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-primary">
-          <Icon className="size-4" />
-        </span>
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function DetailGrid({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid min-w-0 gap-x-6 gap-y-4 sm:grid-cols-2">
-      {children}
-    </div>
-  );
-}
-function DetailField({
-  label,
-  value,
-  wide = false,
-}: {
-  label: string;
-  value: string;
-  wide?: boolean;
-}) {
-  return (
-    <div className={`min-w-0 ${wide ? "sm:col-span-2" : ""}`}>
-      <p className="text-[10px] font-black uppercase tracking-[0.08em] text-[#64748B]">
-        {label}
-      </p>
-      <p className="mt-1 break-words text-sm font-bold leading-5 text-[#334155]">
-        {value}
-      </p>
-    </div>
-  );
-}
-function TextBlock({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div>
-      <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">
-        {label}
-      </p>
-      <p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-[#334155]">
-        {value || "Không có thông tin."}
-      </p>
-    </div>
-  );
-}
 function MoneyLine({
   label,
   value,
@@ -1141,9 +993,9 @@ function MoneyLine({
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="font-semibold text-[#64748B]">{label}</span>
+      <span className="font-semibold text-muted-foreground">{label}</span>
       <span
-        className={`font-black ${discount && value < 0 ? "text-emerald-700" : "text-[#334155]"}`}
+        className={`font-black ${discount && value < 0 ? "text-emerald-700" : "text-foreground/85"}`}
       >
         {value < 0 ? `-${formatMoney(Math.abs(value))}` : formatMoney(value)}
       </span>
@@ -1152,26 +1004,10 @@ function MoneyLine({
 }
 
 function OrderStatusBadge({ status }: { status?: string | null }) {
-  const meta = ORDER_STATUS_META[status ?? ""] ?? {
-    label: status ?? "-",
-    className: "border-slate-200 bg-slate-50 text-slate-600",
-  };
-  return (
-    <Badge variant="outline" className={`whitespace-nowrap ${meta.className}`}>
-      {meta.label}
-    </Badge>
-  );
+  return <AdminStatusBadge status={status} meta={ORDER_STATUS_META} />;
 }
 function PaymentBadge({ status }: { status: string }) {
-  const meta = PAYMENT_META[status] ?? PAYMENT_META.UNPAID;
-  return (
-    <Badge
-      variant="outline"
-      className={`mt-1 whitespace-nowrap text-[10px] ${meta.className}`}
-    >
-      {meta.label}
-    </Badge>
-  );
+  return <AdminStatusBadge status={status} meta={ADMIN_PAYMENT_STATUS_META} compact />;
 }
 
 function getOrderAttentionReasons(order: StoreOrderRow) {

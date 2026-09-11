@@ -1,8 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useMemo, useState, type ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
@@ -15,7 +14,16 @@ import {
   UserRound,
   WalletCards,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import {
+  ADMIN_PAYMENT_STATUS_META,
+  AdminDetailField as DetailField,
+  AdminDetailGrid as DetailGrid,
+  AdminDetailSection as DetailSection,
+  AdminFilterSelect as FilterSelect,
+  AdminStatusBadge,
+  AdminSummaryCard as SummaryCard,
+  AdminTextBlock as TextBlock,
+} from '@/components/admin/admin-ui';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -88,16 +96,6 @@ const SPA_STATUS_META: Record<string, { label: string; className: string }> = {
   LATE: { label: 'Trễ hẹn', className: 'border-rose-200 bg-rose-50 text-rose-700' },
 };
 
-const PAYMENT_STATUS_META: Record<string, { label: string; className: string }> = {
-  PAID: { label: 'Đã thanh toán', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  PENDING: { label: 'Chờ thanh toán', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  PAYMENT_ERROR: { label: 'Thanh toán lỗi', className: 'border-red-200 bg-red-50 text-red-700' },
-  EXPIRED: { label: 'Thanh toán hết hạn', className: 'border-red-200 bg-red-50 text-red-700' },
-  REFUNDED: { label: 'Đã hoàn tiền', className: 'border-violet-200 bg-violet-50 text-violet-700' },
-  CANCELLED: { label: 'Đã hủy thanh toán', className: 'border-slate-200 bg-slate-50 text-slate-700' },
-  UNPAID: { label: 'Chưa thanh toán', className: 'border-slate-200 bg-slate-50 text-slate-600' },
-};
-
 export function SpaBookingsPanel({
   bookings,
   onRefresh,
@@ -163,11 +161,11 @@ export function SpaBookingsPanel({
 
   return (
     <div>
-      <div className="border-b border-[#E5EAF0] bg-[#FBFCFD] p-5">
+      <div className="border-b border-border bg-muted/20 p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-black text-[#172033]">Giám sát lịch hẹn</p>
-            <p className="mt-1 text-xs font-semibold text-[#64748B]">
+            <p className="text-sm font-black text-foreground">Giám sát lịch hẹn</p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
               Dữ liệu chỉ đọc; mọi thay đổi lịch thuộc quyền quản lý và nhân viên Spa.
             </p>
           </div>
@@ -187,7 +185,7 @@ export function SpaBookingsPanel({
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="relative xl:col-span-2">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={search}
               onChange={(event) => updateFilter(() => setSearch(event.target.value))}
@@ -195,32 +193,47 @@ export function SpaBookingsPanel({
               className="pl-9"
             />
           </label>
-          <FilterSelect value={status} onChange={(value) => updateFilter(() => setStatus(value))} ariaLabel="Lọc theo trạng thái">
-            <option value="ALL">Tất cả trạng thái</option>
-            <option value="ACTIVE_SERVICE">Đang phục vụ</option>
-            {Object.entries(SPA_STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}
-          </FilterSelect>
-          <FilterSelect value={paymentFilter} onChange={(value) => updateFilter(() => setPaymentFilter(value as PaymentFilter))} ariaLabel="Lọc theo thanh toán">
-            <option value="ALL">Tất cả thanh toán</option>
-            <option value="PAID">Đã thanh toán</option>
-            <option value="PENDING">Chờ thanh toán</option>
-            <option value="REFUNDED">Đã hoàn tiền</option>
-            <option value="UNPAID">Chưa thanh toán</option>
-          </FilterSelect>
-          <FilterSelect value={dateFilter} onChange={(value) => updateFilter(() => setDateFilter(value as DateFilter))} ariaLabel="Lọc theo thời gian">
-            <option value="ALL">Tất cả thời gian</option>
-            <option value="TODAY">Hôm nay</option>
-            <option value="THIS_WEEK">Tuần này</option>
-            <option value="THIS_MONTH">Tháng này</option>
-            <option value="CUSTOM">Khoảng ngày</option>
-          </FilterSelect>
+          <FilterSelect
+            value={status}
+            onChange={(value) => updateFilter(() => setStatus(value))}
+            ariaLabel="Lọc theo trạng thái"
+            options={[
+              { value: 'ALL', label: 'Tất cả trạng thái' },
+              { value: 'ACTIVE_SERVICE', label: 'Đang phục vụ' },
+              ...Object.entries(SPA_STATUS_META).map(([value, meta]) => ({ value, label: meta.label })),
+            ]}
+          />
+          <FilterSelect
+            value={paymentFilter}
+            onChange={(value) => updateFilter(() => setPaymentFilter(value as PaymentFilter))}
+            ariaLabel="Lọc theo thanh toán"
+            options={[
+              { value: 'ALL', label: 'Tất cả thanh toán' },
+              { value: 'PAID', label: 'Đã thanh toán' },
+              { value: 'PENDING', label: 'Chờ thanh toán' },
+              { value: 'REFUNDED', label: 'Đã hoàn tiền' },
+              { value: 'UNPAID', label: 'Chưa thanh toán' },
+            ]}
+          />
+          <FilterSelect
+            value={dateFilter}
+            onChange={(value) => updateFilter(() => setDateFilter(value as DateFilter))}
+            ariaLabel="Lọc theo thời gian"
+            options={[
+              { value: 'ALL', label: 'Tất cả thời gian' },
+              { value: 'TODAY', label: 'Hôm nay' },
+              { value: 'THIS_WEEK', label: 'Tuần này' },
+              { value: 'THIS_MONTH', label: 'Tháng này' },
+              { value: 'CUSTOM', label: 'Khoảng ngày' },
+            ]}
+          />
           {dateFilter === 'CUSTOM' && (
             <>
               <Input type="date" value={dateFrom} aria-label="Từ ngày" onChange={(event) => updateFilter(() => setDateFrom(event.target.value))} />
               <Input type="date" value={dateTo} aria-label="Đến ngày" onChange={(event) => updateFilter(() => setDateTo(event.target.value))} />
             </>
           )}
-          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#475569]">
+          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-bold text-foreground/75">
             <input
               type="checkbox"
               checked={attentionOnly}
@@ -237,47 +250,47 @@ export function SpaBookingsPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-b border-[#E5EAF0] px-5 py-3 text-xs font-semibold text-[#64748B]">
-        <span>Tìm thấy <strong className="text-[#172033]">{filteredBookings.length}</strong> lịch hẹn</span>
+      <div className="flex items-center justify-between border-b border-border px-5 py-3 text-xs font-semibold text-muted-foreground">
+        <span>Tìm thấy <strong className="text-foreground">{filteredBookings.length}</strong> lịch hẹn</span>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1120px] border-collapse text-left">
-          <thead className="bg-[#F7F9FB]">
+          <thead className="bg-muted/30">
             <tr>
               {['Mã lịch / Thời gian', 'Khách hàng / Thú cưng', 'Dịch vụ', 'Nhân viên', 'Trạng thái', 'Thanh toán', 'Theo dõi', 'Chi tiết'].map((label) => (
-                <th key={label} className="px-4 py-4 text-[11px] font-black uppercase tracking-wider text-[#64748B]">{label}</th>
+                <th key={label} className="px-4 py-4 text-[11px] font-black uppercase tracking-wider text-muted-foreground">{label}</th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E5EAF0]">
+          <tbody className="divide-y divide-border">
             {pageBookings.map((booking, index) => {
               const attentionReasons = getAttentionReasons(booking);
               const mainService = booking.mainServiceResolved ?? booking.service;
               return (
-                <tr key={booking.id ?? `spa-booking-${index}`} className="cursor-pointer align-top transition hover:bg-[#FAFBFC]" onClick={() => setSelectedBooking(booking)}>
+                <tr key={booking.id ?? `spa-booking-${index}`} className="cursor-pointer align-top transition hover:bg-muted/20" onClick={() => setSelectedBooking(booking)}>
                   <td className="px-4 py-4">
                     <p className="font-mono text-xs font-black text-primary">#{shortId(booking.id)}</p>
-                    <p className="mt-1 whitespace-nowrap text-sm font-black text-[#172033]">{formatTime(booking.scheduledAt)}</p>
-                    <p className="text-xs font-semibold text-[#64748B]">{formatDate(booking.scheduledAt)}</p>
+                    <p className="mt-1 whitespace-nowrap text-sm font-black text-foreground">{formatTime(booking.scheduledAt)}</p>
+                    <p className="text-xs font-semibold text-muted-foreground">{formatDate(booking.scheduledAt)}</p>
                   </td>
                   <td className="px-4 py-4">
-                    <p className="max-w-44 truncate text-sm font-black text-[#172033]">{getCustomerName(booking)}</p>
-                    <p className="mt-1 max-w-44 truncate text-xs font-semibold text-[#64748B]">
+                    <p className="max-w-44 truncate text-sm font-black text-foreground">{getCustomerName(booking)}</p>
+                    <p className="mt-1 max-w-44 truncate text-xs font-semibold text-muted-foreground">
                       {booking.petName ?? booking.pet?.name ?? 'Chưa có tên pet'} · {formatSpecies(booking.petSpecies ?? booking.pet?.species)}
                       {getPetWeight(booking) ? ` · ${getPetWeight(booking)}kg` : ''}
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <p className="max-w-48 text-sm font-bold text-[#334155]">{mainService?.name ?? 'Gói Spa'}</p>
+                    <p className="max-w-48 text-sm font-bold text-foreground/85">{mainService?.name ?? 'Gói Spa'}</p>
                     <p className="mt-1 text-xs font-semibold text-violet-700">
                       {booking.subServices?.length ? `+ ${booking.subServices.length} dịch vụ kèm theo` : 'Không có dịch vụ kèm theo'}
                     </p>
                   </td>
-                  <td className="px-4 py-4 text-sm font-semibold text-[#334155]">{booking.staff?.name ?? 'Chưa phân công'}</td>
+                  <td className="px-4 py-4 text-sm font-semibold text-foreground/85">{booking.staff?.name ?? 'Chưa phân công'}</td>
                   <td className="px-4 py-4"><StatusBadge status={booking.status} /></td>
                   <td className="px-4 py-4">
-                    <p className="whitespace-nowrap text-sm font-black text-[#172033]">{formatMoney(getBookingTotal(booking))}</p>
+                    <p className="whitespace-nowrap text-sm font-black text-foreground">{formatMoney(getBookingTotal(booking))}</p>
                     <PaymentBadge status={getPaymentStatus(booking)} />
                   </td>
                   <td className="px-4 py-4">
@@ -286,9 +299,9 @@ export function SpaBookingsPanel({
                         {attentionReasons.slice(0, 2).map((reason) => (
                           <p key={reason} className="flex items-start gap-1 text-xs font-bold text-red-700"><AlertTriangle className="mt-0.5 size-3 shrink-0" />{reason}</p>
                         ))}
-                        {attentionReasons.length > 2 && <p className="text-xs font-bold text-[#64748B]">+{attentionReasons.length - 2} cảnh báo khác</p>}
+                        {attentionReasons.length > 2 && <p className="text-xs font-bold text-muted-foreground">+{attentionReasons.length - 2} cảnh báo khác</p>}
                       </div>
-                    ) : <span className="text-xs font-semibold text-[#94A3B8]">Ổn định</span>}
+                    ) : <span className="text-xs font-semibold text-muted-foreground/70">Ổn định</span>}
                   </td>
                   <td className="px-4 py-4">
                     <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedBooking(booking); }}>
@@ -299,14 +312,14 @@ export function SpaBookingsPanel({
               );
             })}
             {!pageBookings.length && (
-              <tr><td colSpan={8} className="px-5 py-14 text-center text-sm font-semibold text-[#64748B]">Không có lịch hẹn phù hợp với bộ lọc.</td></tr>
+              <tr><td colSpan={8} className="px-5 py-14 text-center text-sm font-semibold text-muted-foreground">Không có lịch hẹn phù hợp với bộ lọc.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5EAF0] px-5 py-4">
-        <p className="text-xs font-semibold text-[#64748B]">Trang {activePage}/{totalPages} · {filteredBookings.length} lịch hẹn</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+        <p className="text-xs font-semibold text-muted-foreground">Trang {activePage}/{totalPages} · {filteredBookings.length} lịch hẹn</p>
         <div className="flex gap-2">
           <Button type="button" size="sm" variant="outline" disabled={activePage <= 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>Trước</Button>
           <Button type="button" size="sm" variant="outline" disabled={activePage >= totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>Sau</Button>
@@ -315,41 +328,6 @@ export function SpaBookingsPanel({
 
       <SpaBookingDetailDialog booking={selectedBooking} onClose={() => setSelectedBooking(null)} />
     </div>
-  );
-}
-
-function SummaryCard({ label, value, icon: Icon, tone = 'default', onClick }: {
-  label: string;
-  value: number;
-  icon: LucideIcon;
-  tone?: 'default' | 'amber' | 'blue' | 'green' | 'red';
-  onClick: () => void;
-}) {
-  const tones = {
-    default: 'border-slate-200 bg-white text-slate-700',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700',
-    blue: 'border-blue-200 bg-blue-50 text-blue-700',
-    green: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    red: 'border-red-200 bg-red-50 text-red-700',
-  };
-  return (
-    <button type="button" onClick={onClick} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tones[tone]}`}>
-      <span className="flex size-9 items-center justify-center rounded-lg bg-white/80"><Icon className="size-4" /></span>
-      <span><span className="block text-xl font-black">{value}</span><span className="block text-[11px] font-black uppercase tracking-wide">{label}</span></span>
-    </button>
-  );
-}
-
-function FilterSelect({ value, onChange, ariaLabel, children }: {
-  value: string;
-  onChange: (value: string) => void;
-  ariaLabel: string;
-  children: ReactNode;
-}) {
-  return (
-    <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={ariaLabel} className="h-10 rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#475569] outline-none focus:border-primary">
-      {children}
-    </select>
   );
 }
 
@@ -363,25 +341,25 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[1120px]">
-        <DialogHeader className="relative border-b border-orange-100 bg-linear-to-r from-orange-50 via-white to-white px-6 py-5 pr-14 text-left sm:px-8 sm:py-6 sm:pr-16">
+        <DialogHeader className="relative border-b border-orange-100 bg-linear-to-r from-orange-50 via-background to-background px-6 py-5 pr-14 text-left sm:px-8 sm:py-6 sm:pr-16">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-primary">Chi tiết lịch Spa · Chỉ xem</p>
-              <DialogTitle className="mt-2 flex flex-wrap items-center gap-3 text-2xl font-black text-[#172033] sm:text-3xl">
+              <DialogTitle className="mt-2 flex flex-wrap items-center gap-3 text-2xl font-black text-foreground sm:text-3xl">
                 Lịch #{shortId(booking.id)} <StatusBadge status={booking.status} />
               </DialogTitle>
               <DialogDescription className="mt-2 text-xs font-semibold sm:text-sm">
                 Đặt lúc {formatDateTime(booking.createdAt)} · Cập nhật {formatDateTime(booking.updatedAt)}
               </DialogDescription>
             </div>
-            <div className="shrink-0 rounded-xl border border-orange-200 bg-white px-4 py-3 shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">Thời gian hẹn</p>
-              <p className="mt-1 text-base font-black text-[#172033]">{formatTime(booking.scheduledAt)} · {formatDate(booking.scheduledAt)}</p>
+            <div className="shrink-0 rounded-xl border border-orange-200 bg-background px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Thời gian hẹn</p>
+              <p className="mt-1 text-base font-black text-foreground">{formatTime(booking.scheduledAt)} · {formatDate(booking.scheduledAt)}</p>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 gap-4 overflow-y-auto bg-[#F7F9FB] p-4 sm:p-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-5">
+        <div className="grid min-h-0 gap-4 overflow-y-auto bg-muted/30 p-4 sm:p-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-5">
           {attentionReasons.length > 0 && (
             <section className="rounded-xl border border-red-200 bg-red-50 p-4 lg:col-span-2">
               <h3 className="flex items-center gap-2 text-sm font-black text-red-800"><AlertTriangle className="size-4" /> Nội dung cần chú ý</h3>
@@ -401,13 +379,13 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
               <DetailField label="Kết thúc thực tế" value={formatDateTime(booking.timeEndReal)} />
               <DetailField label="Độ lệch hoàn thành" value={formatCompletionDiff(booking.completionDiffMinutes)} />
             </DetailGrid>
-            <div className="mt-5 flex flex-col gap-2 border-t border-[#E5EAF0] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">Nhân viên phụ trách</p>
-                <p className="mt-1 text-sm font-black text-[#172033]">{booking.staff?.name ?? 'Chưa phân công'}</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Nhân viên phụ trách</p>
+                <p className="mt-1 text-sm font-black text-foreground">{booking.staff?.name ?? 'Chưa phân công'}</p>
               </div>
               {booking.staff && (
-                <p className="break-all text-xs font-semibold text-[#64748B] sm:max-w-[55%] sm:text-right">
+                <p className="break-all text-xs font-semibold text-muted-foreground sm:max-w-[55%] sm:text-right">
                   {booking.staff.phone ?? booking.staff.email ?? 'Chưa có thông tin liên hệ'}
                 </p>
               )}
@@ -429,12 +407,12 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
             <div className="space-y-3">
               <ServiceLine name={mainService?.name ?? 'Gói Spa'} price={mainService?.price ?? booking.priceSnapshot} primary />
               {(booking.subServices ?? []).map((service) => <ServiceLine key={service.id} name={service.name} price={service.price} />)}
-              {!booking.subServices?.length && <p className="text-sm font-semibold text-[#94A3B8]">Không có dịch vụ kèm theo.</p>}
-              <div className="flex items-center justify-between border-t border-[#E5EAF0] pt-3">
-                <span className="text-sm font-black text-[#172033]">Tổng tiền</span>
+              {!booking.subServices?.length && <p className="text-sm font-semibold text-muted-foreground/70">Không có dịch vụ kèm theo.</p>}
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="text-sm font-black text-foreground">Tổng tiền</span>
                 <span className="text-lg font-black text-primary">{formatMoney(getBookingTotal(booking))}</span>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#475569]">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground/75">
                 <PaymentBadge status={getPaymentStatus(booking)} />
                 <span>{formatPaymentMethod(booking.payment?.method)}</span>
                 {booking.payment?.paidAt && <span>· Thanh toán {formatDateTime(booking.payment.paidAt)}</span>}
@@ -451,8 +429,8 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
               <TextBlock label="Sự cố được ghi nhận" value={booking.issueReported} alert={Boolean(booking.issueReported)} />
               {booking.photoAfter && (
                 <div className="md:col-span-2">
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-[#64748B]">Ảnh sau dịch vụ</p>
-                  <div className="relative h-56 w-full max-w-md overflow-hidden rounded-xl border border-[#E5EAF0] bg-[#F7F9FB]">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-muted-foreground">Ảnh sau dịch vụ</p>
+                  <div className="relative h-56 w-full max-w-md overflow-hidden rounded-xl border border-border bg-muted/30">
                     <Image src={booking.photoAfter} alt={`Kết quả dịch vụ của ${booking.petName ?? 'thú cưng'}`} fill sizes="448px" unoptimized className="object-cover" />
                   </div>
                 </div>
@@ -468,7 +446,7 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
                 <DetailField label="Ngày đánh giá" value={formatDateTime(booking.feedback.createdAt)} />
                 <TextBlock label="Nhận xét" value={booking.feedback.comment} wide />
               </div>
-            ) : <p className="text-sm font-semibold text-[#94A3B8]">Khách hàng chưa gửi đánh giá.</p>}
+            ) : <p className="text-sm font-semibold text-muted-foreground/70">Khách hàng chưa gửi đánh giá.</p>}
           </DetailSection>
         </div>
       </DialogContent>
@@ -476,42 +454,16 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
   );
 }
 
-function DetailSection({ icon: Icon, title, wide = false, children }: { icon: LucideIcon; title: string; wide?: boolean; children: ReactNode }) {
-  return (
-    <section className={`min-w-0 rounded-2xl border border-[#DDE4EC] bg-white p-4 shadow-xs sm:p-5 ${wide ? 'lg:col-span-2' : ''}`}>
-      <h3 className="mb-4 flex items-center gap-2.5 text-sm font-black text-[#172033]">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-primary"><Icon className="size-4" /></span>
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function DetailGrid({ children }: { children: ReactNode }) {
-  return <div className="grid min-w-0 gap-x-6 gap-y-4 sm:grid-cols-2">{children}</div>;
-}
-
-function DetailField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
-  return <div className={`min-w-0 ${wide ? 'sm:col-span-2' : ''}`}><p className="text-[10px] font-black uppercase tracking-[0.08em] text-[#64748B]">{label}</p><p className="mt-1 break-words text-sm font-bold leading-5 text-[#334155]">{value}</p></div>;
-}
-
-function TextBlock({ label, value, alert = false, wide = false }: { label: string; value?: string | null; alert?: boolean; wide?: boolean }) {
-  return <div className={wide ? 'md:col-span-3' : ''}><p className="text-[11px] font-black uppercase tracking-wide text-[#64748B]">{label}</p><p className={`mt-1 whitespace-pre-wrap text-sm font-semibold ${alert ? 'text-red-700' : 'text-[#334155]'}`}>{value || 'Không có thông tin.'}</p></div>;
-}
-
 function ServiceLine({ name, price, primary = false }: { name: string; price?: number | null; primary?: boolean }) {
-  return <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-bold text-[#334155]">{name}</p>{primary && <p className="text-xs font-semibold text-primary">Dịch vụ chính</p>}</div><span className="whitespace-nowrap text-sm font-black text-[#172033]">{formatMoney(price ?? 0)}</span></div>;
+  return <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-bold text-foreground/85">{name}</p>{primary && <p className="text-xs font-semibold text-primary">Dịch vụ chính</p>}</div><span className="whitespace-nowrap text-sm font-black text-foreground">{formatMoney(price ?? 0)}</span></div>;
 }
 
 function StatusBadge({ status }: { status?: string | null }) {
-  const meta = SPA_STATUS_META[status ?? ''] ?? { label: status ?? '-', className: 'border-slate-200 bg-slate-50 text-slate-600' };
-  return <Badge variant="outline" className={`whitespace-nowrap ${meta.className}`}>{meta.label}</Badge>;
+  return <AdminStatusBadge status={status} meta={SPA_STATUS_META} />;
 }
 
 function PaymentBadge({ status }: { status: string }) {
-  const meta = PAYMENT_STATUS_META[status] ?? PAYMENT_STATUS_META.UNPAID;
-  return <Badge variant="outline" className={`mt-1 whitespace-nowrap text-[10px] ${meta.className}`}>{meta.label}</Badge>;
+  return <AdminStatusBadge status={status} meta={ADMIN_PAYMENT_STATUS_META} compact />;
 }
 
 function bookingMatchesSearch(booking: SpaBookingRow, search: string) {

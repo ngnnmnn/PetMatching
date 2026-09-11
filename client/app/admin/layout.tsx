@@ -88,15 +88,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const initials = (currentUser?.name ?? 'A').slice(0, 1).toUpperCase();
 
   return (
-    <div className="min-h-screen bg-[#F4F7FA] text-[#172033]">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[292px] border-r border-[#D8E0EA] bg-[#FFFFFF] lg:flex lg:flex-col">
-        <div className="flex h-[76px] items-center gap-3 border-b border-[#E5EAF0] px-5">
+    <div className="min-h-screen bg-muted/40 text-foreground">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[292px] border-r border-border bg-background lg:flex lg:flex-col">
+        <div className="flex h-[76px] items-center gap-3 border-b border-border px-5">
           <span className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
             <ShieldCheck className="size-5" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-black tracking-normal text-[#172033]">Quản trị PetMatch</p>
-            <p className="mt-0.5 text-xs font-bold text-[#64748B]">Trung tâm điều hành</p>
+            <p className="truncate text-[15px] font-black tracking-normal text-foreground">Quản trị PetMatch</p>
+            <p className="mt-0.5 text-xs font-bold text-muted-foreground">Trung tâm điều hành</p>
           </div>
         </div>
 
@@ -104,7 +104,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <div className="grid gap-5">
             {navGroups.map((group) => (
               <div key={group.label}>
-                <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-wider text-[#8A97A8]">
+                <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-wider text-muted-foreground/80">
                   {group.label}
                 </p>
                 <div className="grid gap-1">
@@ -118,7 +118,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                           'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-bold transition',
                           active
                             ? 'bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--primary)]'
-                            : 'text-[#475569] hover:bg-[#F2F5F8] hover:text-[#172033]',
+                            : 'text-foreground/75 hover:bg-muted hover:text-foreground',
                         )}
                       >
                         <item.icon className="size-4 shrink-0" />
@@ -132,11 +132,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
         </nav>
 
-        <div className="border-t border-[#E5EAF0] p-4">
+        <div className="border-t border-border p-4">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#D8E0EA] bg-white px-3 text-sm font-black text-[#B42318] transition hover:border-[#FDA29B] hover:bg-[#FFF1F0]"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-black text-destructive transition hover:border-destructive/30 hover:bg-destructive/5"
           >
             <LogOut className="size-4" />
             Đăng xuất
@@ -145,28 +145,28 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="lg:pl-[292px]">
-        <header className="sticky top-0 z-30 border-b border-[#D8E0EA] bg-white/95 backdrop-blur">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
           <div className="flex min-h-[76px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-wider text-primary">Bảng quản trị</p>
-              <h1 className="mt-1 truncate text-xl font-black tracking-normal text-[#172033]">
+              <h1 className="mt-1 truncate text-xl font-black tracking-normal text-foreground">
                 Điều hành hệ thống
               </h1>
             </div>
 
             <div className="flex items-center gap-3">
               <div className="hidden text-right sm:block">
-                <p className="text-sm font-black text-[#172033]">{currentUser?.name ?? 'Quản trị viên'}</p>
-                <p className="mt-0.5 text-xs font-bold text-[#64748B]">{currentUser?.email ?? 'Quản trị hệ thống'}</p>
+                <p className="text-sm font-black text-foreground">{currentUser?.name ?? 'Quản trị viên'}</p>
+                <p className="mt-0.5 text-xs font-bold text-muted-foreground">{currentUser?.email ?? 'Quản trị hệ thống'}</p>
               </div>
-              <span className="flex size-10 items-center justify-center rounded-lg bg-[#172033] text-sm font-black text-white">
+              <span className="flex size-10 items-center justify-center rounded-lg bg-foreground text-sm font-black text-white">
                 {initials}
               </span>
               <button
                 type="button"
                 onClick={handleLogout}
                 title="Đăng xuất"
-                className="inline-flex size-10 items-center justify-center rounded-lg border border-[#D8E0EA] bg-white text-[#475569] transition hover:border-[#FDA29B] hover:bg-[#FFF1F0] hover:text-[#B42318]"
+                className="inline-flex size-10 items-center justify-center rounded-lg border border-border bg-background text-foreground/75 transition hover:border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
               >
                 <LogOut className="size-4" />
               </button>

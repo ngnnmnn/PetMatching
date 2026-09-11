@@ -259,7 +259,8 @@ export class AdminController {
   @Put('system-profile')
   updateSystemProfile(
     @Req() request: AuthenticatedRequest,
-    @Body() dto: {
+    @Body()
+    dto: {
       name: string;
       description?: string;
       address: string;
@@ -308,8 +309,8 @@ export class AdminController {
   }
 
   @Get('spa-bookings')
-  getSpaBookings(@Query('branchId') branchId?: string) {
-    return this.adminService.getSpaBookings(branchId);
+  getSpaBookings() {
+    return this.adminService.getSpaBookings();
   }
 
   @Get('complaints')
