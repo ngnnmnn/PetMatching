@@ -153,17 +153,22 @@ export class MatchingService {
       },
     };
 
-    if (dto.breed && dto.breed !== 'all') {
-      where.breed = dto.breed;
+    if (dto.breed && dto.breed.trim().toLowerCase() !== 'all') {
+      where.breed = dto.breed.trim();
     }
-    if (dto.location && dto.location !== 'all') {
-      where.location = dto.location;
+    if (dto.location && dto.location.trim().toLowerCase() !== 'all') {
+      where.location = dto.location.trim();
     }
     if (dto.verifiedOnly === 'true') {
       where.verificationBadge = VerificationBadge.VERIFIED;
     }
-    if (dto.hasPedigreeOnly === 'true') {
+    // Lọc theo thú cưng có giấy phả hệ (hỗ trợ cả hasPedigreeOnly và purebredOnly)
+    if (dto.hasPedigreeOnly === 'true' || dto.purebredOnly === 'true') {
       where.hasPedigree = true;
+    }
+    // Lọc theo thú cưng đã khai báo tiêm chủng
+    if (dto.vaccinatedOnly === 'true') {
+      where.isVaccinated = true;
     }
 
     const candidates = await this.prisma.pet.findMany({

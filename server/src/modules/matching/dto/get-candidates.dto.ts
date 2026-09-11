@@ -29,9 +29,19 @@ export class GetCandidatesDto {
   @IsBooleanString()
   verifiedOnly?: string;
 
+  /// Lọc chỉ hiển thị thú cưng có giấy phả hệ (hỗ trợ cả hasPedigreeOnly và purebredOnly)
   @IsOptional()
   @IsBooleanString()
   hasPedigreeOnly?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  purebredOnly?: string;
+
+  /// Lọc chỉ hiển thị thú cưng đã tiêm chủng
+  @IsOptional()
+  @IsBooleanString()
+  vaccinatedOnly?: string;
 
   @IsOptional()
   @IsNumberString()
