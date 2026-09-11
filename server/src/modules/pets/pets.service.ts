@@ -270,8 +270,24 @@ export class PetsService {
     return detail;
   }
 
-  createPet(userId: string, dto: CreatePetDto) {
+  // Tạo hồ sơ thú cưng mới — giống (breed) phải tồn tại trong DB do admin quản lý
+  async createPet(userId: string, dto: CreatePetDto) {
     this.assertProfileWeight(dto.species, dto.weight);
+
+    // Kiểm tra giống (breed) phải tồn tại và đang active trong hệ thống
+    const breedExists = await this.prisma.breed.findFirst({
+      where: {
+        species: dto.species,
+        name: dto.breed,
+        isActive: true,
+      },
+    });
+    if (!breedExists) {
+      throw new BadRequestException(
+        `Giống "${dto.breed}" không tồn tại trong hệ thống. Vui lòng chọn giống từ danh sách có sẵn.`,
+      );
+    }
+
     const birthday = new Date(dto.birthday);
     if (Number.isNaN(birthday.getTime())) {
       throw new BadRequestException('Birthday is invalid.');

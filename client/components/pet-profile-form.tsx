@@ -14,8 +14,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import api from "@/lib/axios"
 import {
   breedingOptions,
-  catBreeds,
-  dogBreeds,
   getPetWeightLimits,
   isPetMatchingWeightEligible,
   isPetProfileWeightValid,
@@ -60,28 +58,24 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     lng: 105.8542,
   })
 
+  // Danh sách giống lấy từ database (chỉ admin mới thêm giống mới)
   const [dbBreeds, setDbBreeds] = useState<string[]>([])
-  const [isCustomBreed, setIsCustomBreed] = useState(false)
-  const [customBreedInput, setCustomBreedInput] = useState("")
 
+  // Lấy danh sách giống từ API khi chọn loài (chỉ giống do admin thêm vào)
   useEffect(() => {
     if (!formData.species) return
     const species = formData.species.toUpperCase()
     api
       .get<{ id: string; name: string }[]>('/breeds', { params: { species } })
       .then((res) => {
-        if (res.data && res.data.length > 0) {
-          setDbBreeds(res.data.map((b) => b.name))
-        } else {
-          setDbBreeds(formData.species === "dog" ? dogBreeds : catBreeds)
-        }
+        setDbBreeds(res.data?.map((b) => b.name) ?? [])
       })
       .catch(() => {
-        setDbBreeds(formData.species === "dog" ? dogBreeds : catBreeds)
+        setDbBreeds([])
       })
   }, [formData.species])
 
-  const breeds = dbBreeds.length > 0 ? dbBreeds : (formData.species === "dog" ? dogBreeds : formData.species === "cat" ? catBreeds : [])
+  const breeds = dbBreeds
 
   const handleImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -265,8 +259,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
   const canProceed = () => {
     if (step === 1) {
-      const breedValid = isCustomBreed ? customBreedInput.trim().length > 0 : !!formData.breed
-      return formData.name.trim().length > 0 && formData.species && breedValid && formData.gender && !!avatar
+      // Kiểm tra đã chọn giống từ danh sách có sẵn
+      return formData.name.trim().length > 0 && formData.species && !!formData.breed && formData.gender && !!avatar
     }
     if (step === 2) {
       const isBirthdayValid = formData.birthday
@@ -299,7 +293,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
 
     const species = formData.species === "dog" ? "DOG" : "CAT"
     const gender = formData.gender === "male" ? "MALE" : "FEMALE"
-    const finalBreed = isCustomBreed ? customBreedInput.trim() : formData.breed
+    // Sử dụng giống đã chọn từ danh sách có sẵn
+    const finalBreed = formData.breed
 
     const breedingOptionMap: Record<string, string> = {
       cash: "CASH",
@@ -464,16 +459,11 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 <Label htmlFor="breed">
                   Giống <span className="text-destructive font-bold">*</span>
                 </Label>
+                {/* Dropdown chọn giống — chỉ hiển thị giống do admin thêm vào hệ thống */}
                 <Select
-                  value={isCustomBreed ? "OTHER" : formData.breed}
+                  value={formData.breed}
                   onValueChange={(value) => {
-                    if (value === "OTHER") {
-                      setIsCustomBreed(true)
-                      setFormData({ ...formData, breed: "" })
-                    } else {
-                      setIsCustomBreed(false)
-                      setFormData({ ...formData, breed: value })
-                    }
+                    setFormData({ ...formData, breed: value })
                   }}
                   disabled={!formData.species}
                 >
@@ -486,21 +476,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                         {breed}
                       </SelectItem>
                     ))}
-                    <SelectItem value="OTHER">✨ Giống khác (Nhập thủ công)</SelectItem>
                   </SelectContent>
                 </Select>
-
-                {isCustomBreed && (
-                  <div className="mt-2 space-y-1">
-                    <Label htmlFor="customBreedInput" className="text-xs font-semibold text-primary">Tên giống của bé</Label>
-                    <Input
-                      id="customBreedInput"
-                      placeholder="Ví dụ: Puggle, Phốc sóc lai..."
-                      value={customBreedInput}
-                      onChange={(e) => setCustomBreedInput(e.target.value)}
-                      className="border-primary/50 focus:border-primary"
-                    />
-                  </div>
+                {formData.species && breeds.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Chưa có giống nào trong hệ thống. Vui lòng liên hệ admin để thêm giống.
+                  </p>
                 )}
               </div>
 

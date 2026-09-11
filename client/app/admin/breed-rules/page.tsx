@@ -23,11 +23,11 @@ import {
   type Breed,
   type BreedRule,
   type BreedRulePayload,
-  type CustomBreedItem,
   type Species,
 } from '@/lib/api/admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 const emptyRuleForm: BreedRulePayload = {
@@ -56,7 +56,7 @@ export default function BreedRulesPage() {
 
   // Breed Catalog State
   const [officialBreeds, setOfficialBreeds] = useState<Breed[]>([]);
-  const [customBreeds, setCustomBreeds] = useState<CustomBreedItem[]>([]);
+
   const [loadingBreeds, setLoadingBreeds] = useState(true);
   const [savingBreed, setSavingBreed] = useState(false);
   const [searchBreed, setSearchBreed] = useState('');
@@ -89,7 +89,6 @@ export default function BreedRulesPage() {
     try {
       const response = await adminApi.breeds();
       setOfficialBreeds(response.data?.official || []);
-      setCustomBreeds(response.data?.custom || []);
     } catch (error: any) {
       toast.error(error?.response?.data?.message ?? 'Không thể tải danh mục giống.');
     } finally {
@@ -126,14 +125,14 @@ export default function BreedRulesPage() {
     });
   }, [officialBreeds, searchBreed, speciesBreed]);
 
-  const visibleCustomBreeds = useMemo(() => {
-    const keyword = searchBreed.trim().toLocaleLowerCase('vi');
-    return customBreeds.filter((b) => {
-      const matchesSearch = !keyword || b.name.toLocaleLowerCase('vi').includes(keyword);
-      const matchesSpecies = speciesBreed === 'ALL' || b.species === speciesBreed;
-      return matchesSearch && matchesSpecies;
-    });
-  }, [customBreeds, searchBreed, speciesBreed]);
+  // Danh sách giống lọc theo loài đang chọn trong form rule
+  const breedsForRuleSpecies = useMemo(() => {
+    return officialBreeds
+      .filter((b) => b.species === ruleForm.species && b.isActive)
+      .map((b) => b.name);
+  }, [officialBreeds, ruleForm.species]);
+
+
 
   // Rule Handlers
   const openCreateRule = (defaultBreedA?: string) => {
@@ -294,7 +293,7 @@ export default function BreedRulesPage() {
         <div>
           <h1 className="text-2xl font-black tracking-tight">Quản lý Giống & Quy tắc Phối giống</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Cấu hình danh mục giống chính thức, duyệt giống do người dùng tự nhập và thiết lập quy tắc tương thích.
+            Cấu hình danh mục giống chính thức và thiết lập quy tắc tương thích phối giống. Chỉ admin mới có quyền thêm giống mới.
           </p>
         </div>
 
@@ -382,43 +381,6 @@ export default function BreedRulesPage() {
             </Button>
           </div>
 
-          {/* Section: Custom Breeds from User Pets (Chờ duyệt) */}
-          {visibleCustomBreeds.length > 0 && (
-            <div className="rounded-3xl border border-amber-200 bg-amber-50/50 p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="size-5 text-amber-600" />
-                <h2 className="text-base font-extrabold text-amber-900">
-                  Giống người dùng tự nhập ({visibleCustomBreeds.length})
-                </h2>
-              </div>
-              <p className="text-xs text-amber-700">
-                Các giống thú cưng này do người dùng nhập khi đăng ký pet. Nhấn nút &ldquo;Phê duyệt&rdquo; để đưa vào Danh mục chính thức và cấu hình quy tắc lai phối.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {visibleCustomBreeds.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-card border shadow-xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {item.species === 'DOG' ? (
-                        <span className="flex size-7 items-center justify-center rounded-lg bg-amber-100 text-amber-700 font-bold text-xs">🐕</span>
-                      ) : (
-                        <span className="flex size-7 items-center justify-center rounded-lg bg-violet-100 text-violet-700 font-bold text-xs">🐈</span>
-                      )}
-                      <span className="font-bold text-xs truncate">{item.name}</span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="rounded-xl text-xs font-bold border-amber-300 text-amber-800 hover:bg-amber-100 shrink-0"
-                      onClick={() => openCreateBreed(item.name, item.species)}
-                    >
-                      Phê duyệt
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Section: Official Breed Catalog */}
           {loadingBreeds ? (
@@ -731,7 +693,7 @@ export default function BreedRulesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setRuleForm({ ...ruleForm, species: 'DOG' })}
+                    onClick={() => setRuleForm({ ...ruleForm, species: 'DOG', breedA: '', breedB: '' })}
                     className={cn(
                       'p-3 rounded-2xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all',
                       ruleForm.species === 'DOG' ? 'border-primary bg-primary/10 text-primary' : 'border-border',
@@ -741,7 +703,7 @@ export default function BreedRulesPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRuleForm({ ...ruleForm, species: 'CAT' })}
+                    onClick={() => setRuleForm({ ...ruleForm, species: 'CAT', breedA: '', breedB: '' })}
                     className={cn(
                       'p-3 rounded-2xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all',
                       ruleForm.species === 'CAT' ? 'border-primary bg-primary/10 text-primary' : 'border-border',
@@ -752,24 +714,41 @@ export default function BreedRulesPage() {
                 </div>
               </div>
 
+              {/* Dropdown chọn giống A và B từ danh mục chính thức */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Giống thứ nhất (A) *</label>
-                  <Input
+                  <Select
                     value={ruleForm.breedA}
-                    onChange={(e) => setRuleForm({ ...ruleForm, breedA: e.target.value })}
-                    placeholder="Ví dụ: Pug"
-                    className="rounded-xl font-bold"
-                  />
+                    onValueChange={(value) => setRuleForm({ ...ruleForm, breedA: value })}
+                  >
+                    <SelectTrigger className="rounded-xl font-bold">
+                      <SelectValue placeholder="Chọn giống A" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {breedsForRuleSpecies.map((name) => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Giống thứ hai (B) *</label>
-                  <Input
+                  <Select
                     value={ruleForm.breedB}
-                    onChange={(e) => setRuleForm({ ...ruleForm, breedB: e.target.value })}
-                    placeholder="Ví dụ: Beagle"
-                    className="rounded-xl font-bold"
-                  />
+                    onValueChange={(value) => setRuleForm({ ...ruleForm, breedB: value })}
+                  >
+                    <SelectTrigger className="rounded-xl font-bold">
+                      <SelectValue placeholder="Chọn giống B" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {breedsForRuleSpecies
+                        .filter((name) => name !== ruleForm.breedA)
+                        .map((name) => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

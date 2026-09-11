@@ -1205,6 +1205,7 @@ export class AdminService {
   // BREED CATALOG MANAGEMENT
   // =============================================================
 
+  // Lấy danh mục giống chính thức do admin quản lý
   async getAdminBreeds(query: { species?: Species; search?: string }) {
     const search = query.search?.trim();
     const officialBreeds = await this.prisma.breed.findMany({
@@ -1217,30 +1218,9 @@ export class AdminService {
       orderBy: [{ species: 'asc' }, { name: 'asc' }],
     });
 
-    // Detect user-submitted custom breeds not yet in official catalog
-    const userPets = await this.prisma.pet.findMany({
-      where: query.species ? { species: query.species } : {},
-      select: { species: true, breed: true },
-      distinct: ['species', 'breed'],
-    });
-
-    const officialBreedSet = new Set(
-      officialBreeds.map((b) => `${b.species}_${b.name.trim().toLowerCase()}`),
-    );
-
-    const customBreeds = userPets
-      .filter(
-        (p) => !officialBreedSet.has(`${p.species}_${p.breed.trim().toLowerCase()}`),
-      )
-      .map((p) => ({
-        species: p.species,
-        name: p.breed.trim(),
-        isCustom: true,
-      }));
-
     return {
       official: officialBreeds,
-      custom: customBreeds,
+      custom: [],
     };
   }
 
