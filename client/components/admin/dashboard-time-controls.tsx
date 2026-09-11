@@ -81,7 +81,7 @@ export function DashboardTimeControls({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-[#D8E0EA] bg-white p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-border bg-background p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {rangeOptions.map((option) => (
           <button
             key={option.value}
@@ -90,7 +90,7 @@ export function DashboardTimeControls({
             className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
               value.range === option.value && !showCustomRange
                 ? "bg-primary text-primary-foreground"
-                : "text-[#64748B] hover:bg-[#F1F4F7] hover:text-[#172033]"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             {option.label}
@@ -102,7 +102,7 @@ export function DashboardTimeControls({
           className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
             value.range === "custom" || showCustomRange
               ? "bg-primary text-primary-foreground"
-              : "text-[#64748B] hover:bg-[#F1F4F7] hover:text-[#172033]"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           }`}
         >
           <CalendarDays className="size-3.5" /> Tùy chọn
@@ -113,7 +113,7 @@ export function DashboardTimeControls({
             onClick={onRefresh}
             disabled={refreshing}
             aria-label="Làm mới dữ liệu"
-            className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#D8E0EA] text-[#64748B] transition hover:bg-[#F1F4F7] hover:text-[#172033] disabled:opacity-60"
+            className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-60"
           >
             <RefreshCw
               className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
@@ -125,24 +125,24 @@ export function DashboardTimeControls({
       {showCustomRange && (
         <form
           onSubmit={applyCustomRange}
-          className="flex flex-wrap items-center justify-end gap-2 rounded-xl border border-[#D8E0EA] bg-white p-3 shadow-sm"
+          className="flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-background p-3 shadow-sm"
         >
-          <label className="flex items-center gap-2 text-xs font-semibold text-[#64748B]">
+          <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
             Từ
             <input
               type="date"
               value={customFrom}
               onChange={(event) => setCustomFrom(event.target.value)}
-              className="h-9 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-semibold text-[#172033]"
+              className="h-9 rounded-lg border border-border bg-background px-2 text-xs font-semibold text-foreground"
             />
           </label>
-          <label className="flex items-center gap-2 text-xs font-semibold text-[#64748B]">
+          <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
             Đến
             <input
               type="date"
               value={customTo}
               onChange={(event) => setCustomTo(event.target.value)}
-              className="h-9 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-semibold text-[#172033]"
+              className="h-9 rounded-lg border border-border bg-background px-2 text-xs font-semibold text-foreground"
             />
           </label>
           <button
@@ -192,8 +192,8 @@ export function RevenueGrowthBadge({
       >
         <Icon className="size-3.5" /> {Math.abs(change).toFixed(1)}%
       </span>
-      <span className="pointer-events-none invisible absolute right-0 top-full z-30 mt-2 w-72 translate-y-1 rounded-xl border border-[#D8E0EA] bg-white p-3 opacity-0 shadow-xl transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:visible group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-        <span className="block text-xs font-black text-[#172033]">
+      <span className="pointer-events-none invisible absolute right-0 top-full z-30 mt-2 w-72 translate-y-1 rounded-xl border border-border bg-background p-3 opacity-0 shadow-xl transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:visible group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+        <span className="block text-xs font-black text-foreground">
           So sánh với kỳ liền trước
         </span>
         <ComparisonRow
@@ -206,7 +206,7 @@ export function RevenueGrowthBadge({
           period={previousPeriod}
           value={revenue?.previous ?? 0}
         />
-        <span className="mt-2 flex items-center justify-between gap-3 border-t border-[#E5EAF0] pt-2 text-xs font-semibold text-[#64748B]">
+        <span className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2 text-xs font-semibold text-muted-foreground">
           <span>Chênh lệch</span>
           <span
             className={`font-black ${positive ? "text-emerald-700" : "text-rose-700"}`}
@@ -216,7 +216,7 @@ export function RevenueGrowthBadge({
           </span>
         </span>
         {revenue?.previous === 0 && (revenue?.current ?? 0) > 0 && (
-          <span className="mt-2 block text-[11px] font-semibold leading-4 text-[#64748B]">
+          <span className="mt-2 block text-[11px] font-semibold leading-4 text-muted-foreground">
             Kỳ trước chưa có doanh thu; mức tăng được hiển thị là 100%.
           </span>
         )}
@@ -235,13 +235,13 @@ function ComparisonRow({
   value: number;
 }) {
   return (
-    <span className="mt-2 flex items-start justify-between gap-3 text-xs font-semibold text-[#64748B]">
+    <span className="mt-2 flex items-start justify-between gap-3 text-xs font-semibold text-muted-foreground">
       <span>
         {label}
         <br />
         <span className="text-[10px]">{period}</span>
       </span>
-      <span className="font-black text-[#172033]">{money.format(value)}</span>
+      <span className="font-black text-foreground">{money.format(value)}</span>
     </span>
   );
 }

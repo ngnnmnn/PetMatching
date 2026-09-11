@@ -40,22 +40,18 @@ type RevenuePoint = {
 
 type DashboardData = {
   stats: {
-    users: { total: number };
-    pets: { total: number; verified: number; pendingVerification: number };
+    pets: { total: number; pendingVerification: number };
     matching: { totalMatches: number; pendingReports: number };
     moderation: {
       createdToday: number;
       overdue24Hours: number;
     };
     store: {
-      status: string | null;
       totalOrders: number;
       pendingOrders: number;
       activeProducts: number;
-      outOfStockProducts: number;
     };
     spa: {
-      status: string | null;
       totalServices: number;
       totalBookings: number;
       pendingBookings?: number;
@@ -77,7 +73,6 @@ type DashboardData = {
       changePercent: number;
     };
     revenueSeries: RevenuePoint[];
-    updatedAt: string;
   };
 };
 

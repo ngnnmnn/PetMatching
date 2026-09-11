@@ -1,43 +1,32 @@
-import api from '@/lib/axios';
+import api from "@/lib/axios";
 
-export type AdminRole = 'USER' | 'ADMIN' | 'MODERATOR' | 'STORE_MANAGER' | 'SPA_MANAGER' | 'SPA_STAFF';
-export type AccountStatus = 'ACTIVE' | 'SUSPENDED';
-export type DocumentStatus = 'PENDING' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'NEED_MORE_INFO';
-export type ComplaintAction =
-  | 'DISMISS'
-  | 'WARNING'
-  | 'HIDE_CONTENT'
-  | 'SUSPEND_ACCOUNT'
-  | 'RESOLVE'
-  | 'ESCALATE';
+export type AdminRole = "USER" | "ADMIN" | "MODERATOR" | "STORE_MANAGER" | "SPA_MANAGER" | "SPA_STAFF";
+export type AccountStatus = "ACTIVE" | "SUSPENDED";
+export type DocumentStatus = "PENDING" | "REVIEWING" | "APPROVED" | "REJECTED" | "NEED_MORE_INFO";
+export type ComplaintAction = "DISMISS" | "WARNING" | "HIDE_CONTENT" | "SUSPEND_ACCOUNT" | "RESOLVE" | "ESCALATE";
 export type ResolveMatchingReportPayload = {
-  status: 'RESOLVED' | 'DISMISSED' | 'INSUFFICIENT_EVIDENCE';
+  status: "RESOLVED" | "DISMISSED" | "INSUFFICIENT_EVIDENCE";
   action: ComplaintAction;
   adminNote: string;
   resolutionMessage: string;
-  documentTypes?: Array<'VACCINE_RECORD' | 'PEDIGREE_CERT'>;
+  documentTypes?: Array<"VACCINE_RECORD" | "PEDIGREE_CERT">;
 };
 export type ModerateReportAbusePayload = {
-  action: 'WARNING' | 'BLOCK';
+  action: "WARNING" | "BLOCK";
 };
 export type HidePetReason =
-  | 'CONTENT_VIOLATION'
-  | 'INACCURATE_INFORMATION'
-  | 'SUSPECTED_FAKE'
-  | 'DOCUMENT_FRAUD'
-  | 'UNRESOLVED_REPORT'
-  | 'OTHER';
-export type RestorePetReason =
-  | 'INFORMATION_VERIFIED'
-  | 'REPORT_RESOLVED'
-  | 'DOCUMENTS_APPROVED'
-  | 'ADMIN_REVIEW'
-  | 'OTHER';
+  | "CONTENT_VIOLATION"
+  | "INACCURATE_INFORMATION"
+  | "SUSPECTED_FAKE"
+  | "DOCUMENT_FRAUD"
+  | "UNRESOLVED_REPORT"
+  | "OTHER";
+export type RestorePetReason = "INFORMATION_VERIFIED" | "REPORT_RESOLVED" | "DOCUMENTS_APPROVED" | "ADMIN_REVIEW" | "OTHER";
 
-export type Species = 'DOG' | 'CAT';
+export type Species = "DOG" | "CAT";
 
 export type AdminDashboardParams = {
-  range?: '7d' | '30d' | '90d' | '12m' | 'custom';
+  range?: "7d" | "30d" | "90d" | "12m" | "custom";
   from?: string;
   to?: string;
 };
@@ -55,10 +44,7 @@ export interface BreedRule {
   updatedAt: string;
 }
 
-export type BreedRulePayload = Pick<
-  BreedRule,
-  'species' | 'breedA' | 'breedB' | 'isCompatible' | 'isActive'
-> & {
+export type BreedRulePayload = Pick<BreedRule, "species" | "breedA" | "breedB" | "isCompatible" | "isActive"> & {
   offspringName?: string;
   warningNote?: string;
 };
@@ -95,60 +81,41 @@ export type UpdateBreedPayload = {
 };
 
 export const adminApi = {
-  dashboard: (params?: AdminDashboardParams) => api.get('/admin/dashboard', { params }),
-  users: () => api.get('/admin/users'),
+  dashboard: (params?: AdminDashboardParams) => api.get("/admin/dashboard", { params }),
+  users: () => api.get("/admin/users"),
   updateUserRole: (id: string, role: AdminRole) => api.patch(`/admin/users/${id}/role`, { role }),
-  grantSpaManager: (id: string, allowReassignment = false) =>
-    api.patch(`/admin/users/${id}/spa-manager/grant`, { allowReassignment }),
-  revokeSpaManager: (id: string, mode: 'UNASSIGN' | 'TRANSFER', newManagerId?: string) =>
+  grantSpaManager: (id: string, allowReassignment = false) => api.patch(`/admin/users/${id}/spa-manager/grant`, { allowReassignment }),
+  revokeSpaManager: (id: string, mode: "UNASSIGN" | "TRANSFER", newManagerId?: string) =>
     api.patch(`/admin/users/${id}/spa-manager/revoke`, { mode, newManagerId }),
-  updateAccountStatus: (id: string, accountStatus: AccountStatus) =>
-    api.patch(`/admin/users/${id}/status`, { accountStatus }),
-  pets: () => api.get('/admin/pets'),
+  updateAccountStatus: (id: string, accountStatus: AccountStatus) => api.patch(`/admin/users/${id}/status`, { accountStatus }),
+  pets: () => api.get("/admin/pets"),
   pet: (id: string) => api.get(`/admin/pets/${id}`),
-  hidePet: (id: string, reason: HidePetReason, note?: string) =>
-    api.patch(`/admin/pets/${id}/hide`, { reason, note }),
-  restorePet: (id: string, reason: RestorePetReason, note?: string) =>
-    api.patch(`/admin/pets/${id}/restore`, { reason, note }),
+  hidePet: (id: string, reason: HidePetReason, note?: string) => api.patch(`/admin/pets/${id}/hide`, { reason, note }),
+  restorePet: (id: string, reason: RestorePetReason, note?: string) => api.patch(`/admin/pets/${id}/restore`, { reason, note }),
   reviewPetDocument: (id: string, status: DocumentStatus, reviewNote?: string) =>
     api.patch(`/admin/pet-verifications/${id}/review`, { status, reviewNote }),
-  matchingReports: () => api.get('/admin/matching-reports'),
+  matchingReports: () => api.get("/admin/matching-reports"),
   matchingReport: (id: string) => api.get(`/admin/matching-reports/${id}`),
-  startMatchingReportReview: (id: string) =>
-    api.patch(`/admin/matching-reports/${id}/review`),
-  resolveMatchingReport: (id: string, data: ResolveMatchingReportPayload) =>
-    api.patch(`/admin/matching-reports/${id}/resolve`, data),
-  moderateMatchingReportReporter: (
-    id: string,
-    data: ModerateReportAbusePayload,
-  ) => api.patch(`/admin/matching-reports/${id}/reporter-moderation`, data),
-  breedRules: (params?: { species?: Species; active?: string; search?: string }) =>
-    api.get<BreedRule[]>('/admin/breed-rules', { params }),
-  createBreedRule: (data: BreedRulePayload) => api.post<BreedRule>('/admin/breed-rules', data),
-  updateBreedRule: (id: string, data: BreedRulePayload) =>
-    api.patch<BreedRule>(`/admin/breed-rules/${id}`, data),
+  startMatchingReportReview: (id: string) => api.patch(`/admin/matching-reports/${id}/review`),
+  resolveMatchingReport: (id: string, data: ResolveMatchingReportPayload) => api.patch(`/admin/matching-reports/${id}/resolve`, data),
+  moderateMatchingReportReporter: (id: string, data: ModerateReportAbusePayload) =>
+    api.patch(`/admin/matching-reports/${id}/reporter-moderation`, data),
+  breedRules: (params?: { species?: Species; active?: string; search?: string }) => api.get<BreedRule[]>("/admin/breed-rules", { params }),
+  createBreedRule: (data: BreedRulePayload) => api.post<BreedRule>("/admin/breed-rules", data),
+  updateBreedRule: (id: string, data: BreedRulePayload) => api.patch<BreedRule>(`/admin/breed-rules/${id}`, data),
   deleteBreedRule: (id: string) => api.delete(`/admin/breed-rules/${id}`),
-  breeds: (params?: { species?: Species; search?: string }) =>
-    api.get<BreedCatalogResponse>('/admin/breeds', { params }),
-  createBreed: (data: CreateBreedPayload) => api.post<Breed>('/admin/breeds', data),
-  updateBreed: (id: string, data: UpdateBreedPayload) =>
-    api.patch<Breed>(`/admin/breeds/${id}`, data),
+  breeds: (params?: { species?: Species; search?: string }) => api.get<BreedCatalogResponse>("/admin/breeds", { params }),
+  createBreed: (data: CreateBreedPayload) => api.post<Breed>("/admin/breeds", data),
+  updateBreed: (id: string, data: UpdateBreedPayload) => api.patch<Breed>(`/admin/breeds/${id}`, data),
   deleteBreed: (id: string) => api.delete(`/admin/breeds/${id}`),
-  systemProfile: () => api.get('/admin/system-profile'),
+  systemProfile: () => api.get("/admin/system-profile"),
   updateSystemProfile: (data: { name: string; description?: string; address: string; phone: string }) =>
-    api.put('/admin/system-profile', data),
-  storeDashboard: (params?: AdminDashboardParams) => api.get('/admin/store-dashboard', { params }),
-  storeProducts: () => api.get('/admin/store-products'),
-  storeOrders: () => api.get('/admin/store-orders'),
-  spas: () => api.get('/admin/spas'),
-  spaDashboard: (params?: AdminDashboardParams) => api.get('/admin/spa-dashboard', { params }),
-  spaServices: () => api.get('/admin/spa-services'),
-  spaBookings: (branchId?: string) =>
-    api.get('/admin/spa-bookings', {
-      params: branchId ? { branchId } : undefined,
-    }),
-  complaints: (type?: string) => api.get('/admin/complaints', { params: type ? { type } : undefined }),
-  resolveComplaint: (id: string, action: ComplaintAction, adminNote?: string) =>
-    api.patch(`/admin/complaints/${id}/resolve`, { action, adminNote }),
+    api.put("/admin/system-profile", data),
+  storeDashboard: (params?: AdminDashboardParams) => api.get("/admin/store-dashboard", { params }),
+  storeProducts: () => api.get("/admin/store-products"),
+  storeOrders: () => api.get("/admin/store-orders"),
+  spas: () => api.get("/admin/spas"),
+  spaDashboard: (params?: AdminDashboardParams) => api.get("/admin/spa-dashboard", { params }),
+  spaServices: () => api.get("/admin/spa-services"),
+  spaBookings: () => api.get("/admin/spa-bookings"),
 };
-

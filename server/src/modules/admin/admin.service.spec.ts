@@ -637,7 +637,7 @@ describe('AdminService complaints', () => {
 });
 
 describe('AdminService spa bookings', () => {
-  it('filters by the actual Spa address and resolves main and sub-services', async () => {
+  it('loads the configured Spa bookings and resolves main and sub-services', async () => {
     const booking = {
       id: 'booking-1',
       addressSpaId: 'branch-1',
@@ -660,10 +660,9 @@ describe('AdminService spa bookings', () => {
       { destroyByUrl: jest.fn() } as any,
     );
 
-    const result = await service.getSpaBookings('branch-1');
+    const result = await service.getSpaBookings();
 
     expect(spaBooking.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { addressSpaId: 'branch-1' },
       orderBy: { scheduledAt: 'desc' },
       include: expect.objectContaining({
         addressSpa: expect.any(Object),

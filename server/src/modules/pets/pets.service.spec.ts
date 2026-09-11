@@ -91,6 +91,7 @@ describe('PetsService profile details and updates', () => {
     documents: [],
   };
 
+  // Chuẩn bị dữ liệu và các Prisma mock độc lập trước mỗi trường hợp kiểm thử.
   beforeEach(() => {
     detailFindUnique = jest.fn() as jest.MockedFunction<FindPet>;
     detailFindUnique.mockResolvedValue(pet);
@@ -118,6 +119,7 @@ describe('PetsService profile details and updates', () => {
     };
     const prisma = {
       pet: { findUnique: detailFindUnique, create: createPet },
+      breed: { findFirst: jest.fn().mockResolvedValue({ id: 'breed-1' }) },
       $transaction: jest
         .fn()
         .mockImplementation((callback: (client: TransactionMock) => unknown) =>
@@ -157,6 +159,7 @@ describe('PetsService profile details and updates', () => {
     });
   });
 
+  // Xác nhận createPet trả về Promise bị từ chối khi cân nặng nằm ngoài giới hạn hồ sơ.
   it.each([
     [Species.DOG, 0.1],
     [Species.DOG, 160.1],
@@ -164,8 +167,8 @@ describe('PetsService profile details and updates', () => {
     [Species.CAT, 20.1],
   ])(
     'rejects %s profile creation with invalid weight %s kg',
-    (species, weight) => {
-      expect(() =>
+    async (species, weight) => {
+      await expect(
         service.createPet('owner-1', {
           name: 'Milo',
           species,
@@ -177,7 +180,7 @@ describe('PetsService profile details and updates', () => {
           avatarUrl:
             'https://res.cloudinary.com/demo/image/upload/pets/milo.jpg',
         }),
-      ).toThrow(BadRequestException);
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(createPet).not.toHaveBeenCalled();
     },
   );

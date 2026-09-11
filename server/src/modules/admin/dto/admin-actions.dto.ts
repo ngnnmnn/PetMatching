@@ -86,10 +86,11 @@ export class ReviewPetDocumentDto {
   @IsEnum(DocumentStatus)
   status!: DocumentStatus;
 
-  @ValidateIf((dto: ReviewPetDocumentDto) =>
-    dto.reviewNote !== undefined ||
-    dto.status === DocumentStatus.REJECTED ||
-    dto.status === DocumentStatus.NEED_MORE_INFO,
+  @ValidateIf(
+    (dto: ReviewPetDocumentDto) =>
+      dto.reviewNote !== undefined ||
+      dto.status === DocumentStatus.REJECTED ||
+      dto.status === DocumentStatus.NEED_MORE_INFO,
   )
   @IsString()
   @IsNotEmpty()

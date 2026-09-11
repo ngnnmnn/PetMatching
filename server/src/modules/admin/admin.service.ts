@@ -120,11 +120,11 @@ export class AdminService {
     const [store, spa] = await Promise.all([
       this.prisma.store.findFirst({
         orderBy: { createdAt: 'asc' },
-        select: { id: true, status: true },
+        select: { id: true },
       }),
       this.prisma.addressSpa.findFirst({
         orderBy: { createdAt: 'asc' },
-        select: { id: true, status: true },
+        select: { id: true },
       }),
     ]);
     const storeFilter = { storeId: store?.id ?? '__missing__' };
@@ -137,9 +137,7 @@ export class AdminService {
     );
     const overdueThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const [
-      totalUsers,
       totalPets,
-      verifiedPets,
       pendingPetDocuments,
       totalMatches,
       pendingMatchingReports,
@@ -150,20 +148,13 @@ export class AdminService {
       totalOrders,
       pendingStoreOrders,
       activeProducts,
-      outOfStockProducts,
       totalSpaServices,
       totalSpaBookings,
       pendingSpaBookings,
       recognizedStoreOrders,
       recognizedSpaBookings,
     ] = await Promise.all([
-      this.prisma.user.count({
-        where: { role: { not: UserRole.ADMIN } },
-      }),
       this.prisma.pet.count(),
-      this.prisma.pet.count({
-        where: { verificationBadge: VerificationBadge.VERIFIED },
-      }),
       this.prisma.petDocument.count({
         where: { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
       }),
@@ -202,7 +193,6 @@ export class AdminService {
       this.prisma.product.count({
         where: { ...storeFilter, isActive: true },
       }),
-      this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
       this.prisma.spaService.count(),
       this.prisma.spaBooking.count({ where: spaFilter }),
       this.prisma.spaBooking.count({
@@ -287,10 +277,8 @@ export class AdminService {
 
     return {
       stats: {
-        users: { total: totalUsers },
         pets: {
           total: totalPets,
-          verified: verifiedPets,
           pendingVerification: pendingPetDocuments,
         },
         matching: { totalMatches, pendingReports: pendingMatchingReports },
@@ -299,14 +287,11 @@ export class AdminService {
           overdue24Hours: overduePetDocuments + overdueMatchingReports,
         },
         store: {
-          status: store?.status ?? null,
           totalOrders,
           pendingOrders: pendingStoreOrders,
           activeProducts,
-          outOfStockProducts,
         },
         spa: {
-          status: spa?.status ?? null,
           totalServices: totalSpaServices,
           totalBookings: totalSpaBookings,
           pendingBookings: pendingSpaBookings,
@@ -322,7 +307,6 @@ export class AdminService {
           changePercent: revenueChangePercent,
         },
         revenueSeries,
-        updatedAt: new Date().toISOString(),
       },
     };
   }
@@ -2055,9 +2039,8 @@ export class AdminService {
     });
   }
 
-  async getSpaBookings(branchId?: string) {
+  async getSpaBookings() {
     const bookings = await this.prisma.spaBooking.findMany({
-      where: branchId ? { addressSpaId: branchId } : undefined,
       orderBy: { scheduledAt: 'desc' },
       include: {
         user: { select: { id: true, name: true, email: true, phone: true } },
