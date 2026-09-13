@@ -40,7 +40,10 @@ interface CompatibilityBreakdownProps {
     pedigreeVerified: boolean
     isVaccinated: boolean
     vaccineVerified: boolean
+    // Khoảng cách giữa 2 pet (km)
     distanceKm?: number
+    // Đánh dấu khoảng cách đường bộ thực tế qua OSRM (true) hay đường chim bay (false)
+    isRoadDistance?: boolean
     compatibilityScore?: number
     matchReasons?: string[]
     breedWarnings?: string[]
@@ -167,7 +170,7 @@ export function CompatibilityBreakdown({
             )}
 
             <span className="inline-flex items-center gap-1 rounded-lg bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 px-2 py-0.5 text-[11px] font-bold border border-teal-200/60">
-              <MapPin className="size-3" /> {candidatePet.distanceKm != null ? `Cách ~${candidatePet.distanceKm} km` : candidatePet.ward || candidatePet.location} (+15%)
+              <MapPin className="size-3" /> {candidatePet.distanceKm != null ? `Cách ~${candidatePet.distanceKm} km${candidatePet.isRoadDistance ? ' đường bộ' : ''}` : candidatePet.ward || candidatePet.location} (+15%)
             </span>
 
             {isSimilarWeight ? (
@@ -294,12 +297,14 @@ export function CompatibilityBreakdown({
                     </div>
                     <div>
                       <p className="text-xs font-bold text-foreground">
-                        Khu vực & Khoảng cách ({candidatePet.ward || candidatePet.location})
+                        Khu vực & Khoảng cách {candidatePet.isRoadDistance ? 'đường bộ thực tế' : ''} ({candidatePet.ward || candidatePet.location})
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         {candidatePet.distanceKm != null && candidatePet.distanceKm <= 1
                           ? "Cùng khu vực rất gần (< 1 km), thuận tiện gặp gỡ"
-                          : `Khoảng cách ~${candidatePet.distanceKm ?? 3.5} km, dễ dàng sắp xếp lịch phối`}
+                          : candidatePet.isRoadDistance
+                          ? `Khoảng cách đường bộ thực tế ~${candidatePet.distanceKm} km (OSRM), dễ dàng sắp xếp lịch phối`
+                          : `Khoảng cách ước tính ~${candidatePet.distanceKm ?? 3.5} km, dễ dàng sắp xếp lịch phối`}
                       </p>
                     </div>
                   </div>

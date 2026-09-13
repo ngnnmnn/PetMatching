@@ -65,6 +65,7 @@ type Pet = {
   district?: string | null;
   ward?: string | null;
   distanceKm?: number;
+  isRoadDistance?: boolean;
   avatarUrl?: string | null;
   avatar?: string | null;
   gallery: string[];
@@ -1223,8 +1224,12 @@ export default function UnifiedMatchingHubPage() {
                       <span className="flex items-center gap-1 text-primary">
                         📍 {selectedCandidateDetail.ward || selectedCandidateDetail.location}
                         {selectedCandidateDetail.distanceKm != null && (
-                          <span className="text-muted-foreground font-medium">
-                            ({selectedCandidateDetail.distanceKm <= 1 ? '< 1 km' : `cách ~${selectedCandidateDetail.distanceKm} km`})
+                          <span
+                            className="text-muted-foreground font-medium"
+                            title={selectedCandidateDetail.isRoadDistance ? "Khoảng cách đường bộ thực tế (OSRM)" : "Khoảng cách ước tính"}
+                          >
+                            ({selectedCandidateDetail.distanceKm <= 1 ? '< 1 km' : `cách ~${selectedCandidateDetail.distanceKm} km`}
+                            {selectedCandidateDetail.isRoadDistance ? ' 🛣️ đường bộ' : ''})
                           </span>
                         )}
                       </span>
@@ -1643,8 +1648,11 @@ function SwipeCardContainer({
 
           <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
             {/* Khoảng cách di chuyển */}
-            <span className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow">
-              📍 {pet.distanceKm != null && pet.distanceKm <= 1 ? `Cùng khu vực (${pet.distanceKm} km)` : `Cách ${pet.distanceKm ?? 5} km`}
+            <span
+              className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow"
+              title={pet.isRoadDistance ? "Khoảng cách đường bộ thực tế (OpenStreetMap OSRM)" : "Khoảng cách ước tính"}
+            >
+              {pet.isRoadDistance ? '🛣️' : '📍'} {pet.distanceKm != null && pet.distanceKm <= 1 ? `Cùng khu vực (${pet.distanceKm} km)` : `Cách ~${pet.distanceKm ?? 5} km${pet.isRoadDistance ? ' đ.bộ' : ''}`}
             </span>
 
             {/* Cân nặng & chỉ báo mức độ an toàn sinh nở */}
@@ -1779,7 +1787,9 @@ function CandidateCardGrid({
       </div>
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-          <span className="font-semibold text-foreground">📍 {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km`})</span>
+          <span className="font-semibold text-foreground">
+            {pet.isRoadDistance ? '🛣️' : '📍'} {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km${pet.isRoadDistance ? ' đ.bộ' : ''}`})
+          </span>
           <span className={cn(
             "px-2 py-0.5 rounded-md font-bold text-xs",
             weightDiff != null && Math.abs(weightDiff) <= 2

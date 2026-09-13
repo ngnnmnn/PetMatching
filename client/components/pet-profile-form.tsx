@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import { uploadImages, type UploadPurpose } from "@/lib/api/uploads"
 import { HanoiWardSelect } from "@/components/hanoi-ward-select"
+import { AddressAutocompleteInput, type LocationSearchResult } from "@/components/checkout/AddressAutocompleteInput"
 
 interface PetProfileFormProps {
   onComplete?: () => void
@@ -42,6 +43,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     breedingOption: "",
     breedingPrice: "",
     location: "",
+    district: "",
   })
   const [avatar, setAvatar] = useState<string | null>(null)
   const [gallery, setGallery] = useState<string[]>([])
@@ -307,7 +309,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     setIsSubmitting(true)
     setSubmitError("")
 
-    const finalLocation = "Hà Nội"
+    const finalLocation = formData.location.trim() || "Hà Nội"
     const finalWard = selectedWard?.name || "Phường Hoàn Kiếm"
     const latitude = selectedWard?.lat ?? 21.0285
     const longitude = selectedWard?.lng ?? 105.8542
@@ -321,7 +323,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         birthday: formData.birthday,
         weight: Number(formData.weight),
         location: finalLocation,
-        district: undefined,
+        district: formData.district.trim() || undefined,
         ward: finalWard,
         latitude,
         longitude,
@@ -775,13 +777,43 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     Địa chỉ & Khu vực của bé tại Hà Nội <span className="text-destructive font-bold">*</span>
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Chọn Phường / Xã nơi bé đang ở để hệ thống tự động xác định toạ độ và đề xuất ghép đôi gần nhất.
+                    Tìm kiếm địa chỉ chi tiết theo OpenStreetMap để hệ thống tự động xác định toạ độ GPS chính xác nhất.
                   </p>
                 </div>
-                <HanoiWardSelect
-                  value={selectedWard?.name}
-                  onChange={(ward) => setSelectedWard(ward)}
+                <AddressAutocompleteInput
+                  placeholder="Nhập số nhà, tên đường, khu vực (VD: 32 Đội Cấn, Ba Đình...)"
+                  initialValue={formData.location}
+                  onSelectLocation={(loc: LocationSearchResult) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      location: loc.address || "Hà Nội",
+                      district: loc.district || "",
+                    }));
+                    setSelectedWard({
+                      name: loc.ward || loc.district || "Phường Hoàn Kiếm",
+                      lat: loc.lat,
+                      lng: loc.lng,
+                    });
+                  }}
                 />
+
+                {selectedWard && (
+                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    <span className="font-semibold">✓ Đã xác định vị trí GPS:</span>
+                    <span className="font-mono">{selectedWard.lat.toFixed(4)}, {selectedWard.lng.toFixed(4)}</span>
+                    <span className="text-muted-foreground">({selectedWard.name})</span>
+                  </div>
+                )}
+
+                <div className="pt-1">
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Hoặc chọn nhanh theo danh sách Phường / Xã (dự phòng)
+                  </p>
+                  <HanoiWardSelect
+                    value={selectedWard?.name}
+                    onChange={(ward) => setSelectedWard(ward)}
+                  />
+                </div>
               </div>
 
               {/* Sổ tiêm phòng & Vắc-xin Card */}

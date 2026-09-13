@@ -106,8 +106,9 @@ async function fetchHanoiAddressSuggestions(query: string): Promise<LocationSear
 
 /**
  * Component ô nhập địa chỉ thông minh với gợi ý bản đồ tự động OpenStreetMap (Autocomplete)
+ * Hỗ trợ cả Named Export và Default Export để tương thích mọi nơi
  */
-export default function AddressAutocompleteInput({
+export function AddressAutocompleteInput({
   label = '📍 Tìm địa chỉ tự động trên bản đồ *',
   placeholder = 'Gõ tên đường, số nhà hoặc địa danh (Ví dụ: 32 Đội Cấn, Duy Tân...)',
   initialValue = '',
@@ -278,3 +279,5 @@ export default function AddressAutocompleteInput({
     </div>
   );
 }
+// Export mặc định để tương thích với các component đang sử dụng default import
+export default AddressAutocompleteInput;

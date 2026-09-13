@@ -79,6 +79,7 @@ import {
 } from "@/lib/api/pets";
 import { cn } from "@/lib/utils";
 import { HanoiWardSelect } from "@/components/hanoi-ward-select";
+import { AddressAutocompleteInput, type LocationSearchResult } from "@/components/checkout/AddressAutocompleteInput";
 import { getHanoiWardCoords } from "@/lib/hanoi-wards";
 import {
   getPetWeightLimits,
@@ -103,6 +104,8 @@ type EditForm = {
   location: string;
   district: string;
   ward: string;
+  latitude: number | null;
+  longitude: number | null;
   personality: string;
   isVaccinated: boolean;
   hasPedigree: boolean;
@@ -124,6 +127,8 @@ function formFromPet(pet: Pet): EditForm {
     location: pet.location,
     district: pet.district ?? "",
     ward: pet.ward ?? "",
+    latitude: pet.latitude ?? null,
+    longitude: pet.longitude ?? null,
     personality: pet.personality ?? "",
     isVaccinated: pet.isVaccinated,
     hasPedigree: pet.hasPedigree,
@@ -343,16 +348,23 @@ export function PetProfileDialog({
       return;
     }
 
-    const wardCoords = getHanoiWardCoords(form.ward);
+    // Ưu tiên sử dụng toạ độ GPS chính xác nếu có, nếu chưa có thì fallback theo tâm phường
+    let lat = form.latitude;
+    let lng = form.longitude;
+    if (lat == null || lng == null) {
+      const wardCoords = getHanoiWardCoords(form.ward || form.location);
+      lat = wardCoords.lat;
+      lng = wardCoords.lng;
+    }
 
     const payload: UpdatePetPayload = {
       name: form.name.trim(),
       weight: Number(form.weight),
-      location: "Hà Nội",
-      district: null,
+      location: form.location.trim() || "Hà Nội",
+      district: form.district.trim() || null,
       ward: form.ward.trim() || "Phường Hoàn Kiếm",
-      latitude: wardCoords.lat,
-      longitude: wardCoords.lng,
+      latitude: lat,
+      longitude: lng,
       personality: form.personality.trim() || null,
       isVaccinated: form.isVaccinated,
       hasPedigree: form.hasPedigree,
@@ -1132,18 +1144,48 @@ function PetEditForm({
 
       <section>
         <SectionTitle icon={MapPin} title="Địa chỉ & Khu vực tại Hà Nội" />
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">
-            Phường / Xã nơi bé đang ở (Hệ thống tự động cập nhật toạ độ GPS)
-          </Label>
-          <HanoiWardSelect
-            value={form.ward || form.location}
-            onChange={(ward) => {
-              update("location", "Hà Nội");
-              update("district", "");
-              update("ward", ward.name);
-            }}
-          />
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">
+              Tìm kiếm địa chỉ chi tiết theo OpenStreetMap (Tự động cập nhật toạ độ GPS chính xác)
+            </Label>
+            <AddressAutocompleteInput
+              placeholder="Nhập số nhà, tên đường, khu vực (VD: 32 Đội Cấn, Ba Đình...)"
+              initialValue={form.location && form.location !== "Hà Nội" ? form.location : (form.ward ? `${form.ward}, Hà Nội` : "")}
+              onSelectLocation={(loc: LocationSearchResult) => {
+                update("location", loc.address || "Hà Nội");
+                update("district", loc.district || "");
+                update("ward", loc.ward || loc.district || "");
+                update("latitude", loc.lat);
+                update("longitude", loc.lng);
+              }}
+            />
+          </div>
+
+          {form.latitude != null && form.longitude != null && (
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="font-semibold">✓ Đã xác định vị trí GPS:</span>
+              <span className="font-mono">{form.latitude.toFixed(4)}, {form.longitude.toFixed(4)}</span>
+              {form.ward && <span className="text-muted-foreground">({form.ward})</span>}
+            </div>
+          )}
+
+          <div className="pt-1">
+            <Label className="text-xs text-muted-foreground mb-1 block">
+              Hoặc chọn danh sách Phường / Xã (dự phòng nếu không tìm thấy số nhà)
+            </Label>
+            <HanoiWardSelect
+              value={form.ward || form.location}
+              onChange={(ward) => {
+                const coords = getHanoiWardCoords(ward.name);
+                update("location", "Hà Nội");
+                update("district", "");
+                update("ward", ward.name);
+                update("latitude", coords.lat);
+                update("longitude", coords.lng);
+              }}
+            />
+          </div>
         </div>
       </section>
 
