@@ -192,10 +192,19 @@ export class SpaController {
     return this.spaService.getManagerCategories(req.user.id);
   }
 
+  /**
+   * Lấy dữ liệu thống kê tổng quan (Dashboard) của Quản lý Spa theo chi nhánh và khoảng thời gian lọc
+   */
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/dashboard-stats')
-  getManagerDashboardStats(@Req() req: AuthenticatedRequest, @Query('branchId') branchId: string) {
-    return this.spaService.getManagerDashboardStats(req.user.id, branchId);
+  getManagerDashboardStats(
+    @Req() req: AuthenticatedRequest,
+    @Query('branchId') branchId: string,
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.spaService.getManagerDashboardStats(req.user.id, branchId, { range, from, to });
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)

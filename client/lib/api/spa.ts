@@ -70,9 +70,14 @@ export const spaApi = {
   createManagerCategory: (data: any) => api.post<any>('/spa/manager/categories', data),
   updateManagerCategory: (id: string, data: any) => api.patch<any>(`/spa/manager/categories/${id}`, data),
   deleteManagerCategory: (id: string) => api.delete<any>(`/spa/manager/categories/${id}`),
-  getManagerBrands: () => api.get<any[]>('/spa/manager/brands'),
-  getManagerDashboardStats: (branchId: string) => api.get<any>(`/spa/manager/dashboard-stats?branchId=${branchId}`),
-  getManagerServices: () => api.get<any[]>('/spa/manager/services'),
+  getManagerDashboardStats: (branchId: string, params?: { range?: string; from?: string; to?: string }) => {
+    const query = new URLSearchParams();
+    if (branchId) query.append('branchId', branchId);
+    if (params?.range) query.append('range', params.range);
+    if (params?.from) query.append('from', params.from);
+    if (params?.to) query.append('to', params.to);
+    return api.get<any>(`/spa/manager/dashboard-stats?${query.toString()}`);
+  },
   createManagerService: (data: any) => api.post<any>('/spa/manager/services', data),
   updateManagerService: (id: string, data: any) => api.patch<any>(`/spa/manager/services/${id}`, data),
   getManagerBookings: (branchId: string) => api.get<any[]>(`/spa/manager/bookings?branchId=${branchId}`),
