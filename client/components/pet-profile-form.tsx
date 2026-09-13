@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Award, Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Minus, Plus, Scale, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
+import { Award, Camera, Cat, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Minus, Plus, Scale, ShieldCheck, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -59,6 +59,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     lat: 21.0285,
     lng: 105.8542,
   })
+  // Trạng thái hiển thị dropdown chọn Phường/Xã thủ công (mặc định thu gọn để giao diện gọn gàng)
+  const [showManualWardSelect, setShowManualWardSelect] = useState(false)
 
   // Danh sách giống lấy từ database (kèm phân loại thuần chủng/lai & cờ cho phép phả hệ)
   const [dbBreeds, setDbBreeds] = useState<{ id: string; name: string; breedType: 'PUREBRED' | 'HYBRID'; allowPedigree: boolean }[]>([])
@@ -774,14 +776,15 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               <div className="space-y-3 rounded-2xl border bg-muted/20 p-4">
                 <div className="space-y-1">
                   <Label className="font-extrabold text-sm">
-                    Địa chỉ & Khu vực của bé tại Hà Nội <span className="text-destructive font-bold">*</span>
+                    Khu vực & Địa chỉ của bé tại Hà Nội <span className="text-destructive font-bold">*</span>
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Tìm kiếm địa chỉ chi tiết theo OpenStreetMap để hệ thống tự động xác định toạ độ GPS chính xác nhất.
+                    Nhập tên đường, khu vực hoặc phường để hệ thống định vị và đề xuất ghép đôi gần nhất.
                   </p>
                 </div>
                 <AddressAutocompleteInput
-                  placeholder="Nhập số nhà, tên đường, khu vực (VD: 32 Đội Cấn, Ba Đình...)"
+                  label=""
+                  placeholder="Gõ tên đường, khu vực (Ví dụ: 32 Đội Cấn, Duy Tân, Bồ Đề...)"
                   initialValue={formData.location}
                   onSelectLocation={(loc: LocationSearchResult) => {
                     setFormData((prev) => ({
@@ -798,21 +801,55 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                 />
 
                 {selectedWard && (
-                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                    <span className="font-semibold">✓ Đã xác định vị trí GPS:</span>
-                    <span className="font-mono">{selectedWard.lat.toFixed(4)}, {selectedWard.lng.toFixed(4)}</span>
-                    <span className="text-muted-foreground">({selectedWard.name})</span>
+                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-3 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                    <div className="flex items-center gap-2 font-bold text-emerald-800 dark:text-emerald-300">
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span>Đã định vị: {selectedWard.name}</span>
+                    </div>
+                    <div className="mt-1 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                      <ShieldCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                      <span>Vị trí cụ thể chỉ dùng để tính khoảng cách đường bộ khi tìm ghép đôi. Trên hồ sơ công khai, người khác chỉ nhìn thấy khu vực <b>{selectedWard.name}</b>.</span>
+                    </div>
                   </div>
                 )}
 
-                <div className="pt-1">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Hoặc chọn nhanh theo danh sách Phường / Xã (dự phòng)
-                  </p>
-                  <HanoiWardSelect
-                    value={selectedWard?.name}
-                    onChange={(ward) => setSelectedWard(ward)}
-                  />
+                <div className="pt-0.5">
+                  {!showManualWardSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowManualWardSelect(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                    >
+                      <ChevronDown className="size-3.5" />
+                      Không tìm thấy địa chỉ? Chọn nhanh theo danh sách Phường / Xã
+                    </button>
+                  ) : (
+                    <div className="space-y-2 pt-2 border-t border-dashed">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-semibold text-muted-foreground">
+                          Chọn Phường / Xã tại Hà Nội (dự phòng)
+                        </Label>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualWardSelect(false)}
+                          className="text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
+                        >
+                          Thu gọn
+                        </button>
+                      </div>
+                      <HanoiWardSelect
+                        value={selectedWard?.name}
+                        onChange={(ward) => {
+                          setSelectedWard(ward);
+                          setFormData((prev) => ({
+                            ...prev,
+                            location: `${ward.name}, Hà Nội`,
+                            district: "",
+                          }));
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
