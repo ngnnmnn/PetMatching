@@ -658,31 +658,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
 
 
-  // State và hàm xử lý tạo vận đơn GHN & AhaMove Hỏa Tốc dành cho Manager
-  const [creatingGhnOrder, setCreatingGhnOrder] = useState<string | null>(null);
-  const [trackingGhnCode, setTrackingGhnCode] = useState<string | null>(null);
+  // State và hàm xử lý tạo vận đơn AhaMove Hỏa Tốc dành cho Manager
   const [creatingAhamoveOrder, setCreatingAhamoveOrder] = useState<string | null>(null);
   const [trackingAhamoveCode, setTrackingAhamoveCode] = useState<string | null>(null);
-
-  const handleCreateGhnShippingOrder = async (orderId: string) => {
-    setCreatingGhnOrder(orderId);
-    try {
-      const res = await shippingApi.createShippingOrder(orderId);
-      if (res.data?.success) {
-        toast.success(`Đã gửi đơn GHN thành công! Mã vận đơn: ${res.data.ghnOrderCode}`);
-        const ordersRes = await managerApi.getOrders();
-        setOrders(ordersRes.data);
-        if (selectedOrderDetails?.id === orderId) {
-          setSelectedOrderDetails(ordersRes.data.find((o: any) => o.id === orderId) || null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to create GHN order', err);
-      toast.error(err.response?.data?.message || 'Có lỗi khi tạo vận đơn GHN.');
-    } finally {
-      setCreatingGhnOrder(null);
-    }
-  };
 
   const handleCreateAhamoveShippingOrder = async (orderId: string) => {
     setCreatingAhamoveOrder(orderId);
@@ -4089,24 +4067,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   Chi tiết đơn hàng: {selectedOrderDetails.id}
                 </h3>
 
-                {/* Hiển thị Mã vận đơn GHN và nút tra cứu trong Modal chi tiết đơn */}
-                {selectedOrderDetails.ghnOrderCode && (
-                  <div className="flex items-center justify-between bg-orange-50/80 p-3 rounded-xl border border-orange-200 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-orange-900">🚀 Mã vận đơn GHN:</span>
-                      <span className="font-mono font-black text-orange-900 bg-white px-2 py-0.5 rounded border border-orange-200">
-                        {selectedOrderDetails.ghnOrderCode}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setTrackingGhnCode(selectedOrderDetails.ghnOrderCode!)}
-                      className="px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs transition shadow-xs cursor-pointer"
-                    >
-                      Xem lịch sử tracking GHN ➔
-                    </button>
-                  </div>
-                )}
+
 
                 {/* Hiển thị Mã vận đơn AhaMove Hỏa Tốc và nút tra cứu trong Modal chi tiết đơn */}
                 {selectedOrderDetails.ahamoveOrderCode && (
@@ -7434,13 +7395,6 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
           </div>
         </div>
       )}
-      {/* Modal xem chi tiết hành trình GHN tự động */}
-      <OrderTrackingModal
-        isOpen={!!trackingGhnCode}
-        code={trackingGhnCode}
-        carrier="GHN"
-        onClose={() => setTrackingGhnCode(null)}
-      />
       {/* Modal xem chi tiết hành trình AhaMove Hỏa Tốc */}
       <OrderTrackingModal
         isOpen={!!trackingAhamoveCode}

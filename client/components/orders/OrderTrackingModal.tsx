@@ -30,16 +30,13 @@ export default function OrderTrackingModal({
     if (!code) return;
     setLoading(true);
     try {
-      const res =
-        carrier === 'AHAMOVE'
-          ? await shippingApi.getAhamoveTrackingDetail(code)
-          : await shippingApi.getTrackingDetail(code);
+      const res = await shippingApi.getAhamoveTrackingDetail(code);
       setData(res.data);
     } catch (err: any) {
       console.error('Failed to fetch tracking detail', err);
       toast.error(
         err.response?.data?.message ||
-          `Không thể lấy thông tin hành trình ${carrier === 'AHAMOVE' ? 'AhaMove' : 'GHN'}`,
+          'Không thể lấy thông tin hành trình AhaMove',
       );
     } finally {
       setLoading(false);
@@ -57,7 +54,7 @@ export default function OrderTrackingModal({
     } else {
       setData(null);
     }
-  }, [isOpen, code, carrier]);
+  }, [isOpen, code]);
 
   if (!isOpen || !code) return null;
 

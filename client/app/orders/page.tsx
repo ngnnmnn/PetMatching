@@ -62,8 +62,6 @@ interface Order {
     paymentUrl?: string | null;
   } | null;
   shippingStatus?: string | null;
-  /// Mã vận đơn GHN tự động
-  ghnOrderCode?: string | null;
   /// Mã vận đơn AhaMove hỏa tốc
   ahamoveOrderCode?: string | null;
   deliveryProofUrl?: string | null;
@@ -241,8 +239,7 @@ export default function OrdersPage() {
   // Delivery Proof Inline Toggle State
   const [showProofOrderId, setShowProofOrderId] = useState<string | null>(null);
   const [showRefundProofOrderId, setShowRefundProofOrderId] = useState<string | null>(null);
-  // State mã GHN và AhaMove đang bật modal xem chi tiết tracking
-  const [trackingGhnCode, setTrackingGhnCode] = useState<string | null>(null);
+  // State mã AhaMove đang bật modal xem chi tiết tracking
   const [trackingAhamoveCode, setTrackingAhamoveCode] = useState<string | null>(null);
 
   const handleRetryPayment = async (order: Order) => {
@@ -744,16 +741,6 @@ export default function OrdersPage() {
                           title="Click xem chi tiết hành trình vận chuyển AhaMove"
                         >
                           ⚡ AhaMove: {order.ahamoveOrderCode}
-                        </button>
-                      )}
-                      {order.ghnOrderCode && !order.ahamoveOrderCode && (
-                        <button
-                          type="button"
-                          onClick={() => setTrackingGhnCode(order.ghnOrderCode!)}
-                          className="inline-flex items-center gap-1 font-mono font-bold text-[10px] bg-orange-50 hover:bg-orange-100 text-orange-800 px-2 py-0.5 rounded border border-orange-200 shadow-2xs transition cursor-pointer"
-                          title="Click xem chi tiết hành trình vận chuyển GHN"
-                        >
-                          🚀 GHN: {order.ghnOrderCode}
                         </button>
                       )}
                     </div>
@@ -1280,13 +1267,6 @@ export default function OrdersPage() {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* Modal tra cứu lịch sử hành trình GHN tự động theo thời gian thực */}
-      <OrderTrackingModal
-        isOpen={!!trackingGhnCode}
-        code={trackingGhnCode}
-        carrier="GHN"
-        onClose={() => setTrackingGhnCode(null)}
-      />
       {/* Modal tra cứu lịch sử hành trình AhaMove Hỏa Tốc theo thời gian thực */}
       <OrderTrackingModal
         isOpen={!!trackingAhamoveCode}

@@ -209,6 +209,8 @@ export default function AddressFormModal({
   const [receiverName, setReceiverName] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [detail, setDetail] = useState('');
+  const [selectedLat, setSelectedLat] = useState<number | undefined>();
+  const [selectedLng, setSelectedLng] = useState<number | undefined>();
   const [saveAddressToDb, setSaveAddressToDb] = useState(true);
   const [setAsDefault, setSetAsDefault] = useState(false);
 
@@ -219,9 +221,9 @@ export default function AddressFormModal({
 
   const [loadingWards, setLoadingWards] = useState(false);
 
-  // Dynamic shipping fee calculated from AhaMove live API or fallback
-  const [dynamicShippingFee, setDynamicShippingFee] = useState<number | null>(30000);
-  const calculatedShippingFee = showShippingFee ? (dynamicShippingFee ?? 30000) : null;
+  // Cước phí giao hỏa tốc AhaMove tính toán thời gian thực (nếu chưa có địa chỉ thì để null)
+  const [dynamicShippingFee, setDynamicShippingFee] = useState<number | null>(null);
+  const calculatedShippingFee = showShippingFee ? dynamicShippingFee : null;
   // Ref ghi nhớ trạng thái đã khởi tạo form để chỉ chạy 1 lần khi mở Modal, tránh tự động reset tab khi re-render hoặc auto-polling
   const hasInitializedRef = useRef(false);
 
@@ -299,6 +301,35 @@ export default function AddressFormModal({
     fetchWards();
   }, [isOpen, initialData?.ward, initialData?.wardCode]);
 
+  // Tự động tính cước phí giao hỏa tốc AhaMove thời gian thực khi người dùng gõ/chọn địa chỉ mới trong Modal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!detail || detail.trim().length < 5) {
+      setDynamicShippingFee(null);
+      return;
+    }
+
+    const fullAddress = [detail, wardName, 'Thành phố Hà Nội'].filter(Boolean).join(', ');
+
+    const timer = setTimeout(() => {
+      shippingApi
+        .estimateAhamoveShippingFee({
+          dropoffLat: selectedLat,
+          dropoffLng: selectedLng,
+          addressStr: fullAddress,
+        })
+        .then((res) => {
+          if (res.data?.feeVnd && typeof res.data.feeVnd === 'number') {
+            setDynamicShippingFee(res.data.feeVnd);
+          }
+        })
+        .catch(() => {});
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, detail, wardName, selectedLat, selectedLng]);
+
   const handleSelectSavedAddress = (addr: any) => {
     setSelectedSavedAddressId(addr.id);
     setReceiverName(addr.receiverName || addr.name || '');
@@ -355,6 +386,8 @@ export default function AddressFormModal({
       wardCode: finalWardCode || '10101',
       saveAddressToDb,
       setAsDefault,
+      lat: selectedLat,
+      lng: selectedLng,
       calculatedShippingFee: calculatedShippingFee ?? undefined,
     });
   };
@@ -532,7 +565,8 @@ export default function AddressFormModal({
                     }
                   }}
                   onSelectLocation={async (loc: LocationSearchResult) => {
-                    setDetail(loc.detail || loc.address);
+                    const chosenAddrStr = loc.address || loc.detail;
+                    setDetail(chosenAddrStr);
                     if (loc.ward) {
                       const cleanLoc = cleanWardName(loc.ward);
                       const match = wards.find(
@@ -551,17 +585,23 @@ export default function AddressFormModal({
                       setWardCode(wards[0].wardCode);
                       setWardName(wards[0].wardName);
                     }
+                    setSelectedLat(loc.lat);
+                    setSelectedLng(loc.lng);
                     try {
-                      const feeRes = await shippingApi.estimateAhamoveShippingFee(loc.lat, loc.lng);
+                      const feeRes = await shippingApi.estimateAhamoveShippingFee({
+                        dropoffLat: loc.lat,
+                        dropoffLng: loc.lng,
+                        addressStr: chosenAddrStr,
+                      });
                       if (feeRes.data?.feeVnd) {
                         setDynamicShippingFee(feeRes.data.feeVnd);
                         toast.success(
-                          `Đã chọn vị trí: ${loc.address} — Phí ship hỏa tốc AhaMove: ${feeRes.data.formattedFee} (${feeRes.data.distanceKm} km)`,
+                          `Đã chọn vị trí: ${chosenAddrStr} — Phí ship hỏa tốc AhaMove: ${feeRes.data.formattedFee} (${feeRes.data.distanceKm} km)`,
                         );
                       }
                     } catch (e) {
                       console.error('Failed to estimate AhaMove fee', e);
-                      toast.success(`Đã chọn vị trí: ${loc.address}`);
+                      toast.success(`Đã chọn vị trí: ${chosenAddrStr}`);
                     }
                   }}
                 />
@@ -595,7 +635,7 @@ export default function AddressFormModal({
             </>
           )}
 
-          {/* Live Recalculated Shipping Fee & Total Order Preview Box */}
+          {/* Hiển thị cước phí vận chuyển mới và tổng đơn hàng cập nhật khi đổi địa chỉ */}
           {showShippingFee && (
             <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
               <div className="flex justify-between items-center font-extrabold text-emerald-900">
@@ -604,15 +644,17 @@ export default function AddressFormModal({
                   {calculatedShippingFee !== null ? (
                     formatCurrency(calculatedShippingFee)
                   ) : (
-                    '—'
+                    <span className="text-xs text-amber-700 font-medium font-sans">Chưa chọn địa chỉ</span>
                   )}
                 </span>
               </div>
-              {itemsSubtotal !== undefined && calculatedShippingFee !== null && (
+              {itemsSubtotal !== undefined && (
                 <div className="flex justify-between items-center font-black text-gray-900 pt-1.5 border-t border-emerald-200/60 text-sm">
                   <span>Tổng thanh toán đơn hàng sau khi đổi địa chỉ:</span>
                   <span className="text-lg text-[var(--primary-color)] font-mono">
-                    {formatCurrency(itemsSubtotal + calculatedShippingFee)}
+                    {calculatedShippingFee !== null
+                      ? formatCurrency(itemsSubtotal + calculatedShippingFee)
+                      : '—'}
                   </span>
                 </div>
               )}

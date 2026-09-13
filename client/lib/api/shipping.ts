@@ -5,13 +5,6 @@ export interface HanoiWardOption {
   wardName: string;
 }
 
-export interface CreateShippingOrderResponse {
-  success: boolean;
-  message: string;
-  ghnOrderCode: string;
-  order: any;
-}
-
 export interface TrackingEvent {
   step: number;
   statusKey: string;
@@ -23,7 +16,7 @@ export interface TrackingEvent {
 }
 
 export interface TrackingDetailResponse {
-  ghnOrderCode: string;
+  ahamoveOrderCode?: string;
   orderId: string;
   orderStatus: string;
   currentShippingStatus: string;
@@ -37,7 +30,7 @@ export interface TrackingDetailResponse {
 }
 
 /**
- * Các hàm tương tác API Vận chuyển và GHN ở phía Client
+ * Các hàm tương tác API Vận chuyển và AhaMove ở phía Client
  */
 export const shippingApi = {
   /**
@@ -47,18 +40,6 @@ export const shippingApi = {
     api.get<HanoiWardOption[]>('/shipping/wards', {
       params: { province_id: 1 },
     }),
-
-  /**
-   * Gọi API tạo vận đơn GHN cho đơn hàng (Thao tác 1 chạm dành cho Manager)
-   */
-  createShippingOrder: (orderId: string) =>
-    api.post<CreateShippingOrderResponse>(`/shipping/create-order/${orderId}`),
-
-  /**
-   * Tra cứu lịch sử hành trình vận đơn GHN chi tiết
-   */
-  getTrackingDetail: (ghnOrderCode: string) =>
-    api.get<TrackingDetailResponse>(`/shipping/track/${ghnOrderCode}`),
 
   /**
    * Gọi API tạo vận đơn hỏa tốc AhaMove cho đơn hàng
@@ -75,12 +56,12 @@ export const shippingApi = {
     api.get<TrackingDetailResponse>(`/shipping/track-ahamove/${code}`),
 
   /**
-   * Ước tính phí giao hàng hỏa tốc AhaMove theo tọa độ GPS điểm nhận
+   * Ước tính phí giao hàng hỏa tốc AhaMove thời gian thực từ Portal API theo tọa độ GPS hoặc chuỗi địa chỉ
    */
-  estimateAhamoveShippingFee: (dropoffLat: number, dropoffLng: number) =>
-    api.post<{ success: boolean; distanceKm: number; feeVnd: number; formattedFee: string }>(
+  estimateAhamoveShippingFee: (params: { dropoffLat?: number; dropoffLng?: number; addressStr?: string }) =>
+    api.post<{ success: boolean; distanceKm?: number; feeVnd: number; formattedFee: string; isRealAhamoveFee?: boolean }>(
       '/shipping/ahamove/estimate-fee',
-      { dropoffLat, dropoffLng },
+      params,
     ),
 
   /**

@@ -9,19 +9,12 @@ import { HANOI_WARDS } from '../matching/hanoi-wards';
 import { ShippingSimulatorService } from './shipping-simulator.service';
 
 /**
- * Service xử lý tính phí, danh mục Phường/Xã và Tích hợp Giao Hàng Nhanh (GHN)
+ * Service xử lý tính phí, danh mục Phường/Xã và Tích hợp Giao hàng hỏa tốc AhaMove
  */
 @Injectable()
 export class ShippingService {
   private readonly logger = new Logger(ShippingService.name);
   private static readonly HANOI_PROVINCE_ID = 1;
-
-  // Cấu hình API GHN Sandbox mặc định
-  private readonly ghnToken =
-    process.env.GHN_TOKEN || 'a3fdf0a8-851d-11f1-aa4d-367074fd68e2';
-  private readonly ghnShopId = process.env.GHN_SHOP_ID || '195509';
-  private readonly ghnBaseUrl =
-    process.env.GHN_API_URL || 'https://online-gateway.ghn.vn/shiip/public-api';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -51,293 +44,6 @@ export class ShippingService {
       serviceFee: 30000,
       insuranceFee: 0,
       isEstimated: false,
-    };
-  }
-
-  /**
-   * Đẩy đơn hàng sang hệ thống Giao Hàng Nhanh (GHN Sandbox)
-   * Quản lý bấm nút "Gửi bên vận chuyển" 1 lần duy nhất
-   * @param orderId ID của đơn hàng cần tạo vận đơn
-   */
-  async createShippingOrder(orderId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        user: true,
-        items: {
-          include: { product: true },
-        },
-      },
-    });
-
-    if (!order) {
-      throw new NotFoundException('Không tìm thấy thông tin đơn hàng!');
-    }
-
-    if (order.ghnOrderCode) {
-      return {
-        success: true,
-        message: 'Đơn hàng này đã được tạo vận đơn GHN trước đó!',
-        ghnOrderCode: order.ghnOrderCode,
-        order,
-      };
-    }
-
-    // Thiết lập thông tin gói hàng
-    const toDistrictId = order.districtId || 1442; // Mặc định Đống Đa nếu thiếu
-    const toWardCode = order.wardCode || '20101'; // Mặc định Cát Linh nếu thiếu
-
-    const items = order.items.map((item) => ({
-      name: item.product.name.substring(0, 50),
-      code: item.productId,
-      quantity: item.quantity,
-      price: Math.round(item.price),
-      weight: 200,
-    }));
-
-    const totalWeight = items.reduce(
-      (sum, item) => sum + item.quantity * item.weight,
-      0,
-    );
-
-    const body = {
-      payment_type_id: 2,
-      note: 'Đơn hàng PetMatching - Cho xem hàng',
-      required_note: 'KHONGCHOXEMHANG',
-      to_name: order.customerNameSnapshot || order.user?.name || 'Khách hàng PetMatching',
-      to_phone: order.customerPhoneSnapshot || order.user?.phone || '0988888888',
-      to_address: order.shippingAddress,
-      to_district_id: Number(toDistrictId),
-      to_ward_code: String(toWardCode),
-      weight: Math.max(totalWeight, 300),
-      length: 15,
-      width: 15,
-      height: 15,
-      service_type_id: 2,
-      cod_amount:
-        order.status === 'PENDING'
-          ? Math.round(order.totalAmount + order.shippingFee)
-          : 0,
-      items,
-    };
-
-    let ghnOrderCode = '';
-    let isSandboxFallback = false;
-
-    try {
-      // Gọi API khởi tạo đơn GHN
-      const response = await fetch(
-        `${this.ghnBaseUrl}/v2/shipping-order/create`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Token: this.ghnToken,
-            ShopId: this.ghnShopId,
-          },
-          body: JSON.stringify(body),
-        },
-      );
-
-      const data = await response.json();
-
-      if (data.code === 200 && data.data?.order_code) {
-        ghnOrderCode = data.data.order_code;
-      } else {
-        this.logger.warn(
-          `[GHN API Sandbox Warning] API GHN trả về lỗi (${data.message}), tự động khởi tạo mã vận đơn thử nghiệm Sandbox...`,
-        );
-        isSandboxFallback = true;
-        ghnOrderCode = `GHN-SB-${Math.floor(100000 + Math.random() * 900000)}`;
-      }
-    } catch (err) {
-      this.logger.warn(
-        `[GHN API Connection] Kết nối GHN API gặp sự cố, tự động dùng mã vận đơn giả lập: ${err.message}`,
-      );
-      isSandboxFallback = true;
-      ghnOrderCode = `GHN-SB-${Math.floor(100000 + Math.random() * 900000)}`;
-    }
-
-    // Cập nhật đơn hàng trong DB
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        ghnOrderCode,
-        shippingStatus: 'ready_to_pick',
-        status: 'PROCESSING',
-        shippingNote: isSandboxFallback
-          ? 'Đã gửi đơn GHN Sandbox (Tự động giả lập tiến trình shipper)'
-          : 'Đã tạo vận đơn trên GHN thành công',
-      },
-    });
-
-    // Kích hoạt bộ đếm thời gian giả lập tự động tracking ngầm
-    this.shippingSimulatorService.startSimulation(orderId, ghnOrderCode);
-
-    return {
-      success: true,
-      message: 'Đã tạo đơn vận chuyển GHN thành công!',
-      ghnOrderCode,
-      order: updatedOrder,
-    };
-  }
-
-  /**
-   * Đón và xử lý Webhook tự động cập nhật trạng thái từ GHN
-   * @param payload Dữ liệu webhook gửi từ GHN hoặc Simulator
-   */
-  async handleWebhook(payload: any) {
-    this.logger.log(`[GHN Webhook] Nhận payload: ${JSON.stringify(payload)}`);
-
-    const ghnOrderCode = payload.OrderCode || payload.order_code;
-    const status = (payload.Status || payload.status || '').toLowerCase();
-
-    if (!ghnOrderCode) {
-      return { success: false, message: 'Thiếu thông tin order_code trong Webhook' };
-    }
-
-    const order = await this.prisma.order.findFirst({
-      where: { ghnOrderCode },
-    });
-
-    if (!order) {
-      return { success: false, message: 'Không tìm thấy đơn hàng tương ứng' };
-    }
-
-    let newStatus: 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' =
-      order.status as any;
-
-    switch (status) {
-      case 'ready_to_pick':
-      case 'picking':
-      case 'storing':
-      case 'sorting':
-        newStatus = 'PROCESSING';
-        break;
-      case 'delivering':
-      case 'transporting':
-        newStatus = 'SHIPPED';
-        break;
-      case 'delivered':
-        newStatus = 'DELIVERED';
-        break;
-      case 'cancel':
-      case 'returned':
-        newStatus = 'CANCELLED';
-        break;
-      default:
-        break;
-    }
-
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        shippingStatus: status,
-        status: newStatus,
-      },
-    });
-
-    return {
-      success: true,
-      orderId: order.id,
-      ghnOrderCode,
-      shippingStatus: status,
-      orderStatus: newStatus,
-    };
-  }
-
-  /**
-   * Tra cứu lịch sử hành trình chi tiết của vận đơn GHN tự động
-   * @param ghnOrderCode Mã vận đơn GHN
-   */
-  async getTrackingDetail(ghnOrderCode: string) {
-    const order = await this.prisma.order.findFirst({
-      where: { ghnOrderCode },
-    });
-
-    if (!order) {
-      throw new NotFoundException(`Không tìm thấy vận đơn GHN có mã ${ghnOrderCode}`);
-    }
-
-    const currentStatus = (order.shippingStatus || 'ready_to_pick').toLowerCase();
-    const createdAt = order.createdAt;
-
-    // Xây dựng mốc thời gian hành trình lịch sử vận chuyển
-    const trackingEvents: any[] = [
-      {
-        step: 1,
-        statusKey: 'ready_to_pick',
-        title: 'Đã tạo vận đơn GHN',
-        location: 'Bưu cục GHN Đống Đa - Hà Nội',
-        description: 'Shop đã gửi thông tin đơn hàng sang cổng GHN',
-        time: createdAt,
-        isCompleted: true,
-      },
-    ];
-
-    const isPicking =
-      currentStatus === 'picking' ||
-      currentStatus === 'storing' ||
-      currentStatus === 'sorting' ||
-      currentStatus === 'delivering' ||
-      currentStatus === 'transporting' ||
-      currentStatus === 'delivered';
-
-    if (isPicking) {
-      trackingEvents.push({
-        step: 2,
-        statusKey: 'picking',
-        title: 'Shipper đã lấy hàng',
-        location: 'Kho trung chuyển GHN Hà Nội',
-        description: 'Shipper GHN đã tiếp nhận và đang luân chuyển hàng',
-        time: new Date(createdAt.getTime() + 45 * 1000),
-        isCompleted: true,
-      });
-    }
-
-    const isDelivering =
-      currentStatus === 'delivering' ||
-      currentStatus === 'transporting' ||
-      currentStatus === 'delivered';
-
-    if (isDelivering) {
-      trackingEvents.push({
-        step: 3,
-        statusKey: 'delivering',
-        title: 'Đang giao hàng tới người nhận',
-        location: 'Tuyến giao hàng nội thành Hà Nội',
-        description: 'Shipper GHN đang gọi điện và giao hàng đến địa chỉ',
-        time: new Date(createdAt.getTime() + 120 * 1000),
-        isCompleted: true,
-      });
-    }
-
-    const isDelivered = currentStatus === 'delivered' || order.status === 'DELIVERED';
-
-    if (isDelivered) {
-      trackingEvents.push({
-        step: 4,
-        statusKey: 'delivered',
-        title: 'Giao hàng thành công',
-        location: order.shippingAddress,
-        description: 'Người nhận đã kí xác nhận nhận hàng thành công',
-        time: new Date(createdAt.getTime() + 210 * 1000),
-        isCompleted: true,
-      });
-    }
-
-    return {
-      ghnOrderCode,
-      orderId: order.id,
-      orderStatus: order.status,
-      currentShippingStatus: currentStatus,
-      shippingAddress: order.shippingAddress,
-      shipperInfo: {
-        name: 'Nguyễn Văn Nam (Shipper GHN)',
-        phone: '0988 123 456',
-        hubName: 'Bưu cục GHN Đống Đa',
-      },
-      events: trackingEvents,
     };
   }
 
@@ -375,11 +81,27 @@ export class ShippingService {
    * Trả về tọa độ GPS tương đối (vĩ độ, kinh độ) dựa trên Quận/Huyện địa chỉ giao hàng của khách
    * @param addressStr Địa chỉ giao hàng của khách
    */
+  /**
+   * Trả về tọa độ GPS tương đối (vĩ độ, kinh độ) dựa trên Quận/Huyện/Xã/Phường địa chỉ giao hàng của khách
+   * @param addressStr Địa chỉ giao hàng của khách
+   */
   private getDistrictCoordinates(addressStr: string): { lat: number; lng: number } {
     const addr = (addressStr || '').toLowerCase();
+    if (addr.includes('hòa lạc') || addr.includes('hoa lac') || addr.includes('thạch hòa') || addr.includes('tiến xuân')) {
+      return { lat: 21.0188, lng: 105.5264 }; // Tọa độ GPS khu vực Hòa Lạc - Thạch Thất (33.81 km)
+    }
+    if (addr.includes('xuân mai') || addr.includes('xuan mai') || addr.includes('chúc sơn')) {
+      return { lat: 20.8833, lng: 105.7000 };
+    }
+    if (addr.includes('sơn tây') || addr.includes('son tay')) {
+      return { lat: 21.1333, lng: 105.5000 };
+    }
+    if (addr.includes('nội bài') || addr.includes('noi bai')) {
+      return { lat: 21.2185, lng: 105.8042 };
+    }
     if (addr.includes('hoàn kiếm')) return { lat: 21.0285, lng: 105.8542 };
     if (addr.includes('hai bà trưng')) return { lat: 21.0069, lng: 105.8432 };
-    if (addr.includes('đống đa')) return { lat: 21.0125, lng: 105.8272 };
+    if (addr.includes('đống đa') || addr.includes('đường láng') || addr.includes('láng')) return { lat: 21.0125, lng: 105.8272 };
     if (addr.includes('ba đình')) return { lat: 21.0333, lng: 105.8233 };
     if (addr.includes('cầu giấy')) return { lat: 21.0362, lng: 105.7905 };
     if (addr.includes('thanh xuân')) return { lat: 20.9980, lng: 105.8080 };
@@ -402,7 +124,6 @@ export class ShippingService {
     if (addr.includes('phú xuyên')) return { lat: 20.7333, lng: 105.9000 };
     if (addr.includes('ứng hòa')) return { lat: 20.7333, lng: 105.7833 };
     if (addr.includes('mỹ đức')) return { lat: 20.6833, lng: 105.7333 };
-    if (addr.includes('sơn tây')) return { lat: 21.1333, lng: 105.5000 };
     if (addr.includes('ba vì')) return { lat: 21.2333, lng: 105.3833 };
     if (addr.includes('phúc thọ')) return { lat: 21.1000, lng: 105.5667 };
     if (addr.includes('đan phượng')) return { lat: 21.1000, lng: 105.6667 };
@@ -642,38 +363,113 @@ export class ShippingService {
   }
 
   /**
-   * Tính toán phí giao hàng hỏa tốc AhaMove dựa trên tọa độ GPS địa chỉ nhận và bảng giá dịch vụ
-   * @param dropoffLat Vĩ độ điểm giao hàng
-   * @param dropoffLng Kinh độ điểm giao hàng
+   * Tính toán cước phí giao hàng hỏa tốc AhaMove thời gian thực
+   * Ưu tiên gọi trực tiếp API báo giá chính thức của AhaMove Portal (/v3/orders/estimated-fee)
+   * Tự động chuyển về công thức tọa độ GPS Haversine nếu API mất kết nối
+   * @param dropoffLat Vĩ độ điểm giao hàng (tùy chọn)
+   * @param dropoffLng Kinh độ điểm giao hàng (tùy chọn)
+   * @param addressStr Chuỗi địa chỉ giao hàng (tùy chọn)
    */
-  async estimateAhamoveShippingFee(dropoffLat: number, dropoffLng: number) {
-    const pickupLat = 21.0069; // Shop PetMatching (Bách Khoa, Hà Nội)
-    const pickupLng = 105.8432;
+  async estimateAhamoveShippingFee(dropoffLat?: number, dropoffLng?: number, addressStr?: string) {
+    let lat = dropoffLat;
+    let lng = dropoffLng;
 
-    // Công thức Haversine tính khoảng cách giữa 2 điểm GPS (đơn vị: km)
+    // Nếu không có tọa độ GPS truyền trực tiếp, tự động suy ra tọa độ từ chuỗi địa chỉ
+    if ((!lat || !lng) && addressStr) {
+      const coords = this.getDistrictCoordinates(addressStr);
+      lat = coords.lat;
+      lng = coords.lng;
+    }
+
+    if (!lat || !lng) {
+      lat = 21.0285; // Mặc định trung tâm Hà Nội nếu thiếu thông tin
+      lng = 105.8432;
+    }
+
+    const pickupAddress = 'Số 1 Đại Cổ Việt, Hai Bà Trưng, Hà Nội';
+    const pickupLat = 21.0069;
+    const pickupLng = 105.8432;
+    const apiKey = process.env.AHAMOVE_API_KEY || 'sk_test_1oSlooJ79RRzEzAPV4xHQfEQEmuC0FYe';
+    const mobile = process.env.AHAMOVE_MOBILE || '84869098696';
+    const baseUrl = process.env.AHAMOVE_API_URL || 'https://partner-apistg.ahamove.com';
+
+    let estimatedFee = 30000;
+    let isRealAhamoveFee = false;
+
+    // 1. Thử gọi trực tiếp API báo giá ước tính chính thức từ AhaMove Portal v3
+    try {
+      const tokenRes = await fetch(`${baseUrl}/v3/accounts/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey, mobile: mobile }),
+      });
+      const tokenData = await tokenRes.json();
+      const token = tokenData?.token;
+
+      if (token) {
+        const estimateBody = {
+          service_id: 'HAN-BIKE',
+          path: [
+            { address: pickupAddress, lat: pickupLat, lng: pickupLng },
+            { address: addressStr || 'Địa chỉ giao hàng', lat, lng },
+          ],
+        };
+
+        const feeRes = await fetch(`${baseUrl}/v3/orders/estimated-fee`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(estimateBody),
+        });
+
+        if (feeRes.ok) {
+          const feeData = await feeRes.json();
+          const ahaFee =
+            feeData?.total_price ||
+            feeData?.total_fee ||
+            feeData?.fee ||
+            (Array.isArray(feeData) && (feeData[0]?.total_price || feeData[0]?.fee));
+
+          if (ahaFee && typeof ahaFee === 'number' && ahaFee > 0) {
+            estimatedFee = Math.round(ahaFee);
+            isRealAhamoveFee = true;
+            this.logger.log(`[AhaMove Estimate API] Giá cước ước tính thời gian thực từ AhaMove Portal: ${estimatedFee}đ`);
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`[AhaMove Estimate API Notice] ${err.message}`);
+    }
+
+    // Tính toán khoảng cách Haversine giữa điểm shop và điểm giao
     const R = 6371;
-    const dLat = ((dropoffLat - pickupLat) * Math.PI) / 180;
-    const dLon = ((dropoffLng - pickupLng) * Math.PI) / 180;
+    const dLat = ((lat - pickupLat) * Math.PI) / 180;
+    const dLon = ((lng - pickupLng) * Math.PI) / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos((pickupLat * Math.PI) / 180) *
-        Math.cos((dropoffLat * Math.PI) / 180) *
+        Math.cos((lat * Math.PI) / 180) *
         Math.sin(dLon / 2) *
         Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distanceKm = Number((R * c).toFixed(2));
 
-    // Bảng giá AhaMove HAN-BIKE: 3km đầu = 21.000đ, mỗi km tiếp theo +5.000đ
-    let feeVnd = 21000;
-    if (distanceKm > 3) {
-      feeVnd += Math.ceil(distanceKm - 3) * 5000;
+    // 2. Nếu không gọi được API AhaMove Portal -> Dùng công thức Haversine làm fallback
+    if (!isRealAhamoveFee) {
+      estimatedFee = 21000;
+      if (distanceKm > 3) {
+        estimatedFee += Math.ceil(distanceKm - 3) * 5000;
+      }
     }
 
     return {
       success: true,
+      feeVnd: estimatedFee,
+      isRealAhamoveFee,
       distanceKm,
-      feeVnd,
-      formattedFee: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(feeVnd),
+      formattedFee: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(estimatedFee),
     };
   }
 

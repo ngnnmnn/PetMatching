@@ -122,13 +122,12 @@ export default function AddressAutocompleteInput({
   const [selectedAddress, setSelectedAddress] = useState<string | null>(initialValue || null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Ghi nhớ giá trị initialValue từ props để chỉ cập nhật searchTerm khi initialValue thay đổi từ bên ngoài
+  // Ghi nhớ giá trị initialValue từ props để cập nhật searchTerm khi initialValue thay đổi từ bên ngoài
   const prevInitialValueRef = useRef(initialValue);
   useEffect(() => {
     if (initialValue !== prevInitialValueRef.current) {
       prevInitialValueRef.current = initialValue;
       setSearchTerm(initialValue || '');
-      // Không gán selectedAddress = initialValue khi đang gõ để tránh chặn hàm tìm kiếm gợi ý OpenStreetMap
     }
   }, [initialValue]);
 
@@ -147,6 +146,8 @@ export default function AddressAutocompleteInput({
   useEffect(() => {
     if (!searchTerm || searchTerm.trim().length < 2 || searchTerm === selectedAddress) {
       setSuggestions([]);
+      setIsOpen(false);
+      setLoading(false);
       return;
     }
 
@@ -155,24 +156,38 @@ export default function AddressAutocompleteInput({
       const results = await fetchHanoiAddressSuggestions(searchTerm);
       setSuggestions(results);
       setLoading(false);
-      setIsOpen(true);
+      if (results.length > 0) {
+        setIsOpen(true);
+      } else {
+        setIsOpen(false);
+      }
     }, 350);
 
     return () => clearTimeout(timer);
   }, [searchTerm, selectedAddress]);
 
+  /**
+   * Hàm xử lý khi người dùng chọn 1 địa chỉ gợi ý từ bản đồ OpenStreetMap
+   * @param item Đối tượng thông tin vị trí địa chỉ
+   */
   const handleSelect = (item: LocationSearchResult) => {
-    setSearchTerm(item.address);
-    setSelectedAddress(item.address);
+    const chosenAddressStr = item.address || item.detail;
+    setSearchTerm(chosenAddressStr);
+    setSelectedAddress(chosenAddressStr);
+    setSuggestions([]);
     setIsOpen(false);
     onSelectLocation(item);
   };
 
+  /**
+   * Hàm xóa sạch từ khóa tìm kiếm địa chỉ và đưa ô nhập về trạng thái ban đầu
+   */
   const handleClear = () => {
     setSearchTerm('');
     setSelectedAddress(null);
     setSuggestions([]);
     setIsOpen(false);
+    if (onChangeText) onChangeText('');
   };
 
   return (
@@ -231,7 +246,7 @@ export default function AddressAutocompleteInput({
                 <span>📍 Gợi ý địa chỉ chuẩn trên bản đồ OpenStreetMap:</span>
               </div>
               {suggestions.map((item, idx) => {
-                const isSelected = selectedAddress === item.address;
+                const isSelected = selectedAddress === item.address || selectedAddress === item.detail;
                 return (
                   <button
                     key={idx}

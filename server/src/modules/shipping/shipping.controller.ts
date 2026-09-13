@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ShippingService } from './shipping.service';
 
 /**
- * Controller tiếp nhận yêu cầu liên quan đến vận chuyển và vận đơn GHN
+ * Controller tiếp nhận yêu cầu liên quan đến vận chuyển và vận đơn hỏa tốc AhaMove
  */
 @Controller('api/shipping')
 export class ShippingController {
@@ -14,36 +14,6 @@ export class ShippingController {
   @Get('wards')
   getWards(@Query('province_id') provinceId?: string) {
     return this.shippingService.getWards(Number(provinceId || 0));
-  }
-
-  /**
-   * API cho Manager tạo vận đơn GHN tự động khi bấm nút "Gửi bên vận chuyển"
-   * @param orderId ID đơn hàng cần tạo vận đơn GHN
-   */
-  @Post('create-order/:orderId')
-  createShippingOrder(@Param('orderId') orderId: string) {
-    return this.shippingService.createShippingOrder(orderId);
-  }
-
-  /**
-   * Endpoint đón Webhook cập nhật trạng thái tự động từ GHN hoặc Simulator
-   */
-  @Post('webhook')
-  handleWebhook(@Body() payload: any) {
-    return this.shippingService.handleWebhook(payload);
-  }
-
-  /**
-   * API tra cứu chi tiết lịch sử hành trình vận đơn GHN tự động
-   * @param ghnOrderCode Mã vận đơn GHN
-   */
-  /**
-   * API tra cứu chi tiết lịch sử hành trình vận đơn GHN tự động
-   * @param ghnOrderCode Mã vận đơn GHN
-   */
-  @Get('track/:ghnOrderCode')
-  getTrackingDetail(@Param('ghnOrderCode') ghnOrderCode: string) {
-    return this.shippingService.getTrackingDetail(ghnOrderCode);
   }
 
   /**
@@ -73,12 +43,12 @@ export class ShippingController {
   }
 
   /**
-   * API ước tính phí giao hỏa tốc AhaMove dựa trên tọa độ GPS địa chỉ nhận
-   * @param body { dropoffLat, dropoffLng }
+   * API ước tính phí giao hỏa tốc AhaMove dựa trên tọa độ GPS hoặc chuỗi địa chỉ nhận
+   * @param body { dropoffLat?, dropoffLng?, addressStr? }
    */
   @Post('ahamove/estimate-fee')
-  estimateAhamoveShippingFee(@Body() body: { dropoffLat: number; dropoffLng: number }) {
-    return this.shippingService.estimateAhamoveShippingFee(body.dropoffLat, body.dropoffLng);
+  estimateAhamoveShippingFee(@Body() body: { dropoffLat?: number; dropoffLng?: number; addressStr?: string }) {
+    return this.shippingService.estimateAhamoveShippingFee(body.dropoffLat, body.dropoffLng, body.addressStr);
   }
 
   /**
