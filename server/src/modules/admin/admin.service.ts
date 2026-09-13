@@ -1861,7 +1861,6 @@ export class AdminService {
       inProgressBookings,
       completedBookings,
       cancelledBookings,
-      lateBookings,
       periodRevenueBookings,
       recognizedServiceGroups,
       legacyServiceGroups,
@@ -1897,7 +1896,6 @@ export class AdminService {
           status: {
             in: [
               SpaBookingStatus.CHECK_IN,
-              SpaBookingStatus.ARRIVED,
               SpaBookingStatus.IN_PROGRESS,
             ],
           },
@@ -1913,9 +1911,6 @@ export class AdminService {
             in: [SpaBookingStatus.CANCELLED, SpaBookingStatus.NO_SHOW],
           },
         },
-      }),
-      this.prisma.spaBooking.count({
-        where: { ...addressFilter, status: SpaBookingStatus.LATE },
       }),
       this.prisma.spaBooking.findMany({
         where: {
@@ -2049,7 +2044,6 @@ export class AdminService {
         { status: SpaBookingStatus.IN_PROGRESS, value: inProgressBookings },
         { status: SpaBookingStatus.COMPLETED, value: completedBookings },
         { status: SpaBookingStatus.CANCELLED, value: cancelledBookings },
-        { status: SpaBookingStatus.LATE, value: lateBookings },
       ],
       topServices,
       upcomingBookings,

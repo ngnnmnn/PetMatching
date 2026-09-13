@@ -909,12 +909,10 @@ enum SpaBookingStatus {
   PENDING
   CONFIRMED
   CHECK_IN
-  ARRIVED
   IN_PROGRESS
   COMPLETED
   CANCELLED
   NO_SHOW
-  LATE
 }
 
 /// Trạng thái badge xác minh hiển thị trên swipe card:

@@ -1,18 +1,16 @@
 import type { OrderStatus, SpaBookingStatus } from '@prisma/client';
 
 /**
- * Nhãn hiển thị tiếng Việt tương ứng cho từng trạng thái lịch Spa
+ * Nhãn hiển thị tiếng Việt tương ứng cho từng trạng thái lịch Spa (đã loại bỏ ARRIVED và LATE)
  */
 export const SPA_BOOKING_STATUS_LABELS: Record<SpaBookingStatus, string> = {
   PENDING: 'đang chờ xác nhận',
   CONFIRMED: 'đã xác nhận',
   CHECK_IN: 'đã tiếp nhận tại quầy',
-  ARRIVED: 'khách đã đến',
   IN_PROGRESS: 'đang thực hiện',
   COMPLETED: 'đã hoàn thành',
   CANCELLED: 'đã hủy',
   NO_SHOW: 'khách vắng mặt',
-  LATE: 'khách đến trễ',
 };
 
 /**

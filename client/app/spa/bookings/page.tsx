@@ -383,10 +383,9 @@ export default function SpaHistory() {
           </span>
         );
       case 'CHECK_IN':
-      case 'ARRIVED':
         return (
           <span className="rounded-full bg-teal-50 border border-teal-200 px-3 py-1 text-xs font-bold text-teal-800">
-            Khách đã đến
+            Đã Check-in
           </span>
         );
 
@@ -394,12 +393,6 @@ export default function SpaHistory() {
         return (
           <span className="rounded-full bg-orange-50 border border-orange-200 px-3 py-1 text-xs font-bold text-orange-800">
             Đang thực hiện
-          </span>
-        );
-      case 'LATE':
-        return (
-          <span className="rounded-full bg-rose-50 border border-rose-200 px-3 py-1 text-xs font-bold text-rose-800">
-            Trễ hẹn
           </span>
         );
       case 'COMPLETED':

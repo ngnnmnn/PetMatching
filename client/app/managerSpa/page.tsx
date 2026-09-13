@@ -163,8 +163,7 @@ function SpaManagerConsoleContent() {
       case 'CONFIRMED':
         return 'Đã xác nhận';
       case 'CHECK_IN':
-      case 'ARRIVED':
-        return 'Khách đã đến';
+        return 'Đã Check-in';
       case 'IN_PROGRESS':
         return 'Đang thực hiện';
       case 'COMPLETED':
@@ -173,8 +172,6 @@ function SpaManagerConsoleContent() {
         return 'Đã hủy';
       case 'NO_SHOW':
         return 'Khách vắng mặt';
-      case 'LATE':
-        return 'Trễ hẹn';
       default:
         return status;
     }
@@ -1311,7 +1308,7 @@ function SpaManagerConsoleContent() {
   const bookingCountsSummary = useMemo(() => {
     const total = filteredBookings.length;
     const pending = filteredBookings.filter((b) => b.status === 'PENDING').length;
-    const needStaff = filteredBookings.filter((b) => (b.status === 'CONFIRMED' || b.status === 'CHECK_IN' || b.status === 'ARRIVED') && !b.staffId).length;
+    const needStaff = filteredBookings.filter((b) => (b.status === 'CONFIRMED' || b.status === 'CHECK_IN') && !b.staffId).length;
     const inProgress = filteredBookings.filter((b) => b.status === 'IN_PROGRESS').length;
     const completed = filteredBookings.filter((b) => b.status === 'COMPLETED').length;
     const cancelled = filteredBookings.filter((b) => b.status === 'CANCELLED' || b.status === 'NO_SHOW').length;
@@ -1501,12 +1498,10 @@ function SpaManagerConsoleContent() {
                           PENDING: { label: 'Chờ xác nhận', color: 'bg-amber-500' },
                           CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
                           CHECK_IN: { label: 'Đã Check-in', color: 'bg-teal-500' },
-                          ARRIVED: { label: 'Khách đã đến', color: 'bg-teal-600' },
                           IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
                           COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
                           CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
                           NO_SHOW: { label: 'Khách vắng mặt', color: 'bg-gray-500' },
-                          LATE: { label: 'Trễ hẹn', color: 'bg-rose-500' }
                         }[item.status as string] || { label: item.status, color: 'bg-gray-400' };
 
                         return (
@@ -1569,11 +1564,11 @@ function SpaManagerConsoleContent() {
                           const statusStyle = {
                             PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
                             CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
+                            CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
                             IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                             COMPLETED: 'bg-green-50 text-green-700 border-green-200',
                             CANCELLED: 'bg-red-50 text-red-700 border-red-200',
                             NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
-                            LATE: 'bg-rose-50 text-rose-705 border-rose-200'
                           }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
                           return (
@@ -2025,12 +2020,11 @@ function SpaManagerConsoleContent() {
                         <option value="ALL">🌐 Tất cả trạng thái</option>
                         <option value="PENDING">🚨 Chờ xác nhận</option>
                         <option value="CONFIRMED">👤 Đã xác nhận</option>
-                        <option value="CHECK_IN">📍 Khách đã đến</option>
+                        <option value="CHECK_IN">📍 Đã Check-in</option>
                         <option value="IN_PROGRESS">🔄 Đang thực hiện</option>
                         <option value="COMPLETED">✅ Đã hoàn thành</option>
                         <option value="CANCELLED">❌ Đã hủy</option>
                         <option value="NO_SHOW">🚶‍♂️ Khách vắng mặt</option>
-                        <option value="LATE">⏰ Trễ hẹn</option>
                       </select>
                     </div>
                   </div>
@@ -2177,15 +2171,13 @@ function SpaManagerConsoleContent() {
                               PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
                               CONFIRMED: 'bg-blue-55 text-blue-700 border-blue-200',
                               CHECK_IN: 'bg-teal-50 text-teal-700 border-teal-200',
-                              ARRIVED: 'bg-teal-50 text-teal-700 border-teal-200',
                               IN_PROGRESS: 'bg-orange-50 text-orange-700 border-orange-200',
                               COMPLETED: 'bg-green-50 text-green-700 border-green-200',
                               CANCELLED: 'bg-red-50 text-red-700 border-red-200',
                               NO_SHOW: 'bg-gray-50 text-gray-700 border-gray-250',
-                              LATE: 'bg-rose-50 text-rose-700 border-rose-250'
                             }[b.status as string] || 'bg-gray-50 text-gray-700 border-gray-200';
 
-                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(b.status) && (b.rescheduleCount || 0) < 2;
+                            const canReschedule = ['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(b.status) && (b.rescheduleCount || 0) < 2;
                             const isSelectedFromUrl = bookingIdParam === b.id;
                             const isHighlighted = b.isNewLive || isSelectedFromUrl;
 
@@ -3084,12 +3076,10 @@ function SpaManagerConsoleContent() {
                 PENDING: 'bg-amber-100 text-amber-800 border-amber-300',
                 CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-300',
                 CHECK_IN: 'bg-teal-100 text-teal-800 border-teal-300',
-                ARRIVED: 'bg-teal-100 text-teal-800 border-teal-300',
                 IN_PROGRESS: 'bg-orange-100 text-orange-800 border-orange-300',
                 COMPLETED: 'bg-green-100 text-green-800 border-green-300',
                 CANCELLED: 'bg-red-100 text-red-800 border-red-300',
                 NO_SHOW: 'bg-gray-100 text-gray-800 border-gray-300',
-                LATE: 'bg-rose-100 text-rose-800 border-rose-300'
               }[selectedBookingDetail.status as string] || 'bg-gray-100 text-gray-800 border-gray-300'}`}>
                 {getSpaStatusText(selectedBookingDetail.status)}
               </span>
@@ -3268,7 +3258,7 @@ function SpaManagerConsoleContent() {
                 </button>
               )}
 
-              {['PENDING', 'CONFIRMED', 'CHECK_IN', 'ARRIVED', 'LATE'].includes(selectedBookingDetail.status) && (selectedBookingDetail.rescheduleCount || 0) < 2 && (
+              {['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(selectedBookingDetail.status) && (selectedBookingDetail.rescheduleCount || 0) < 2 && (
                 <button
                   type="button"
                   onClick={() => {

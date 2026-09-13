@@ -278,12 +278,10 @@ export interface SpaBookingType {
     | "PENDING"
     | "CONFIRMED"
     | "CHECK_IN"
-    | "ARRIVED"
     | "IN_PROGRESS"
     | "COMPLETED"
     | "CANCELLED"
-    | "NO_SHOW"
-    | "LATE";
+    | "NO_SHOW";
   priceSnapshot: number | null;
   totalPrice?: number;
   payment?: Payment | null;

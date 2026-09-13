@@ -82,18 +82,16 @@ type DateFilter = 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM';
 type PaymentFilter = 'ALL' | 'PAID' | 'PENDING' | 'REFUNDED' | 'UNPAID';
 
 const PAGE_SIZE = 10;
-const ACTIVE_STATUSES = ['CHECK_IN', 'ARRIVED', 'IN_PROGRESS', 'LATE'];
+const ACTIVE_STATUSES = ['CHECK_IN', 'IN_PROGRESS'];
 
 const SPA_STATUS_META: Record<string, { label: string; className: string }> = {
   PENDING: { label: 'Chờ xác nhận', className: 'border-amber-200 bg-amber-50 text-amber-700' },
   CONFIRMED: { label: 'Đã xác nhận', className: 'border-blue-200 bg-blue-50 text-blue-700' },
   CHECK_IN: { label: 'Đã check-in', className: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
-  ARRIVED: { label: 'Khách đã đến', className: 'border-teal-200 bg-teal-50 text-teal-700' },
   IN_PROGRESS: { label: 'Đang thực hiện', className: 'border-orange-200 bg-orange-50 text-orange-700' },
   COMPLETED: { label: 'Hoàn thành', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   CANCELLED: { label: 'Đã hủy', className: 'border-red-200 bg-red-50 text-red-700' },
   NO_SHOW: { label: 'Không đến', className: 'border-slate-200 bg-slate-50 text-slate-700' },
-  LATE: { label: 'Trễ hẹn', className: 'border-rose-200 bg-rose-50 text-rose-700' },
 };
 
 export function SpaBookingsPanel({
@@ -487,7 +485,6 @@ function bookingMatchesSearch(booking: SpaBookingRow, search: string) {
 
 function getAttentionReasons(booking: SpaBookingRow) {
   const reasons: string[] = [];
-  if (booking.status === 'LATE') reasons.push('Lịch đang bị trễ');
   if (booking.status === 'NO_SHOW') reasons.push('Khách không đến');
   if (booking.status === 'CANCELLED') reasons.push(booking.cancelReason ? `Đã hủy: ${booking.cancelReason}` : 'Lịch đã bị hủy');
   if (booking.issueReported) reasons.push(`Có sự cố: ${booking.issueReported}`);

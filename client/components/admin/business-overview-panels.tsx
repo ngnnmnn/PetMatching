@@ -189,11 +189,6 @@ const spaStatusMeta: Record<string, StatusMeta> = {
     color: "bg-violet-500",
     chartColor: chartColors.violet,
   },
-  ARRIVED: {
-    label: "Khách đã đến",
-    color: "bg-violet-500",
-    chartColor: chartColors.violet,
-  },
   IN_PROGRESS: {
     label: "Đang thực hiện",
     color: "bg-violet-500",
@@ -214,7 +209,6 @@ const spaStatusMeta: Record<string, StatusMeta> = {
     color: "bg-rose-500",
     chartColor: chartColors.rose,
   },
-  LATE: { label: "Trễ hẹn", color: "bg-orange-500", chartColor: chartColors.orange },
 };
 
 type StatusMeta = { label: string; color: string; chartColor: string };

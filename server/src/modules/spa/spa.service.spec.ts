@@ -532,8 +532,10 @@ describe('SpaService staff checkin date restriction & notify late', () => {
     );
   });
 
-  it('gửi thông báo cho manager khi khách chưa đến và cập nhật trạng thái LATE', async () => {
-    const updateMock = jest.fn().mockResolvedValue({});
+  /**
+   * Test case kiểm tra nhân viên gửi thông báo cho quản lý khi khách chưa đến (giữ nguyên trạng thái booking)
+   */
+  it('gửi thông báo cho manager khi khách chưa đến và giữ nguyên trạng thái booking', async () => {
     const createNotificationMock = jest.fn().mockResolvedValue({});
 
     const prisma = {
@@ -549,9 +551,7 @@ describe('SpaService staff checkin date restriction & notify late', () => {
         }),
       },
       $transaction: jest.fn().mockImplementation(async (callback) => {
-        return callback({
-          spaBooking: { update: updateMock },
-        });
+        return callback({});
       }),
     };
 
@@ -567,12 +567,7 @@ describe('SpaService staff checkin date restriction & notify late', () => {
 
     const result = await service.staffNotifyManagerLate('staff-1', 'booking-late-1');
     expect(result.success).toBe(true);
-    expect(updateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'booking-late-1' },
-        data: { status: 'LATE' },
-      }),
-    );
+    expect(result.status).toBe('CONFIRMED');
     expect(createNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'manager-1',
@@ -594,7 +589,6 @@ describe('SpaService auto update overdue past bookings', () => {
       spaBooking: {
         findMany: jest.fn()
           .mockResolvedValueOnce([]) // noShow
-          .mockResolvedValueOnce([]) // late
           .mockResolvedValueOnce([   // past overdue
             {
               id: 'booking-past-1',
