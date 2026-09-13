@@ -285,8 +285,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
               SpaBookingStatus.CONFIRMED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
-              SpaBookingStatus.LATE,
-              SpaBookingStatus.ARRIVED,
             ],
           },
           scheduledAt: {
@@ -330,8 +328,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
               SpaBookingStatus.CONFIRMED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
-              SpaBookingStatus.LATE,
-              SpaBookingStatus.ARRIVED,
             ],
           },
           scheduledAt: {
@@ -840,7 +836,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const updatedData: any = {};
     if (dto.status !== undefined) {
       if (dto.status === SpaBookingStatus.IN_PROGRESS) {
-        if (booking.status !== SpaBookingStatus.CHECK_IN && booking.status !== SpaBookingStatus.ARRIVED) {
+        if (booking.status !== SpaBookingStatus.CHECK_IN) {
           throw new BadRequestException('Khách hàng chưa Check-in. Vui lòng Check-in cho khách trước khi bắt đầu làm dịch vụ!');
         }
       }
@@ -1257,19 +1253,19 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
   async autoUpdateBookingStatuses() {
     const now = new Date();
-    const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
+    // Quá 15 phút kể từ giờ hẹn (scheduledAt) mà chưa check-in -> Tự động chuyển sang NO_SHOW
+    const fifteenMinsAgo = new Date(now.getTime() - 15 * 60 * 1000);
 
-    // 1. Any booking 30+ minutes past scheduledAt without check-in -> NO_SHOW automatically
+    // 1. Lịch hẹn quá 15 phút chưa check-in -> Tự động chuyển sang NO_SHOW
     const noShowBookings = await this.prisma.spaBooking.findMany({
       where: {
         status: {
           in: [
             SpaBookingStatus.PENDING,
             SpaBookingStatus.CONFIRMED,
-            SpaBookingStatus.LATE,
           ],
         },
-        scheduledAt: { lt: thirtyMinsAgo },
+        scheduledAt: { lt: fifteenMinsAgo },
       },
       include: {
         payment: true,
@@ -1285,20 +1281,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           });
         }
         const updated = await tx.spaBooking.update({ where: { id: booking.id }, data: { status: SpaBookingStatus.NO_SHOW } });
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
-      }
-    });
-
-    // 2. CONFIRMED -> LATE if scheduledAt in past (0 to 30 mins ago) and not yet in progress
-    const lateBookings = await this.prisma.spaBooking.findMany({
-      where: {
-        status: SpaBookingStatus.CONFIRMED,
-        scheduledAt: { lt: now, gte: thirtyMinsAgo },
-      },
-    });
-    if (lateBookings.length > 0) await this.prisma.$transaction(async (tx) => {
-      for (const booking of lateBookings) {
-        const updated = await tx.spaBooking.update({ where: { id: booking.id }, data: { status: SpaBookingStatus.LATE } });
         await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
       }
     });
@@ -1383,17 +1365,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const staffName = booking.staff?.name || 'Nhân viên';
 
     return this.prisma.$transaction(async (tx) => {
-      // Cập nhật trạng thái thành LATE nếu đang là CONFIRMED
-      let updatedStatus = booking.status;
-      if (booking.status === SpaBookingStatus.CONFIRMED) {
-        updatedStatus = SpaBookingStatus.LATE;
-        await tx.spaBooking.update({
-          where: { id: bookingId },
-          data: { status: SpaBookingStatus.LATE },
-        });
-      }
-
-      // Tạo thông báo cho Quản lý
+      // Tạo thông báo cho Quản lý (giữ nguyên trạng thái booking hiện tại)
       await this.notifications.create(
         {
           userId: managerId,
@@ -1411,7 +1383,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       return {
         success: true,
         message: 'Đã gửi thông báo đến Quản lý chi nhánh thành công.',
-        status: updatedStatus,
+        status: booking.status,
       };
     });
   }
@@ -2089,8 +2061,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
       SpaBookingStatus.CHECK_IN,
-      SpaBookingStatus.LATE,
-      SpaBookingStatus.ARRIVED,
     ];
     if (!allowedAssignStatuses.includes(booking.status)) {
       throw new BadRequestException(
@@ -2121,7 +2091,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.CHECK_IN,
-            SpaBookingStatus.LATE,
           ],
         },
       },
@@ -2217,8 +2186,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
               SpaBookingStatus.CONFIRMED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
-              SpaBookingStatus.LATE,
-              SpaBookingStatus.ARRIVED,
             ],
           },
           scheduledAt: {
@@ -2405,8 +2372,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
               SpaBookingStatus.CONFIRMED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
-              SpaBookingStatus.LATE,
-              SpaBookingStatus.ARRIVED,
             ],
           },
           scheduledAt: {
@@ -2654,7 +2619,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CHECK_IN,
-            SpaBookingStatus.LATE,
           ],
         },
       },
@@ -2784,8 +2748,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
       SpaBookingStatus.CHECK_IN,
-      SpaBookingStatus.LATE,
-      SpaBookingStatus.ARRIVED,
     ];
     if (!allowedAssignStatuses.includes(booking.status)) {
       throw new BadRequestException(
@@ -2816,7 +2778,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.CHECK_IN,
-            SpaBookingStatus.LATE,
           ],
         },
       },
@@ -2967,8 +2928,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       const completed = staffBookings.filter((b) => b.status === SpaBookingStatus.COMPLETED);
       const active = staffBookings.filter((b) =>
         b.status === SpaBookingStatus.IN_PROGRESS ||
-        b.status === SpaBookingStatus.CHECK_IN ||
-        b.status === SpaBookingStatus.LATE
+        b.status === SpaBookingStatus.CHECK_IN
       );
 
       const currentlyDoing = staffBookings.find(
@@ -3129,8 +3089,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             SpaBookingStatus.CONFIRMED,
             SpaBookingStatus.IN_PROGRESS,
             SpaBookingStatus.CHECK_IN,
-            SpaBookingStatus.LATE,
-            SpaBookingStatus.ARRIVED,
           ],
         },
         scheduledAt: {
@@ -3166,8 +3124,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
               SpaBookingStatus.CONFIRMED,
               SpaBookingStatus.IN_PROGRESS,
               SpaBookingStatus.CHECK_IN,
-              SpaBookingStatus.LATE,
-              SpaBookingStatus.ARRIVED,
             ],
           },
           scheduledAt: {

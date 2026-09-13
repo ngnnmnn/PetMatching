@@ -86,12 +86,11 @@ export class PetsService {
     where: Prisma.SpaBookingWhereInput,
     scope: 'PET' | 'USER',
   ) {
+    // Danh sách các trạng thái lịch Spa đang hoạt động (đã loại bỏ ARRIVED và LATE)
     const activeStatuses: SpaBookingStatus[] = [
       SpaBookingStatus.PENDING,
       SpaBookingStatus.CONFIRMED,
       SpaBookingStatus.CHECK_IN,
-      SpaBookingStatus.ARRIVED,
-      SpaBookingStatus.LATE,
       SpaBookingStatus.IN_PROGRESS,
     ];
     const activeBookings = await tx.spaBooking.findMany({

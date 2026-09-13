@@ -60,7 +60,6 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Đã hủy",
   CONFIRMED: "Đã xác nhận",
   CHECK_IN: "Đã Check-in",
-  ARRIVED: "Khách đã đến",
   IN_PROGRESS: "Đang thực hiện",
   COMPLETED: "Hoàn tất",
   NO_SHOW: "Không đến",
