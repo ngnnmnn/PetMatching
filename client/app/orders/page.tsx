@@ -236,9 +236,6 @@ export default function OrdersPage() {
   const [submittingRefund, setSubmittingRefund] = useState(false);
   const [banks, setBanks] = useState<{ bin: string; name: string; shortName: string; logo: string }[]>([]);
 
-  // Delivery Proof Inline Toggle State
-  const [showProofOrderId, setShowProofOrderId] = useState<string | null>(null);
-  const [showRefundProofOrderId, setShowRefundProofOrderId] = useState<string | null>(null);
   // State mã AhaMove đang bật modal xem chi tiết tracking
   const [trackingAhamoveCode, setTrackingAhamoveCode] = useState<string | null>(null);
 

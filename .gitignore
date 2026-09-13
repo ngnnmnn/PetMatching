@@ -16,7 +16,7 @@ coverage/
 # Env
 # Temp and installers
 *.msi
-scratch/
+**/scratch/
 .env*
 db.env
 

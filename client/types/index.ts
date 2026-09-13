@@ -189,7 +189,6 @@ export interface Product {
   importPrice?: number | null;
   salePrice?: number | null;
   brand?: string;
-  unit?: string;
   rating: number;
   reviewCount: number;
   soldCount?: number;

@@ -36,35 +36,6 @@ const QUICK_CATEGORIES = [
 
 const ITEMS_PER_PAGE = 12; // 3 rows, 4 products per row
 
-/** Kiểm tra sản phẩm thử nghiệm hoặc rác hệ thống để ẩn khỏi danh sách hiển thị */
-const isTestOrSystemProduct = (product: any) => {
-  const nameLower = product.name.toLowerCase();
-
-  const hasKeyword = (
-    nameLower.includes('test demo') ||
-    nameLower.includes('freeship') ||
-    nameLower.includes('voucher test') ||
-    nameLower.includes('phí ship') ||
-    nameLower.includes('phí vận chuyển') ||
-    nameLower.includes('sản phẩm thử nghiệm')
-  );
-
-  if (hasKeyword) return true;
-
-  const isGibberish = (str: string): boolean => {
-    const s = str.toLowerCase();
-    const mashes = [
-      'asdfgh', 'sdfghj', 'dfghjk', 'fghjkl',
-      'qwerty', 'wertyu', 'ertyui', 'rtyuio',
-      'zxcvbn'
-    ];
-    if (mashes.some(m => s.includes(m))) return true;
-    return false;
-  };
-
-  return isGibberish(product.name);
-};
-
 // Bảng ánh xạ khoảng cân nặng tiêu chuẩn theo size sản phẩm
 const SIZE_WEIGHT_RANGES: Record<string, { min: number; max: number }> = {
   s: { min: 0, max: 4 },
@@ -404,10 +375,7 @@ function ShopPageContent() {
   // Client-side category, price, and pet customization filtering on full loaded catalog
   const filteredProducts = products
     .filter((product) => {
-    // 1. Filter out test/system products
-    if (isTestOrSystemProduct(product)) return false;
-
-    // 2. Pet Customization Filter (species, weight, size)
+    // 1. Pet Customization Filter (species, weight, size)
     if (selectedPet) {
       // Check target species (double check client-side)
       if (product.targetSpecies !== 'ALL' && product.targetSpecies !== selectedPet.species) {
@@ -421,7 +389,7 @@ function ShopPageContent() {
       }
     }
 
-    // 3. Category filter
+    // 2. Category filter
     const matchesCategory =
       selectedCategories.length === 0 || selectedCategories.includes(product.category);
 

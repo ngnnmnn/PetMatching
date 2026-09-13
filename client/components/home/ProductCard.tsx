@@ -288,7 +288,6 @@ export default function ProductCard({
             <div className="min-h-[3.875rem]">
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-xs font-bold uppercase tracking-[0.08em] text-[#0F766E]">{product.brand || 'PetMatch'}</p>
-                {product.unit && <span className="shrink-0 text-xs font-semibold text-[var(--text-muted)]">{product.unit}</span>}
               </div>
               <h3 className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-[var(--text-main)] transition duration-200 group-hover:text-[var(--primary-color)]">{product.name}</h3>
             </div>
@@ -474,11 +473,6 @@ export default function ProductCard({
                       <span className="inline-flex items-center gap-1 text-gray-400">
                         <Star className="size-4 text-gray-300 fill-gray-100" />
                         <span className="font-bold text-gray-400">Chưa có đánh giá nào</span>
-                      </span>
-                    )}
-                    {product.unit && (
-                      <span className="font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md text-[11px]">
-                        {product.unit}
                       </span>
                     )}
                   </div>

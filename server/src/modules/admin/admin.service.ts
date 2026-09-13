@@ -1563,7 +1563,6 @@ export class AdminService {
                 name: true,
                 imageUrl: true,
                 brand: true,
-                unit: true,
               },
             },
             variant: { select: { id: true, name: true } },
