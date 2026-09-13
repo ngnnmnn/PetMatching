@@ -5,6 +5,7 @@ import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { shippingApi, type HanoiWardOption } from '@/lib/api/shipping';
+import AddressAutocompleteInput, { LocationSearchResult } from './AddressAutocompleteInput';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
@@ -127,11 +128,10 @@ function CustomSelect({
                       setIsOpen(false);
                       setSearchTerm('');
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition text-left ${
-                      isSelected
+                    className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition text-left ${isSelected
                         ? 'bg-[#0F766E]/10 text-[#0F766E] font-bold'
                         : 'text-[var(--text-main)] hover:bg-gray-100 font-medium'
-                    }`}
+                      }`}
                   >
                     <span className="truncate">{opt.label}</span>
                     {isSelected && <Check className="size-3.5 text-[#0F766E] shrink-0 ml-2" />}
@@ -219,25 +219,48 @@ export default function AddressFormModal({
 
   const [loadingWards, setLoadingWards] = useState(false);
 
-  // Fixed shipping fee preview.
-  const calculatedShippingFee = showShippingFee ? 30000 : null;
-  // Reset form when opening
+  // Dynamic shipping fee calculated from AhaMove live API or fallback
+  const [dynamicShippingFee, setDynamicShippingFee] = useState<number | null>(30000);
+  const calculatedShippingFee = showShippingFee ? (dynamicShippingFee ?? 30000) : null;
+  // Ref ghi nhớ trạng thái đã khởi tạo form để chỉ chạy 1 lần khi mở Modal, tránh tự động reset tab khi re-render hoặc auto-polling
+  const hasInitializedRef = useRef(false);
+
+  /**
+   * Hàm khởi tạo dữ liệu ban đầu cho form địa chỉ khi Modal được mở (isOpen = true).
+   * Phân loại:
+   * - Nếu có initialData (Sửa địa chỉ đơn hàng): Mở sẵn tab 'new' và điền địa chỉ hiện tại của đơn hàng.
+   * - Nếu không có initialData nhưng có địa chỉ đã lưu: Mở tab 'saved' và chọn địa chỉ mặc định.
+   * - Nếu không có gì: Mở tab 'new' trống.
+   */
   useEffect(() => {
-    if (isOpen) {
-      if (savedAddresses && savedAddresses.length > 0) {
+    if (!isOpen) {
+      hasInitializedRef.current = false;
+      return;
+    }
+
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      if (initialData?.receiverName || initialData?.detail) {
+        setAddressTab('new');
+        setReceiverName(initialData.receiverName || '');
+        setReceiverPhone(initialData.receiverPhone || '');
+        setDetail(initialData.detail || '');
+        setWardName(initialData.ward || '');
+        setWardCode(initialData.wardCode);
+      } else if (savedAddresses && savedAddresses.length > 0) {
         setAddressTab('saved');
         const defaultAddr = savedAddresses.find((a) => a.isDefault) || savedAddresses[0];
         handleSelectSavedAddress(defaultAddr);
       } else {
         setAddressTab('new');
-        setReceiverName(initialData?.receiverName || '');
-        setReceiverPhone(initialData?.receiverPhone || '');
-        setDetail(initialData?.detail || '');
-        setWardName(initialData?.ward || '');
-        setWardCode(initialData?.wardCode);
+        setReceiverName('');
+        setReceiverPhone('');
+        setDetail('');
+        setWardName('');
+        setWardCode(undefined);
       }
     }
-  }, [initialData, isOpen, savedAddresses]);
+  }, [isOpen, initialData, savedAddresses]);
 
   // Fetch Wards for Hanoi (province_id = 1) when modal is open
   useEffect(() => {
@@ -290,15 +313,27 @@ export default function AddressFormModal({
     setWardName(label);
   };
 
+  /**
+   * Xử lý xác nhận form địa chỉ: Kiểm tra ràng buộc Tên, SĐT và Địa chỉ giao hàng từ OpenStreetMap
+   * @param e Sự kiện Submit form
+   */
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!receiverName.trim() || !receiverPhone.trim() || !detail.trim() || !wardName) {
-      toast.error('Vui lòng chọn hoặc điền đầy đủ các thông tin địa chỉ.');
+
+    let finalWardCode = wardCode;
+    let finalWardName = wardName;
+    if (!finalWardCode && wards.length > 0) {
+      finalWardCode = wards[0].wardCode;
+      finalWardName = wards[0].wardName;
+    }
+
+    if (!receiverName.trim() || !receiverPhone.trim() || !detail.trim()) {
+      toast.error('Vui lòng nhập tên, số điện thoại và địa chỉ giao hàng.');
       return;
     }
 
-    if (!wardCode) {
-      toast.error('Vui lòng chọn Phường/Xã từ hệ thống.');
+    if (detail.trim().length < 5) {
+      toast.error('Vui lòng nhập địa chỉ cụ thể (tối thiểu 5 ký tự) để AhaMove giao hàng chính xác.');
       return;
     }
 
@@ -312,12 +347,12 @@ export default function AddressFormModal({
       receiverName: receiverName.trim(),
       receiverPhone: receiverPhone.trim(),
       provinceName: HANOI_PROVINCE_NAME,
-      districtName: wardName,
-      wardName,
+      districtName: finalWardName || HANOI_PROVINCE_NAME,
+      wardName: finalWardName || HANOI_PROVINCE_NAME,
       detail: detail.trim(),
       provinceId: HANOI_PROVINCE_ID,
-      districtId: Number(wardCode),
-      wardCode,
+      districtId: Number(finalWardCode) || 1,
+      wardCode: finalWardCode || '10101',
       saveAddressToDb,
       setAsDefault,
       calculatedShippingFee: calculatedShippingFee ?? undefined,
@@ -363,6 +398,21 @@ export default function AddressFormModal({
         {/* Saved Addresses Tabs */}
         {savedAddresses && savedAddresses.length > 0 && (
           <div className="flex border-b border-[var(--border-color)] text-xs font-extrabold gap-4 pb-2">
+            {/* Tab 1: Sửa địa chỉ hiện tại / Nhập địa chỉ mới (đặt lên trước theo yêu cầu người dùng) */}
+            <button
+              type="button"
+              onClick={() => {
+                setAddressTab('new');
+                setSelectedSavedAddressId(null);
+              }}
+              className={`pb-2 transition border-b-2 ${addressTab === 'new'
+                  ? 'border-[#0F766E] text-[#0F766E]'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+            >
+              {initialData?.receiverName || initialData?.detail ? '✏️ Sửa địa chỉ hiện tại' : '✍️ Nhập địa chỉ mới'}
+            </button>
+            {/* Tab 2: Danh sách địa chỉ đã lưu trong tài khoản */}
             <button
               type="button"
               onClick={() => {
@@ -371,27 +421,12 @@ export default function AddressFormModal({
                   handleSelectSavedAddress(savedAddresses[0]);
                 }
               }}
-              className={`pb-2 transition border-b-2 ${
-                addressTab === 'saved'
+              className={`pb-2 transition border-b-2 ${addressTab === 'saved'
                   ? 'border-[#0F766E] text-[#0F766E]'
                   : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
+                }`}
             >
               📋 Địa chỉ đã lưu ({savedAddresses.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAddressTab('new');
-                setSelectedSavedAddressId(null);
-              }}
-              className={`pb-2 transition border-b-2 ${
-                addressTab === 'new'
-                  ? 'border-[#0F766E] text-[#0F766E]'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              ✍️ Nhập địa chỉ mới
             </button>
           </div>
         )}
@@ -482,45 +517,57 @@ export default function AddressFormModal({
                 <span>Hệ thống hiện tại chỉ áp dụng giao hàng cho các khu vực thuộc <strong>Thành phố Hà Nội</strong>.</span>
               </div>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                {/* Fixed Province/City Input */}
-                <div>
-                  <label className="mb-2 flex items-center text-xs font-extrabold text-[var(--text-main)]">
-                    Tỉnh / Thành phố <span className="text-red-500 ml-0.5">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    readOnly
-                    disabled
-                    value={HANOI_PROVINCE_NAME}
-                    className="min-h-12 w-full cursor-not-allowed rounded-xl border border-[var(--border-color)] bg-gray-100 px-4 py-3 text-sm font-bold text-gray-700"
-                  />
-                </div>
-
-                {/* Custom Ward Select */}
-                <CustomSelect
-                  label="Phường / Xã (Hà Nội)"
-                  placeholder="Chọn Phường/Xã..."
-                  options={wardOptions}
-                  value={wardCode}
-                  onChange={handleWardSelect}
-                  loading={loadingWards}
+              {/* Ô Tìm kiếm / Nhập địa chỉ tự động bằng OpenStreetMap Autocomplete duy nhất */}
+              <div className="rounded-2xl border border-teal-200 bg-emerald-50/40 p-4 space-y-2">
+                <AddressAutocompleteInput
+                  label="📍 Nhập hoặc tìm kiếm địa chỉ giao hàng trên bản đồ OpenStreetMap"
+                  placeholder="Gõ số nhà, tên đường, tòa nhà hoặc địa danh tại Hà Nội..."
+                  initialValue={detail}
                   required
+                  onChangeText={(val) => {
+                    setDetail(val);
+                    if (!wardCode && wards.length > 0) {
+                      setWardCode(wards[0].wardCode);
+                      setWardName(wards[0].wardName);
+                    }
+                  }}
+                  onSelectLocation={async (loc: LocationSearchResult) => {
+                    setDetail(loc.detail || loc.address);
+                    if (loc.ward) {
+                      const cleanLoc = cleanWardName(loc.ward);
+                      const match = wards.find(
+                        (w) =>
+                          cleanWardName(w.wardName).includes(cleanLoc) ||
+                          cleanLoc.includes(cleanWardName(w.wardName)),
+                      );
+                      if (match) {
+                        setWardCode(match.wardCode);
+                        setWardName(match.wardName);
+                      } else if (wards.length > 0) {
+                        setWardCode(wards[0].wardCode);
+                        setWardName(wards[0].wardName);
+                      }
+                    } else if (wards.length > 0) {
+                      setWardCode(wards[0].wardCode);
+                      setWardName(wards[0].wardName);
+                    }
+                    try {
+                      const feeRes = await shippingApi.estimateAhamoveShippingFee(loc.lat, loc.lng);
+                      if (feeRes.data?.feeVnd) {
+                        setDynamicShippingFee(feeRes.data.feeVnd);
+                        toast.success(
+                          `Đã chọn vị trí: ${loc.address} — Phí ship hỏa tốc AhaMove: ${feeRes.data.formattedFee} (${feeRes.data.distanceKm} km)`,
+                        );
+                      }
+                    } catch (e) {
+                      console.error('Failed to estimate AhaMove fee', e);
+                      toast.success(`Đã chọn vị trí: ${loc.address}`);
+                    }
+                  }}
                 />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-extrabold text-[var(--text-main)]">
-                  Địa chỉ chi tiết (số nhà, đường) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: Số 2h, ngõ 81 Duy Tân"
-                  value={detail}
-                  onChange={(e) => setDetail(e.target.value)}
-                  className="min-h-12 w-full rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] px-4 py-3 text-sm focus-visible:border-primary focus-visible:outline-none"
-                />
+                <p className="text-[11px] font-semibold text-teal-800">
+                  ⚡ <strong>Hệ thống tự động định vị bản đồ OpenStreetMap</strong> để tính toán khoảng cách và phí giao hàng AhaMove!
+                </p>
               </div>
 
               {showSaveOptions && (

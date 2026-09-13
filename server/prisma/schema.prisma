@@ -444,6 +444,10 @@ model Order {
   districtId            Int?
   wardCode              String?
   shippingStatus        String?
+  /// Mã vận đơn Giao Hàng Nhanh (GHN) khi được đẩy đơn thành công
+  ghnOrderCode          String?
+  /// Mã vận đơn AhaMove khi được tạo đơn thành công
+  ahamoveOrderCode      String?
   storeId               String?
   refundStatus          String?
   refundBankCode        String?

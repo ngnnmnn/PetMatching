@@ -64,6 +64,10 @@ export interface ManagerOrder {
       imageUrl?: string;
     };
   }[];
+  /// Mã vận đơn Giao Hàng Nhanh (GHN)
+  ghnOrderCode?: string | null;
+  /// Mã vận đơn AhaMove hỏa tốc
+  ahamoveOrderCode?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
   refundStatus?: string | null;

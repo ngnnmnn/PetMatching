@@ -25,9 +25,13 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import AppHeader from '@/components/layout/AppHeader';
 import { usersApi } from '@/lib/api/users';
+// Import API vận chuyển AhaMove để đồng bộ trạng thái tự động ngầm
+import { shippingApi } from '@/lib/api/shipping';
 import AddressFormModal from '@/components/checkout/AddressFormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
+// Modal xem chi tiết hành trình vận đơn GHN tự động
+import OrderTrackingModal from '@/components/orders/OrderTrackingModal';
 
 interface OrderItem {
   id: string;
@@ -58,6 +62,10 @@ interface Order {
     paymentUrl?: string | null;
   } | null;
   shippingStatus?: string | null;
+  /// Mã vận đơn GHN tự động
+  ghnOrderCode?: string | null;
+  /// Mã vận đơn AhaMove hỏa tốc
+  ahamoveOrderCode?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
   refundStatus?: string | null;
@@ -178,13 +186,13 @@ const removeAccentsAndUpperCase = (str: string) => {
     .toUpperCase();
 };
 
+// Danh sách tab lọc trạng thái đơn hàng dành cho Khách hàng (theo quy trình 6 bước AhaMove)
 const ORDER_STATUS_TABS = [
   { id: 'ALL', label: 'Tất cả' },
-  { id: 'PENDING', label: 'Chờ xác nhận', statuses: ['PENDING'] },
-  { id: 'PROCESSING', label: 'Đang xử lý / Đã thanh toán', statuses: ['PROCESSING'] },
-  { id: 'PACKED', label: 'Đã đóng gói', statuses: ['PACKED'] },
+  { id: 'PENDING', label: 'Xác nhận / Đã thanh toán', statuses: ['PENDING'] },
+  { id: 'PACKED', label: 'Đã gói hàng', statuses: ['PACKED'] },
   { id: 'SHIPPED', label: 'Đang giao', statuses: ['SHIPPED'] },
-  { id: 'DELIVERED', label: 'Đã giao thành công', statuses: ['DELIVERED'] },
+  { id: 'DELIVERED', label: 'Giao hàng thành công', statuses: ['DELIVERED'] },
   { id: 'CANCELLED', label: 'Đã hủy / Thất bại', statuses: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] },
 ];
 
@@ -233,6 +241,9 @@ export default function OrdersPage() {
   // Delivery Proof Inline Toggle State
   const [showProofOrderId, setShowProofOrderId] = useState<string | null>(null);
   const [showRefundProofOrderId, setShowRefundProofOrderId] = useState<string | null>(null);
+  // State mã GHN và AhaMove đang bật modal xem chi tiết tracking
+  const [trackingGhnCode, setTrackingGhnCode] = useState<string | null>(null);
+  const [trackingAhamoveCode, setTrackingAhamoveCode] = useState<string | null>(null);
 
   const handleRetryPayment = async (order: Order) => {
     setRetryLoadingId(order.id);
@@ -354,6 +365,23 @@ export default function OrdersPage() {
     }
   }, []);
 
+  // Auto-polling tự động ngầm 4 giây/lần cập nhật tiến trình đơn hàng mà không cần load/refresh lại trang
+  useEffect(() => {
+    // Gọi đồng bộ ngay lập tức khi mở trang đơn hàng
+    shippingApi.syncActiveAhamoveOrders().then(() => loadOrders()).catch(() => {});
+
+    const interval = setInterval(async () => {
+      try {
+        await shippingApi.syncActiveAhamoveOrders();
+        await loadOrders();
+      } catch (e) {
+        // ignore
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   if (!isMounted) {
     return (
       <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)]">
@@ -441,23 +469,25 @@ export default function OrdersPage() {
     }
   };
 
-  const getStatusBadge = (status: Order['status']) => {
-    switch (status) {
+  /**
+   * Hiển thị badge trạng thái cho khách hàng (chuẩn AhaMove 6 bước)
+   * - Đơn COD mới tạo: "Xác nhận"
+   * - Đơn QR đã thanh toán thành công: "Đã thanh toán"
+   * - Đã đóng gói: "Đã gói hàng"
+   * - Đang vận chuyển: "Đang giao" / "Đã gửi vận chuyển"
+   * - Hoàn thành: "Giao hàng thành công"
+   */
+  const getStatusBadge = (order: Order) => {
+    switch (order.status) {
       case 'DELIVERED':
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-extrabold text-green-700">
             <CheckCircle className="size-3.5" />
-            Đã nhận hàng
-          </span>
-        );
-      case 'PROCESSING':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-extrabold text-teal-700 border border-teal-200">
-            <Clock className="size-3.5" />
-            Đang xử lý
+            Giao hàng thành công
           </span>
         );
       case 'PACKED':
+      case 'PROCESSING':
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700">
             <Package className="size-3.5" />
@@ -468,7 +498,7 @@ export default function OrdersPage() {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700">
             <Truck className="size-3.5" />
-            Đã gửi bên vận chuyển
+            {order.shippingStatus === 'ACCEPTED' || order.shippingStatus === 'IN_PROCESS' ? 'Đang giao' : 'Đã gửi vận chuyển'}
           </span>
         );
       case 'CANCELLED':
@@ -494,10 +524,18 @@ export default function OrdersPage() {
         );
       case 'PENDING':
       default:
+        if (order.payment?.method === 'QR' && order.payment?.status === 'PAID') {
+          return (
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-extrabold text-emerald-700 border border-emerald-200">
+              <CheckCircle className="size-3.5" />
+              Đã thanh toán
+            </span>
+          );
+        }
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700">
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-800">
             <Clock className="size-3.5" />
-            Chờ xác nhận
+            Xác nhận
           </span>
         );
     }
@@ -697,10 +735,32 @@ export default function OrdersPage() {
                         <Calendar className="size-3.5" />
                         {formatDate(order.createdAt)}
                       </div>
+                      {/* Hiển thị nút tra cứu hành trình vận chuyển AhaMove hỏa tốc */}
+                      {order.ahamoveOrderCode && (
+                        <button
+                          type="button"
+                          onClick={() => setTrackingAhamoveCode(order.ahamoveOrderCode!)}
+                          className="inline-flex items-center gap-1 font-mono font-bold text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-800 px-2 py-0.5 rounded border border-rose-200 shadow-2xs transition cursor-pointer"
+                          title="Click xem chi tiết hành trình vận chuyển AhaMove"
+                        >
+                          ⚡ AhaMove: {order.ahamoveOrderCode}
+                        </button>
+                      )}
+                      {order.ghnOrderCode && !order.ahamoveOrderCode && (
+                        <button
+                          type="button"
+                          onClick={() => setTrackingGhnCode(order.ghnOrderCode!)}
+                          className="inline-flex items-center gap-1 font-mono font-bold text-[10px] bg-orange-50 hover:bg-orange-100 text-orange-800 px-2 py-0.5 rounded border border-orange-200 shadow-2xs transition cursor-pointer"
+                          title="Click xem chi tiết hành trình vận chuyển GHN"
+                        >
+                          🚀 GHN: {order.ghnOrderCode}
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {getStatusBadge(order.status)}
+                    {/* Giữ lại nhãn trạng thái cho các đơn bị Hủy, Hết hạn hoặc Lỗi thanh toán; các đơn bình thường đã có thanh tiến trình ở dưới */}
+                    {(order.status === 'CANCELLED' || order.status === 'EXPIRED' || order.status === 'PAYMENT_ERROR') && getStatusBadge(order)}
                     {getPaymentStatusBadge(order)}
 
                     {/* Action buttons for PENDING / PAYMENT_ERROR / EXPIRED orders */}
@@ -848,18 +908,48 @@ export default function OrdersPage() {
                   {/* Status Step Tracker */}
                   {order.status !== 'CANCELLED' && order.status !== 'EXPIRED' && order.status !== 'PAYMENT_ERROR' && (
                     <div className="bg-white p-3 rounded-xl border border-[var(--border-color)] space-y-1.5">
-                      <p className="font-extrabold text-[var(--text-muted)] uppercase tracking-wider text-[9px]">Tiến trình vận chuyển</p>
+                      <p className="font-extrabold text-[var(--text-muted)] uppercase tracking-wider text-[9px]">Tiến trình vận chuyển (AhaMove)</p>
                       <div className="grid grid-cols-5 gap-1 text-center text-[10px] font-black">
                         {(() => {
-                          const statusOrder = ['PENDING', 'PROCESSING', 'PACKED', 'SHIPPED', 'DELIVERED'];
-                          let currentIdx = statusOrder.indexOf(order.status);
+                          // Tính toán bước hiện tại theo quy trình AhaMove 5 bước mới dành cho Khách hàng
+                          let currentIdx = 0;
+                          const shipStatusUpper = (order.shippingStatus || '').toUpperCase();
+                          // Chỉ khi tài xế AhaMove chấp nhận đơn (ACCEPTED) hoặc đang di chuyển giao hàng mới chuyển sang bước "Đang giao"
+                          const isDriverAccepted = [
+                            'ACCEPTED',
+                            'IN_PROCESS',
+                            'IN PROCESS',
+                            'DELIVERING',
+                            'ON_TRIP',
+                            'TRIP_START',
+                          ].includes(shipStatusUpper);
+
+                          if (order.status === 'DELIVERED') {
+                            currentIdx = 4; // Giao hàng thành công
+                          } else if (order.status === 'SHIPPED') {
+                            if (isDriverAccepted) {
+                              currentIdx = 3; // Đang giao (Tài xế đã nhận đơn & đang di chuyển)
+                            } else {
+                              currentIdx = 2; // Đã gửi VC (Đã tạo đơn AhaMove, đang tìm/gán tài xế)
+                            }
+                          } else if (order.status === 'PACKED') {
+                            currentIdx = 1; // Đã gói hàng
+                          } else {
+                            currentIdx = 0; // Xác nhận / Đã thanh toán
+                          }
 
                           const steps = [
-                            { label: 'Chờ xác nhận', icon: '1' },
-                            { label: 'Đang xử lý', icon: '2' },
-                            { label: 'Đã gói hàng', icon: '3' },
+                            {
+                              label:
+                                order.payment?.method === 'QR' && order.payment?.status === 'PAID'
+                                  ? 'Đã thanh toán'
+                                  : 'Xác nhận',
+                              icon: '1',
+                            },
+                            { label: 'Đã gói hàng', icon: '2' },
+                            { label: 'Đã gửi VC', icon: '3' },
                             { label: 'Đang giao', icon: '4' },
-                            { label: 'Đã nhận', icon: '5' },
+                            { label: 'Thành công', icon: '5' },
                           ];
 
                           return steps.map((step, idx) => {
@@ -886,25 +976,7 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {order.status === 'DELIVERED' && order.deliveryProofUrl && (
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPreviewModal({
-                            url: order.deliveryProofUrl!,
-                            title: 'Xác nhận giao hàng thành công',
-                            subtitle: 'Ảnh chụp thực tế từ nhân viên giao hàng (Shipper)',
-                          })
-                        }
-                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-extrabold text-xs transition cursor-pointer shadow-2xs"
-                      >
-                        <CheckCircle className="size-4 text-emerald-600" />
-                        <span>Xem ảnh giao hàng</span>
-                        <Eye className="size-3.5 text-emerald-600 ml-0.5" />
-                      </button>
-                    </div>
-                  )}
+
 
                   {order.refundProofUrl && (
                     <div className="pt-1">
@@ -1208,6 +1280,20 @@ export default function OrdersPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Modal tra cứu lịch sử hành trình GHN tự động theo thời gian thực */}
+      <OrderTrackingModal
+        isOpen={!!trackingGhnCode}
+        code={trackingGhnCode}
+        carrier="GHN"
+        onClose={() => setTrackingGhnCode(null)}
+      />
+      {/* Modal tra cứu lịch sử hành trình AhaMove Hỏa Tốc theo thời gian thực */}
+      <OrderTrackingModal
+        isOpen={!!trackingAhamoveCode}
+        code={trackingAhamoveCode}
+        carrier="AHAMOVE"
+        onClose={() => setTrackingAhamoveCode(null)}
+      />
     </main>
   );
 }

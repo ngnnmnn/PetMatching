@@ -72,6 +72,8 @@ import { spaApi } from '@/lib/api/spa';
 import { Category } from '@/types';
 import { uploadImages } from '@/lib/api/uploads';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+// Modal xem chi tiết hành trình vận đơn GHN tự động
+import OrderTrackingModal from '@/components/orders/OrderTrackingModal';
 import AppPagination from '@/components/ui/app-pagination';
 import {
   Pagination,
@@ -95,12 +97,12 @@ const CATEGORY_MAP: Record<string, string> = {
   LEASH_COLLAR: 'Vòng cổ & Dây dắt',
 };
 
+// Mapping nhãn hiển thị trạng thái đơn hàng trong Manager UI (theo quy trình AhaMove 6 bước)
 const ORDER_STATUS_MAP: Record<string, string> = {
-  PENDING: 'Chờ xác nhận',
-  PROCESSING: 'Đã thanh toán (Chờ gói)',
+  PENDING: 'Xác nhận / Đã thanh toán',
   PACKED: 'Đã gói hàng',
-  SHIPPED: 'Đã gửi bên vận chuyển',
-  DELIVERED: 'Đã nhận hàng',
+  SHIPPED: 'Đang giao / Đã gửi VC',
+  DELIVERED: 'Giao hàng thành công',
   CANCELLED: 'Đã hủy',
 };
 
@@ -397,6 +399,22 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   }, [currentTab, banks.length]);
 
+  // Auto-polling tự động đồng bộ trạng thái đơn hàng GHN mỗi 10 giây khi ở tab orders
+  useEffect(() => {
+    if (currentTab !== 'orders') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await managerApi.getOrders();
+        setOrders(res.data);
+      } catch (err) {
+        // silent polling
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [currentTab]);
+
   // Filtered lists based on search and status filters
   const filteredProducts = useMemo(() => {
     let result = products.filter((product) => {
@@ -579,25 +597,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
-  // Shipping & Delivery Modal States
-  const [shipModalOrder, setShipModalOrder] = useState<ManagerOrder | null>(null);
-  const [shippingNoteInput, setShippingNoteInput] = useState<string>('');
-  const [submittingShipNote, setSubmittingShipNote] = useState<boolean>(false);
-
-  const [deliveryModalOrder, setDeliveryModalOrder] = useState<ManagerOrder | null>(null);
-  const [deliveryProofFile, setDeliveryProofFile] = useState<File | null>(null);
-  const [deliveryProofPreview, setDeliveryProofPreview] = useState<string | null>(null);
-  const [deliveryNoteInput, setDeliveryNoteInput] = useState<string>('');
-  const [submittingDeliveryProof, setSubmittingDeliveryProof] = useState<boolean>(false);
-
+  // Hàm cập nhật trạng thái đơn hàng dành cho Manager
   const handleOrderStatusChange = async (
     orderId: string,
     newStatus: string,
-    deliveryProofUrl?: string,
-    shippingNote?: string,
   ) => {
     try {
-      await managerApi.updateOrderStatus(orderId, newStatus, deliveryProofUrl, shippingNote);
+      await managerApi.updateOrderStatus(orderId, newStatus);
       toast.success('Cập nhật trạng thái đơn hàng thành công!');
       const res = await managerApi.getOrders();
       setOrders(res.data);
@@ -650,102 +656,91 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
-  const handleConfirmShip = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!shipModalOrder) return;
-    setSubmittingShipNote(true);
-    try {
-      await handleOrderStatusChange(
-        shipModalOrder.id,
-        'SHIPPED',
-        undefined,
-        shippingNoteInput.trim() || undefined,
-      );
-      setShipModalOrder(null);
-      setShippingNoteInput('');
-    } catch (err) {
-      // handled
-    } finally {
-      setSubmittingShipNote(false);
-    }
-  };
 
-  const handleConfirmDelivery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!deliveryModalOrder) return;
-    setSubmittingDeliveryProof(true);
+
+  // State và hàm xử lý tạo vận đơn GHN & AhaMove Hỏa Tốc dành cho Manager
+  const [creatingGhnOrder, setCreatingGhnOrder] = useState<string | null>(null);
+  const [trackingGhnCode, setTrackingGhnCode] = useState<string | null>(null);
+  const [creatingAhamoveOrder, setCreatingAhamoveOrder] = useState<string | null>(null);
+  const [trackingAhamoveCode, setTrackingAhamoveCode] = useState<string | null>(null);
+
+  const handleCreateGhnShippingOrder = async (orderId: string) => {
+    setCreatingGhnOrder(orderId);
     try {
-      let imageUrl: string | undefined = undefined;
-      if (deliveryProofFile) {
-        const uploadRes = await managerApi.uploadDeliveryProof(deliveryProofFile);
-        imageUrl = uploadRes.data.url;
+      const res = await shippingApi.createShippingOrder(orderId);
+      if (res.data?.success) {
+        toast.success(`Đã gửi đơn GHN thành công! Mã vận đơn: ${res.data.ghnOrderCode}`);
+        const ordersRes = await managerApi.getOrders();
+        setOrders(ordersRes.data);
+        if (selectedOrderDetails?.id === orderId) {
+          setSelectedOrderDetails(ordersRes.data.find((o: any) => o.id === orderId) || null);
+        }
       }
-      await handleOrderStatusChange(
-        deliveryModalOrder.id,
-        'DELIVERED',
-        imageUrl,
-        deliveryNoteInput.trim() || undefined,
-      );
-      setDeliveryModalOrder(null);
-      setDeliveryProofFile(null);
-      setDeliveryProofPreview(null);
-      setDeliveryNoteInput('');
     } catch (err: any) {
-      console.error('Failed to confirm delivery', err);
-      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật giao hàng.');
+      console.error('Failed to create GHN order', err);
+      toast.error(err.response?.data?.message || 'Có lỗi khi tạo vận đơn GHN.');
     } finally {
-      setSubmittingDeliveryProof(false);
+      setCreatingGhnOrder(null);
     }
   };
 
-  const [uploadingDetailProof, setUploadingDetailProof] = useState<boolean>(false);
-
-  const handleDetailProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedOrderDetails) return;
-    setUploadingDetailProof(true);
+  const handleCreateAhamoveShippingOrder = async (orderId: string) => {
+    setCreatingAhamoveOrder(orderId);
     try {
-      const uploadRes = await managerApi.uploadDeliveryProof(file);
-      const newProofUrl = uploadRes.data.url;
-      await managerApi.updateOrderStatus(
-        selectedOrderDetails.id,
-        selectedOrderDetails.status,
-        newProofUrl,
-        selectedOrderDetails.shippingNote || undefined,
-      );
-      toast.success('Đã cập nhật ảnh bằng chứng giao hàng thành công!');
-      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, deliveryProofUrl: newProofUrl } : null));
+      const res = await shippingApi.createAhamoveShippingOrder(orderId);
+      if (res.data?.success) {
+        toast.success(`Đã tạo đơn giao hỏa tốc AhaMove thành công! Mã: ${res.data.ahamoveOrderCode}`);
+        const ordersRes = await managerApi.getOrders();
+        setOrders(ordersRes.data);
+        if (selectedOrderDetails?.id === orderId) {
+          setSelectedOrderDetails(ordersRes.data.find((o: any) => o.id === orderId) || null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to create AhaMove order', err);
+      toast.error(err.response?.data?.message || 'Có lỗi khi tạo vận đơn AhaMove.');
+      setCreatingAhamoveOrder(null);
+    }
+  };
+
+  const [syncingAhamove, setSyncingAhamove] = useState<boolean>(false);
+
+  /**
+   * Đồng bộ trực tiếp trạng thái thực tế từ AhaMove Staging Portal cho toàn bộ đơn hàng đang giao
+   * @param showToast Hiển thị thông báo toast khi Manager chủ động ấn nút
+   */
+  const handleSyncAhamoveOrders = async (showToast = true) => {
+    if (showToast) setSyncingAhamove(true);
+    try {
+      await shippingApi.syncActiveAhamoveOrders();
       const res = await managerApi.getOrders();
       setOrders(res.data);
+      if (selectedOrderDetails) {
+        const updated = res.data.find((o: any) => o.id === selectedOrderDetails.id);
+        if (updated) setSelectedOrderDetails(updated);
+      }
+      if (showToast) {
+        toast.success('Đã đồng bộ trạng thái mới nhất từ AhaMove!');
+      }
     } catch (err: any) {
-      console.error('Failed to upload delivery proof', err);
-      toast.error(err.response?.data?.message || 'Lỗi khi tải ảnh bằng chứng giao hàng.');
+      console.error('Failed to sync AhaMove orders', err);
     } finally {
-      setUploadingDetailProof(false);
+      if (showToast) setSyncingAhamove(false);
     }
   };
 
-  const handleRemoveDetailProof = async () => {
-    if (!selectedOrderDetails) return;
-    setUploadingDetailProof(true);
-    try {
-      await managerApi.updateOrderStatus(
-        selectedOrderDetails.id,
-        selectedOrderDetails.status,
-        '',
-        selectedOrderDetails.shippingNote || undefined,
-      );
-      toast.success('Đã gỡ bỏ ảnh bằng chứng giao hàng!');
-      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, deliveryProofUrl: null } : null));
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
-    } catch (err: any) {
-      console.error('Failed to remove delivery proof', err);
-      toast.error('Lỗi khi gỡ ảnh bằng chứng giao hàng.');
-    } finally {
-      setUploadingDetailProof(false);
-    }
-  };
+  // Tự động polling ngầm 4 giây/lần khi đang mở tab quản lý đơn hàng (tự động cập nhật tiến trình không cần F5/load lại trang)
+  useEffect(() => {
+    if (currentTab !== 'orders') return;
+
+    const interval = setInterval(() => {
+      handleSyncAhamoveOrders(false);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [currentTab, selectedOrderDetails?.id]);
+
+
 
   const [uploadingRefundProof, setUploadingRefundProof] = useState<boolean>(false);
   const [pendingRefundProofUrl, setPendingRefundProofUrl] = useState<string>('');
@@ -3788,6 +3783,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </button>
                 </div>
               )}
+              {/* Nút bấm làm mới và đồng bộ trực tiếp trạng thái các vận đơn AhaMove */}
+              <button
+                type="button"
+                disabled={syncingAhamove}
+                onClick={() => handleSyncAhamoveOrders(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Đồng bộ ngay lập tức các trạng thái mới nhất từ AhaMove Portal"
+              >
+                <RefreshCw className={`size-3.5 text-rose-700 ${syncingAhamove ? 'animate-spin' : ''}`} />
+                <span>Đồng bộ AhaMove</span>
+              </button>
               <Filter className="size-4 text-[#B0B0B0]" />
               <select
                 value={filterStatus}
@@ -3910,6 +3916,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           </td>
                           <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(o.totalAmount)}</td>
                           <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            {/* Ưu tiên hiển thị mã AhaMove và nút Theo dõi AhaMove ngay khi có ahamoveOrderCode */}
                             {o.refundStatus === 'REFUNDED' ? (
                               <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-green-50 border border-green-200 text-green-700 shadow-sm">
                                 ✅ Đã duyệt hoàn tiền
@@ -3922,40 +3929,76 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-red-50 border border-red-200 text-red-700 shadow-sm">
                                 ❌ Đã hủy
                               </span>
-                            ) : o.status === 'PENDING' || o.status === 'PROCESSING' ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOrderStatusChange(o.id, 'PACKED')}
-                                className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-amber-600 rounded-xl hover:bg-amber-700 shadow-md transition active:scale-95 cursor-pointer"
-                              >
-                                📦 Đã gói hàng
-                              </button>
+                            ) : o.status === 'DELIVERED' ? (
+                              // Đã hoàn thành -> Giao hàng thành công
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm">
+                                  🎉 Giao hàng thành công
+                                </span>
+                                {o.ahamoveOrderCode && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setTrackingAhamoveCode(o.ahamoveOrderCode!)}
+                                    className="text-[10px] font-bold text-gray-500 hover:text-rose-600 underline cursor-pointer"
+                                  >
+                                    Xem hành trình
+                                  </button>
+                                )}
+                              </div>
+                            ) : o.ahamoveOrderCode || o.status === 'SHIPPED' ? (
+                              // Đã gửi AhaMove thành công (có mã ahamoveOrderCode) -> Hiển thị mã AhaMove & Nút theo dõi
+                              <div className="flex flex-col items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-blue-50 border border-blue-200 text-blue-700 shadow-sm">
+                                  🛵 {o.shippingStatus === 'ACCEPTED' || o.shippingStatus === 'IN_PROCESS' ? 'Đang giao' : 'Đã gửi VC'}
+                                </span>
+                                {o.ahamoveOrderCode && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setTrackingAhamoveCode(o.ahamoveOrderCode!)}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 shadow-2xs transition cursor-pointer"
+                                    title="Click xem chi tiết hành trình AhaMove"
+                                  >
+                                    ⚡ AhaMove: {o.ahamoveOrderCode}
+                                  </button>
+                                )}
+                              </div>
                             ) : o.status === 'PACKED' ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShipModalOrder(o);
-                                  setShippingNoteInput(o.shippingNote || '');
-                                }}
-                                className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md transition active:scale-95 cursor-pointer"
-                              >
-                                🚚 Gửi vận chuyển
-                              </button>
-                            ) : o.status === 'SHIPPED' ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDeliveryModalOrder(o);
-                                  setDeliveryNoteInput(o.shippingNote || '');
-                                }}
-                                className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 shadow-md transition active:scale-95 cursor-pointer"
-                              >
-                                ✅ Đã nhận hàng
-                              </button>
+                              // Chưa có mã AhaMove & Đã gói hàng -> Manager bấm nút "Gửi AhaMove"
+                              <div className="flex flex-col items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  disabled={creatingAhamoveOrder === o.id}
+                                  onClick={() => handleCreateAhamoveShippingOrder(o.id)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold text-white bg-rose-600 rounded-xl hover:bg-rose-700 shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50"
+                                  title="Gửi hỏa tốc 1-2h qua AhaMove Sandbox"
+                                >
+                                  {creatingAhamoveOrder === o.id ? (
+                                    <Loader2 className="size-3.5 animate-spin text-white" />
+                                  ) : (
+                                    '⚡'
+                                  )}
+                                  <span>Gửi AhaMove</span>
+                                </button>
+                              </div>
                             ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm">
-                                🎉 Đã nhận hàng
-                              </span>
+                              // Đơn mới (PENDING) -> Manager bấm nút "Đã gói hàng"
+                              <div className="flex flex-col items-center gap-1.5">
+                                <span className={cn(
+                                  "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black",
+                                  o.payment?.method === 'QR' && o.payment?.status === 'PAID'
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                                )}>
+                                  {o.payment?.method === 'QR' && o.payment?.status === 'PAID' ? '💳 Đã thanh toán' : '📝 Xác nhận'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOrderStatusChange(o.id, 'PACKED')}
+                                  className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-extrabold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-md transition active:scale-95 cursor-pointer"
+                                >
+                                  📦 Đã gói hàng
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -4045,6 +4088,44 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 <h3 className="text-lg font-black text-[var(--text-main)] pb-2 border-b">
                   Chi tiết đơn hàng: {selectedOrderDetails.id}
                 </h3>
+
+                {/* Hiển thị Mã vận đơn GHN và nút tra cứu trong Modal chi tiết đơn */}
+                {selectedOrderDetails.ghnOrderCode && (
+                  <div className="flex items-center justify-between bg-orange-50/80 p-3 rounded-xl border border-orange-200 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-orange-900">🚀 Mã vận đơn GHN:</span>
+                      <span className="font-mono font-black text-orange-900 bg-white px-2 py-0.5 rounded border border-orange-200">
+                        {selectedOrderDetails.ghnOrderCode}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTrackingGhnCode(selectedOrderDetails.ghnOrderCode!)}
+                      className="px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs transition shadow-xs cursor-pointer"
+                    >
+                      Xem lịch sử tracking GHN ➔
+                    </button>
+                  </div>
+                )}
+
+                {/* Hiển thị Mã vận đơn AhaMove Hỏa Tốc và nút tra cứu trong Modal chi tiết đơn */}
+                {selectedOrderDetails.ahamoveOrderCode && (
+                  <div className="flex items-center justify-between bg-rose-50/80 p-3 rounded-xl border border-rose-200 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-rose-900">⚡ Mã vận đơn AhaMove Hỏa Tốc:</span>
+                      <span className="font-mono font-black text-rose-900 bg-white px-2 py-0.5 rounded border border-rose-200">
+                        {selectedOrderDetails.ahamoveOrderCode}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTrackingAhamoveCode(selectedOrderDetails.ahamoveOrderCode!)}
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-xs transition shadow-xs cursor-pointer"
+                    >
+                      Xem lịch sử tracking AhaMove ➔
+                    </button>
+                  </div>
+                )}
 
                 {/* Delivery Info */}
                 {(() => {
@@ -4200,18 +4281,48 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 {/* Status Step Tracker */}
                 {selectedOrderDetails.status !== 'CANCELLED' && (
                   <div className="bg-[#F9F8F6] p-3.5 rounded-xl border border-[#EFEAE2] space-y-2">
-                    <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Tiến trình đơn hàng</p>
+                    <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Tiến trình đơn hàng (AhaMove 5 bước)</p>
                     <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-extrabold">
                       {(() => {
-                        const statusOrder = ['PENDING', 'PROCESSING', 'PACKED', 'SHIPPED', 'DELIVERED'];
-                        let currentIdx = statusOrder.indexOf(selectedOrderDetails.status);
+                        // Tính toán bước hiện tại của đơn hàng theo 5 bước AhaMove chuẩn mới (bỏ Đang xử lý)
+                        let currentIdx = 0;
+                        const shipStatusUpper = (selectedOrderDetails.shippingStatus || '').toUpperCase();
+                        // Chỉ khi tài xế AhaMove chấp nhận đơn (ACCEPTED) hoặc đang di chuyển giao hàng mới chuyển sang bước "Đang giao"
+                        const isDriverAccepted = [
+                          'ACCEPTED',
+                          'IN_PROCESS',
+                          'IN PROCESS',
+                          'DELIVERING',
+                          'ON_TRIP',
+                          'TRIP_START',
+                        ].includes(shipStatusUpper);
+
+                        if (selectedOrderDetails.status === 'DELIVERED') {
+                          currentIdx = 4; // Giao hàng thành công
+                        } else if (selectedOrderDetails.status === 'SHIPPED') {
+                          if (isDriverAccepted) {
+                            currentIdx = 3; // Đang giao (Tài xế đã nhận đơn & đang di chuyển)
+                          } else {
+                            currentIdx = 2; // Đã gửi VC (Đã tạo đơn AhaMove, đang tìm/gán tài xế)
+                          }
+                        } else if (selectedOrderDetails.status === 'PACKED') {
+                          currentIdx = 1; // Đã gói hàng
+                        } else {
+                          currentIdx = 0; // Xác nhận / Đã thanh toán
+                        }
 
                         const steps = [
-                          { label: 'Chờ xác nhận', icon: '1' },
-                          { label: 'Đang xử lý', icon: '2' },
-                          { label: 'Đã gói hàng', icon: '3' },
-                          { label: 'Đã gửi VC', icon: '4' },
-                          { label: 'Đã nhận hàng', icon: '5' },
+                          {
+                            label:
+                              selectedOrderDetails.payment?.method === 'QR' && selectedOrderDetails.payment?.status === 'PAID'
+                                ? 'Đã thanh toán'
+                                : 'Xác nhận',
+                            icon: '1',
+                          },
+                          { label: 'Đã gói hàng', icon: '2' },
+                          { label: 'Đã gửi VC', icon: '3' },
+                          { label: 'Đang giao', icon: '4' },
+                          { label: 'Thành công', icon: '5' },
                         ];
 
                         return steps.map((step, idx) => {
@@ -4221,7 +4332,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             <div
                               key={idx}
                               className={cn(
-                                'flex flex-col items-center gap-1 p-1 rounded-lg border transition',
+                                'flex flex-col items-center gap-1 p-1.5 rounded-lg border transition',
                                 isDone ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 'bg-white border-gray-200 text-gray-400',
                                 isCurrent && 'ring-2 ring-[#0F766E] shadow-sm',
                               )}
@@ -4238,64 +4349,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   </div>
                 )}
 
-                {/* Delivery Proof Image Section - Only for DELIVERED status */}
-                {selectedOrderDetails.status === 'DELIVERED' && (
-                  <div className="space-y-2 bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200 text-xs shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <p className="font-black text-emerald-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                        <CheckCircle2 className="size-3.5 text-emerald-600" />
-                        Ảnh bằng chứng giao hàng (Shipper chụp)
-                      </p>
-                      <label className="text-[10px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-200/80 hover:bg-emerald-300 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1">
-                        {uploadingDetailProof ? (
-                          <Loader2 className="size-3 animate-spin text-emerald-800" />
-                        ) : (
-                          <Upload className="size-3 text-emerald-800" />
-                        )}
-                        {selectedOrderDetails.deliveryProofUrl ? 'Cập nhật / Thay ảnh' : 'Tải ảnh lên'}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          disabled={uploadingDetailProof}
-                          onChange={handleDetailProofUpload}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
 
-                    {selectedOrderDetails.deliveryProofUrl ? (
-                      <div className="relative mt-1 group">
-                        <a href={selectedOrderDetails.deliveryProofUrl} target="_blank" rel="noreferrer" className="block">
-                          <img
-                            src={selectedOrderDetails.deliveryProofUrl}
-                            alt="Bằng chứng giao hàng"
-                            className="w-full max-h-52 object-cover rounded-lg border border-emerald-300 hover:opacity-95 transition cursor-pointer shadow-xs"
-                          />
-                        </a>
-                        <button
-                          type="button"
-                          onClick={handleRemoveDetailProof}
-                          disabled={uploadingDetailProof}
-                          className="absolute top-2 right-2 size-7 rounded-full bg-red-600/90 text-white flex items-center justify-center hover:bg-red-700 shadow-md transition cursor-pointer"
-                          title="Bỏ / Xóa ảnh bằng chứng giao hàng"
-                        >
-                          <X className="size-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 border border-dashed border-emerald-300/80 bg-white/60 rounded-lg text-emerald-700 font-medium text-xs">
-                        Chưa có ảnh bằng chứng giao hàng. Bấm "Tải ảnh lên" ở trên để lưu ảnh do Shipper chụp.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedOrderDetails.shippingNote && (
-                  <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200 text-xs">
-                    <p className="font-black text-blue-800 uppercase tracking-wider text-[10px]">Ghi chú vận chuyển</p>
-                    <p className="text-xs font-bold text-blue-900 mt-0.5">{selectedOrderDetails.shippingNote}</p>
-                  </div>
-                )}
 
                 {/* Order Status & Financial Summary */}
                 <div className="flex justify-between items-center pt-2 border-t text-xs font-semibold">
@@ -4389,166 +4443,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             loading={refundingId === confirmRejectRefundOrder?.id}
           />
 
-          {/* Modal Gửi bên vận chuyển */}
-          {shipModalOrder && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-              onClick={() => setShipModalOrder(null)}
-            >
-              <div
-                className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 animate-scaleIn"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between border-b pb-3">
-                  <h3 className="text-base font-black text-gray-800 flex items-center gap-2">
-                    🚚 Gửi bên vận chuyển
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setShipModalOrder(null)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="size-5" />
-                  </button>
-                </div>
 
-                <form onSubmit={handleConfirmShip} className="space-y-4 text-xs font-semibold">
-                  <p className="text-gray-600">
-                    Chuyển trạng thái đơn hàng <strong className="font-mono text-black">{shipModalOrder.id.slice(0, 12)}...</strong> sang <strong>"Đã gửi bên vận chuyển"</strong>.
-                  </p>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#8A8980] mb-1">
-                      Ghi chú Shipper / Đơn vị giao hàng (Không bắt buộc)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="VD: Shipper Zalo Nam - 0901234567 hoặc Grab Express"
-                      value={shippingNoteInput}
-                      onChange={(e) => setShippingNoteInput(e.target.value)}
-                      className="w-full rounded-xl border border-[#EFEAE2] px-3 py-2 text-xs focus:outline-none focus:border-[#0F766E]"
-                    />
-                  </div>
 
-                  <div className="flex justify-end gap-2 pt-2 border-t">
-                    <button
-                      type="button"
-                      onClick={() => setShipModalOrder(null)}
-                      className="px-4 py-2 rounded-xl border font-bold text-gray-600 hover:bg-gray-50"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submittingShipNote}
-                      className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
-                    >
-                      {submittingShipNote && <Loader2 className="size-3.5 animate-spin" />}
-                      Xác nhận đã gửi hàng
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Modal Đã nhận hàng & Upload Ảnh bằng chứng */}
-          {deliveryModalOrder && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto"
-              onClick={() => setDeliveryModalOrder(null)}
-            >
-              <div
-                className="w-full max-w-md rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-2xl space-y-4 animate-scaleIn my-8 relative text-left"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between border-b pb-3">
-                  <h3 className="text-base font-black text-gray-800 flex items-center gap-2">
-                    ✅ Xác nhận Đã nhận hàng
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryModalOrder(null)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="size-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleConfirmDelivery} className="space-y-4 text-xs font-semibold">
-                  <p className="text-gray-600">
-                    Chuyển trạng thái đơn hàng <strong className="font-mono text-black">{deliveryModalOrder.id.slice(0, 12)}...</strong> sang <strong>"Đã nhận hàng"</strong> (Hoàn thành).
-                  </p>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#8A8980] mb-1">
-                      Ảnh bằng chứng giao hàng từ Shipper/Zalo (Không bắt buộc)
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        setDeliveryProofFile(file);
-                        if (file) {
-                          setDeliveryProofPreview(URL.createObjectURL(file));
-                        } else {
-                          setDeliveryProofPreview(null);
-                        }
-                      }}
-                      className="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0F766E]/10 file:text-[#0F766E] hover:file:bg-[#0F766E]/20"
-                    />
-                    {deliveryProofPreview && (
-                      <div className="mt-2 relative rounded-xl overflow-hidden border">
-                        <img src={deliveryProofPreview} alt="Preview ảnh giao hàng" className="w-full h-40 object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeliveryProofFile(null);
-                            setDeliveryProofPreview(null);
-                          }}
-                          className="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-full hover:bg-black"
-                        >
-                          <X className="size-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#8A8980] mb-1">
-                      Ghi chú hoàn thành (Không bắt buộc)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="VD: Khách đã nhận đủ 2 sản phẩm và thanh toán COD"
-                      value={deliveryNoteInput}
-                      onChange={(e) => setDeliveryNoteInput(e.target.value)}
-                      className="w-full rounded-xl border border-[#EFEAE2] px-3 py-2 text-xs focus:outline-none focus:border-[#0F766E]"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2 border-t">
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryModalOrder(null)}
-                      className="px-4 py-2 rounded-xl border font-bold text-gray-600 hover:bg-gray-50"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submittingDeliveryProof}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
-                    >
-                      {submittingDeliveryProof && <Loader2 className="size-3.5 animate-spin text-white" />}
-                      Xác nhận Đã nhận hàng
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
           {/* Excel Export Modal */}
           {isExportModalOpen && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-left">
@@ -7547,6 +7444,20 @@ function SpaManagerConsole({ currentTab, managerUser }: { currentTab: string; ma
           </div>
         </div>
       )}
+      {/* Modal xem chi tiết hành trình GHN tự động */}
+      <OrderTrackingModal
+        isOpen={!!trackingGhnCode}
+        code={trackingGhnCode}
+        carrier="GHN"
+        onClose={() => setTrackingGhnCode(null)}
+      />
+      {/* Modal xem chi tiết hành trình AhaMove Hỏa Tốc */}
+      <OrderTrackingModal
+        isOpen={!!trackingAhamoveCode}
+        code={trackingAhamoveCode}
+        carrier="AHAMOVE"
+        onClose={() => setTrackingAhamoveCode(null)}
+      />
     </div>
   );
 }
