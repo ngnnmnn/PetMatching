@@ -135,7 +135,7 @@ export const managerApi = {
   getStoreSettings: () => api.get<StoreSettings>('/manager/store-settings'),
   updateStoreSettings: (data: UpdateStoreSettingsInput) =>
     api.put<StoreSettings>('/manager/store-settings', data),
-  
+
   getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
   createProduct: (data: Partial<ManagerProduct>) => api.post<ManagerProduct>('/manager/products', data),
   updateProduct: (id: string, data: Partial<ManagerProduct>) => api.put<ManagerProduct>(`/manager/products/${id}`, data),

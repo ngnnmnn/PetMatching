@@ -666,17 +666,26 @@ export default function BreedRulesPage() {
       )}
 
       {/* ================= MODAL 1: BREED CATALOG FORM ================= */}
+      {/* Modal thêm/chỉnh sửa danh mục giống: Thiết kế Flex-Col với Header và Footer cố định, Body cuộn */}
       {breedFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-card rounded-3xl p-6 shadow-2xl space-y-5 border">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-card rounded-3xl shadow-2xl border flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header cố định */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-card shrink-0">
               <h2 className="font-black text-lg">
                 {editingBreed ? 'Chỉnh sửa Giống thú cưng' : 'Thêm Giống mới vào Danh mục'}
               </h2>
-              <button type="button" onClick={() => setBreedFormOpen(false)}><X className="size-5" /></button>
+              <button
+                type="button"
+                onClick={() => setBreedFormOpen(false)}
+                className="p-1 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="size-5" />
+              </button>
             </div>
 
-            <form onSubmit={submitBreed} className="space-y-4">
+            {/* Body form có thể cuộn độc lập */}
+            <form id="breed-catalog-form" onSubmit={submitBreed} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Loài *</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -773,32 +782,52 @@ export default function BreedRulesPage() {
                 />
                 <span>Kích hoạt hiển thị cho người dùng chọn</span>
               </label>
-
-              <div className="flex gap-3 pt-4 border-t">
-                <Button type="button" variant="outline" className="flex-1 rounded-xl font-bold" onClick={() => setBreedFormOpen(false)}>
-                  Hủy
-                </Button>
-                <Button type="submit" disabled={savingBreed} className="flex-1 rounded-xl font-bold">
-                  {savingBreed ? <Loader2 className="size-4 animate-spin" /> : editingBreed ? 'Cập nhật' : 'Thêm giống'}
-                </Button>
-              </div>
             </form>
+
+            {/* Footer cố định không bị tràn hay cắt nửa */}
+            <div className="flex gap-3 px-6 py-4 border-t bg-card shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-xl font-bold h-11"
+                onClick={() => setBreedFormOpen(false)}
+              >
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                form="breed-catalog-form"
+                disabled={savingBreed}
+                className="flex-1 rounded-xl font-bold h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+              >
+                {savingBreed ? <Loader2 className="size-4 animate-spin" /> : editingBreed ? 'Cập nhật' : 'Thêm giống'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
       {/* ================= MODAL 2: BREED RULE FORM ================= */}
+      {/* Modal quy tắc phối giống: Header cố định, Form body cuộn mượt, Footer nút bấm cố định dưới cùng */}
       {ruleFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg bg-card rounded-3xl p-6 shadow-2xl space-y-5 border overflow-y-auto max-h-[90vh]">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-card rounded-3xl shadow-2xl border flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header cố định */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-card shrink-0">
               <h2 className="font-black text-lg">
                 {editingRule ? 'Chỉnh sửa Quy tắc Lai phối' : 'Thêm Quy tắc Phối giống mới'}
               </h2>
-              <button type="button" onClick={() => setRuleFormOpen(false)}><X className="size-5" /></button>
+              <button
+                type="button"
+                onClick={() => setRuleFormOpen(false)}
+                className="p-1 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="size-5" />
+              </button>
             </div>
 
-            <form onSubmit={submitRule} className="space-y-4">
+            {/* Form body có thể cuộn khi nhiều nội dung */}
+            <form id="breed-rule-form" onSubmit={submitRule} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Loài *</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -945,16 +974,27 @@ export default function BreedRulesPage() {
                   className="w-full rounded-xl border bg-background p-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
-
-              <div className="flex gap-3 pt-4 border-t">
-                <Button type="button" variant="outline" className="flex-1 rounded-xl font-bold" onClick={() => setRuleFormOpen(false)}>
-                  Hủy
-                </Button>
-                <Button type="submit" disabled={savingRule} className="flex-1 rounded-xl font-bold">
-                  {savingRule ? <Loader2 className="size-4 animate-spin" /> : editingRule ? 'Cập nhật' : 'Thêm quy tắc'}
-                </Button>
-              </div>
             </form>
+
+            {/* Footer cố định: các nút bấm luôn hiển thị rõ ràng, không bị che khuất */}
+            <div className="flex gap-3 px-6 py-4 border-t bg-card shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-xl font-bold h-11"
+                onClick={() => setRuleFormOpen(false)}
+              >
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                form="breed-rule-form"
+                disabled={savingRule}
+                className="flex-1 rounded-xl font-bold h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+              >
+                {savingRule ? <Loader2 className="size-4 animate-spin" /> : editingRule ? 'Cập nhật' : 'Thêm quy tắc'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
