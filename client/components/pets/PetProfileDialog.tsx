@@ -22,6 +22,7 @@ import {
   ImagePlus,
   Info,
   Loader2,
+  Lock,
   MapPin,
   MoreVertical,
   PawPrint,
@@ -1156,6 +1157,14 @@ function PetEditForm({
               label=""
               placeholder="Gõ tên đường, khu vực (Ví dụ: 32 Đội Cấn, Duy Tân, Bồ Đề...)"
               initialValue={form.location && form.location !== "Hà Nội" ? form.location : (form.ward ? `${form.ward}, Hà Nội` : "")}
+              onChangeText={(text) => {
+                if (!text || text.trim().length === 0) {
+                  update("ward", "");
+                  update("location", "");
+                  update("latitude", null);
+                  update("longitude", null);
+                }
+              }}
               onSelectLocation={(loc: LocationSearchResult) => {
                 update("location", loc.address || "Hà Nội");
                 update("district", loc.district || "");
@@ -1166,17 +1175,21 @@ function PetEditForm({
             />
           </div>
 
-          {form.ward && (
-            <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-3 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/30">
+          {form.ward ? (
+            <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-3 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/30 transition-all">
               <div className="flex items-center gap-2 font-bold text-emerald-800 dark:text-emerald-300">
                 <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                 <span>Đã định vị: {form.ward}</span>
               </div>
               <div className="mt-1 flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                <ShieldCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                <Lock className="size-3.5 shrink-0 text-muted-foreground mt-0.5" />
                 <span>Vị trí cụ thể chỉ dùng để tính khoảng cách đường bộ khi tìm ghép đôi. Trên hồ sơ công khai, người khác chỉ nhìn thấy khu vực <b>{form.ward}</b>.</span>
               </div>
             </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground pl-1">
+              💡 Gõ số nhà, tên đường hoặc khu vực rồi bấm chọn từ danh sách gợi ý.
+            </p>
           )}
 
           <div className="pt-0.5">
