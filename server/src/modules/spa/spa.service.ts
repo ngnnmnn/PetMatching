@@ -1271,9 +1271,19 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         },
         scheduledAt: { lt: thirtyMinsAgo },
       },
+      include: {
+        payment: true,
+      },
     });
     if (noShowBookings.length > 0) await this.prisma.$transaction(async (tx) => {
       for (const booking of noShowBookings) {
+        // Tự động hủy trạng thái thanh toán nếu chưa thanh toán (khách không đến)
+        if (booking.payment && booking.payment.status !== PaymentStatus.PAID) {
+          await tx.payment.update({
+            where: { id: booking.payment.id },
+            data: { status: PaymentStatus.CANCELLED },
+          });
+        }
         const updated = await tx.spaBooking.update({ where: { id: booking.id }, data: { status: SpaBookingStatus.NO_SHOW } });
         await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
       }
