@@ -506,11 +506,6 @@ export default function ProductDetailPage() {
                     {speciesLabel}
                   </span>
                 </div>
-                {product.unit && (
-                  <span className="rounded-md bg-gray-100 px-3 py-1 text-xs font-bold text-[var(--text-muted)]">
-                    Đơn vị: {product.unit}
-                  </span>
-                )}
               </div>
 
               {/* Title */}

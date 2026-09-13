@@ -4,19 +4,12 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ReactNode, useEffect, useState, Suspense } from 'react';
 import {
-  Calendar,
   LayoutDashboard,
   LogOut,
-  MessageSquare,
   Package,
-  Scissors,
-  Settings,
-  ShieldCheck,
   ShoppingBag,
   Store,
   Users,
-  Clock,
-  FolderKanban,
   Tag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,35 +19,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 function ManagerNavigation() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentTab = searchParams.get('tab') || 'dashboard';
-  const [role, setRole] = useState<string>('');
 
-  useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      const u = JSON.parse(stored);
-      setRole(u.role || '');
-    }
-  }, []);
-
-  const navGroups = role === 'SPA_MANAGER' ? [
-    {
-      label: 'Tổng quan',
-      items: [
-        { label: 'Bảng điều khiển', id: 'dashboard', href: '/manager', icon: LayoutDashboard },
-      ],
-    },
-    {
-      label: 'Quản lý Spa',
-      items: [
-        { label: 'Lịch hẹn', id: 'bookings', href: '/manager?tab=bookings', icon: Calendar },
-        { label: 'Dịch vụ', id: 'services', href: '/manager?tab=services', icon: Scissors },
-        { label: 'Danh mục', id: 'categories', href: '/manager?tab=categories', icon: FolderKanban },
-        { label: 'Nhân viên', id: 'staffs', href: '/manager?tab=staffs', icon: Users },
-        { label: 'Khuyến mãi', id: 'promotions', href: '/manager/promotions', icon: Tag },
-      ],
-    },
-  ] : [
+  const navGroups = [
     {
       label: 'Tổng quan',
       items: [
@@ -166,7 +132,7 @@ export default function ManagerLayout({ children }: { children: ReactNode }) {
   }
 
   const initials = (currentUser?.name ?? 'M').slice(0, 1).toUpperCase();
-  const roleName = currentUser?.role === 'SPA_MANAGER' ? 'Quản lý Spa' : 'Quản lý Cửa hàng';
+  const roleName = 'Quản lý Cửa hàng';
 
   return (
     <div className="min-h-screen bg-[#F9F8F6] text-[var(--text-main)]">

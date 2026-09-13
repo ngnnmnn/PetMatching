@@ -170,26 +170,6 @@ export class ManagerController {
     return this.managerService.deleteCategory(id);
   }
 
-  @Get('units')
-  getProductUnits() {
-    return this.managerService.getProductUnits();
-  }
-
-  @Post('units')
-  createProductUnit(@Body() dto: { name: string }) {
-    return this.managerService.createProductUnit(dto);
-  }
-
-  @Put('units/:id')
-  updateProductUnit(@Param('id') id: string, @Body() dto: { name: string }) {
-    return this.managerService.updateProductUnit(id, dto);
-  }
-
-  @Delete('units/:id')
-  deleteProductUnit(@Param('id') id: string) {
-    return this.managerService.deleteProductUnit(id);
-  }
-
   @Post('orders/:id/approve-refund')
   approveRefund(
     @Param('id') id: string,

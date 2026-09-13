@@ -47,7 +47,6 @@ type OrderItem = {
     name?: string | null;
     imageUrl?: string | null;
     brand?: string | null;
-    unit?: string | null;
   } | null;
   variant?: { id?: string; name?: string | null } | null;
 };
@@ -762,9 +761,7 @@ function StoreOrderDetailDialog({
                               {item.product?.name ?? "Sản phẩm đã xóa"}
                             </p>
                             <p className="text-xs font-semibold text-muted-foreground">
-                              {[item.product?.brand, item.product?.unit]
-                                .filter(Boolean)
-                                .join(" · ") || "-"}
+                              {item.product?.brand || "-"}
                             </p>
                           </div>
                         </div>

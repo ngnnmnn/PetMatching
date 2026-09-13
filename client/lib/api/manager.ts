@@ -25,7 +25,6 @@ export interface ManagerProduct {
   importPrice?: number | null;
   salePrice?: number | null;
   brand?: string;
-  unit?: string;
   rating?: number;
   reviewCount?: number;
   stock?: number | null;
@@ -102,13 +101,6 @@ export interface ManagerCustomer {
   }[];
 }
 
-export interface ProductUnit {
-  id: string;
-  name: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export interface StoreSettings {
   id?: string;
   name: string;
@@ -174,10 +166,6 @@ export const managerApi = {
   updateCategory: (id: string, data: { name: string }) => api.put<Category>(`/manager/categories/${id}`, data),
   deleteCategory: (id: string) => api.delete(`/manager/categories/${id}`),
 
-  getProductUnits: () => api.get<ProductUnit[]>('/manager/units'),
-  createProductUnit: (data: { name: string }) => api.post<ProductUnit>('/manager/units', data),
-  updateProductUnit: (id: string, data: { name: string }) => api.put<ProductUnit>(`/manager/units/${id}`, data),
-  deleteProductUnit: (id: string) => api.delete(`/manager/units/${id}`),
 
   getProductVariants: (productId: string) => api.get<ManagerProductVariant[]>(`/manager/products/${productId}/variants`),
   createProductVariant: (productId: string, data: Partial<ManagerProductVariant>) => api.post<ManagerProductVariant>(`/manager/products/${productId}/variants`, data),

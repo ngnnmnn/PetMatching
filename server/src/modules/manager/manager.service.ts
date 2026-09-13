@@ -351,7 +351,6 @@ export class ManagerService {
         importPrice,
         salePrice,
         brand: dto.brand || '',
-        unit: dto.unit || '',
         stock: finalStock,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
         isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : false,
@@ -441,7 +440,6 @@ export class ManagerService {
         importPrice,
         salePrice,
         brand: dto.brand,
-        unit: dto.unit,
         stock: finalStock,
         isActive: dto.isActive,
         isFeatured: dto.isFeatured,
@@ -897,77 +895,6 @@ export class ManagerService {
     });
   }
 
-  async getProductUnits() {
-    return this.prisma.productUnit.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async createProductUnit(dto: { name: string }) {
-    if (!dto.name || !dto.name.trim()) {
-      throw new BadRequestException('Tên đơn vị tính không được để trống.');
-    }
-    const name = dto.name.trim();
-    const existing = await this.prisma.productUnit.findFirst({
-      where: { name: { equals: name, mode: 'insensitive' } },
-    });
-    if (existing) {
-      throw new BadRequestException('Đơn vị tính này đã tồn tại.');
-    }
-    return this.prisma.productUnit.create({
-      data: { name },
-    });
-  }
-
-  async updateProductUnit(id: string, dto: { name: string }) {
-    if (!dto.name || !dto.name.trim()) {
-      throw new BadRequestException('Tên đơn vị tính không được để trống.');
-    }
-    const unit = await this.prisma.productUnit.findUnique({
-      where: { id },
-    });
-    if (!unit) {
-      throw new NotFoundException('Không tìm thấy đơn vị tính.');
-    }
-    const name = dto.name.trim();
-    const existing = await this.prisma.productUnit.findFirst({
-      where: {
-        id: { not: id },
-        name: { equals: name, mode: 'insensitive' },
-      },
-    });
-    if (existing) {
-      throw new BadRequestException('Đơn vị tính này đã tồn tại.');
-    }
-
-    return this.prisma.productUnit.update({
-      where: { id },
-      data: { name },
-    });
-  }
-
-  async deleteProductUnit(id: string) {
-    const unit = await this.prisma.productUnit.findUnique({
-      where: { id },
-    });
-    if (!unit) {
-      throw new NotFoundException('Không tìm thấy đơn vị tính.');
-    }
-
-    const productCount = await this.prisma.product.count({
-      where: { unit: unit.name },
-    });
-    if (productCount > 0) {
-      throw new BadRequestException(
-        'Không thể xóa đơn vị tính này vì đang có sản phẩm sử dụng.',
-      );
-    }
-
-    return this.prisma.productUnit.delete({
-      where: { id },
-    });
-  }
-
   async approveRefund(orderId: string, refundProofUrl?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -1158,10 +1085,6 @@ export class ManagerService {
         0;
       const brand =
         (row['Thương hiệu'] ?? row['brand'] ?? '').toString().trim() || null;
-      const unit =
-        (row['Đơn vị tính'] ?? row['Đơn vị'] ?? row['unit'] ?? '')
-          .toString()
-          .trim() || null;
       const salePriceRaw = row['Giá khuyến mãi'] ?? row['salePrice'];
       const description =
         (row['Mô tả'] ?? row['description'] ?? '').toString().trim() || null;
@@ -1255,19 +1178,6 @@ export class ManagerService {
           slug: categorySlug,
         },
       });
-
-      // Auto-create product unit in productUnit table if not exists
-      if (unit) {
-        const unitName = unit.trim();
-        const existingUnit = await this.prisma.productUnit.findFirst({
-          where: { name: { equals: unitName, mode: 'insensitive' } },
-        });
-        if (!existingUnit) {
-          await this.prisma.productUnit.create({
-            data: { name: unitName },
-          });
-        }
-      }
 
       let productName = name;
       let variantName = variantNameExplicit;
@@ -1476,7 +1386,6 @@ export class ManagerService {
             salePrice: salePrice || null,
             stock: totalVariantStock,
             brand: brand || product.brand,
-            unit: unit || product.unit,
             description: description || product.description,
             category: categorySlug,
             targetSpecies: species,
@@ -1498,7 +1407,6 @@ export class ManagerService {
               salePrice: salePrice || null,
               stock: currentStock + quantity,
               brand: brand || product.brand,
-              unit: unit || product.unit,
               description: description || product.description,
               category: categorySlug,
               targetSpecies: species,
@@ -1525,7 +1433,6 @@ export class ManagerService {
               salePrice: salePrice || null,
               stock: quantity,
               brand: brand || '',
-              unit: unit || '',
               description: description || '',
               isActive: true,
               isFeatured: false,

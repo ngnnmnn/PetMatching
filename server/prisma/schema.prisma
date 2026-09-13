@@ -386,7 +386,6 @@ model Product {
   salePrice      Float?
   importPrice    Float?
   brand          String?
-  unit           String?
   rating         Float            @default(0)
   reviewCount    Int              @default(0)
   stock          Int              @default(5)
@@ -940,15 +939,6 @@ model Voucher {
   updatedAt         DateTime  @updatedAt
 
   @@map("vouchers")
-}
-
-model ProductUnit {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("product_units")
 }
 
 model ProductVariant {
