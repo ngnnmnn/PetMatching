@@ -176,8 +176,14 @@ export default function BreedRulesPage() {
       toast.error('Vui lòng nhập đầy đủ hai giống.');
       return;
     }
-    if (ruleForm.breedA.trim().toLocaleLowerCase('vi') === ruleForm.breedB.trim().toLocaleLowerCase('vi')) {
-      toast.error('Hai giống trong một quy tắc phải khác nhau.');
+    const isSameBreed =
+      ruleForm.breedA.trim().toLocaleLowerCase('vi') ===
+      ruleForm.breedB.trim().toLocaleLowerCase('vi');
+    // Nếu chọn 2 giống giống nhau, chỉ cho phép khi là quy tắc Cảnh báo (-10đ) hoặc Cấm phối tuyệt đối (như đột biến gene Fold x Fold, Munchkin x Munchkin)
+    if (isSameBreed && ruleForm.isCompatible && !ruleForm.isBlocked) {
+      toast.error(
+        'Hai giống giống nhau đã mặc định tương thích thuần chủng. Chỉ thiết lập quy tắc cùng giống khi cần Cảnh báo hoặc Cấm phối tuyệt đối.',
+      );
       return;
     }
     if ((!ruleForm.isCompatible || ruleForm.isBlocked) && !ruleForm.warningNote?.trim()) {
@@ -860,7 +866,17 @@ export default function BreedRulesPage() {
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Giống thứ nhất (A) *</label>
                   <Select
                     value={ruleForm.breedA}
-                    onValueChange={(value) => setRuleForm({ ...ruleForm, breedA: value })}
+                    onValueChange={(value) => {
+                      const willBeSame = value === ruleForm.breedB;
+                      setRuleForm({
+                        ...ruleForm,
+                        breedA: value,
+                        // Nếu chọn cùng giống, tự động chuyển sang Khuyên tránh / Cấm
+                        ...(willBeSame && ruleForm.isCompatible && !ruleForm.isBlocked
+                          ? { isCompatible: false }
+                          : {}),
+                      });
+                    }}
                   >
                     <SelectTrigger className="rounded-xl font-bold">
                       <SelectValue placeholder="Chọn giống A" />
@@ -876,21 +892,42 @@ export default function BreedRulesPage() {
                   <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Giống thứ hai (B) *</label>
                   <Select
                     value={ruleForm.breedB}
-                    onValueChange={(value) => setRuleForm({ ...ruleForm, breedB: value })}
+                    onValueChange={(value) => {
+                      const willBeSame = ruleForm.breedA === value;
+                      setRuleForm({
+                        ...ruleForm,
+                        breedB: value,
+                        // Nếu chọn cùng giống, tự động chuyển sang Khuyên tránh / Cấm
+                        ...(willBeSame && ruleForm.isCompatible && !ruleForm.isBlocked
+                          ? { isCompatible: false }
+                          : {}),
+                      });
+                    }}
                   >
                     <SelectTrigger className="rounded-xl font-bold">
                       <SelectValue placeholder="Chọn giống B" />
                     </SelectTrigger>
                     <SelectContent>
-                      {breedsForRuleSpecies
-                        .filter((name) => name !== ruleForm.breedA)
-                        .map((name) => (
-                          <SelectItem key={name} value={name}>{name}</SelectItem>
-                        ))}
+                      {breedsForRuleSpecies.map((name) => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+
+              {/* Banner hướng dẫn khi chọn 2 giống giống nhau để cảnh báo / cấm phối gen */}
+              {ruleForm.breedA && ruleForm.breedB && ruleForm.breedA === ruleForm.breedB && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/80 p-3 text-xs text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="size-4 text-rose-600 shrink-0" />
+                    Quy tắc cảnh báo / cấm phối cùng giống ({ruleForm.breedA})
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Áp dụng cho các giống có đột biến gen gây hại khi nhân giống đồng hợp tử (như Scottish Fold × Scottish Fold, Munchkin × Munchkin). Hãy chọn <b>Khuyên tránh / Cấm</b> hoặc bật <b>CẤM GHÉP ĐÔI TUYỆT ĐỐI</b>.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Đánh giá Tương thích *</label>

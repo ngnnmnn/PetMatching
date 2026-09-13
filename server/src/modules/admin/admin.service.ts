@@ -2571,10 +2571,14 @@ export class AdminService {
   private normalizeBreedRule(dto: CreateBreedRuleDto | UpdateBreedRuleDto) {
     const first = dto.breedA.trim().replace(/\s+/g, ' ');
     const second = dto.breedB.trim().replace(/\s+/g, ' ');
+    // Nếu hai giống giống nhau (ví dụ: Scottish Fold x Scottish Fold, Munchkin x Munchkin),
+    // chỉ cho phép thiết lập quy tắc khi là Cảnh báo hoặc Cấm phối tuyệt đối do đột biến gen gây hại
     if (first.localeCompare(second, 'vi', { sensitivity: 'base' }) === 0) {
-      throw new BadRequestException(
-        'Hai giống trong một quy tắc phải khác nhau.',
-      );
+      if (dto.isCompatible && !dto.isBlocked) {
+        throw new BadRequestException(
+          'Hai giống giống nhau đã mặc định tương thích thuần chủng. Chỉ tạo quy tắc cùng giống khi cần Cảnh báo hoặc Cấm phối tuyệt đối.',
+        );
+      }
     }
 
     const [breedA, breedB] =
