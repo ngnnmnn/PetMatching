@@ -1642,12 +1642,13 @@ export class ManagerService {
         orderProfit += (soldPrice - importPrice) * i.quantity;
       }
 
+      // Nhãn tiếng Việt tương ứng cho báo cáo đơn hàng (chuẩn AhaMove mới)
       const statusLabels: Record<string, string> = {
-        PENDING: 'Chờ xác nhận',
+        PENDING: 'Xác nhận',
         PACKED: 'Đã gói hàng',
         PROCESSING: 'Đã gói hàng',
-        SHIPPED: 'Đã gửi bên vận chuyển',
-        DELIVERED: 'Đã nhận hàng',
+        SHIPPED: 'Đã gửi VC',
+        DELIVERED: 'Giao hàng thành công',
         CANCELLED: 'Đã hủy',
       };
 

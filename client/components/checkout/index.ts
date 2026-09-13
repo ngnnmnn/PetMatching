@@ -6,4 +6,5 @@ export { default as AddressFormModal } from './AddressFormModal';
 export { default as ShippingAddressSelector } from './ShippingAddressSelector';
 
 export { default as VoucherModal } from './VoucherModal';
-
+export { default as AddressAutocompleteInput } from './AddressAutocompleteInput';
+export type { LocationSearchResult } from './AddressAutocompleteInput';

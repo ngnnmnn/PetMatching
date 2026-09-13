@@ -15,13 +15,18 @@ export const SPA_BOOKING_STATUS_LABELS: Record<SpaBookingStatus, string> = {
   LATE: 'khách đến trễ',
 };
 
+/**
+ * Nhãn hiển thị tiếng Việt tương ứng cho từng trạng thái đơn hàng (chuẩn AhaMove mới)
+ * @param status Trạng thái đơn hàng
+ */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  PENDING: 'đang chờ xử lý',
-  PACKED: 'đã đóng gói',
-  PROCESSING: 'đang được xử lý',
-  SHIPPED: 'đang được giao',
-  DELIVERED: 'đã giao thành công',
+  PENDING: 'xác nhận',
+  PACKED: 'đã gói hàng',
+  PROCESSING: 'đã gói hàng',
+  SHIPPED: 'đang giao',
+  DELIVERED: 'giao hàng thành công',
   CANCELLED: 'đã hủy',
   EXPIRED: 'đã hết hạn',
   PAYMENT_ERROR: 'thanh toán gặp lỗi',
 };
+
