@@ -161,8 +161,11 @@ interface AddressFormModalProps {
     wardCode?: string;
     saveAddressToDb: boolean;
     setAsDefault: boolean;
+    lat?: number;
+    lng?: number;
     calculatedShippingFee?: number;
   }) => void;
+
   savedAddresses?: any[];
   initialData?: {
     receiverName?: string;

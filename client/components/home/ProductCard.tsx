@@ -222,24 +222,34 @@ export default function ProductCard({
             <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/28 to-transparent opacity-0 transition group-hover:opacity-100" />
           </Link>
           
-          {/* Stock status, Active status, Best Seller badge, or discount badge */}
-          {product.isActive === false ? (
-            <span className="absolute left-2.5 top-2.5 rounded-lg bg-stone-700 px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10 animate-fadeIn">
-              Tạm ngưng bán
-            </span>
-          ) : isOutOfStock ? (
-            <span className="absolute left-2.5 top-2.5 rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10 animate-fadeIn">
-              Hết hàng
-            </span>
-          ) : (product.soldCount && product.soldCount >= 5) ? (
-            <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-red-500 px-2.5 py-1 text-[10px] font-black text-white shadow-md z-10">
-              🔥 Bán chạy
-            </span>
-          ) : discount ? (
-            <span className="absolute left-2.5 top-2.5 rounded-lg bg-[var(--primary-color)] px-2.5 py-1 text-[10px] font-black text-white shadow-sm z-10">
-              -{discount}%
-            </span>
-          ) : null}
+          {/* Khu vực hiển thị huy hiệu: Nổi bật, Trạng thái mở bán, Bán chạy hoặc Khuyến mãi */}
+          <div className="absolute left-2.5 top-2.5 z-10 flex flex-col items-start gap-1.5 pointer-events-none">
+            {/* Huy hiệu Sản phẩm nổi bật */}
+            {product.isFeatured && (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 text-amber-950 font-black px-2.5 py-1 text-[10px] shadow-md border border-amber-300 animate-fadeIn">
+                ⭐ Nổi bật
+              </span>
+            )}
+
+            {/* Trạng thái kinh doanh hoặc khuyến mãi */}
+            {product.isActive === false ? (
+              <span className="rounded-lg bg-stone-700 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
+                Tạm ngưng bán
+              </span>
+            ) : isOutOfStock ? (
+              <span className="rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
+                Hết hàng
+              </span>
+            ) : (product.soldCount && product.soldCount >= 5) ? (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-red-500 px-2.5 py-1 text-[10px] font-black text-white shadow-md">
+                🔥 Bán chạy
+              </span>
+            ) : discount ? (
+              <span className="rounded-lg bg-[var(--primary-color)] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
+                -{discount}%
+              </span>
+            ) : null}
+          </div>
 
           {/* Low Stock Badge */}
           {currentStock !== undefined && currentStock > 0 && currentStock <= 5 && (

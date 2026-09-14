@@ -19,6 +19,7 @@ export const SPA_BOOKING_STATUS_LABELS: Record<SpaBookingStatus, string> = {
  */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: 'xác nhận',
+  CONFIRMED: 'đã xác nhận',
   PACKED: 'đã gói hàng',
   PROCESSING: 'đã gói hàng',
   SHIPPED: 'đang giao',

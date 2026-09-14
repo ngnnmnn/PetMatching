@@ -300,13 +300,19 @@ export class ShippingService {
   /**
    * Đón và xử lý Webhook tự động cập nhật trạng thái từ AhaMove Staging Portal
    * Cập nhật trạng thái hiển thị: SHIPPED (Đang giao) -> DELIVERED (Giao hàng thành công)
-   * @param payload Dữ liệu webhook gửi từ AhaMove
+   * Khi trạng thái chuyển sang DELIVERED, tự động cập nhật hóa đơn thanh toán COD sang PAID
+   * @param payload Dữ liệu webhook gửi từ AhaMove Sandbox
    */
   async handleAhamoveWebhook(payload: any) {
     this.logger.log(`[AhaMove Webhook] Nhận payload: ${JSON.stringify(payload)}`);
 
-    const orderCode = payload.order_id || payload.order_code || payload.shared_link_id;
-    const status = (payload.status || '').toUpperCase();
+    const orderCode =
+      payload.order_id ||
+      payload.order_code ||
+      payload.shared_link_id ||
+      payload.id ||
+      payload._id;
+    const status = (payload.status || payload.order_status || '').toUpperCase();
 
     if (!orderCode) {
       return { success: false, message: 'Thiếu mã đơn hàng AhaMove trong Webhook' };
@@ -316,6 +322,7 @@ export class ShippingService {
       where: {
         OR: [{ ahamoveOrderCode: orderCode }, { id: orderCode }],
       },
+      include: { payment: true },
     });
 
     if (!order) {
@@ -324,23 +331,34 @@ export class ShippingService {
     }
 
     let targetStatus: 'SHIPPED' | 'DELIVERED' | 'CANCELLED' = 'SHIPPED';
-    let note = 'Cập nhật từ AhaMove';
+    let note = 'Cập nhật từ AhaMove Sandbox';
 
     switch (status) {
       case 'ACCEPTED':
+      case 'ASSIGNING':
+      case 'CONFIRMED':
         targetStatus = 'SHIPPED';
         note = 'Tài xế AhaMove đã nhận đơn hàng và đang di chuyển tới Shop (Đang giao)';
         break;
       case 'IN_PROCESS':
       case 'IN PROCESS':
+      case 'DELIVERING':
+      case 'ON_TRIP':
+      case 'TRIP_START':
+      case 'PICKED':
         targetStatus = 'SHIPPED';
         note = 'Tài xế AhaMove đã lấy hàng thành công và đang trên đường giao (Đang giao)';
         break;
       case 'COMPLETED':
+      case 'DELIVERED':
+      case 'SUCCESSFUL':
+      case 'FINISHED':
         targetStatus = 'DELIVERED';
         note = 'Tài xế AhaMove đã giao hàng thành công (Giao hàng thành công)';
         break;
       case 'CANCELLED':
+      case 'FAILED':
+      case 'REJECTED':
         targetStatus = 'CANCELLED';
         note = 'Đơn giao hàng AhaMove đã bị hủy';
         break;
@@ -357,6 +375,20 @@ export class ShippingService {
         shippingNote: note,
       },
     });
+
+    // Tự động thanh toán cho đơn hàng COD khi giao hàng thành công từ AhaMove
+    if (
+      targetStatus === 'DELIVERED' &&
+      order.payment &&
+      order.payment.method === 'COD' &&
+      order.payment.status !== 'PAID'
+    ) {
+      await this.prisma.payment.update({
+        where: { id: order.payment.id },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
+      this.logger.log(`[AhaMove Webhook] Tự động cập nhật thanh toán COD sang PAID cho đơn ${order.id}`);
+    }
 
     this.logger.log(`[AhaMove Webhook Updated] Đơn ${order.id} -> Status: ${targetStatus} (${status})`);
     return { success: true, message: 'Cập nhật Webhook AhaMove thành công' };
@@ -527,12 +559,25 @@ export class ShippingService {
 
               // Tự động cập nhật Database nếu trạng thái trên AhaMove Portal có thay đổi
               let targetOrderStatus: any = order.status;
-              const activeStatuses = ['ACCEPTED', 'IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'ASSIGNING'];
-              if (ahaStatus === 'COMPLETED') {
+              const activeStatuses = [
+                'ACCEPTED',
+                'IN_PROCESS',
+                'IN PROCESS',
+                'DELIVERING',
+                'ON_TRIP',
+                'TRIP_START',
+                'ASSIGNING',
+                'CONFIRMED',
+                'PICKED',
+              ];
+              const completedStatuses = ['COMPLETED', 'DELIVERED', 'SUCCESSFUL', 'FINISHED'];
+              const cancelledStatuses = ['CANCELLED', 'FAILED', 'REJECTED'];
+
+              if (completedStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'DELIVERED';
               } else if (activeStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'SHIPPED';
-              } else if (ahaStatus === 'CANCELLED') {
+              } else if (cancelledStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'CANCELLED';
               }
 
@@ -545,6 +590,20 @@ export class ShippingService {
                     shippingNote: `Tự động đồng bộ từ AhaMove Portal: ${ahaStatus}`,
                   },
                 });
+
+                // Tự động cập nhật thanh toán COD thành PAID khi AhaMove báo hoàn tất
+                if (targetOrderStatus === 'DELIVERED') {
+                  const payment = await this.prisma.payment.findUnique({
+                    where: { orderId: order.id },
+                  });
+                  if (payment && payment.method === 'COD' && payment.status !== 'PAID') {
+                    await this.prisma.payment.update({
+                      where: { id: payment.id },
+                      data: { status: 'PAID', paidAt: new Date() },
+                    });
+                    this.logger.log(`[AhaMove Sync] Tự động cập nhật thanh toán COD thành PAID cho đơn ${order.id}`);
+                  }
+                }
               }
             }
           }

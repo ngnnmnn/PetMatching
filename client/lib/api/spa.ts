@@ -1,20 +1,15 @@
 import api from '@/lib/axios';
-import { SpaBranchType, SpaServiceType, SpaBookingType, AddressSpaType, SpaStaffProfileType } from '@/types';
+import {
+  SpaBranchType,
+  SpaServiceType,
+  SpaBookingType,
+  AddressSpaType,
+  SpaStaffProfileType,
+  CreateBookingData,
+} from '@/types';
 
-export interface CreateBookingData {
-  branchId?: string;
-  addressSpaId?: string;
-  serviceId?: string;
-  mainServiceId?: string;
-  subServiceIds?: string[];
-  petName?: string;
-  petSpecies?: 'DOG' | 'CAT';
-  petWeight?: number;
-  petId?: string;
-  staffId?: string;
-  scheduledAt: string;
-  note?: string;
-}
+export type { CreateBookingData };
+
 
 export const spaApi = {
   getCategories: () => api.get<any[]>('/spa/categories'),
@@ -65,6 +60,8 @@ export const spaApi = {
   notifyManagerCustomerLate: (id: string) => api.post<any>(`/spa/staff/bookings/${id}/notify-late`),
 
   // Spa Manager API Methods
+  /** Quản lý Spa lấy danh mục dịch vụ */
+  getManagerServices: () => api.get<any[]>('/spa/manager/services'),
   getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),
   getManagerCategories: () => api.get<any[]>('/spa/manager/categories'),
   createManagerCategory: (data: any) => api.post<any>('/spa/manager/categories', data),

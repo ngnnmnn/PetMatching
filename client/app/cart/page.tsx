@@ -48,19 +48,55 @@ export default function CartPage() {
     }
   }, [cartItems, isMounted, hasInitializedSelection]);
 
-  // Sync selectedItemIds when cart items change (clean up deleted items from selection)
+  // Helper kiểm tra trạng thái mở bán và tồn kho của từng sản phẩm trong giỏ hàng
+  const getItemStockStatus = (item: any) => {
+    const isProductInactive = item.product?.isActive === false;
+    const isVariantInactive = !!item.variant && item.variant.isActive === false;
+    const isInactive = isProductInactive || isVariantInactive;
+
+    const availableStock = item.variant
+      ? (item.variant.stock ?? 0)
+      : (item.product?.stock ?? 0);
+
+    const isOutOfStock = availableStock <= 0;
+    const isStockInsufficient = availableStock < item.quantity;
+    const isUnpurchasable = isInactive || isOutOfStock || isStockInsufficient;
+
+    return {
+      isInactive,
+      availableStock,
+      isOutOfStock,
+      isStockInsufficient,
+      isUnpurchasable,
+    };
+  };
+
+  // Tự động bỏ chọn các sản phẩm đã hết hàng hoặc ngưng bán khi dữ liệu giỏ hàng cập nhật realtime
   useEffect(() => {
     if (hasInitializedSelection) {
-      const currentIds = cartItems.map((item) => item.id);
-      setSelectedItemIds((prev) => prev.filter((id) => currentIds.includes(id)));
+      setSelectedItemIds((prev) =>
+        prev.filter((id) => {
+          const item = cartItems.find((ci) => ci.id === id);
+          if (!item) return false;
+          const status = getItemStockStatus(item);
+          return !status.isUnpurchasable;
+        })
+      );
     }
   }, [cartItems, hasInitializedSelection]);
 
   const handleToggleSelectItem = (item: any) => {
-    const isProductInactive = item.product?.isActive === false;
-    const isVariantInactive = !!item.variant && item.variant.isActive === false;
-    if (isProductInactive || isVariantInactive) {
+    const status = getItemStockStatus(item);
+    if (status.isInactive) {
       toast.warning(`Sản phẩm "${item.product?.name || 'này'}" hiện đang tạm ngưng bán, không thể chọn mua.`);
+      return;
+    }
+    if (status.isOutOfStock) {
+      toast.warning(`Sản phẩm "${item.product?.name || 'này'}" hiện đã hết hàng trong kho.`);
+      return;
+    }
+    if (status.isStockInsufficient) {
+      toast.warning(`Kho chỉ còn ${status.availableStock} sản phẩm, không đủ số lượng trong giỏ (${item.quantity}). Vui lòng giảm số lượng.`);
       return;
     }
     setSelectedItemIds((prev) =>
@@ -69,30 +105,36 @@ export default function CartPage() {
   };
 
   const handleToggleSelectAll = () => {
-    const activeItems = cartItems.filter(
-      (item) => item.product?.isActive !== false && (!item.variant || item.variant.isActive !== false)
-    );
-    if (selectedItemIds.length === activeItems.length && activeItems.length > 0) {
+    const validItems = cartItems.filter((item) => {
+      const status = getItemStockStatus(item);
+      return !status.isUnpurchasable;
+    });
+    if (selectedItemIds.length === validItems.length && validItems.length > 0) {
       setSelectedItemIds([]);
     } else {
-      setSelectedItemIds(activeItems.map((item) => item.id));
+      setSelectedItemIds(validItems.map((item) => item.id));
     }
   };
 
   const handleProceedToCheckout = () => {
     if (selectedItemIds.length === 0) {
-      toast.warning('Vui lòng chọn ít nhất 1 sản phẩm để thanh toán.');
+      toast.warning('Vui lòng chọn ít nhất 1 sản phẩm hợp lệ còn hàng để thanh toán.');
       return;
     }
 
     const selectedItems = cartItems.filter((i) => selectedItemIds.includes(i.id));
     for (const item of selectedItems) {
-      if (item.product?.isActive === false) {
-        toast.error(`Sản phẩm "${item.product.name}" hiện đang tạm ngưng bán. Vui lòng bỏ chọn hoặc xóa khỏi giỏ hàng.`);
+      const status = getItemStockStatus(item);
+      if (status.isInactive) {
+        toast.error(`Sản phẩm "${item.product.name}" hiện đang tạm ngưng bán. Vui lòng bỏ chọn khỏi giỏ hàng.`);
         return;
       }
-      if (item.variant && item.variant.isActive === false) {
-        toast.error(`Phân loại "${item.variant.name}" của sản phẩm "${item.product.name}" hiện đang tạm ngưng bán. Vui lòng bỏ chọn hoặc xóa khỏi giỏ hàng.`);
+      if (status.isOutOfStock) {
+        toast.error(`Sản phẩm "${item.product.name}" hiện đã hết hàng. Vui lòng bỏ chọn khỏi giỏ hàng.`);
+        return;
+      }
+      if (status.isStockInsufficient) {
+        toast.error(`Sản phẩm "${item.product.name}" chỉ còn ${status.availableStock} cái trong kho (Bạn đang chọn ${item.quantity}). Vui lòng điều chỉnh số lượng.`);
         return;
       }
     }
@@ -101,6 +143,7 @@ export default function CartPage() {
     localStorage.removeItem('petmatch_direct_checkout_item');
     router.push('/checkout');
   };
+
 
   if (!isMounted) {
     return (
@@ -196,22 +239,20 @@ export default function CartPage() {
                       ? (item.variant.salePrice && item.variant.salePrice < item.variant.sellingPrice)
                       : (item.product.salePrice && item.product.salePrice < item.product.sellingPrice);
 
-                    const isProductInactive = item.product?.isActive === false;
-                    const isVariantInactive = !!item.variant && item.variant.isActive === false;
-                    const isInactive = isProductInactive || isVariantInactive;
+                    const status = getItemStockStatus(item);
 
                     return (
-                      <div key={item.id} className={cn("p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center transition-colors", isInactive && "bg-slate-50/80")}>
+                      <div key={item.id} className={cn("p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center transition-colors", status.isUnpurchasable && "bg-slate-50/80")}>
                         {/* Checkbox */}
                         <div className="flex items-center h-full sm:self-center shrink-0 pr-2">
                           <input
                             type="checkbox"
-                            disabled={isInactive}
+                            disabled={status.isUnpurchasable}
                             checked={selectedItemIds.includes(item.id)}
                             onChange={() => handleToggleSelectItem(item)}
                             className={cn(
                               "size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] shrink-0",
-                              isInactive ? "cursor-not-allowed opacity-40 bg-gray-200" : "cursor-pointer"
+                              status.isUnpurchasable ? "cursor-not-allowed opacity-40 bg-gray-200" : "cursor-pointer"
                             )}
                           />
                         </div>
@@ -221,7 +262,7 @@ export default function CartPage() {
                           <img
                             src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
-                            className={cn("w-full h-full object-cover transition-all", isInactive && "grayscale opacity-50")}
+                            className={cn("w-full h-full object-cover transition-all", status.isUnpurchasable && "grayscale opacity-50")}
                           />
                         </Link>
 
@@ -229,13 +270,23 @@ export default function CartPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-0.5">
                             <span className="text-[10px] font-extrabold text-[#0F766E] uppercase tracking-wider">{item.product.brand || 'PetMatch'}</span>
-                            {isInactive && (
+                            {status.isInactive && (
                               <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-800 border border-rose-200">
                                 🚫 Tạm ngưng bán
                               </span>
                             )}
+                            {!status.isInactive && status.isOutOfStock && (
+                              <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 border border-amber-200">
+                                ⚠️ Hết hàng
+                              </span>
+                            )}
+                            {!status.isInactive && !status.isOutOfStock && status.isStockInsufficient && (
+                              <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 border border-amber-200">
+                                ⚠️ Kho chỉ còn {status.availableStock} cái
+                              </span>
+                            )}
                           </div>
-                          <Link href={`/product/${item.productId}`} className={cn("block text-sm font-black transition line-clamp-1 mt-0.5", isInactive ? "text-gray-400 line-through" : "text-[var(--text-main)] hover:text-primary")}>
+                          <Link href={`/product/${item.productId}`} className={cn("block text-sm font-black transition line-clamp-1 mt-0.5", status.isUnpurchasable ? "text-gray-400 line-through" : "text-[var(--text-main)] hover:text-primary")}>
                             {item.product.name}
                           </Link>
                           {item.variant && (
@@ -265,8 +316,14 @@ export default function CartPage() {
                             <span className="w-10 text-center text-xs font-black">{item.quantity}</span>
                             <button
                               type="button"
+                              disabled={status.isInactive || status.isOutOfStock || item.quantity >= status.availableStock}
                               onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                              className="inline-flex size-7 items-center justify-center rounded bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black"
+                              className={cn(
+                                "inline-flex size-7 items-center justify-center rounded bg-gray-50 text-gray-600 transition",
+                                (status.isInactive || status.isOutOfStock || item.quantity >= status.availableStock)
+                                  ? "opacity-40 cursor-not-allowed"
+                                  : "hover:bg-gray-100 hover:text-black"
+                              )}
                             >
                               <Plus className="h-3 w-3" />
                             </button>
@@ -290,6 +347,7 @@ export default function CartPage() {
                       </div>
                     );
                   })}
+
                 </div>
               </div>
             </div>

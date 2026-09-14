@@ -1,9 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Product, ProductVariant } from '@/types';
 import { toast } from 'sonner';
 import { cartApi } from '@/lib/api/cart';
+import { productsApi } from '@/lib/api/products';
 
 export interface CartItem {
   id: string; // unique cart item line identifier (cuid on DB or composite key for guest)
@@ -20,6 +21,7 @@ interface CartContextType {
   removeFromCart: (cartItemId: string) => Promise<void>;
   updateQuantity: (cartItemId: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
+  refreshCart: () => Promise<void>;
   cartCount: number;
   cartTotal: number;
 }
@@ -30,7 +32,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isMounted, setIsMounted] = useState(false);
 
-  const loadCart = async () => {
+  /**
+   * Tải lại giỏ hàng từ server hoặc cập nhật trạng thái tồn kho / mở bán mới nhất của sản phẩm
+   */
+  const loadCart = useCallback(async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       try {
@@ -58,24 +63,57 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             setCartItems([]);
           }
         } else {
-          console.error('Failed to load cart from backend', e);
+          // Khi server gặp sự cố mạng hoặc lỗi tạm thời, fallback sang giỏ hàng lưu cục bộ
+          console.warn('Không thể kết nối tải giỏ hàng từ server, sử dụng bộ nhớ tạm:', e?.message || e);
+          const stored = localStorage.getItem('petmatch_cart');
+          if (stored) {
+            try {
+              setCartItems(JSON.parse(stored));
+            } catch {}
+          }
         }
       }
     } else {
       const stored = localStorage.getItem('petmatch_cart');
       if (stored) {
         try {
-          setCartItems(JSON.parse(stored));
+          const rawItems: CartItem[] = JSON.parse(stored);
+          if (rawItems.length > 0) {
+            // Cập nhật thông tin tồn kho và trạng thái mở bán mới nhất cho giỏ hàng khách vãng lai
+            const updatedItems = await Promise.all(
+              rawItems.map(async (item) => {
+                try {
+                  const res = await productsApi.getById(item.productId);
+                  const p = res.data;
+                  const v = item.variantId && p.variants ? p.variants.find((v) => v.id === item.variantId) : null;
+                  return {
+                    ...item,
+                    product: p,
+                    variant: v || item.variant,
+                  };
+                } catch {
+                  return item;
+                }
+              })
+            );
+            setCartItems(updatedItems);
+          } else {
+            setCartItems([]);
+          }
         } catch (e) {
           console.error('Failed to parse cart items', e);
+          setCartItems([]);
         }
       } else {
         setCartItems([]);
       }
     }
-  };
+  }, []);
 
-  const syncCart = async () => {
+  /**
+   * Đồng bộ giỏ hàng local lên server khi người dùng đăng nhập
+   */
+  const syncCart = useCallback(async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       const stored = localStorage.getItem('petmatch_cart');
@@ -107,20 +145,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
       await loadCart();
     } else {
-      const stored = localStorage.getItem('petmatch_cart');
-      if (stored) {
-        try {
-          setCartItems(JSON.parse(stored));
-        } catch (e) {
-          console.error('Failed to parse cart items', e);
-        }
-      } else {
-        setCartItems([]);
-      }
+      await loadCart();
     }
-  };
+  }, [loadCart]);
 
-  // Sync / Load cart on mount and when auth state changes
+  // Khởi tạo và lắng nghe thay đổi đăng nhập
   useEffect(() => {
     setIsMounted(true);
     syncCart();
@@ -133,7 +162,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return () => {
       window.removeEventListener('auth-change', handleAuthChange);
     };
-  }, []);
+  }, [syncCart]);
+
+  // Cơ chế Polling tự động cập nhật giỏ hàng theo thời gian thực (mỗi 4 giây & khi quay lại tab)
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const interval = setInterval(() => {
+      loadCart();
+    }, 4000);
+
+    const handleFocus = () => {
+      loadCart();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleFocus);
+    };
+  }, [isMounted, loadCart]);
+
 
   // Save guest cart to localStorage
   useEffect(() => {
@@ -287,12 +339,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         removeFromCart,
         updateQuantity,
         clearCart,
+        refreshCart: loadCart,
         cartCount,
         cartTotal,
       }}
     >
       {children}
     </CartContext.Provider>
+
   );
 }
 

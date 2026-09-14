@@ -415,3 +415,22 @@ export interface UpdateVoucherInput {
   isActive?: boolean;
 }
 
+/**
+ * Kiểu dữ liệu payload khi gửi yêu cầu đặt lịch hẹn dịch vụ Spa
+ */
+export interface CreateBookingData {
+  branchId?: string;
+  addressSpaId?: string;
+  serviceId?: string;
+  mainServiceId?: string;
+  subServiceIds?: string[];
+  petName?: string;
+  petSpecies?: 'DOG' | 'CAT';
+  petWeight?: number;
+  petId?: string;
+  staffId?: string;
+  scheduledAt: string;
+  note?: string;
+}
+
+

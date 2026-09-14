@@ -451,6 +451,12 @@ export default function ProductDetailPage() {
                 className={`max-h-full max-w-full object-contain transition-all duration-300 rounded-xl ${(currentStock === 0 || product.isActive === false) ? 'grayscale opacity-60' : ''
                   }`}
               />
+              {/* Huy hiệu Sản phẩm nổi bật */}
+              {product.isFeatured && (
+                <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 text-amber-950 px-3 py-1 text-xs font-black shadow-md border border-amber-300 z-10 animate-fadeIn">
+                  ⭐ Nổi bật
+                </span>
+              )}
               {product.isActive === false ? (
                 <span className="absolute left-4 top-4 rounded-lg bg-stone-700 px-3 py-1.5 text-xs font-black text-white shadow-md z-10">
                   Tạm ngưng bán
@@ -497,7 +503,12 @@ export default function ProductDetailPage() {
             <div>
               {/* Brand and category labels */}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {product.isFeatured && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 border border-amber-300 px-2.5 py-1 text-xs font-black text-amber-900 shadow-2xs">
+                      ⭐ Sản phẩm nổi bật
+                    </span>
+                  )}
                   <span className="inline-flex items-center gap-1 rounded-md bg-[#FFF3E0] px-3 py-1 text-xs font-bold text-[#E65100]">
                     {CATEGORY_LABELS[product.category] || product.category}
                   </span>
