@@ -29,6 +29,7 @@ import {
   recognizedSpaRevenueWhere,
   recognizedStoreRevenueWhere,
 } from '../../common/revenue.utils';
+import { findConfiguredStoreId } from '../../common/store.utils';
 import {
   buildDashboardBuckets,
   resolveDashboardRange,
@@ -117,17 +118,14 @@ export class AdminService {
     query: { range?: string; from?: string; to?: string } = {},
   ) {
     const period = resolveDashboardRange(query);
-    const [store, spa] = await Promise.all([
-      this.prisma.store.findFirst({
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      }),
+    const [storeId, spa] = await Promise.all([
+      findConfiguredStoreId(this.prisma),
       this.prisma.addressSpa.findFirst({
         orderBy: { createdAt: 'asc' },
         select: { id: true },
       }),
     ]);
-    const storeFilter = { storeId: store?.id ?? '__missing__' };
+    const storeFilter = { storeId: storeId ?? '__missing__' };
     const spaFilter = { addressSpaId: spa?.id ?? '__missing__' };
     const now = new Date();
     const startOfToday = new Date(
@@ -200,7 +198,7 @@ export class AdminService {
       }),
       this.prisma.order.findMany({
         where: {
-          ...recognizedStoreRevenueWhere(store?.id),
+          ...recognizedStoreRevenueWhere(storeId ?? undefined),
           createdAt: {
             gte: period.previousFrom,
             lt: period.toExclusive,
@@ -1481,13 +1479,10 @@ export class AdminService {
   }
 
   async getStoreProducts() {
-    const store = await this.prisma.store.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
+    const storeId = await findConfiguredStoreId(this.prisma);
 
     return this.prisma.product.findMany({
-      where: { storeId: store?.id ?? '__missing__' },
+      where: { storeId: storeId ?? '__missing__' },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -1506,13 +1501,10 @@ export class AdminService {
   }
 
   async getStoreOrders() {
-    const store = await this.prisma.store.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
+    const storeId = await findConfiguredStoreId(this.prisma);
 
     return this.prisma.order.findMany({
-      where: { storeId: store?.id ?? '__missing__' },
+      where: { storeId: storeId ?? '__missing__' },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -1606,7 +1598,6 @@ export class AdminService {
         name: true,
         address: true,
         status: true,
-        manager: { select: { name: true } },
       },
     });
     const now = new Date();
@@ -1779,7 +1770,6 @@ export class AdminService {
             name: store.name,
             address: store.address,
             status: store.status,
-            manager: store.manager,
           }
         : null,
       stats: {

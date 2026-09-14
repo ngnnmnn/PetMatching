@@ -30,35 +30,17 @@ import {
   FolderKanban,
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-function computeSalePrice(
-  sellingPriceNum: number,
-  discountType: 'AMOUNT' | 'PERCENT',
-  discountValueStr: string,
-): { salePrice: number | null; error?: string } {
-  if (!discountValueStr || discountValueStr.trim() === '') {
-    return { salePrice: null };
-  }
-  const val = Number(discountValueStr);
-  if (isNaN(val) || val <= 0) {
-    return { salePrice: null, error: 'Mức giảm giá phải lớn hơn 0.' };
-  }
-
-  if (discountType === 'AMOUNT') {
-    if (val >= sellingPriceNum) {
-      return { salePrice: null, error: 'Số tiền giảm phải nhỏ hơn giá bán niêm yết.' };
-    }
-    return { salePrice: sellingPriceNum - val };
-  } else {
-    if (val >= 100) {
-      return { salePrice: null, error: 'Phần trăm giảm giá phải nhỏ hơn 100%.' };
-    }
-    const discountAmount = Math.round((sellingPriceNum * val) / 100);
-    return { salePrice: sellingPriceNum - discountAmount };
-  }
-}
-import { managerApi, ManagerProduct, ManagerOrder, ManagerCustomer, StoreSettings, ManagerDashboardStats } from '@/lib/api/manager';
-import { HanoiWardOption, shippingApi } from '@/lib/api/shipping';
+import {
+  managerApi,
+  ManagerCustomer,
+  ManagerDashboardStats,
+  ManagerOrder,
+  ManagerProduct,
+  ManagerProductInput,
+  ManagerProductVariant,
+  ManagerProductVariantInput,
+} from '@/lib/api/manager';
+import { shippingApi } from '@/lib/api/shipping';
 import { productsApi } from '@/lib/api/products';
 import { Category } from '@/types';
 import { uploadImages } from '@/lib/api/uploads';
@@ -73,6 +55,45 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+
+function computeSalePrice(
+  sellingPriceNum: number,
+  discountType: 'AMOUNT' | 'PERCENT',
+  discountValueStr: string,
+): { salePrice: number | null; error?: string } {
+  if (!discountValueStr || discountValueStr.trim() === '') {
+    return { salePrice: null };
+  }
+  const value = Number(discountValueStr);
+  if (isNaN(value) || value <= 0) {
+    return { salePrice: null, error: 'Mức giảm giá phải lớn hơn 0.' };
+  }
+
+  if (discountType === 'AMOUNT') {
+    if (value >= sellingPriceNum) {
+      return {
+        salePrice: null,
+        error: 'Số tiền giảm phải nhỏ hơn giá bán niêm yết.',
+      };
+    }
+    return { salePrice: sellingPriceNum - value };
+  }
+
+  if (value >= 100) {
+    return {
+      salePrice: null,
+      error: 'Phần trăm giảm giá phải nhỏ hơn 100%.',
+    };
+  }
+  const discountAmount = Math.round((sellingPriceNum * value) / 100);
+  return { salePrice: sellingPriceNum - discountAmount };
+}
+
+function isPersistedVariant(
+  variant: ManagerProductVariant | ManagerProductVariantInput,
+): variant is ManagerProductVariant {
+  return 'id' in variant && typeof variant.id === 'string';
+}
 
 // Currency Formatter
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
@@ -181,8 +202,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [products, setProducts] = useState<ManagerProduct[]>([]);
   const [orders, setOrders] = useState<ManagerOrder[]>([]);
   const [customers, setCustomers] = useState<ManagerCustomer[]>([]);
-  const [storeInfo, setStoreInfo] = useState<StoreSettings | null>(null);
-  const [hanoiWards, setHanoiWards] = useState<HanoiWardOption[]>([]);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ManagerOrder | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -220,8 +239,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     onConfirm: () => { },
     loading: false,
   });
-  const [isSaved, setIsSaved] = useState(false);
-  const [submittingSettings, setSubmittingSettings] = useState(false);
   const [feedbackProduct, setFeedbackProduct] = useState<ManagerProduct | null>(null);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
@@ -246,9 +263,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [uploadingImage, setUploadingImage] = useState(false);
 
   // Variant Management States
-  const [variants, setVariants] = useState<any[]>([]);
+  const [variants, setVariants] = useState<ManagerProductVariant[]>([]);
   const [loadingVariants, setLoadingVariants] = useState(false);
-  const [editingVariant, setEditingVariant] = useState<any | null>(null);
+  const [editingVariant, setEditingVariant] = useState<ManagerProductVariant | null>(null);
   const [variantForm, setVariantForm] = useState({
     name: '',
     sellingPrice: '',
@@ -260,7 +277,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     isActive: true,
   });
 
-  const [localVariants, setLocalVariants] = useState<any[]>([]);
+  const [localVariants, setLocalVariants] = useState<ManagerProductVariantInput[]>([]);
   const [editingLocalVariantIndex, setEditingLocalVariantIndex] = useState<number | null>(null);
   const [uploadingVariantImage, setUploadingVariantImage] = useState(false);
 
@@ -308,30 +325,38 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, settingsRes, categoriesRes, wardsRes] =
+      const [statsRes, productsRes, ordersRes, customersRes, categoriesRes] =
         await Promise.allSettled([
           managerApi.getDashboardStats(),
           managerApi.getProducts(),
           managerApi.getOrders(),
           managerApi.getCustomers(),
-          managerApi.getStoreSettings(),
           productsApi.getCategories(),
-          shippingApi.getHanoiWards(),
         ]);
 
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
       if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
       if (ordersRes.status === 'fulfilled') setOrders(ordersRes.value.data);
       if (customersRes.status === 'fulfilled') setCustomers(customersRes.value.data);
-      if (settingsRes.status === 'fulfilled') setStoreInfo(settingsRes.value.data);
       if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
-      if (wardsRes.status === 'fulfilled') setHanoiWards(wardsRes.value.data);
     } catch (error) {
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshOrders = async () => {
+    const response = await managerApi.getOrders();
+    setOrders(response.data);
+    return response.data;
+  };
+
+  const refreshProducts = async () => {
+    const response = await managerApi.getProducts();
+    setProducts(response.data);
+    return response.data;
   };
 
   useEffect(() => {
@@ -554,10 +579,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.updateOrderStatus(orderId, newStatus);
       toast.success('Cập nhật trạng thái đơn hàng thành công!');
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      const refreshedOrders = await refreshOrders();
       if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(res.data.find((o) => o.id === orderId) || null);
+        setSelectedOrderDetails(
+          refreshedOrders.find((order) => order.id === orderId) || null,
+        );
       }
     } catch (error) {
       console.error('Failed to update order status', error);
@@ -576,8 +602,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       );
       toast.success(`Đã chuyển trạng thái "${actionLabel}" cho ${selectedOrderIds.length} đơn hàng!`);
       setSelectedOrderIds([]);
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      await refreshOrders();
     } catch (err: any) {
       console.error('Failed batch status update', err);
       toast.error('Có lỗi xảy ra khi chuyển trạng thái hàng loạt.');
@@ -595,8 +620,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       );
       toast.success(`Đã duyệt hoàn tiền thành công cho ${selectedOrderIds.length} đơn hàng!`);
       setSelectedOrderIds([]);
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      await refreshOrders();
     } catch (err: any) {
       console.error('Failed batch refund approval', err);
       toast.error('Có lỗi xảy ra khi duyệt hoàn tiền hàng loạt.');
@@ -617,10 +641,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const res = await shippingApi.createAhamoveShippingOrder(orderId);
       if (res.data?.success) {
         toast.success(`Đã tạo đơn giao hỏa tốc AhaMove thành công! Mã: ${res.data.ahamoveOrderCode}`);
-        const ordersRes = await managerApi.getOrders();
-        setOrders(ordersRes.data);
+        const refreshedOrders = await refreshOrders();
         if (selectedOrderDetails?.id === orderId) {
-          setSelectedOrderDetails(ordersRes.data.find((o: any) => o.id === orderId) || null);
+          setSelectedOrderDetails(
+            refreshedOrders.find((order) => order.id === orderId) || null,
+          );
         }
       }
     } catch (err: any) {
@@ -640,10 +665,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     if (showToast) setSyncingAhamove(true);
     try {
       await shippingApi.syncActiveAhamoveOrders();
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      const refreshedOrders = await refreshOrders();
       if (selectedOrderDetails) {
-        const updated = res.data.find((o: any) => o.id === selectedOrderDetails.id);
+        const updated = refreshedOrders.find(
+          (order) => order.id === selectedOrderDetails.id,
+        );
         if (updated) setSelectedOrderDetails(updated);
       }
       if (showToast) {
@@ -684,9 +710,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       // Save to database immediately so it is persisted
       await managerApi.updateRefundProof(selectedOrderDetails.id, url);
 
-      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, refundProofUrl: url } : null));
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      setSelectedOrderDetails((prev) =>
+        prev ? { ...prev, refundProofUrl: url } : null,
+      );
+      await refreshOrders();
       toast.success('Đã tải và lưu ảnh chuyển khoản hoàn tiền thành công!');
     } catch (err: any) {
       console.error('Failed to upload refund proof', err);
@@ -702,9 +729,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.updateRefundProof(selectedOrderDetails.id, '');
       setPendingRefundProofUrl('');
-      setSelectedOrderDetails((prev: any) => (prev ? { ...prev, refundProofUrl: null } : null));
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      setSelectedOrderDetails((prev) =>
+        prev ? { ...prev, refundProofUrl: null } : null,
+      );
+      await refreshOrders();
       toast.success('Đã gỡ bỏ ảnh chuyển khoản hoàn tiền!');
     } catch (err: any) {
       console.error('Failed to remove refund proof', err);
@@ -725,10 +753,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       await managerApi.approveRefund(orderId, finalProofUrl);
       toast.success('Đã duyệt yêu cầu hoàn tiền thành công!');
       setPendingRefundProofUrl('');
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      const refreshedOrders = await refreshOrders();
       if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(res.data.find((o) => o.id === orderId) || null);
+        setSelectedOrderDetails(
+          refreshedOrders.find((order) => order.id === orderId) || null,
+        );
       }
     } catch (error: any) {
       console.error('Failed to approve refund', error);
@@ -743,43 +772,17 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.rejectRefund(orderId);
       toast.info('Đã từ chối hoàn tiền cho đơn hàng này.');
-      const res = await managerApi.getOrders();
-      setOrders(res.data);
+      const refreshedOrders = await refreshOrders();
       if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(res.data.find((o) => o.id === orderId) || null);
+        setSelectedOrderDetails(
+          refreshedOrders.find((order) => order.id === orderId) || null,
+        );
       }
     } catch (error: any) {
       console.error('Failed to reject refund', error);
       toast.error('Lỗi khi từ chối yêu cầu hoàn tiền.');
     } finally {
       setRefundingId(null);
-    }
-  };
-
-  const handleUpdateSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!storeInfo) return;
-    if (!storeInfo.wardCode) {
-      toast.error('Vui lòng chọn phường/xã thuộc Thành phố Hà Nội.');
-      return;
-    }
-    setSubmittingSettings(true);
-    try {
-      const response = await managerApi.updateStoreSettings({
-        name: storeInfo.name,
-        phone: storeInfo.phone || '',
-        addressDetail: storeInfo.addressDetail || '',
-        wardCode: storeInfo.wardCode,
-        description: storeInfo.description,
-      });
-      setStoreInfo(response.data);
-      setIsSaved(true);
-      toast.success('Lưu cấu hình cửa hàng thành công!');
-    } catch (error) {
-      console.error('Failed to save store settings', error);
-      toast.error('Lỗi khi cập nhật cấu hình cửa hàng.');
-    } finally {
-      setSubmittingSettings(false);
     }
   };
 
@@ -872,7 +875,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       stock: product.stock ? String(product.stock) : '',
       brand: product.brand || '',
       imageUrl: product.imageUrl || '',
-      images: (product as any).images || (product.imageUrl ? [product.imageUrl] : []),
+      images: product.images || (product.imageUrl ? [product.imageUrl] : []),
       description: product.description || '',
       isFeatured: product.isFeatured,
       isActive: product.isActive,
@@ -885,8 +888,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.deleteProduct(id);
       toast.success('Xóa sản phẩm thành công!');
-      const res = await managerApi.getProducts();
-      setProducts(res.data);
+      await refreshProducts();
     } catch (error: any) {
       console.error('Failed to delete product', error);
       const msg = error.response?.data?.message || 'Lỗi khi xóa sản phẩm. Sản phẩm có thể đã được gắn vào đơn hàng.';
@@ -908,7 +910,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
   };
 
-  const handleEditVariantClick = (variant: any) => {
+  const handleEditVariantClick = (variant: ManagerProductVariant) => {
     setEditingVariant(variant);
     const vSelling = Number(variant.sellingPrice) || 0;
     let vDiscountVal = '';
@@ -1005,9 +1007,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       }
 
       handleCancelEditVariant();
-      loadVariants(currentProduct.id);
-      const prodRes = await managerApi.getProducts();
-      setProducts(prodRes.data);
+      await Promise.all([
+        loadVariants(currentProduct.id),
+        refreshProducts(),
+      ]);
     } catch (error) {
       console.error('Failed to submit variant form', error);
       toast.error('Lỗi khi lưu biến thể.');
@@ -1023,9 +1026,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.deleteProductVariant(variantId);
       toast.success('Xóa biến thể thành công!');
-      loadVariants(currentProduct.id);
-      const prodRes = await managerApi.getProducts();
-      setProducts(prodRes.data);
+      await Promise.all([
+        loadVariants(currentProduct.id),
+        refreshProducts(),
+      ]);
     } catch (error: any) {
       console.error('Failed to delete variant', error);
       const msg = error.response?.data?.message || 'Lỗi khi xóa biến thể.';
@@ -1309,7 +1313,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         }
       });
 
-      const data: Partial<ManagerProduct> & { variants?: any[] } = {
+      const data: ManagerProductInput = {
         name: productForm.name.trim(),
         category: productForm.category,
         targetSpecies: productForm.targetSpecies,
@@ -1334,8 +1338,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         toast.success('Thêm sản phẩm mới thành công!');
       }
       setIsProductModalOpen(false);
-      const res = await managerApi.getProducts();
-      setProducts(res.data);
+      await refreshProducts();
     } catch (error) {
       console.error('Failed to submit product form', error);
       toast.error('Lỗi khi lưu sản phẩm.');
@@ -2425,8 +2428,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       ) : (editingProduct ? variants : localVariants).length === 0 ? (
                         <p className="text-[10px] text-gray-400 italic py-2">Chưa cấu hình biến thể nào. Sản phẩm sẽ sử dụng phân loại mặc định chính.</p>
                       ) : (
-                        (editingProduct ? variants : localVariants).map((v: any, index: number) => (
-                          <div key={v.id || index} className="flex items-center justify-between p-2 rounded-xl border border-[#EFEAE2] bg-white text-[11px]">
+                        (editingProduct ? variants : localVariants).map((v, index) => (
+                          <div key={isPersistedVariant(v) ? v.id : index} className="flex items-center justify-between p-2 rounded-xl border border-[#EFEAE2] bg-white text-[11px]">
                             <div className="flex items-center gap-2">
                               {v.imageUrl && (
                                 <img src={v.imageUrl} alt="" className="size-8 rounded-lg object-cover border border-[#EFEAE2]" />
@@ -2446,14 +2449,26 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             <div className="flex gap-1">
                               <button
                                 type="button"
-                                onClick={() => editingProduct ? handleEditVariantClick(v) : handleEditLocalVariant(index)}
+                                onClick={() => {
+                                  if (editingProduct && isPersistedVariant(v)) {
+                                    handleEditVariantClick(v);
+                                  } else {
+                                    handleEditLocalVariant(index);
+                                  }
+                                }}
                                 className="p-1 text-gray-500 hover:text-primary transition cursor-pointer"
                               >
                                 <Edit2 className="size-3" />
                               </button>
                               <button
                                 type="button"
-                                onClick={() => editingProduct ? handleDeleteVariant(v.id) : handleDeleteLocalVariant(index)}
+                                onClick={() => {
+                                  if (editingProduct && isPersistedVariant(v)) {
+                                    handleDeleteVariant(v.id);
+                                  } else {
+                                    handleDeleteLocalVariant(index);
+                                  }
+                                }}
                                 className="p-1 text-gray-500 hover:text-red-500 transition cursor-pointer"
                               >
                                 <Trash2 className="size-3" />
@@ -4284,133 +4299,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               </div>
             </div>
           )}
-        </div>
-      );
-
-    case 'settings':
-      return (
-        <div className="max-w-2xl space-y-6 animate-fadeIn">
-          <div>
-            <h2 className="text-xl font-black">Cấu hình cửa hàng</h2>
-            <p className="text-sm font-semibold text-[var(--text-muted)]">Thiết lập thông tin cửa hàng hiển thị trên ứng dụng.</p>
-          </div>
-
-          <form onSubmit={handleUpdateSettings} className="rounded-2xl border border-[#EFEAE2] bg-white p-6 shadow-sm space-y-5">
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Tên cửa hàng *</label>
-              <input
-                type="text"
-                required
-                value={storeInfo?.name || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, name: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Số điện thoại liên hệ *</label>
-              <input
-                type="text"
-                required
-                value={storeInfo?.phone || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, phone: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Tỉnh / Thành phố *</label>
-              <input
-                type="text"
-                readOnly
-                value="Thành phố Hà Nội"
-                className="w-full cursor-not-allowed rounded-xl border border-[#EFEAE2] bg-gray-100 px-4 py-3 text-[15px] font-semibold text-gray-600"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Phường / Xã *</label>
-              <select
-                required
-                value={storeInfo?.wardCode || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    const ward = hanoiWards.find((item) => item.wardCode === e.target.value);
-                    setStoreInfo({
-                      ...storeInfo,
-                      wardCode: e.target.value,
-                      wardName: ward?.wardName || '',
-                    });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              >
-                <option value="">Chọn phường/xã tại Hà Nội</option>
-                {hanoiWards.map((ward) => (
-                  <option key={ward.wardCode} value={ward.wardCode}>
-                    {ward.wardName}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Số nhà, tên đường *</label>
-              <input
-                type="text"
-                required
-                value={storeInfo?.addressDetail || ''}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, addressDetail: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-[var(--text-main)]">Mô tả cửa hàng</label>
-              <textarea
-                value={storeInfo?.description || ''}
-                rows={3}
-                onChange={(e) => {
-                  if (storeInfo) {
-                    setStoreInfo({ ...storeInfo, description: e.target.value });
-                    setIsSaved(false);
-                  }
-                }}
-                className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] px-4 py-3 text-[15px] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            {isSaved && (
-              <div className="rounded-xl bg-green-50 p-3.5 text-sm font-bold text-green-700 animate-fadeIn">
-                Lưu cấu hình cửa hàng thành công!
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={submittingSettings}
-              className="w-full rounded-xl bg-[var(--primary-color)] py-3.5 font-bold text-white transition hover:bg-[#cf5017] flex items-center justify-center gap-2"
-            >
-              {submittingSettings && <Loader2 className="size-4 animate-spin text-white" />}
-              Lưu cấu hình
-            </button>
-          </form>
         </div>
       );
 

@@ -132,6 +132,41 @@ export class ShippingService {
   }
 
   /**
+   * Store is a singleton in PetMatching. Its Admin-managed profile is the
+   * single source of truth for every AhaMove pickup.
+   */
+  private async getStorePickupPoint() {
+    const store = await this.prisma.store.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        name: true,
+        phone: true,
+        address: true,
+      },
+    });
+
+    if (!store) {
+      throw new NotFoundException('Cửa hàng chưa được cấu hình.');
+    }
+
+    const name = store.name?.trim();
+    const phone = store.phone?.trim();
+    const address = store.address?.trim();
+    if (!name || !phone || !address) {
+      throw new BadRequestException(
+        'Vui lòng cập nhật đầy đủ tên, số điện thoại và địa chỉ cửa hàng trong trang Admin.',
+      );
+    }
+
+    return {
+      name,
+      phone,
+      address,
+      ...this.getDistrictCoordinates(address),
+    };
+  }
+
+  /**
    * Đẩy đơn hàng sang hệ thống AhaMove Sandbox (Giao hàng hỏa tốc nội thành)
    * Quản lý bấm nút "Gửi bên vận chuyển (AhaMove)" 1 lần duy nhất
    * @param orderId ID của đơn hàng cần giao hỏa tốc
@@ -159,6 +194,8 @@ export class ShippingService {
       };
     }
 
+    const pickup = await this.getStorePickupPoint();
+
     let ahamoveOrderCode = '';
     let isRealAhamoveCreated = false;
     const apiKey = process.env.AHAMOVE_API_KEY || 'sk_test_1oSlooJ79RRzEzAPV4xHQfEQEmuC0FYe';
@@ -176,11 +213,7 @@ export class ShippingService {
       const token = tokenData?.token;
 
       if (token) {
-        // 2. Tọa độ GPS cố định điểm lấy hàng Shop PetMatching (Bách Khoa - Hai Bà Trưng - Hà Nội)
-        const pickupAddress = 'Số 1 Đại Cổ Việt, Hai Bà Trưng, Hà Nội';
-        const pickupLat = 21.0069;
-        const pickupLng = 105.8432;
-
+        // 2. Điểm lấy hàng luôn dùng thông tin Store do Admin quản lý.
         // 3. Phân tích địa chỉ giao hàng động do khách tự chọn khi Checkout (Tách riêng địa chỉ sạch, tên và SĐT người nhận)
         const parsedAddress = this.parseShippingAddressHelper(order.shippingAddress || '');
         const dropoffAddress = parsedAddress.address || 'Số 100 Phố Huế, Hai Bà Trưng, Hà Nội';
@@ -210,11 +243,11 @@ export class ShippingService {
           ],
           path: [
             {
-              address: pickupAddress,
-              name: 'PetMatching Shop',
-              mobile: mobile,
-              lat: pickupLat,
-              lng: pickupLng,
+              address: pickup.address,
+              name: pickup.name,
+              mobile: pickup.phone,
+              lat: pickup.lat,
+              lng: pickup.lng,
             },
             {
               address: dropoffAddress,
@@ -510,7 +543,7 @@ export class ShippingService {
 
         if (token) {
           const detailRes = await fetch(`${baseUrl}/v3/orders/${order.ahamoveOrderCode}`, {
-            headers: { Authorization: `Bearer ${token}` },
+              headers: { Authorization: `Bearer ${token}` },
           });
 
           if (detailRes.ok) {
@@ -808,5 +841,4 @@ export class ShippingService {
     return { success: true, count: activeOrders.length, updated: updatedCount };
   }
 }
-
 

@@ -47,7 +47,6 @@ model User {
   spaFeedbacks            SpaFeedback[]
   managedSpaCategories    SpaCategory[]        @relation("SpaCategoryManager")
   spaStaffProfile         SpaStaff?            @relation("UserSpaStaffProfile")
-  managedStores           Store[]              @relation("StoreManager")
   passwordResetTokens     PasswordResetToken[]
   matchingReportsCreated  PetReport[]          @relation("MatchingReportReporter")
   matchingReportsReceived PetReport[]          @relation("MatchingReportSubject")
@@ -359,15 +358,12 @@ model Store {
   address     String?
   phone       String?
   status      ApprovalStatus @default(PENDING)
-  managerId   String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   orders      Order[]
   products    Product[]
-  manager     User?          @relation("StoreManager", fields: [managerId], references: [id])
 
   @@index([status])
-  @@index([managerId])
   @@map("stores")
 }
 

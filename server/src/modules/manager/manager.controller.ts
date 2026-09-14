@@ -7,7 +7,6 @@ import {
   Patch,
   Post,
   Put,
-  Req,
   UseGuards,
   UseInterceptors,
   UploadedFiles,
@@ -15,13 +14,19 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ManagerGuard } from '../../common/auth/manager.guard';
-import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
-import { Response } from 'express';
-import { UpdateStoreSettingsDto } from './dto/update-store-settings.dto';
+import type { Response } from 'express';
+import type {
+  CreateManagerProductInput,
+  ManagerProductVariantInput,
+  UpdateManagerProductInput,
+} from './dto/manager-product-input';
 import { ManagerService } from './manager.service';
 
 @UseGuards(JwtAuthGuard, ManagerGuard)
@@ -30,21 +35,8 @@ export class ManagerController {
   constructor(private readonly managerService: ManagerService) {}
 
   @Get('dashboard-stats')
-  getDashboardStats(@Req() req: AuthenticatedRequest) {
-    return this.managerService.getDashboardStats(req.user.id);
-  }
-
-  @Get('store-settings')
-  getStoreSettings(@Req() req: AuthenticatedRequest) {
-    return this.managerService.getStoreSettings(req.user.id);
-  }
-
-  @Put('store-settings')
-  updateStoreSettings(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: UpdateStoreSettingsDto,
-  ) {
-    return this.managerService.updateStoreSettings(req.user.id, dto);
+  getDashboardStats() {
+    return this.managerService.getDashboardStats();
   }
 
   @Get('products')
@@ -53,7 +45,7 @@ export class ManagerController {
   }
 
   @Post('products')
-  createProduct(@Body() dto: any) {
+  createProduct(@Body() dto: CreateManagerProductInput) {
     return this.managerService.createProduct(dto);
   }
 
@@ -80,7 +72,10 @@ export class ManagerController {
   }
 
   @Put('products/:id')
-  updateProduct(@Param('id') id: string, @Body() dto: any) {
+  updateProduct(
+    @Param('id') id: string,
+    @Body() dto: UpdateManagerProductInput,
+  ) {
     return this.managerService.updateProduct(id, dto);
   }
 
@@ -91,7 +86,7 @@ export class ManagerController {
 
   @Get('orders/export')
   async exportOrders(
-    @Res() res: any,
+    @Res() res: Response,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('onlyRefunded') onlyRefunded?: string,
@@ -115,17 +110,6 @@ export class ManagerController {
     return this.managerService.getOrders();
   }
 
-  @Post('orders/upload-delivery-proof')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-    }),
-  )
-  uploadDeliveryProof(@UploadedFile() file: Express.Multer.File) {
-    return this.managerService.uploadDeliveryProof(file);
-  }
-
   @Post('orders/upload-refund-proof')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -140,7 +124,8 @@ export class ManagerController {
   @Patch('orders/:id/status')
   updateOrderStatus(
     @Param('id') id: string,
-    @Body() dto: { status: string; deliveryProofUrl?: string; shippingNote?: string },
+    @Body()
+    dto: { status: string; deliveryProofUrl?: string; shippingNote?: string },
   ) {
     return this.managerService.updateOrderStatus(
       id,
@@ -199,7 +184,7 @@ export class ManagerController {
   @Post('products/:productId/variants')
   createProductVariant(
     @Param('productId') productId: string,
-    @Body() dto: any,
+    @Body() dto: ManagerProductVariantInput,
   ) {
     return this.managerService.createProductVariant(productId, dto);
   }
@@ -207,7 +192,7 @@ export class ManagerController {
   @Put('variants/:variantId')
   updateProductVariant(
     @Param('variantId') variantId: string,
-    @Body() dto: any,
+    @Body() dto: ManagerProductVariantInput,
   ) {
     return this.managerService.updateProductVariant(variantId, dto);
   }

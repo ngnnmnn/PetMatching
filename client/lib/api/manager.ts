@@ -20,7 +20,7 @@ export interface ManagerProduct {
   description?: string;
   imageUrl?: string;
   images?: string[];
-  specifications?: any;
+  specifications?: Record<string, unknown> | string | null;
   sellingPrice: number;
   importPrice?: number | null;
   salePrice?: number | null;
@@ -31,9 +31,32 @@ export interface ManagerProduct {
   sales?: number;
   isActive: boolean;
   isFeatured: boolean;
-  variants?: any[];
+  variants?: ManagerProductVariant[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ManagerProductVariantInput {
+  name: string;
+  sellingPrice: number;
+  salePrice?: number | null;
+  importPrice?: number | null;
+  stock: number;
+  imageUrl?: string | null;
+  isActive?: boolean;
+}
+
+export type ManagerProductInput = Partial<
+  Omit<ManagerProduct, 'id' | 'variants'>
+> & {
+  variants?: ManagerProductVariantInput[];
+};
+
+export interface ImportProductsResult {
+  success: boolean;
+  updatedCount: number;
+  createdCount: number;
+  errors: string[];
 }
 
 export interface ManagerOrder {
@@ -44,7 +67,9 @@ export interface ManagerOrder {
   customerPhoneSnapshot?: string | null;
   status: string;
   totalAmount: number;
+  shippingFee?: number;
   shippingAddress: string;
+  shippingStatus?: string | null;
   createdAt: string;
   user: {
     id: string | null;
@@ -69,6 +94,13 @@ export interface ManagerOrder {
   ahamoveOrderCode?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
+  payment?: {
+    id: string;
+    method: string;
+    status: string;
+    amount: number;
+    orderCode?: number | null;
+  } | null;
   refundStatus?: string | null;
   refundBankCode?: string | null;
   refundAccountNumber?: string | null;
@@ -101,60 +133,54 @@ export interface ManagerCustomer {
   }[];
 }
 
-export interface StoreSettings {
-  id?: string;
-  name: string;
-  phone?: string;
-  address?: string;
-  addressDetail?: string;
-  provinceId?: number;
-  provinceName?: string;
-  wardCode?: string;
-  wardName?: string;
-  description?: string;
-}
-
-export interface UpdateStoreSettingsInput {
-  name: string;
-  phone: string;
-  addressDetail: string;
-  wardCode: string;
-  description?: string;
-}
-
 export const managerApi = {
-  getDashboardStats: () => api.get<ManagerDashboardStats>('/manager/dashboard-stats'),
-  getStoreSettings: () => api.get<StoreSettings>('/manager/store-settings'),
-  updateStoreSettings: (data: UpdateStoreSettingsInput) =>
-    api.put<StoreSettings>('/manager/store-settings', data),
-
+  getDashboardStats: () =>
+    api.get<ManagerDashboardStats>('/manager/dashboard-stats'),
   getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
-  createProduct: (data: Partial<ManagerProduct>) => api.post<ManagerProduct>('/manager/products', data),
-  updateProduct: (id: string, data: Partial<ManagerProduct>) => api.put<ManagerProduct>(`/manager/products/${id}`, data),
+  createProduct: (data: ManagerProductInput) =>
+    api.post<ManagerProduct>('/manager/products', data),
+  updateProduct: (id: string, data: ManagerProductInput) =>
+    api.put<ManagerProduct>(`/manager/products/${id}`, data),
   deleteProduct: (id: string) => api.delete(`/manager/products/${id}`),
 
   getOrders: () => api.get<ManagerOrder[]>('/manager/orders'),
-  updateOrderStatus: (id: string, status: string, deliveryProofUrl?: string, shippingNote?: string) =>
-    api.patch<ManagerOrder>(`/manager/orders/${id}/status`, { status, deliveryProofUrl, shippingNote }),
-  uploadDeliveryProof: (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return api.post<{ url: string }>('/manager/orders/upload-delivery-proof', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-  },
+  updateOrderStatus: (
+    id: string,
+    status: string,
+    deliveryProofUrl?: string,
+    shippingNote?: string,
+  ) =>
+    api.patch<ManagerOrder>(`/manager/orders/${id}/status`, {
+      status,
+      deliveryProofUrl,
+      shippingNote,
+    }),
   uploadRefundProof: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post<{ url: string }>('/manager/orders/upload-refund-proof', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    return api.post<{ url: string }>(
+      '/manager/orders/upload-refund-proof',
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      },
+    );
   },
-  approveRefund: (id: string, refundProofUrl?: string) => api.post<any>(`/manager/orders/${id}/approve-refund`, { refundProofUrl }),
-  rejectRefund: (id: string) => api.post<any>(`/manager/orders/${id}/reject-refund`),
+  approveRefund: (id: string, refundProofUrl?: string) =>
+    api.post<unknown>(`/manager/orders/${id}/approve-refund`, {
+      refundProofUrl,
+    }),
+  rejectRefund: (id: string) =>
+    api.post<unknown>(`/manager/orders/${id}/reject-refund`),
   updateRefundProof: (id: string, refundProofUrl: string) =>
-    api.patch<ManagerOrder>(`/manager/orders/${id}/refund-proof`, { refundProofUrl }),
-  exportOrders: (params: { startDate?: string; endDate?: string; onlyRefunded?: boolean }) =>
+    api.patch<ManagerOrder>(`/manager/orders/${id}/refund-proof`, {
+      refundProofUrl,
+    }),
+  exportOrders: (params: {
+    startDate?: string;
+    endDate?: string;
+    onlyRefunded?: boolean;
+  }) =>
     api.get<Blob>('/manager/orders/export', {
       params,
       responseType: 'blob',
@@ -162,31 +188,50 @@ export const managerApi = {
 
   getCustomers: () => api.get<ManagerCustomer[]>('/manager/customers'),
 
-  createCategory: (data: { name: string }) => api.post<Category>('/manager/categories', data),
-  updateCategory: (id: string, data: { name: string }) => api.put<Category>(`/manager/categories/${id}`, data),
+  createCategory: (data: { name: string }) =>
+    api.post<Category>('/manager/categories', data),
+  updateCategory: (id: string, data: { name: string }) =>
+    api.put<Category>(`/manager/categories/${id}`, data),
   deleteCategory: (id: string) => api.delete(`/manager/categories/${id}`),
 
-
-  getProductVariants: (productId: string) => api.get<ManagerProductVariant[]>(`/manager/products/${productId}/variants`),
-  createProductVariant: (productId: string, data: Partial<ManagerProductVariant>) => api.post<ManagerProductVariant>(`/manager/products/${productId}/variants`, data),
-  updateProductVariant: (variantId: string, data: Partial<ManagerProductVariant>) => api.put<ManagerProductVariant>(`/manager/variants/${variantId}`, data),
-  deleteProductVariant: (variantId: string) => api.delete(`/manager/variants/${variantId}`),
+  getProductVariants: (productId: string) =>
+    api.get<ManagerProductVariant[]>(`/manager/products/${productId}/variants`),
+  createProductVariant: (productId: string, data: ManagerProductVariantInput) =>
+    api.post<ManagerProductVariant>(
+      `/manager/products/${productId}/variants`,
+      data,
+    ),
+  updateProductVariant: (
+    variantId: string,
+    data: Partial<ManagerProductVariantInput>,
+  ) => api.put<ManagerProductVariant>(`/manager/variants/${variantId}`, data),
+  deleteProductVariant: (variantId: string) =>
+    api.delete(`/manager/variants/${variantId}`),
 
   importProducts: (file: File, images: File[] = []) => {
     const formData = new FormData();
     formData.append('file', file);
     images.forEach((img) => {
-      const pathParts = (img as any).webkitRelativePath?.split('/');
-      const folderName = pathParts && pathParts.length >= 2 ? pathParts[pathParts.length - 2] : '';
+      const pathParts = (
+        img as File & { webkitRelativePath?: string }
+      ).webkitRelativePath?.split('/');
+      const folderName =
+        pathParts && pathParts.length >= 2
+          ? pathParts[pathParts.length - 2]
+          : '';
       if (folderName) {
         formData.append('images', img, `${folderName}_${img.name}`);
       } else {
         formData.append('images', img);
       }
     });
-    return api.post<any>('/manager/products/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    return api.post<ImportProductsResult>(
+      '/manager/products/import',
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      },
+    );
   },
 };
 
@@ -196,6 +241,7 @@ export interface ManagerProductVariant {
   name: string;
   sellingPrice: number;
   salePrice?: number | null;
+  importPrice?: number | null;
   stock: number;
   imageUrl?: string | null;
   isActive: boolean;
