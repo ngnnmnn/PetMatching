@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   Package,
+
   ShoppingBag,
   Store,
   Users,
@@ -19,6 +20,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 function ManagerNavigation() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
 
   const navGroups = [
     {

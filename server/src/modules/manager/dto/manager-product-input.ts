@@ -27,6 +27,10 @@ export interface CreateManagerProductInput {
   stock?: NumericInput;
   isActive?: boolean;
   isFeatured?: boolean;
+  /** Loại giảm giá dùng để đồng bộ giá khuyến mãi xuống các phân loại. */
+  discountType?: 'NONE' | 'AMOUNT' | 'PERCENT';
+  /** Giá trị tiền hoặc phần trăm giảm tương ứng với discountType. */
+  discountValue?: NumericInput;
   variants?: ManagerProductVariantInput[];
 }
 

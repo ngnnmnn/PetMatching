@@ -130,6 +130,14 @@ describe('ManagerService product ownership', () => {
       category: 'DOG_FOOD',
       sellingPrice: 120_000,
       stock: 10,
+      variants: [
+        {
+          name: 'Gói tiêu chuẩn',
+          importPrice: 100_000,
+          sellingPrice: 120_000,
+          stock: 10,
+        },
+      ],
     });
 
     expect(prisma.product.create).toHaveBeenCalledWith({

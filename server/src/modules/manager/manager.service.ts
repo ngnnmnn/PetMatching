@@ -167,6 +167,23 @@ export class ManagerService {
     const profitMargin =
       totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
+    // Thống kê phân bổ đơn hàng của cửa hàng theo 5 trạng thái chuẩn.
+    const [pendingCount, confirmedCount, shippedCount, deliveredCount, cancelledCount] = await Promise.all([
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'PENDING' } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CONFIRMED', 'PROCESSING', 'PACKED'] } } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'SHIPPED' } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'DELIVERED' } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] } } }),
+    ]);
+
+    const statusDistribution = {
+      PENDING: pendingCount,
+      CONFIRMED: confirmedCount,
+      SHIPPED: shippedCount,
+      DELIVERED: deliveredCount,
+      CANCELLED: cancelledCount,
+    };
+
     return {
       totalRevenue,
       totalOrders,
@@ -175,9 +192,13 @@ export class ManagerService {
       cancellationRate,
       totalProfit,
       profitMargin,
+      statusDistribution,
     };
   }
 
+  /**
+   * Lấy danh sách sản phẩm kèm thống kê số lượng đã bán của từng phân loại và sản phẩm, số lượng đánh giá
+   */
   async getProducts() {
     const storeId = await this.getConfiguredStoreId();
     const products = await this.prisma.product.findMany({
@@ -186,18 +207,38 @@ export class ManagerService {
       include: {
         orderItems: {
           where: { order: { status: { not: 'CANCELLED' } } },
-          select: { quantity: true },
+          select: { quantity: true, variantId: true },
         },
-        variants: true,
+        variants: {
+          include: {
+            orderItems: {
+              where: { order: { status: { not: 'CANCELLED' } } },
+              select: { quantity: true },
+            },
+          },
+        },
+        reviews: {
+          select: { id: true },
+        },
       },
     });
 
     return products.map((p) => {
-      const { orderItems, ...product } = p;
-      const sales = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+      const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+      const mappedVariants = p.variants.map((v) => {
+        const vSales = v.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+        const { orderItems, ...vRest } = v;
+        return {
+          ...vRest,
+          sales: vSales,
+        };
+      });
+      const { orderItems, ...rest } = p;
       return {
-        ...product,
+        ...rest,
+        variants: mappedVariants,
         sales,
+        reviewCount: p.reviews?.length || 0,
       };
     });
   }
@@ -246,29 +287,82 @@ export class ManagerService {
     }
   }
 
+  /**
+   * Tạo sản phẩm mới và chuẩn hóa dữ liệu các phân loại trước khi lưu.
+   */
   async createProduct(dto: CreateManagerProductInput) {
     const slug = this.generateSlug(dto.name);
     const id = await this.generateProductId();
     const storeId = await this.getConfiguredStoreId();
 
-    const sellingPrice = Number(dto.sellingPrice);
-    const importPrice = dto.importPrice ? Number(dto.importPrice) : null;
-    const salePrice = dto.salePrice ? Number(dto.salePrice) : null;
-    const stock =
-      dto.stock !== undefined && dto.stock !== null && dto.stock !== ''
-        ? Number(dto.stock)
-        : 0;
+    // Bắt buộc sản phẩm phải có ít nhất 1 phân loại
+    if (
+      !dto.variants ||
+      !Array.isArray(dto.variants) ||
+      dto.variants.length === 0
+    ) {
+      throw new BadRequestException('Sản phẩm phải có ít nhất 1 phân loại.');
+    }
 
-    this.validateProductPrices(sellingPrice, importPrice, salePrice, stock);
+    // Chuẩn hóa và xác thực dữ liệu từng phân loại
+    const processedVariants = dto.variants.map((v: any) => {
+      if (!v.name || !v.name.trim()) {
+        throw new BadRequestException('Tên phân loại không được để trống.');
+      }
+      const vImportPrice =
+        v.importPrice !== undefined &&
+        v.importPrice !== null &&
+        v.importPrice !== ''
+          ? Number(v.importPrice)
+          : null;
+      if (vImportPrice === null || isNaN(vImportPrice) || vImportPrice <= 0) {
+        throw new BadRequestException(
+          `Giá nhập của phân loại "${v.name}" phải là số lớn hơn 0.`,
+        );
+      }
+      // Nếu không nhập giá bán thì tự động gán giá bán = giá nhập
+      let vSellingPrice =
+        v.sellingPrice !== undefined &&
+        v.sellingPrice !== null &&
+        v.sellingPrice !== ''
+          ? Number(v.sellingPrice)
+          : vImportPrice;
+      if (isNaN(vSellingPrice) || vSellingPrice <= 0) {
+        vSellingPrice = vImportPrice;
+      }
+      const vSalePrice =
+        v.salePrice !== undefined &&
+        v.salePrice !== null &&
+        v.salePrice !== ''
+          ? Number(v.salePrice)
+          : null;
+      const vStock =
+        v.stock !== undefined && v.stock !== null && v.stock !== ''
+          ? Number(v.stock)
+          : 0;
 
-    const variantsInput = dto.variants ?? [];
-    const hasVariants = variantsInput.length > 0;
-    const finalStock = hasVariants
-      ? variantsInput.reduce(
-          (sum: number, v: any) => sum + Number(v.stock || 0),
-          0,
-        )
-      : stock;
+      return {
+        name: v.name.trim(),
+        importPrice: vImportPrice,
+        sellingPrice: vSellingPrice,
+        salePrice: vSalePrice,
+        stock: vStock,
+        imageUrl: v.imageUrl || null,
+        isActive: v.isActive !== undefined ? v.isActive : true,
+      };
+    });
+
+    // Tổng hợp tồn kho và khoảng giá từ các phân loại con
+    const finalStock = processedVariants.reduce((sum: number, v: any) => sum + v.stock, 0);
+    const sellingPrice = Math.min(...processedVariants.map((v: any) => v.sellingPrice));
+    const importPrices = processedVariants
+      .map((v: any) => v.importPrice)
+      .filter((ip: any): ip is number => ip !== null);
+    const importPrice = importPrices.length > 0 ? Math.min(...importPrices) : null;
+    const salePrices = processedVariants
+      .map((v: any) => v.salePrice)
+      .filter((sp: any): sp is number => sp !== null);
+    const salePrice = salePrices.length > 0 ? Math.min(...salePrices) : null;
 
     const created = await this.prisma.product.create({
       data: {
@@ -279,7 +373,7 @@ export class ManagerService {
         category: dto.category,
         targetSpecies: dto.targetSpecies || 'ALL',
         description: dto.description || '',
-        imageUrl: dto.imageUrl || '',
+        imageUrl: dto.imageUrl || processedVariants[0]?.imageUrl || '',
         images: dto.images || [],
         specifications: dto.specifications || {},
         sellingPrice,
@@ -289,23 +383,9 @@ export class ManagerService {
         stock: finalStock,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
         isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : false,
-        variants: hasVariants
-          ? {
-              create: variantsInput.map((variant) => ({
-                name: variant.name,
-                sellingPrice: Number(variant.sellingPrice),
-                salePrice: variant.salePrice
-                  ? Number(variant.salePrice)
-                  : null,
-                importPrice: variant.importPrice
-                  ? Number(variant.importPrice)
-                  : null,
-                stock: Number(variant.stock || 0),
-                imageUrl: variant.imageUrl || null,
-                isActive: true,
-              })),
-            }
-          : undefined,
+        variants: {
+          create: processedVariants,
+        },
       },
     });
 
@@ -313,6 +393,9 @@ export class ManagerService {
     return created;
   }
 
+  /**
+   * Cập nhật thông tin sản phẩm và đồng bộ lại các phân loại.
+   */
   async updateProduct(id: string, dto: UpdateManagerProductInput) {
     const existing = await this.prisma.product.findUnique({
       where: { id },
@@ -358,12 +441,33 @@ export class ManagerService {
         ? variants.reduce((sum, v) => sum + v.stock, 0)
         : stock;
 
-    this.validateProductPrices(
-      sellingPrice,
-      importPrice,
-      salePrice,
-      finalStock,
-    );
+    // Đồng bộ khuyến mãi xuống toàn bộ phân loại con nếu có thiết lập khuyến mãi
+    if (dto.discountType !== undefined && variants.length > 0) {
+      if (dto.discountType === 'NONE') {
+        await this.prisma.productVariant.updateMany({
+          where: { productId: id },
+          data: { salePrice: null },
+        });
+      } else if (dto.discountType === 'PERCENT' && dto.discountValue) {
+        const pct = Math.min(100, Math.max(0, Number(dto.discountValue)));
+        for (const v of variants) {
+          const discounted = Math.max(1, Math.round((v.sellingPrice * (100 - pct)) / 100));
+          await this.prisma.productVariant.update({
+            where: { id: v.id },
+            data: { salePrice: discounted },
+          });
+        }
+      } else if (dto.discountType === 'AMOUNT' && dto.discountValue) {
+        const amt = Math.max(0, Number(dto.discountValue));
+        for (const v of variants) {
+          const discounted = Math.max(1, v.sellingPrice - amt);
+          await this.prisma.productVariant.update({
+            where: { id: v.id },
+            data: { salePrice: discounted },
+          });
+        }
+      }
+    }
 
     const updated = await this.prisma.product.update({
       where: { id },
@@ -488,12 +592,24 @@ export class ManagerService {
     return { url: result.url };
   }
 
+  /**
+   * Cập nhật trạng thái đơn hàng từ trang quản lý Store Manager.
+   * Quy tắc nghiệp vụ: Tuyệt đối không cho phép chuyển thủ công sang trạng thái DELIVERED (Đã nhận hàng / Giao thành công).
+   * Trạng thái DELIVERED bắt buộc phải được kích hoạt tự động từ hệ thống vận chuyển AhaMove Sandbox khi tài xế giao hoàn tất.
+   */
   async updateOrderStatus(
     id: string,
     status: string,
     deliveryProofUrl?: string,
     shippingNote?: string,
   ) {
+    // Không cho phép Manager chuyển trạng thái sang DELIVERED (Đã nhận hàng)
+    if (status === 'DELIVERED') {
+      throw new BadRequestException(
+        'Không thể chuyển thủ công sang trạng thái Đã nhận hàng (DELIVERED) từ trang của Manager. Trạng thái này chỉ được cập nhật tự động từ hệ thống AhaMove Sandbox khi tài xế hoàn tất giao hàng.',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id },
@@ -501,6 +617,13 @@ export class ManagerService {
       });
       if (!order) {
         throw new NotFoundException('Không tìm thấy đơn hàng.');
+      }
+
+      // Nếu đơn hàng đã hoàn tất (DELIVERED) qua AhaMove, không cho phép thay đổi trạng thái từ Manager
+      if (order.status === 'DELIVERED') {
+        throw new BadRequestException(
+          'Đơn hàng đã ở trạng thái Giao hàng thành công (DELIVERED) từ AhaMove và không thể chỉnh sửa trạng thái nữa.',
+        );
       }
 
       // If transition to CANCELLED from a non-CANCELLED state
@@ -658,9 +781,17 @@ export class ManagerService {
     });
   }
 
+  /**
+   * Lấy danh sách khách hàng đã từng mua hàng, ẩn email, chuẩn hóa sđt ******1234
+   */
   async getCustomers() {
     const users = await this.prisma.user.findMany({
-      where: { role: 'USER' },
+      where: {
+        role: 'USER',
+        orders: {
+          some: {},
+        },
+      },
       include: {
         orders: {
           include: {
@@ -687,17 +818,22 @@ export class ManagerService {
       const totalOrders = completedOrders.length;
       const totalCancelled = cancelledOrders.length;
       const spent = completedOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-      const isNewCustomer = u.orders.length === 0;
+
+      // Định dạng số điện thoại ẩn thành ******1234
+      let maskedPhone = 'N/A';
+      if (u.phone && u.phone.trim()) {
+        const clean = u.phone.replace(/\s+/g, '');
+        const last4 = clean.slice(-4);
+        maskedPhone = `******${last4}`;
+      }
 
       return {
         id: u.id,
         name: u.name,
-        email: u.email,
-        phone: u.phone || 'N/A',
+        phone: maskedPhone,
         totalOrders,
         totalCancelled,
         spent,
-        isNewCustomer,
         orders: u.orders.map((o) => ({
           id: o.id,
           status: o.status,
@@ -1470,13 +1606,6 @@ export class ManagerService {
         .map((i) => `${i.product?.name || 'Sản phẩm'} (x${i.quantity})`)
         .join(', ');
 
-      let orderProfit = 0;
-      for (const i of o.items) {
-        const soldPrice = i.price;
-        const importPrice = i.product?.importPrice ?? soldPrice * 0.5;
-        orderProfit += (soldPrice - importPrice) * i.quantity;
-      }
-
       // Nhãn tiếng Việt tương ứng cho báo cáo đơn hàng (chuẩn AhaMove mới)
       const statusLabels: Record<string, string> = {
         PENDING: 'Xác nhận',
@@ -1495,7 +1624,6 @@ export class ManagerService {
         'Ngày đặt': new Date(o.createdAt).toLocaleDateString('vi-VN'),
         'Sản phẩm': itemsList,
         'Tổng thanh toán': o.totalAmount,
-        'Lợi nhuận đơn': orderProfit,
         'Trạng thái': statusLabels[o.status] || o.status,
         'Ghi chú vận chuyển': o.shippingNote || '',
         'STK Nhận hoàn tiền': o.refundAccountNumber || '',

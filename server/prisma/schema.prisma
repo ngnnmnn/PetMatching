@@ -805,6 +805,7 @@ enum AccountStatus {
 
 enum OrderStatus {
   PENDING
+  CONFIRMED
   PACKED
   PROCESSING
   SHIPPED

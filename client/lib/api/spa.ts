@@ -1,20 +1,15 @@
 import api from '@/lib/axios';
-import { SpaBranchType, SpaServiceType, SpaBookingType, AddressSpaType, SpaStaffProfileType } from '@/types';
+import {
+  SpaBranchType,
+  SpaServiceType,
+  SpaBookingType,
+  AddressSpaType,
+  SpaStaffProfileType,
+  CreateBookingData,
+} from '@/types';
 
-export interface CreateBookingData {
-  branchId?: string;
-  addressSpaId?: string;
-  serviceId?: string;
-  mainServiceId?: string;
-  subServiceIds?: string[];
-  petName?: string;
-  petSpecies?: 'DOG' | 'CAT';
-  petWeight?: number;
-  petId?: string;
-  staffId?: string;
-  scheduledAt: string;
-  note?: string;
-}
+export type { CreateBookingData };
+
 
 export const spaApi = {
   getCategories: () => api.get<any[]>('/spa/categories'),
@@ -65,14 +60,21 @@ export const spaApi = {
   notifyManagerCustomerLate: (id: string) => api.post<any>(`/spa/staff/bookings/${id}/notify-late`),
 
   // Spa Manager API Methods
+  /** Quản lý Spa lấy danh mục dịch vụ */
+  getManagerServices: () => api.get<any[]>('/spa/manager/services'),
   getManagerBranches: () => api.get<AddressSpaType[]>('/spa/manager/branches'),
   getManagerCategories: () => api.get<any[]>('/spa/manager/categories'),
   createManagerCategory: (data: any) => api.post<any>('/spa/manager/categories', data),
   updateManagerCategory: (id: string, data: any) => api.patch<any>(`/spa/manager/categories/${id}`, data),
   deleteManagerCategory: (id: string) => api.delete<any>(`/spa/manager/categories/${id}`),
-  getManagerBrands: () => api.get<any[]>('/spa/manager/brands'),
-  getManagerDashboardStats: (branchId: string) => api.get<any>(`/spa/manager/dashboard-stats?branchId=${branchId}`),
-  getManagerServices: () => api.get<any[]>('/spa/manager/services'),
+  getManagerDashboardStats: (branchId: string, params?: { range?: string; from?: string; to?: string }) => {
+    const query = new URLSearchParams();
+    if (branchId) query.append('branchId', branchId);
+    if (params?.range) query.append('range', params.range);
+    if (params?.from) query.append('from', params.from);
+    if (params?.to) query.append('to', params.to);
+    return api.get<any>(`/spa/manager/dashboard-stats?${query.toString()}`);
+  },
   createManagerService: (data: any) => api.post<any>('/spa/manager/services', data),
   updateManagerService: (id: string, data: any) => api.patch<any>(`/spa/manager/services/${id}`, data),
   getManagerBookings: (branchId: string) => api.get<any[]>(`/spa/manager/bookings?branchId=${branchId}`),

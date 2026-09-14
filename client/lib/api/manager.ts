@@ -1,5 +1,5 @@
 import api from '@/lib/axios';
-import { Category } from '@/types';
+import { Category, Product, Order } from '@/types';
 
 export interface ManagerDashboardStats {
   totalRevenue: number;
@@ -7,15 +7,19 @@ export interface ManagerDashboardStats {
   totalProductsSold: number;
   totalCustomers: number;
   cancellationRate: number;
-  totalProfit?: number;
-  profitMargin?: number;
+  statusDistribution?: {
+    PENDING: number;
+    CONFIRMED: number;
+    SHIPPED: number;
+    DELIVERED: number;
+    CANCELLED: number;
+  };
 }
 
-export interface ManagerProduct {
-  id: string;
-  name: string;
-  slug?: string;
-  category: string;
+/**
+ * Kiểu dữ liệu sản phẩm quản lý cho Store Manager (kế thừa từ Product chung)
+ */
+export interface ManagerProduct extends Omit<Product, 'variants' | 'targetSpecies' | 'reviewCount' | 'images' | 'rating' | 'specifications'> {
   targetSpecies: string;
   description?: string;
   imageUrl?: string;
@@ -32,8 +36,8 @@ export interface ManagerProduct {
   isActive: boolean;
   isFeatured: boolean;
   variants?: ManagerProductVariant[];
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ManagerProductVariantInput {
@@ -50,6 +54,8 @@ export type ManagerProductInput = Partial<
   Omit<ManagerProduct, 'id' | 'variants'>
 > & {
   variants?: ManagerProductVariantInput[];
+  discountType?: 'NONE' | 'AMOUNT' | 'PERCENT';
+  discountValue?: number;
 };
 
 export interface ImportProductsResult {
@@ -59,18 +65,11 @@ export interface ImportProductsResult {
   errors: string[];
 }
 
-export interface ManagerOrder {
-  id: string;
-  userId: string | null;
-  customerNameSnapshot?: string | null;
-  customerEmailSnapshot?: string | null;
-  customerPhoneSnapshot?: string | null;
+/**
+ * Kiểu dữ liệu đơn hàng cho Store Manager (kế thừa từ Order chung)
+ */
+export interface ManagerOrder extends Omit<Order, 'user' | 'items' | 'status' | 'payment'> {
   status: string;
-  totalAmount: number;
-  shippingFee?: number;
-  shippingAddress: string;
-  shippingStatus?: string | null;
-  createdAt: string;
   user: {
     id: string | null;
     name: string;
@@ -109,6 +108,7 @@ export interface ManagerOrder {
   refundedAt?: string | null;
   refundProofUrl?: string | null;
 }
+
 
 export interface ManagerCustomer {
   id: string;
@@ -243,6 +243,7 @@ export interface ManagerProductVariant {
   salePrice?: number | null;
   importPrice?: number | null;
   stock: number;
+  sales?: number;
   imageUrl?: string | null;
   isActive: boolean;
   createdAt?: string;

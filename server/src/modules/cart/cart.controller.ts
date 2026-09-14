@@ -27,8 +27,11 @@ type AuthenticatedRequest = {
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 
+  /**
+   * Lấy danh sách sản phẩm trong giỏ hàng của người dùng đang đăng nhập
+   */
   @Get()
-  getCart(@Req() req: AuthenticatedRequest) {
+  async getCart(@Req() req: AuthenticatedRequest) {
     return this.cartService.getCart(req.user.id);
   }
 

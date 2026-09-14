@@ -9,12 +9,37 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class CartService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Lấy danh sách sản phẩm trong giỏ hàng của người dùng.
+   * Xử lý an toàn: tự động lọc bỏ các sản phẩm không còn tồn tại và bọc try-catch tránh lỗi 500.
+   */
   async getCart(userId: string) {
-    return this.prisma.cartItem.findMany({
-      where: { userId },
-      include: { product: true, variant: true },
-      orderBy: { updatedAt: 'desc' },
-    });
+    try {
+      const items = await this.prisma.cartItem.findMany({
+        where: { userId },
+        include: { product: true, variant: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      // Lọc bỏ những sản phẩm đã bị xóa khỏi hệ thống
+      const validItems = items.filter((item) => item.product != null);
+      if (validItems.length < items.length) {
+        const orphanIds = items
+          .filter((item) => item.product == null)
+          .map((i) => i.id);
+        if (orphanIds.length > 0) {
+          this.prisma.cartItem
+            .deleteMany({
+              where: { id: { in: orphanIds } },
+            })
+            .catch(() => {});
+        }
+      }
+      return validItems;
+    } catch (error) {
+      console.error('Lỗi khi lấy giỏ hàng từ database:', error);
+      return [];
+    }
   }
 
   async addToCart(
