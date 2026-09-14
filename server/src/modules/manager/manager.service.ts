@@ -7,11 +7,20 @@ import * as XLSX from 'xlsx';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
-import { NotificationCategory, NotificationEventType } from '@prisma/client';
+import { findConfiguredStoreId } from '../../common/store.utils';
+import {
+  NotificationCategory,
+  NotificationEventType,
+  OrderStatus,
+  Prisma,
+} from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
-import { HANOI_WARDS } from '../matching/hanoi-wards';
-import { UpdateStoreSettingsDto } from './dto/update-store-settings.dto';
+import type {
+  CreateManagerProductInput,
+  ManagerProductVariantInput,
+  UpdateManagerProductInput,
+} from './dto/manager-product-input';
 
 @Injectable()
 export class ManagerService {
@@ -21,84 +30,44 @@ export class ManagerService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  private serializeStoreSettings(store: {
-    id: string;
-    name: string;
-    phone: string | null;
-    address: string | null;
-    description: string | null;
-  }) {
-    const address = store.address?.trim() || '';
-    const ward = HANOI_WARDS.find(({ name }) => address.includes(name));
-    const wardPosition = ward ? address.lastIndexOf(ward.name) : -1;
-    const addressDetail =
-      wardPosition >= 0
-        ? address.slice(0, wardPosition).replace(/,\s*$/, '').trim()
-        : address;
-
-    return {
-      ...store,
-      address,
-      addressDetail,
-      provinceId: 1,
-      provinceName: 'Thành phố Hà Nội',
-      wardCode: ward?.wardCode || '',
-      wardName: ward?.name || '',
-    };
-  }
-
-  async getStoreSettings(managerId: string) {
-    const store = await this.getOrCreateStore(managerId);
-    return this.serializeStoreSettings(store);
-  }
-
-  async updateStoreSettings(managerId: string, dto: UpdateStoreSettingsDto) {
-    const ward = HANOI_WARDS.find(({ wardCode }) => wardCode === dto.wardCode);
-    if (!ward) {
-      throw new BadRequestException(
-        'Mã phường/xã không thuộc danh sách 126 phường/xã Hà Nội.',
-      );
+  private async getConfiguredStoreId() {
+    const storeId = await findConfiguredStoreId(this.prisma);
+    if (!storeId) {
+      throw new BadRequestException('Cửa hàng chưa được cấu hình.');
     }
-
-    const store = await this.getOrCreateStore(managerId);
-    const updatedStore = await this.prisma.store.update({
-      where: { id: store.id },
-      data: {
-        name: dto.name.trim(),
-        phone: dto.phone.trim(),
-        address: `${dto.addressDetail.trim()}, ${ward.name}, Thành phố Hà Nội`,
-        description: dto.description?.trim() || null,
-      },
-    });
-
-    return this.serializeStoreSettings(updatedStore);
+    return storeId;
   }
 
-
-
-  private async syncProductWithVariants(productId: string, customTx?: any) {
-    const client = customTx || this.prisma;
+  private async syncProductWithVariants(
+    productId: string,
+    transaction?: Prisma.TransactionClient,
+  ) {
+    const client = transaction ?? this.prisma;
     const variants = await client.productVariant.findMany({
       where: { productId },
     });
 
-    if (!variants || variants.length === 0) return;
+    if (variants.length === 0) return;
 
-    const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stock || 0), 0);
+    const totalStock = variants.reduce((sum, variant) => sum + variant.stock, 0);
 
     let minVariant = variants[0];
-    let minEffectivePrice = (minVariant.salePrice !== null && minVariant.salePrice !== undefined && minVariant.salePrice < minVariant.sellingPrice)
+    let minEffectivePrice =
+      minVariant.salePrice !== null &&
+      minVariant.salePrice < minVariant.sellingPrice
       ? minVariant.salePrice
       : minVariant.sellingPrice;
 
     for (let i = 1; i < variants.length; i++) {
-      const v = variants[i];
-      const eff = (v.salePrice !== null && v.salePrice !== undefined && v.salePrice < v.sellingPrice)
-        ? v.salePrice
-        : v.sellingPrice;
-      if (eff < minEffectivePrice) {
-        minEffectivePrice = eff;
-        minVariant = v;
+      const variant = variants[i];
+      const effectivePrice =
+        variant.salePrice !== null &&
+        variant.salePrice < variant.sellingPrice
+          ? variant.salePrice
+          : variant.sellingPrice;
+      if (effectivePrice < minEffectivePrice) {
+        minEffectivePrice = effectivePrice;
+        minVariant = variant;
       }
     }
 
@@ -108,17 +77,11 @@ export class ManagerService {
         stock: totalStock,
         sellingPrice: minVariant.sellingPrice,
         salePrice: minVariant.salePrice,
-        ...(minVariant.importPrice ? { importPrice: minVariant.importPrice } : {}),
+        ...(minVariant.importPrice !== null
+          ? { importPrice: minVariant.importPrice }
+          : {}),
       },
     });
-  }
-
-  private async syncProductStock(productId: string) {
-    return this.syncProductWithVariants(productId);
-  }
-
-  private async syncProductStockTx(tx: any, productId: string) {
-    return this.syncProductWithVariants(productId, tx);
   }
 
   private generateSlug(name: string): string {
@@ -151,66 +114,66 @@ export class ManagerService {
     );
   }
 
-  async getOrCreateStore(managerId: string) {
-    let store = await this.prisma.store.findFirst({
-      where: { managerId },
-    });
-    if (!store) {
-      store = await this.prisma.store.create({
-        data: {
-          name: 'Cửa hàng PetMatching Hà Nội',
-          phone: '0987654321',
-          address: 'Số 1 Tràng Tiền, Phường Hoàn Kiếm, Thành phố Hà Nội',
-          status: 'ACTIVE',
-          managerId,
+  async getDashboardStats() {
+    const storeId = await this.getConfiguredStoreId();
+    const revenueOrderWhere = recognizedStoreRevenueWhere(storeId);
+    const storeOrderWhere: Prisma.OrderWhereInput = { storeId };
+
+    const [
+      revenueSum,
+      totalOrders,
+      cancelledOrders,
+      itemsSold,
+      totalCustomers,
+      orderItems,
+    ] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: revenueOrderWhere,
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.order.count({ where: storeOrderWhere }),
+      this.prisma.order.count({
+        where: { ...storeOrderWhere, status: 'CANCELLED' },
+      }),
+      this.prisma.orderItem.aggregate({
+        where: { order: { storeId, payment: { status: 'PAID' } } },
+        _sum: { quantity: true },
+      }),
+      this.prisma.user.count({
+        where: { role: 'USER' },
+      }),
+      this.prisma.orderItem.findMany({
+        where: { order: revenueOrderWhere },
+        select: {
+          quantity: true,
+          price: true,
+          product: { select: { importPrice: true } },
         },
-      });
-    }
-    return store;
-  }
+      }),
+    ]);
 
-  async getDashboardStats(managerId: string) {
-    const store = await this.prisma.store.findFirst({
-      where: { managerId },
-      select: { id: true },
-    });
-    const revenueOrderWhere = recognizedStoreRevenueWhere(store?.id);
-    const revenueSum = await this.prisma.order.aggregate({
-      where: revenueOrderWhere,
-      _sum: { totalAmount: true },
-    });
     const totalRevenue = revenueSum._sum.totalAmount ?? 0;
-
-    // Total orders
-    const totalOrders = await this.prisma.order.count();
-
-    // Cancelled orders count
-    const cancelledOrders = await this.prisma.order.count({
-      where: { status: 'CANCELLED' },
-    });
-
     const cancellationRate =
       totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
-
-    // Total products sold: sum order item quantities where order status is not CANCELLED
-    const itemsSold = await this.prisma.orderItem.aggregate({
-      where: { order: { payment: { status: 'PAID' } } },
-      _sum: { quantity: true },
-    });
     const totalProductsSold = itemsSold._sum.quantity ?? 0;
 
-    // Total customers (chỉ tính user có role USER)
-    const totalCustomers = await this.prisma.user.count({
-      where: { role: 'USER' },
-    });
+    let totalProfit = 0;
+    for (const item of orderItems) {
+      const soldPrice = item.price;
+      const importPrice = item.product?.importPrice ?? soldPrice * 0.5;
+      totalProfit += (soldPrice - importPrice) * item.quantity;
+    }
 
-    // Thống kê phân bổ đơn hàng theo 5 trạng thái chuẩn (quy đổi trạng thái cũ nếu có để tổng luôn đạt 100%)
+    const profitMargin =
+      totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+    // Thống kê phân bổ đơn hàng của cửa hàng theo 5 trạng thái chuẩn.
     const [pendingCount, confirmedCount, shippedCount, deliveredCount, cancelledCount] = await Promise.all([
-      this.prisma.order.count({ where: { status: 'PENDING' } }),
-      this.prisma.order.count({ where: { status: { in: ['CONFIRMED', 'PROCESSING', 'PACKED'] } } }),
-      this.prisma.order.count({ where: { status: 'SHIPPED' } }),
-      this.prisma.order.count({ where: { status: 'DELIVERED' } }),
-      this.prisma.order.count({ where: { status: { in: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] } } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'PENDING' } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CONFIRMED', 'PROCESSING', 'PACKED'] } } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'SHIPPED' } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'DELIVERED' } }),
+      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] } } }),
     ]);
 
     const statusDistribution = {
@@ -227,6 +190,8 @@ export class ManagerService {
       totalProductsSold,
       totalCustomers,
       cancellationRate,
+      totalProfit,
+      profitMargin,
       statusDistribution,
     };
   }
@@ -235,7 +200,9 @@ export class ManagerService {
    * Lấy danh sách sản phẩm kèm thống kê số lượng đã bán của từng phân loại và sản phẩm, số lượng đánh giá
    */
   async getProducts() {
+    const storeId = await this.getConfiguredStoreId();
     const products = await this.prisma.product.findMany({
+      where: { storeId },
       orderBy: { createdAt: 'desc' },
       include: {
         orderItems: {
@@ -321,18 +288,12 @@ export class ManagerService {
   }
 
   /**
-   * Tạo mới sản phẩm: Bắt buộc phải có ít nhất 1 phân loại, tính giá bán và tồn kho từ phân loại con
+   * Tạo sản phẩm mới và chuẩn hóa dữ liệu các phân loại trước khi lưu.
    */
-  async createProduct(dto: any) {
+  async createProduct(dto: CreateManagerProductInput) {
     const slug = this.generateSlug(dto.name);
     const id = await this.generateProductId();
-    const store = await this.prisma.store.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
-    if (!store) {
-      throw new BadRequestException('Cửa hàng chưa được cấu hình.');
-    }
+    const storeId = await this.getConfiguredStoreId();
 
     // Bắt buộc sản phẩm phải có ít nhất 1 phân loại
     if (
@@ -406,7 +367,7 @@ export class ManagerService {
     const created = await this.prisma.product.create({
       data: {
         id,
-        storeId: store.id,
+        storeId,
         name: dto.name,
         slug,
         category: dto.category,
@@ -433,9 +394,9 @@ export class ManagerService {
   }
 
   /**
-   * Cập nhật thông tin sản phẩm và đồng bộ lại phân loại
+   * Cập nhật thông tin sản phẩm và đồng bộ lại các phân loại.
    */
-  async updateProduct(id: string, dto: any) {
+  async updateProduct(id: string, dto: UpdateManagerProductInput) {
     const existing = await this.prisma.product.findUnique({
       where: { id },
       select: {
@@ -517,7 +478,8 @@ export class ManagerService {
         description: dto.description,
         imageUrl: dto.imageUrl,
         images: dto.images,
-        specifications: dto.specifications,
+        specifications:
+          dto.specifications === null ? Prisma.DbNull : dto.specifications,
         sellingPrice,
         importPrice,
         salePrice,
@@ -564,7 +526,9 @@ export class ManagerService {
   }
 
   async getOrders() {
+    const storeId = await this.getConfiguredStoreId();
     const orders = await this.prisma.order.findMany({
+      where: { storeId },
       orderBy: { createdAt: 'desc' },
       include: {
         payment: true,
@@ -615,17 +579,6 @@ export class ManagerService {
               }
             : null),
       }));
-  }
-
-  async uploadDeliveryProof(file: Express.Multer.File): Promise<{ url: string }> {
-    if (!file) {
-      throw new BadRequestException('Không có file ảnh nào được gửi lên.');
-    }
-    const result = await this.cloudinaryService.uploadBuffer(
-      file.buffer,
-      'petmatching/delivery_proofs',
-    );
-    return { url: result.url };
   }
 
   async uploadRefundProof(file: Express.Multer.File): Promise<{ url: string }> {
@@ -685,7 +638,7 @@ export class ManagerService {
                 },
               },
             });
-            await this.syncProductStockTx(tx, item.productId);
+            await this.syncProductWithVariants(item.productId, tx);
           } else {
             await tx.product.update({
               where: { id: item.productId },
@@ -741,7 +694,7 @@ export class ManagerService {
                 },
               },
             });
-            await this.syncProductStockTx(tx, item.productId);
+            await this.syncProductWithVariants(item.productId, tx);
           } else {
             const product = await tx.product.findUnique({
               where: { id: item.productId },
@@ -771,7 +724,9 @@ export class ManagerService {
         }
       }
 
-      const updateData: any = { status: status as any };
+      const updateData: Prisma.OrderUpdateInput = {
+        status: status as OrderStatus,
+      };
       if (deliveryProofUrl !== undefined) {
         updateData.deliveryProofUrl = deliveryProofUrl;
       }
@@ -1052,7 +1007,7 @@ export class ManagerService {
           });
         }
 
-        const updateData: any = {
+        const updateData: Prisma.OrderUpdateInput = {
           status: 'CANCELLED',
           refundStatus: 'REFUNDED',
           refundedAt: new Date(),
@@ -1141,7 +1096,7 @@ export class ManagerService {
     let workbook;
     try {
       workbook = XLSX.read(file.buffer, { type: 'buffer' });
-    } catch (e) {
+    } catch {
       throw new BadRequestException(
         'File không đúng định dạng Excel (.xlsx hoặc .xls).',
       );
@@ -1157,13 +1112,7 @@ export class ManagerService {
       );
     }
 
-    const store = await this.prisma.store.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
-    if (!store) {
-      throw new BadRequestException('Cửa hàng chưa được cấu hình.');
-    }
+    const storeId = await this.getConfiguredStoreId();
 
     let updatedCount = 0;
     let createdCount = 0;
@@ -1268,7 +1217,7 @@ export class ManagerService {
             }
           }
           specifications = obj;
-        } catch (e) {
+        } catch {
           errors.push(
             `Dòng ${rowNum}: Cảnh báo: Lỗi định dạng thông số kỹ thuật (Cần dạng: Thuộc tính 1: Giá trị 1, Thuộc tính 2: Giá trị 2).`,
           );
@@ -1537,7 +1486,7 @@ export class ManagerService {
           const newProduct = await this.prisma.product.create({
             data: {
               id: newId,
-              storeId: store.id,
+              storeId,
               name: productName,
               slug: generatedSlug,
               category: categorySlug,
@@ -1586,8 +1535,9 @@ export class ManagerService {
     startDate?: string;
     endDate?: string;
     onlyRefunded?: boolean;
-  }) {
-    const where: any = {};
+  }): Promise<Buffer> {
+    const storeId = await this.getConfiguredStoreId();
+    const where: Prisma.OrderWhereInput = { storeId };
 
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};
@@ -1648,7 +1598,7 @@ export class ManagerService {
           phone = parsed.phone || phone;
           address = `${parsed.address}, ${parsed.ward}, ${parsed.district}, ${parsed.province}`;
         }
-      } catch (e) {
+      } catch {
         // use raw address
       }
 
@@ -1691,7 +1641,10 @@ export class ManagerService {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh sách đơn hàng');
 
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = XLSX.write(workbook, {
+      type: 'buffer',
+      bookType: 'xlsx',
+    }) as Buffer;
     return buffer;
   }
 
@@ -1704,7 +1657,10 @@ export class ManagerService {
 
 
 
-  async createProductVariant(productId: string, dto: any) {
+  async createProductVariant(
+    productId: string,
+    dto: ManagerProductVariantInput,
+  ) {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });
@@ -1751,11 +1707,14 @@ export class ManagerService {
       },
     });
 
-    await this.syncProductStock(productId);
+    await this.syncProductWithVariants(productId);
     return variant;
   }
 
-  async updateProductVariant(variantId: string, dto: any) {
+  async updateProductVariant(
+    variantId: string,
+    dto: ManagerProductVariantInput,
+  ) {
     const existing = await this.prisma.productVariant.findUnique({
       where: { id: variantId },
     });
@@ -1822,7 +1781,7 @@ export class ManagerService {
       },
     });
 
-    await this.syncProductStock(existing.productId);
+    await this.syncProductWithVariants(existing.productId);
     return variant;
   }
 
@@ -1839,7 +1798,7 @@ export class ManagerService {
         where: { id: variantId },
       });
 
-      await this.syncProductStock(existing.productId);
+      await this.syncProductWithVariants(existing.productId);
       return deleted;
     } catch (error) {
       console.error(`Lỗi khi xóa biến thể ${variantId}:`, error);
