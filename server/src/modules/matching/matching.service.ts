@@ -30,6 +30,7 @@ import {
 } from './dto/report-match.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { getHanoiWardCoords } from './hanoi-wards';
+import { OsrmService } from './osrm.service';
 import {
   isPetMatchingWeightEligible,
   PET_WEIGHT_LIMITS,
@@ -104,6 +105,7 @@ export class MatchingService {
     private prisma: PrismaService,
     private readonly cloudinary: CloudinaryService,
     private readonly notifications: NotificationsService,
+    private readonly osrmService?: OsrmService,
   ) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
@@ -284,7 +286,18 @@ export class MatchingService {
 
     const maxDist = dto.maxDistanceKm ? Number(dto.maxDistanceKm) : 0;
 
-    // Tính compatibility scores & distanceKm đồng bộ trong bộ nhớ
+    // Toạ độ của thú cưng cái (female pet)
+    let femaleLat = femalePet.latitude;
+    let femaleLng = femalePet.longitude;
+    if (femaleLat == null || femaleLng == null) {
+      const fWardCoords = getHanoiWardCoords(
+        femalePet.ward || femalePet.location,
+      );
+      femaleLat = fWardCoords.lat;
+      femaleLng = fWardCoords.lng;
+    }
+
+    // Tính compatibility scores & distanceKm đồng bộ trong bộ nhớ (Bước 1: Tính khoảng cách sơ bộ bằng Haversine)
     let data = eligibleCandidates.map((candidate) => {
       const compatibility = this.calculateCompatibilityScoreSync(
         femalePet,
@@ -293,19 +306,10 @@ export class MatchingService {
       );
 
       let distanceKm = 10;
-      let femaleLat = femalePet.latitude;
-      let femaleLng = femalePet.longitude;
       let candLat = candidate.latitude;
       let candLng = candidate.longitude;
 
       // Tra cứu fallback theo Phường Hà Nội nếu thiếu toạ độ GPS
-      if (femaleLat == null || femaleLng == null) {
-        const fWardCoords = getHanoiWardCoords(
-          femalePet.ward || femalePet.location,
-        );
-        femaleLat = fWardCoords.lat;
-        femaleLng = fWardCoords.lng;
-      }
       if (candLat == null || candLng == null) {
         const cWardCoords = getHanoiWardCoords(
           candidate.ward || candidate.location,
@@ -346,8 +350,44 @@ export class MatchingService {
         breedWarnings: compatibility.warnings,
         breedInfo: compatibility.breedInfo,
         distanceKm,
+        isRoadDistance: false,
+        _candCoords:
+          candLat != null && candLng != null
+            ? { lat: candLat, lng: candLng }
+            : null,
       };
     });
+
+    // Bước 2: Tích hợp OpenStreetMap OSRM Table API tính khoảng cách đường bộ thực tế (Batch Routing)
+    if (femaleLat != null && femaleLng != null && this.osrmService) {
+      const candidatesToRoute: {
+        index: number;
+        coords: { lat: number; lng: number };
+      }[] = [];
+
+      data.forEach((item, idx) => {
+        if (item._candCoords) {
+          candidatesToRoute.push({ index: idx, coords: item._candCoords });
+        }
+      });
+
+      if (candidatesToRoute.length > 0) {
+        const roadDistances = await this.osrmService.getBatchRoadDistances(
+          { lat: femaleLat, lng: femaleLng },
+          candidatesToRoute.map((c) => c.coords),
+        );
+
+        if (roadDistances && roadDistances.size > 0) {
+          candidatesToRoute.forEach((c, i) => {
+            const roadDist = roadDistances.get(i);
+            if (roadDist != null) {
+              data[c.index].distanceKm = roadDist;
+              data[c.index].isRoadDistance = true;
+            }
+          });
+        }
+      }
+    }
 
     // Lọc theo bán kính maxDistanceKm (nếu được truyền lên)
     if (maxDist > 0) {
@@ -357,7 +397,10 @@ export class MatchingService {
     // Sắp xếp theo điểm giảm dần
     data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
 
-    return { data };
+    // Xóa trường tạm _candCoords trước khi trả về kết quả
+    const cleanedData = data.map(({ _candCoords, ...item }) => item);
+
+    return { data: cleanedData };
   }
 
   async passPet(userId: string, dto: PassPetDto) {

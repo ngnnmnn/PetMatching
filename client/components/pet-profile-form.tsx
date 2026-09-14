@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Award, Camera, Cat, Check, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Minus, Plus, Scale, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
+import { Award, Camera, Cat, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Lock, Minus, Plus, Scale, ShieldCheck, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import { uploadImages, type UploadPurpose } from "@/lib/api/uploads"
 import { HanoiWardSelect } from "@/components/hanoi-ward-select"
+import { AddressAutocompleteInput, type LocationSearchResult } from "@/components/checkout/AddressAutocompleteInput"
 
 interface PetProfileFormProps {
   onComplete?: () => void
@@ -42,6 +43,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     breedingOption: "",
     breedingPrice: "",
     location: "",
+    district: "",
   })
   const [avatar, setAvatar] = useState<string | null>(null)
   const [gallery, setGallery] = useState<string[]>([])
@@ -51,12 +53,10 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [submitError, setSubmitError] = useState("")
 
-  // Location state (Hà Nội Wards)
-  const [selectedWard, setSelectedWard] = useState<{ name: string; lat: number; lng: number } | null>({
-    name: 'Phường Hoàn Kiếm',
-    lat: 21.0285,
-    lng: 105.8542,
-  })
+  // Location state (Hà Nội Wards - ban đầu để null để người dùng chủ động chọn)
+  const [selectedWard, setSelectedWard] = useState<{ name: string; lat: number; lng: number } | null>(null)
+  // Trạng thái hiển thị dropdown chọn Phường/Xã thủ công (mặc định thu gọn để giao diện gọn gàng)
+  const [showManualWardSelect, setShowManualWardSelect] = useState(false)
 
   // Danh sách giống lấy từ database (kèm phân loại thuần chủng/lai & cờ cho phép phả hệ)
   const [dbBreeds, setDbBreeds] = useState<{ id: string; name: string; breedType: 'PUREBRED' | 'HYBRID'; allowPedigree: boolean }[]>([])
@@ -307,7 +307,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     setIsSubmitting(true)
     setSubmitError("")
 
-    const finalLocation = "Hà Nội"
+    const finalLocation = formData.location.trim() || "Hà Nội"
     const finalWard = selectedWard?.name || "Phường Hoàn Kiếm"
     const latitude = selectedWard?.lat ?? 21.0285
     const longitude = selectedWard?.lng ?? 105.8542
@@ -321,7 +321,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         birthday: formData.birthday,
         weight: Number(formData.weight),
         location: finalLocation,
-        district: undefined,
+        district: formData.district.trim() || undefined,
         ward: finalWard,
         latitude,
         longitude,
@@ -772,16 +772,96 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               <div className="space-y-3 rounded-2xl border bg-muted/20 p-4">
                 <div className="space-y-1">
                   <Label className="font-extrabold text-sm">
-                    Địa chỉ & Khu vực của bé tại Hà Nội <span className="text-destructive font-bold">*</span>
+                    Khu vực & Địa chỉ của bé tại Hà Nội <span className="text-destructive font-bold">*</span>
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Chọn Phường / Xã nơi bé đang ở để hệ thống tự động xác định toạ độ và đề xuất ghép đôi gần nhất.
+                    Nhập tên đường, khu vực hoặc phường để hệ thống định vị và đề xuất ghép đôi gần nhất.
                   </p>
                 </div>
-                <HanoiWardSelect
-                  value={selectedWard?.name}
-                  onChange={(ward) => setSelectedWard(ward)}
+                <AddressAutocompleteInput
+                  label=""
+                  placeholder="Gõ tên đường, khu vực (Ví dụ: 32 Đội Cấn, Duy Tân, Bồ Đề...)"
+                  initialValue={formData.location}
+                  onChangeText={(text) => {
+                    // Khi người dùng bấm nút X hoặc xoá hết chữ -> reset trạng thái định vị
+                    if (!text || text.trim().length === 0) {
+                      setSelectedWard(null);
+                      setFormData((prev) => ({
+                        ...prev,
+                        location: "",
+                        district: "",
+                      }));
+                    }
+                  }}
+                  onSelectLocation={(loc: LocationSearchResult) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      location: loc.address || "Hà Nội",
+                      district: loc.district || "",
+                    }));
+                    setSelectedWard({
+                      name: loc.ward || loc.district || "Phường Hoàn Kiếm",
+                      lat: loc.lat,
+                      lng: loc.lng,
+                    });
+                  }}
                 />
+
+                {selectedWard ? (
+                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-3 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/30 transition-all">
+                    <div className="flex items-center gap-2 font-bold text-emerald-800 dark:text-emerald-300">
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span>Đã định vị: {selectedWard.name}</span>
+                    </div>
+                    <div className="mt-1 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                      <Lock className="size-3.5 shrink-0 text-muted-foreground mt-0.5" />
+                      <span>Vị trí cụ thể chỉ dùng để tính khoảng cách đường bộ khi tìm ghép đôi. Trên hồ sơ công khai, người khác chỉ nhìn thấy khu vực <b>{selectedWard.name}</b>.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground pl-1">
+                    💡 Gõ số nhà, tên đường hoặc khu vực rồi bấm chọn từ danh sách gợi ý.
+                  </p>
+                )}
+
+                <div className="pt-0.5">
+                  {!showManualWardSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowManualWardSelect(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                    >
+                      <ChevronDown className="size-3.5" />
+                      Không tìm thấy địa chỉ? Chọn nhanh theo danh sách Phường / Xã
+                    </button>
+                  ) : (
+                    <div className="space-y-2 pt-2 border-t border-dashed">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-semibold text-muted-foreground">
+                          Chọn Phường / Xã tại Hà Nội (dự phòng)
+                        </Label>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualWardSelect(false)}
+                          className="text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
+                        >
+                          Thu gọn
+                        </button>
+                      </div>
+                      <HanoiWardSelect
+                        value={selectedWard?.name}
+                        onChange={(ward) => {
+                          setSelectedWard(ward);
+                          setFormData((prev) => ({
+                            ...prev,
+                            location: `${ward.name}, Hà Nội`,
+                            district: "",
+                          }));
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Sổ tiêm phòng & Vắc-xin Card */}

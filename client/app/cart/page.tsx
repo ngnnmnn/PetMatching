@@ -243,10 +243,6 @@ export default function CartPage() {
                               Phân loại: {item.variant.name} {item.variant.isActive === false && '(Tạm ngưng)'}
                             </p>
                           )}
-                          {item.product.unit && (
-                            <p className="text-xs text-[var(--text-muted)] mt-0.5">Đơn vị: {item.product.unit}</p>
-                          )}
-
                           {/* Unit Price */}
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-sm font-bold text-[var(--primary-color)]">{formatCurrency(price)}</span>

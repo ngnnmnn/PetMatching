@@ -9,7 +9,6 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:seed": "prisma db seed",
     "images:migrate-cloudinary": "ts-node prisma/migrate-images-to-cloudinary.ts",
     "prisma:studio": "prisma studio",
     "build": "prisma generate && nest build",

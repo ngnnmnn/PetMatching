@@ -25,7 +25,6 @@ export interface ManagerProduct {
   importPrice?: number | null;
   salePrice?: number | null;
   brand?: string;
-  unit?: string;
   rating?: number;
   reviewCount?: number;
   stock?: number | null;
@@ -64,6 +63,10 @@ export interface ManagerOrder {
       imageUrl?: string;
     };
   }[];
+  /// Mã vận đơn Giao Hàng Nhanh (GHN)
+  ghnOrderCode?: string | null;
+  /// Mã vận đơn AhaMove hỏa tốc
+  ahamoveOrderCode?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;
   refundStatus?: string | null;
@@ -98,13 +101,6 @@ export interface ManagerCustomer {
   }[];
 }
 
-export interface ProductUnit {
-  id: string;
-  name: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export interface StoreSettings {
   id?: string;
   name: string;
@@ -131,7 +127,7 @@ export const managerApi = {
   getStoreSettings: () => api.get<StoreSettings>('/manager/store-settings'),
   updateStoreSettings: (data: UpdateStoreSettingsInput) =>
     api.put<StoreSettings>('/manager/store-settings', data),
-  
+
   getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
   createProduct: (data: Partial<ManagerProduct>) => api.post<ManagerProduct>('/manager/products', data),
   updateProduct: (id: string, data: Partial<ManagerProduct>) => api.put<ManagerProduct>(`/manager/products/${id}`, data),
@@ -170,10 +166,6 @@ export const managerApi = {
   updateCategory: (id: string, data: { name: string }) => api.put<Category>(`/manager/categories/${id}`, data),
   deleteCategory: (id: string) => api.delete(`/manager/categories/${id}`),
 
-  getProductUnits: () => api.get<ProductUnit[]>('/manager/units'),
-  createProductUnit: (data: { name: string }) => api.post<ProductUnit>('/manager/units', data),
-  updateProductUnit: (id: string, data: { name: string }) => api.put<ProductUnit>(`/manager/units/${id}`, data),
-  deleteProductUnit: (id: string) => api.delete(`/manager/units/${id}`),
 
   getProductVariants: (productId: string) => api.get<ManagerProductVariant[]>(`/manager/products/${productId}/variants`),
   createProductVariant: (productId: string, data: Partial<ManagerProductVariant>) => api.post<ManagerProductVariant>(`/manager/products/${productId}/variants`, data),

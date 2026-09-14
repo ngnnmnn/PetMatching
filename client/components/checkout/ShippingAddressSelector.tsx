@@ -7,6 +7,7 @@ import AddressFormModal from './AddressFormModal';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import { usersApi } from '@/lib/api/users';
 import { toast } from 'sonner';
+import { formatCleanAddressString } from '@/lib/utils';
 
 interface ShippingAddressSelectorProps {
   savedAddresses: Address[];
@@ -24,6 +25,8 @@ interface ShippingAddressSelectorProps {
     provinceId?: number;
     districtId?: number;
     wardCode?: string;
+    lat?: number;
+    lng?: number;
   };
   onApplyTempAddress?: (data: any) => void;
   title?: string;
@@ -246,7 +249,7 @@ export default function ShippingAddressSelector({
                   </div>
                 </div>
                 <p className="text-[var(--text-muted)] mt-1.5 leading-relaxed">
-                  {addr.detail}, {addr.ward}, {addr.district}, {addr.province}
+                  {formatCleanAddressString(addr.detail, addr.ward, addr.district, addr.province)}
                 </p>
                 {selectedAddressId === addr.id && (!addr.districtId || !addr.wardCode) && (
                   <p className="text-[10px] text-amber-600 font-bold mt-1.5 flex items-center gap-1">
@@ -317,7 +320,7 @@ export default function ShippingAddressSelector({
             </span>
           </div>
           <p className="text-[var(--text-muted)] mt-1.5 leading-relaxed">
-            {tempAddress.detail}, {tempAddress.ward}, {tempAddress.district}, {tempAddress.province}
+            {formatCleanAddressString(tempAddress.detail, tempAddress.ward, tempAddress.district, tempAddress.province)}
           </p>
         </div>
       )}

@@ -4,7 +4,6 @@ import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
 import { CartProvider } from '@/context/CartContext'
-import Chatbot from '@/components/Chatbot'
 import RouteGuard from '@/components/auth/RouteGuard'
 import IdleSessionGuard from '@/components/auth/IdleSessionGuard'
 
@@ -48,7 +47,6 @@ export default function RootLayout({
             {children}
           </RouteGuard>
         </CartProvider>
-        <Chatbot />
         <Toaster richColors position="bottom-center" closeButton />
         {process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === 'true' && <Analytics />}
       </body>

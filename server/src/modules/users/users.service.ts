@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -68,6 +69,8 @@ function cleanItemNameForPayOS(name?: string | null): string {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private prisma: PrismaService,
     private paymentService: PaymentService,
@@ -647,33 +650,42 @@ export class UsersService {
     return address;
   }
 
+  /**
+   * Lấy danh sách đơn hàng của người dùng đang đăng nhập (bao gồm sản phẩm, biến thể và thông tin thanh toán)
+   * @param userId ID người dùng
+   */
   async getOrders(userId: string) {
-    const orders = await this.prisma.order.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        payment: true,
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                imageUrl: true,
+    try {
+      const orders = await this.prisma.order.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          payment: true,
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                },
               },
-            },
-            variant: {
-              select: {
-                id: true,
-                name: true,
+              variant: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    return orders;
+      return orders || [];
+    } catch (error: any) {
+      this.logger.error(`[getOrders Error] Lỗi khi lấy danh sách đơn hàng của user ${userId}: ${error.message}`, error.stack);
+      return [];
+    }
   }
 
   async createOrder(userId: string, dto: CreateOrderDto) {

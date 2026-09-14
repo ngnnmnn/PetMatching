@@ -10,7 +10,6 @@ import { SpaModule } from './modules/spa/spa.module';
 import { CartModule } from './modules/cart/cart.module';
 import { ManagerModule } from './modules/manager/manager.module';
 import { PaymentModule } from './modules/payment/payment.module';
-import { ChatModule } from './modules/chat/chat.module';
 import { ShippingModule } from './modules/shipping/shipping.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
@@ -32,7 +31,6 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     CartModule,
     ManagerModule,
     PaymentModule,
-    ChatModule,
     ShippingModule,
     UploadsModule,
     VouchersModule,

@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import AppHeader from '@/components/layout/AppHeader';
 import { useCart } from '@/context/CartContext';
 import { usersApi } from '@/lib/api/users';
+import { shippingApi } from '@/lib/api/shipping';
 import { Address } from '@/types';
 import { PayOSQRModal, PayOSQRData, ShippingAddressSelector, VoucherModal } from '@/components/checkout';
 
@@ -74,9 +75,13 @@ function CheckoutPageContent() {
   const [selectedProvinceId, setSelectedProvinceId] = useState<number | undefined>(undefined);
   const [selectedDistrictId, setSelectedDistrictId] = useState<number | undefined>(undefined);
   const [selectedWardCode, setSelectedWardCode] = useState<string | undefined>(undefined);
+  const [selectedLat, setSelectedLat] = useState<number | undefined>(undefined);
+  const [selectedLng, setSelectedLng] = useState<number | undefined>(undefined);
 
-  // Payment Method
+  // Phương thức thanh toán (COD hoặc chuyển khoản QR PayOS)
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'QR'>('COD');
+  // Cước phí giao hàng AhaMove (chỉ có giá trị số khi khách hàng đã chọn/nhập địa chỉ)
+  const [calculatedShippingFee, setCalculatedShippingFee] = useState<number | null>(null);
 
   // PayOS QR Modal State
   const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
@@ -273,10 +278,9 @@ function CheckoutPageContent() {
 
   const checkoutCount = checkoutItems.reduce((acc, item) => acc + item.quantity, 0);
 
-  const calculatedShippingFee = 30000;
-
   const hasItems = !!directCheckoutItem || selectedItemIds.length > 0;
-  const baseShippingFee = (hasItems && checkoutTotal > 500000) ? 0 : calculatedShippingFee;
+  const rawShippingFee = calculatedShippingFee ?? 0;
+  const baseShippingFee = (hasItems && checkoutTotal > 500000) ? 0 : rawShippingFee;
 
   let freeShipDiscount = 0;
   if (appliedVoucher?.type === 'FREE_SHIP') {
@@ -322,6 +326,59 @@ function CheckoutPageContent() {
     setIsMounted(true);
     loadAddresses();
   }, []);
+
+  // Tự động tính cước phí giao hàng hỏa tốc AhaMove thời gian thực từ AhaMove Portal API mỗi khi thay đổi địa chỉ
+  useEffect(() => {
+    let targetAddressStr = '';
+    let targetLat: number | undefined = undefined;
+    let targetLng: number | undefined = undefined;
+
+    if (selectedAddressId && selectedAddressId !== 'new') {
+      const addr = savedAddresses.find((a) => a.id === selectedAddressId);
+      if (addr) {
+        targetAddressStr = `${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
+        targetLat = selectedLat;
+        targetLng = selectedLng;
+      }
+    } else {
+      if (detail || selectedWardName || selectedDistrictName || selectedProvinceName) {
+        targetAddressStr = [detail, selectedWardName, selectedDistrictName, selectedProvinceName]
+          .filter(Boolean)
+          .join(', ');
+        targetLat = selectedLat;
+        targetLng = selectedLng;
+      }
+    }
+
+    if (!targetAddressStr || targetAddressStr.trim().length < 5) {
+      setCalculatedShippingFee(null);
+      return;
+    }
+
+    shippingApi
+      .estimateAhamoveShippingFee({
+        dropoffLat: targetLat,
+        dropoffLng: targetLng,
+        addressStr: targetAddressStr,
+      })
+      .then((res) => {
+        if (res.data?.feeVnd && typeof res.data.feeVnd === 'number') {
+          setCalculatedShippingFee(res.data.feeVnd);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to estimate real-time AhaMove shipping fee:', err);
+      });
+  }, [
+    selectedAddressId,
+    savedAddresses,
+    detail,
+    selectedWardName,
+    selectedDistrictName,
+    selectedProvinceName,
+    selectedLat,
+    selectedLng,
+  ]);
 
   // Handle QR Payment Cancel redirection from PayOS
   useEffect(() => {
@@ -576,6 +633,8 @@ function CheckoutPageContent() {
                     provinceId: selectedProvinceId,
                     districtId: selectedDistrictId,
                     wardCode: selectedWardCode,
+                    lat: selectedLat,
+                    lng: selectedLng,
                   }}
                   onApplyTempAddress={(data) => {
                     setReceiverName(data.receiverName);
@@ -587,6 +646,8 @@ function CheckoutPageContent() {
                     setSelectedProvinceId(data.provinceId);
                     setSelectedDistrictId(data.districtId);
                     setSelectedWardCode(data.wardCode);
+                    if (data.lat) setSelectedLat(data.lat);
+                    if (data.lng) setSelectedLng(data.lng);
                   }}
                 />
 
@@ -837,8 +898,14 @@ function CheckoutPageContent() {
                   </div>
                   <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Phí vận chuyển</span>
-                    <span className="text-[var(--text-main)]">
-                      {shippingFee === 0 ? 'Miễn phí' : formatCurrency(shippingFee)}
+                    <span className="text-[var(--text-main)] font-semibold">
+                      {calculatedShippingFee === null ? (
+                        <span className="text-xs text-amber-700 font-medium font-sans">Chưa chọn địa chỉ</span>
+                      ) : shippingFee === 0 ? (
+                        'Miễn phí'
+                      ) : (
+                        formatCurrency(shippingFee)
+                      )}
                     </span>
                   </div>
                   {appliedCode && (
@@ -854,7 +921,11 @@ function CheckoutPageContent() {
 
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end text-sm">
                     <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
-                    <span className="text-base font-black text-[var(--primary-color)]">{formatCurrency(finalTotal)}</span>
+                    <span className="text-base font-black text-[var(--primary-color)]">
+                      {calculatedShippingFee === null
+                        ? formatCurrency(Math.max(0, checkoutTotal - productDiscount)) + ' + phí ship'
+                        : formatCurrency(finalTotal)}
+                    </span>
                   </div>
 
                   <button

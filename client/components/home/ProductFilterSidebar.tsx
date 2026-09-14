@@ -1,7 +1,6 @@
 'use client';
 
-import { Bone, Brush, Cat, Dog, HeartPulse, Home, Package, Tag, Filter, Check } from 'lucide-react';
-import { ProductCategory } from '@/types';
+import { Bone, Brush, Cat, Dog, Home, Package, Tag, Filter, Check } from 'lucide-react';
 
 export interface DynamicCategory {
   value: string;
