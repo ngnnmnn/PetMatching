@@ -10,6 +10,12 @@ import {
 } from '../../common/revenue.utils';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SPA_BOOKING_STATUS_LABELS } from '../notifications/notification-status-labels';
+import {
+  resolveDashboardRange,
+  buildDashboardBuckets,
+  calculateRevenueGrowth,
+  serializeDashboardRange,
+} from '../admin/dashboard-range.utils';
 
 @Injectable()
 export class SpaService implements OnModuleInit, OnModuleDestroy {
@@ -1394,8 +1400,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async getManagerDashboardStats(managerId: string, branchId: string) {
+  /**
+   * Lấy dữ liệu thống kê Dashboard Quản lý Spa theo chi nhánh và khoảng thời gian (hỗ trợ 7d, 30d, 90d, 12m, tùy chọn ngày)
+   */
+  async getManagerDashboardStats(managerId: string, branchId: string, rangeInput?: { range?: string; from?: string; to?: string }) {
     await this.autoUpdateBookingStatuses();
+
+    const period = resolveDashboardRange(rangeInput || { range: '30d' });
 
     const managerBranches = await this.prisma.addressSpa.findMany({
       where: { managerId },
@@ -1417,6 +1428,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       where: branchFilter,
       select: {
         id: true,
+        createdAt: true,
         scheduledAt: true,
         status: true,
         totalPrice: true,
@@ -1485,10 +1497,53 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const recognizedBookings = bookings.filter(isRecognizedSpaBooking);
-    const totalRevenue = recognizedBookings.reduce(
+
+    // Phân tách đơn và doanh thu kỳ hiện tại và kỳ trước theo khoảng thời gian đã chọn
+    const getBookingDate = (b: any) => (b.createdAt ? new Date(b.createdAt) : new Date(b.scheduledAt));
+    
+    // Tất cả lịch hẹn trong kỳ lọc
+    const bookingsInPeriod = bookings.filter((b) => {
+      const d = getBookingDate(b);
+      return d >= period.from && d < period.toExclusive;
+    });
+
+    // Các lịch hẹn hoàn thành và ghi nhận doanh thu
+    const currentPeriodBookings = recognizedBookings.filter((b) => {
+      const d = getBookingDate(b);
+      return d >= period.from && d < period.toExclusive;
+    });
+    const previousPeriodBookings = recognizedBookings.filter((b) => {
+      const d = getBookingDate(b);
+      return d >= period.previousFrom && d < period.from;
+    });
+
+    const currentRevenue = currentPeriodBookings.reduce(
       (sum, booking) => sum + getSpaBookingRevenue(booking),
       0,
     );
+    const previousRevenue = previousPeriodBookings.reduce(
+      (sum, booking) => sum + getSpaBookingRevenue(booking),
+      0,
+    );
+    const revenueChangePercent = calculateRevenueGrowth(
+      currentRevenue,
+      previousRevenue,
+    );
+
+    // Chuỗi dữ liệu biểu đồ doanh thu theo từng mốc thời gian (ngày / tuần / tháng)
+    const revenueSeries = buildDashboardBuckets(period).map((bucket) => {
+      const bucketBookings = currentPeriodBookings.filter((b) => {
+        const d = getBookingDate(b);
+        return d >= bucket.from && d < bucket.toExclusive;
+      });
+      return {
+        label: bucket.label,
+        revenue: bucketBookings.reduce(
+          (sum, b) => sum + getSpaBookingRevenue(b),
+          0,
+        ),
+      };
+    });
 
     const categoriesList = await this.prisma.spaCategory.findMany({
       orderBy: { createdAt: 'asc' },
@@ -1521,25 +1576,27 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       return categoriesList[0]?.id || '';
     }
 
-    // Find the "Dịch vụ lẻ" category id (isMain = false)
+    const isFilteredByRange = Boolean(rangeInput && (rangeInput.range || rangeInput.from || rangeInput.to));
+
+    // Phân bổ doanh thu danh mục theo các đơn hoàn thành trong kỳ đã lọc
+    const bookingsForCategoryStats = isFilteredByRange
+      ? currentPeriodBookings
+      : (currentPeriodBookings.length > 0 ? currentPeriodBookings : recognizedBookings);
+
     const subServiceCategoryId = categoriesList.find((c) => c.isMain === false)?.id
       || categoriesList.find((c) => c.name.toLowerCase().includes('lẻ'))?.id
       || categoriesList[categoriesList.length - 1]?.id
       || '';
 
-    recognizedBookings.forEach((b) => {
+    bookingsForCategoryStats.forEach((b) => {
       const targetId = b.serviceId || b.mainServiceId;
       const mainService = b.service || (targetId ? servicesMap.get(targetId) : null);
       const resolvedSubServices = (b.subServiceIds || []).map((id) => servicesMap.get(id)).filter(Boolean);
 
-      // Main service price = priceSnapshot (snapshotted at booking time)
       const mainPrice = b.priceSnapshot || (mainService as any)?.price || 0;
       const bookingTotal = b.totalPrice ?? b.priceSnapshot ?? 0;
-
-      // Revenue that belongs to sub-services = totalPrice - mainPrice (- discount already included in totalPrice)
       const subRevenue = Math.max(0, bookingTotal - mainPrice);
 
-      // Distribute main service revenue to its category
       const mainCatId = findCategoryForService(mainService, b.categoryId);
       const targetMain = categoryMap.get(mainCatId);
       if (targetMain) {
@@ -1551,13 +1608,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       if (subRevenue > 0) {
         if (resolvedSubServices.length > 0) {
-          // Sub-services found in DB: distribute by each sub-service's own category
           const resolvedSubTotal = resolvedSubServices.reduce((sum: number, s: any) => sum + (s?.price || 0), 0);
           resolvedSubServices.forEach((s: any) => {
             const subCatId = findCategoryForService(s, null);
             const targetSub = categoryMap.get(subCatId);
             if (targetSub) {
-              // Scale by ratio in case catalog prices differ from booking time
               const ratio = resolvedSubTotal > 0 ? (s?.price || 0) / resolvedSubTotal : 0;
               targetSub.revenue += Math.round(subRevenue * ratio);
               if (b.feedback && typeof b.feedback.rateServices === 'number') {
@@ -1566,7 +1621,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             }
           });
         } else {
-          // Sub-service IDs not found in DB (old data): put all remaining revenue into "Dịch vụ lẻ"
           const fallbackSub = categoryMap.get(subServiceCategoryId);
           if (fallbackSub) {
             fallbackSub.revenue += subRevenue;
@@ -1592,8 +1646,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
+    // Phân bổ trạng thái của tất cả lịch hẹn trong kỳ đã lọc
+    const targetBookingsForStatus = isFilteredByRange ? bookingsInPeriod : (bookingsInPeriod.length > 0 ? bookingsInPeriod : bookings);
     const statusCountMap: Record<string, number> = {};
-    bookings.forEach((b) => {
+    targetBookingsForStatus.forEach((b) => {
       statusCountMap[b.status] = (statusCountMap[b.status] || 0) + 1;
     });
     const statusDistribution = Object.entries(statusCountMap).map(([status, value]) => ({ status, value }));
@@ -1602,19 +1658,39 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       (b) => b.status === SpaBookingStatus.PENDING
     ).length;
 
-    const completedBookingsCount = bookings.filter(
-      (b) => b.status === SpaBookingStatus.COMPLETED
-    ).length;
+    const completedBookingsCount = isFilteredByRange
+      ? bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED).length
+      : (bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED).length || recognizedBookings.length);
+
+    const totalRevenue = isFilteredByRange
+      ? currentRevenue
+      : (currentRevenue > 0 ? currentRevenue : recognizedBookings.reduce((sum, b) => sum + getSpaBookingRevenue(b), 0));
+
+    const serializedRange = serializeDashboardRange(period);
 
     return {
       todayBookingsCount: todayBookings.length,
       unconfirmedBookingsCount,
       completedBookingsCount,
       totalRevenue,
+      previousRevenue,
+      revenueChangePercent,
+      range: serializedRange,
+      recognizedBookings: currentPeriodBookings.length,
+      totalBookingsInPeriod: targetBookingsForStatus.length,
       staffCount,
       revenueByService: categoryBreakdown,
       categoryBreakdown,
       statusDistribution,
+      revenueSeries,
+      analytics: {
+        range: serializedRange,
+        revenue: {
+          current: totalRevenue,
+          previous: previousRevenue,
+          changePercent: revenueChangePercent,
+        },
+      },
       todayBookings: todayBookings.map((b) => ({
         id: b.id,
         scheduledAt: b.scheduledAt,

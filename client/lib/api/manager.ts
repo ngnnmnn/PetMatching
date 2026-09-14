@@ -1,5 +1,5 @@
 import api from '@/lib/axios';
-import { Category } from '@/types';
+import { Category, Product, Order } from '@/types';
 
 export interface ManagerDashboardStats {
   totalRevenue: number;
@@ -7,15 +7,19 @@ export interface ManagerDashboardStats {
   totalProductsSold: number;
   totalCustomers: number;
   cancellationRate: number;
-  totalProfit?: number;
-  profitMargin?: number;
+  statusDistribution?: {
+    PENDING: number;
+    CONFIRMED: number;
+    SHIPPED: number;
+    DELIVERED: number;
+    CANCELLED: number;
+  };
 }
 
-export interface ManagerProduct {
-  id: string;
-  name: string;
-  slug?: string;
-  category: string;
+/**
+ * Kiểu dữ liệu sản phẩm quản lý cho Store Manager (kế thừa từ Product chung)
+ */
+export interface ManagerProduct extends Omit<Product, 'variants' | 'targetSpecies' | 'reviewCount' | 'images' | 'rating'> {
   targetSpecies: string;
   description?: string;
   imageUrl?: string;
@@ -29,23 +33,15 @@ export interface ManagerProduct {
   reviewCount?: number;
   stock?: number | null;
   sales?: number;
-  isActive: boolean;
-  isFeatured: boolean;
   variants?: any[];
-  createdAt?: string;
-  updatedAt?: string;
 }
 
-export interface ManagerOrder {
-  id: string;
-  userId: string | null;
-  customerNameSnapshot?: string | null;
-  customerEmailSnapshot?: string | null;
-  customerPhoneSnapshot?: string | null;
+
+/**
+ * Kiểu dữ liệu đơn hàng cho Store Manager (kế thừa từ Order chung)
+ */
+export interface ManagerOrder extends Omit<Order, 'user' | 'items' | 'status'> {
   status: string;
-  totalAmount: number;
-  shippingAddress: string;
-  createdAt: string;
   user: {
     id: string | null;
     name: string;
@@ -67,16 +63,8 @@ export interface ManagerOrder {
   ghnOrderCode?: string | null;
   /// Mã vận đơn AhaMove hỏa tốc
   ahamoveOrderCode?: string | null;
-  deliveryProofUrl?: string | null;
-  shippingNote?: string | null;
-  refundStatus?: string | null;
-  refundBankCode?: string | null;
-  refundAccountNumber?: string | null;
-  refundAccountName?: string | null;
-  refundReason?: string | null;
-  refundedAt?: string | null;
-  refundProofUrl?: string | null;
 }
+
 
 export interface ManagerCustomer {
   id: string;
@@ -196,7 +184,9 @@ export interface ManagerProductVariant {
   name: string;
   sellingPrice: number;
   salePrice?: number | null;
+  importPrice?: number | null;
   stock: number;
+  sales?: number;
   imageUrl?: string | null;
   isActive: boolean;
   createdAt?: string;

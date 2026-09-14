@@ -45,6 +45,29 @@ import { cn } from '@/lib/utils';
 import { spaApi } from '@/lib/api/spa';
 import { uploadImages } from '@/lib/api/uploads';
 import AppPagination from '@/components/ui/app-pagination';
+import {
+  DashboardTimeControls,
+  RevenueGrowthBadge,
+} from '@/components/admin/dashboard-time-controls';
+import type { AdminDashboardParams } from '@/lib/api/admin';
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+} from 'recharts';
+
+/** Cấu hình màu sắc và tên tiếng Việt cho các trạng thái lịch hẹn Spa */
+const SPA_STATUS_META: Record<string, { label: string; color: string; bgClass: string }> = {
+  PENDING: { label: 'Chờ xác nhận', color: '#f59e0b', bgClass: 'bg-amber-500' },
+  CONFIRMED: { label: 'Đã xác nhận', color: '#3b82f6', bgClass: 'bg-blue-500' },
+  CHECK_IN: { label: 'Đã Check-in', color: '#14b8a6', bgClass: 'bg-teal-500' },
+  IN_PROGRESS: { label: 'Đang thực hiện', color: '#f97316', bgClass: 'bg-orange-500' },
+  COMPLETED: { label: 'Hoàn thành', color: '#22c55e', bgClass: 'bg-green-500' },
+  CANCELLED: { label: 'Đã hủy', color: '#ef4444', bgClass: 'bg-red-500' },
+  NO_SHOW: { label: 'Khách vắng mặt', color: '#6b7280', bgClass: 'bg-gray-500' },
+};
 
 function SpaManagerConsoleContent() {
   const searchParams = useSearchParams();
@@ -98,6 +121,8 @@ function SpaManagerConsoleContent() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [stats, setStats] = useState<any>(null);
+  const [dashboardTimeRange, setDashboardTimeRange] = useState<AdminDashboardParams>({ range: '30d' });
+  const [refreshingStats, setRefreshingStats] = useState<boolean>(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [staffs, setStaffs] = useState<any[]>([]);
@@ -440,6 +465,25 @@ function SpaManagerConsoleContent() {
     fetchInitialData();
   }, []);
 
+  /** Tải dữ liệu thống kê dashboard của chi nhánh với bộ lọc thời gian */
+  const loadDashboardStats = async (showRefreshingState = false) => {
+    if (!selectedBranchId) return;
+    if (showRefreshingState) {
+      setRefreshingStats(true);
+    } else {
+      setLoading(true);
+    }
+    try {
+      const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId, dashboardTimeRange);
+      setStats(statsRes.data);
+    } catch (err) {
+      toast.error('Không thể tải dữ liệu thống kê Spa.');
+    } finally {
+      setLoading(false);
+      setRefreshingStats(false);
+    }
+  };
+
   // Fetch data based on active tab and selected branch
   const refreshData = async () => {
     // For tabs that don't need a branch (categories, services), don't block on selectedBranchId
@@ -448,7 +492,7 @@ function SpaManagerConsoleContent() {
     setLoading(true);
     try {
       if (currentTab === 'dashboard') {
-        const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId);
+        const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId, dashboardTimeRange);
         setStats(statsRes.data);
       } else if (currentTab === 'bookings') {
         const [bookingsRes, staffsRes, servicesRes] = await Promise.all([
@@ -483,8 +527,12 @@ function SpaManagerConsoleContent() {
   };
 
   useEffect(() => {
-    refreshData();
-  }, [selectedBranchId, currentTab]);
+    if (currentTab === 'dashboard') {
+      loadDashboardStats();
+    } else {
+      refreshData();
+    }
+  }, [selectedBranchId, currentTab, dashboardTimeRange]);
 
   // Tự động mở chi tiết lịch hẹn nếu có bookingId trên URL (khi click từ thông báo / bell)
   useEffect(() => {
@@ -1369,6 +1417,32 @@ function SpaManagerConsoleContent() {
           {(currentTab === 'dashboard' || !currentTab) && stats && (
             <div className="space-y-6 animate-fadeIn">
 
+              {/* Time Filter Bar */}
+              <div className="bg-white rounded-2xl border border-gray-150 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                    <Calendar className="size-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-gray-900">Bộ lọc thời gian thống kê</h3>
+                    <p className="text-xs text-gray-500 font-medium">
+                      Khoảng thời gian: <span className="font-bold text-primary">{stats.range?.label || '30 ngày gần nhất'}</span>
+                      {stats.range?.from && stats.range?.to && (
+                        <span className="ml-1 text-gray-400">
+                          ({new Date(stats.range.from).toLocaleDateString('vi-VN')} – {new Date(stats.range.to).toLocaleDateString('vi-VN')})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <DashboardTimeControls
+                  value={dashboardTimeRange}
+                  onChange={setDashboardTimeRange}
+                  onRefresh={() => void loadDashboardStats(true)}
+                  refreshing={refreshingStats}
+                />
+              </div>
+
               {/* Metrics cards row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Metric 1 */}
@@ -1412,8 +1486,27 @@ function SpaManagerConsoleContent() {
                 {/* Metric 3 */}
                 <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex items-center justify-between">
                   <div>
-                    <span className="text-[11px] font-black uppercase text-[#8A8980]">Doanh thu</span>
-                    <p className="text-2xl font-black text-gray-900 mt-1">{(stats.totalRevenue).toLocaleString('vi-VN')}đ</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black uppercase text-[#8A8980]">Doanh thu</span>
+                      {stats.range && (
+                        <RevenueGrowthBadge
+                          comparison={{
+                            range: stats.range,
+                            revenue: {
+                              current: stats.totalRevenue ?? 0,
+                              previous: stats.previousRevenue ?? 0,
+                              changePercent: stats.revenueChangePercent ?? 0,
+                            },
+                          }}
+                        />
+                      )}
+                    </div>
+                    <p className="text-2xl font-black text-gray-900 mt-1">{(stats.totalRevenue || 0).toLocaleString('vi-VN')}đ</p>
+                    {stats.range?.label && (
+                      <span className="text-[10px] font-semibold text-gray-400 block mt-0.5">
+                        {stats.range.label}
+                      </span>
+                    )}
                   </div>
                   <div className="size-10 rounded-full bg-purple-50 shadow-inner flex items-center justify-center text-purple-700">
                     <TrendingUp className="size-5" />
@@ -1432,12 +1525,17 @@ function SpaManagerConsoleContent() {
               </div>
 
               {/* Charts row */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
                 {/* Revenue & Rating by Service Group */}
                 <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-7 space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Doanh thu & Đánh giá theo nhóm dịch vụ</h3>
+                    <div>
+                      <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Doanh thu & Đánh giá theo nhóm dịch vụ</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Tính theo khoảng thời gian: <span className="font-semibold text-gray-600">{stats.range?.label || '30 ngày gần nhất'}</span>
+                      </p>
+                    </div>
                     <span className="text-[11px] font-bold text-gray-400">Tỉ lệ sao trung bình</span>
                   </div>
                   <div className="space-y-3 pt-1">
@@ -1447,7 +1545,7 @@ function SpaManagerConsoleContent() {
 
                       if (!categoriesData || categoriesData.length === 0) {
                         return (
-                          <p className="text-xs text-gray-400 py-6 text-center">Chưa có danh mục hoặc doanh thu nào để hiển thị.</p>
+                          <p className="text-xs text-gray-400 py-10 text-center">Chưa có danh mục hoặc doanh thu nào trong khoảng thời gian đã chọn.</p>
                         );
                       }
 
@@ -1486,46 +1584,97 @@ function SpaManagerConsoleContent() {
                   </div>
                 </div>
 
-                {/* Status distribution custom chart */}
-                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-5 space-y-4">
-                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Phân bổ trạng thái lịch hẹn</h3>
-                  <div className="space-y-3 pt-2">
-                    {stats.statusDistribution && stats.statusDistribution.length > 0 ? (
-                      stats.statusDistribution.map((item: any, idx: number) => {
-                        const total = stats.statusDistribution.reduce((acc: number, x: any) => acc + x.value, 0);
-                        const percent = ((item.value / total) * 100).toFixed(0);
-                        const displayStatus = {
-                          PENDING: { label: 'Chờ xác nhận', color: 'bg-amber-500' },
-                          CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-500' },
-                          CHECK_IN: { label: 'Đã Check-in', color: 'bg-teal-500' },
-                          IN_PROGRESS: { label: 'Đang thực hiện', color: 'bg-orange-500' },
-                          COMPLETED: { label: 'Hoàn thành', color: 'bg-green-500' },
-                          CANCELLED: { label: 'Đã hủy', color: 'bg-red-500' },
-                          NO_SHOW: { label: 'Khách vắng mặt', color: 'bg-gray-500' },
-                        }[item.status as string] || { label: item.status, color: 'bg-gray-400' };
+                {/* Status distribution Donut / Pie chart */}
+                <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs lg:col-span-5 space-y-4 flex flex-col justify-start">
+                  {(() => {
+                    const totalStatusCount = stats.statusDistribution?.reduce((acc: number, x: any) => acc + (x.value || 0), 0) || 0;
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Phân bổ trạng thái lịch hẹn</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              Tổng cộng: <span className="font-bold text-gray-700">{totalStatusCount} lịch hẹn</span>
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
+                            {stats.range?.label || '30 ngày'}
+                          </span>
+                        </div>
 
-                        return (
-                          <div key={idx} className="space-y-1.5">
-                            <div className="flex justify-between text-xs font-bold text-gray-700">
-                              <span className="flex items-center gap-1.5">
-                                <span className={`size-2.5 rounded-full ${displayStatus.color}`} />
-                                {displayStatus.label}
-                              </span>
-                              <span>{item.value} ({percent}%)</span>
+                        {stats.statusDistribution && stats.statusDistribution.length > 0 && totalStatusCount > 0 ? (
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-5 pt-1">
+                            {/* Donut Chart */}
+                            <div className="relative size-48 shrink-0 overflow-visible">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart style={{ overflow: 'visible' }}>
+                                  <Pie
+                                    data={stats.statusDistribution}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={48}
+                                    outerRadius={68}
+                                    paddingAngle={3}
+                                    dataKey="value"
+                                  >
+                                    {stats.statusDistribution.map((entry: any, index: number) => {
+                                      const meta = SPA_STATUS_META[entry.status] || { color: '#9ca3af' };
+                                      return <Cell key={`cell-${index}`} fill={meta.color} />;
+                                    })}
+                                  </Pie>
+                                  <Tooltip
+                                    allowEscapeViewBox={{ x: true, y: true }}
+                                    wrapperStyle={{ zIndex: 100, pointerEvents: 'none' }}
+                                    content={({ active, payload }) => {
+                                      if (!active || !payload?.length) return null;
+                                      const data = payload[0].payload;
+                                      const meta = SPA_STATUS_META[data.status] || { label: data.status, color: '#9ca3af' };
+                                      const pct = totalStatusCount > 0 ? ((data.value / totalStatusCount) * 100).toFixed(1) : '0';
+                                      return (
+                                        <div className="rounded-xl border border-gray-200 bg-white/95 backdrop-blur-md p-2.5 shadow-2xl text-xs z-50 pointer-events-none whitespace-nowrap min-w-36">
+                                          <div className="flex items-center gap-2 font-black text-gray-800">
+                                            <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
+                                            <span>{meta.label}</span>
+                                          </div>
+                                          <div className="mt-1 text-gray-600 font-bold">
+                                            {data.value} lịch hẹn ({pct}%)
+                                          </div>
+                                        </div>
+                                      );
+                                    }}
+                                  />
+                                </PieChart>
+                              </ResponsiveContainer>
+                              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                                <span className="text-xl font-black text-gray-900 leading-none">{totalStatusCount}</span>
+                                <span className="text-[10px] font-bold text-gray-400 mt-0.5">Lịch hẹn</span>
+                              </div>
                             </div>
-                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                style={{ width: `${percent}%` }}
-                                className={`h-full ${displayStatus.color} rounded-full`}
-                              />
+
+                            {/* Legend with color, status name, count & percentage */}
+                            <div className="flex-1 w-full space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                              {stats.statusDistribution.map((item: any, idx: number) => {
+                                const meta = SPA_STATUS_META[item.status] || { label: item.status, color: '#9ca3af', bgClass: 'bg-gray-400' };
+                                const percent = totalStatusCount > 0 ? ((item.value / totalStatusCount) * 100).toFixed(1) : '0';
+                                return (
+                                  <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-xl bg-gray-50/80 hover:bg-gray-100 transition-colors border border-gray-100">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
+                                      <span className="font-bold text-gray-700 truncate">{meta.label}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-xs text-gray-400 py-6 text-center">Chưa có dữ liệu phân bổ trạng thái.</p>
-                    )}
-                  </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-10 text-xs text-gray-400">
+                            Chưa có dữ liệu lịch hẹn trong khoảng thời gian đã chọn.
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
               </div>

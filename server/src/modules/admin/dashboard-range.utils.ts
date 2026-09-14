@@ -186,3 +186,26 @@ export function buildDashboardBuckets(
 
   return buckets;
 }
+
+/**
+ * Tính phần trăm tăng trưởng doanh thu giữa kỳ hiện tại và kỳ trước đó
+ */
+export function calculateRevenueGrowth(current: number, previous: number): number {
+  if (previous === 0) {
+    return current > 0 ? 100 : 0;
+  }
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
+/**
+ * Chuẩn hóa đối tượng khoảng thời gian báo cáo thành chuỗi ISO để trả về client
+ */
+export function serializeDashboardRange(period: DashboardRange) {
+  return {
+    label: period.label,
+    from: period.from.toISOString(),
+    to: period.toExclusive.toISOString(),
+    previousFrom: period.previousFrom.toISOString(),
+    previousTo: period.previousToExclusive.toISOString(),
+  };
+}

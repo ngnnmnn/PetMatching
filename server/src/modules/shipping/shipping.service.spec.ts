@@ -1,7 +1,7 @@
 import { ShippingService } from './shipping.service';
 
 describe('ShippingService', () => {
-  const service = new ShippingService();
+  const service = new ShippingService({} as any, {} as any);
 
   it('returns the 126 local Hanoi wards with unique official codes', () => {
     const wards = service.getWards(1);

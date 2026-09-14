@@ -17,9 +17,13 @@ import {
   Tag,
   Ticket,
   ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
+
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import AppHeader from '@/components/layout/AppHeader';
+
 import { useCart } from '@/context/CartContext';
 import { usersApi } from '@/lib/api/users';
 import { shippingApi } from '@/lib/api/shipping';
@@ -262,12 +266,24 @@ function CheckoutPageContent() {
       ? cartItems.filter((item) => selectedItemIds.includes(item.id))
       : cartItems;
 
+  // Kiểm tra trạng thái tồn kho và mở bán của các sản phẩm trong phiên thanh toán theo thời gian thực
+  const invalidCheckoutItems = checkoutItems.filter((item) => {
+    const isInactive = item.product?.isActive === false || (!!item.variant && item.variant.isActive === false);
+    const availableStock = item.variant ? (item.variant.stock ?? 0) : (item.product?.stock ?? 0);
+    const isOutOfStock = availableStock <= 0;
+    const isStockInsufficient = availableStock < item.quantity;
+    return isInactive || isOutOfStock || isStockInsufficient;
+  });
+
+  const hasInvalidItems = invalidCheckoutItems.length > 0;
+
   // Redirect to cart if empty and not loading, unless order has been placed successfully
   useEffect(() => {
     if (!loading && checkoutItems.length === 0 && !orderPlaced) {
       router.push('/cart');
     }
   }, [loading, checkoutItems, router, orderPlaced]);
+
 
   const checkoutTotal = checkoutItems.reduce((acc, item) => {
     const price = item.variant
@@ -419,7 +435,13 @@ function CheckoutPageContent() {
       return;
     }
 
+    if (hasInvalidItems) {
+      toast.error('Có sản phẩm trong đơn hàng hiện đã hết hàng hoặc tạm ngưng bán. Vui lòng quay lại giỏ hàng để cập nhật.');
+      return;
+    }
+
     let finalAddress = '';
+
     let name = '';
     let phoneStr = '';
     let targetDistrictId: number | undefined = undefined;
@@ -611,7 +633,44 @@ function CheckoutPageContent() {
             <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div>
+            {hasInvalidItems && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 mb-6 text-rose-800 animate-in fade-in">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="size-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 text-xs">
+                    <p className="font-extrabold text-sm mb-1">Không thể thanh toán do sản phẩm thay đổi trạng thái:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {invalidCheckoutItems.map((item, idx) => {
+                        const isInactive = item.product?.isActive === false || (!!item.variant && item.variant.isActive === false);
+                        const availableStock = item.variant ? (item.variant.stock ?? 0) : (item.product?.stock ?? 0);
+                        const reason = isInactive
+                          ? 'Tạm ngưng bán'
+                          : availableStock <= 0
+                          ? 'Hết hàng trong kho'
+                          : `Kho chỉ còn ${availableStock} cái (bạn đang đặt ${item.quantity})`;
+                        return (
+                          <li key={idx} className="font-semibold">
+                            <strong>{item.product?.name}</strong> {item.variant ? `(${item.variant.name})` : ''}: <span className="text-rose-700 font-bold">{reason}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="mt-3">
+                      <Link
+                        href="/cart"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs transition shadow-xs"
+                      >
+                        <ArrowLeft className="size-3.5" /> Quay lại giỏ hàng để cập nhật
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
 
             {/* Left side: Address & Payment */}
             <div className="lg:col-span-8 space-y-6">
@@ -931,11 +990,18 @@ function CheckoutPageContent() {
                   <button
                     type="button"
                     onClick={handlePlaceOrder}
-                    disabled={submitting}
-                    className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400 focus-visible:outline-none cursor-pointer"
+                    disabled={submitting || hasInvalidItems}
+                    className={cn(
+                      "w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl px-6 text-sm font-extrabold shadow-sm transition focus-visible:outline-none cursor-pointer",
+                      hasInvalidItems
+                        ? "bg-rose-100 text-rose-700 border border-rose-200 cursor-not-allowed"
+                        : "bg-[var(--primary-color)] text-white hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400"
+                    )}
                   >
                     {submitting ? (
                       <Loader2 className="size-4 animate-spin text-white" />
+                    ) : hasInvalidItems ? (
+                      'Không thể đặt hàng (Sản phẩm hết hàng / ngưng bán)'
                     ) : (
                       'Đặt hàng'
                     )}
@@ -964,8 +1030,10 @@ function CheckoutPageContent() {
 
             </div>
           </div>
+        </div>
         )}
       </div>
+
 
 
 
