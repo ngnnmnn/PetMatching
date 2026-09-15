@@ -1078,7 +1078,7 @@ export default function SpaStaff() {
                         {isFuture ? (
                           <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-2xl border border-slate-250 space-y-2.5 text-center">
                             <p className="text-[11px] text-slate-500 font-medium max-w-sm">
-                              Lịch hẹn được xếp vào ngày <strong>{new Date(booking.scheduledAt).toLocaleDateString('vi-VN')}</strong>.
+                              Lịch hẹn được xếp vào ngày <strong>{new Date(booking.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>.
                             </p>
                           </div>
                         ) : (booking.status === 'CONFIRMED' || booking.status === 'PENDING') ? (

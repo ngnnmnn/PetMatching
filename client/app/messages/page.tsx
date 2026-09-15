@@ -1122,7 +1122,7 @@ export default function MessagesPage() {
                     )}
 
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2 border-t font-semibold">
-                      <span>Gửi ngày: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</span>
+                      <span>Gửi ngày: {new Date(req.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                     </div>
                   </article>
                   );

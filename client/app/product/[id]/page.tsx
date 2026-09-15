@@ -927,9 +927,9 @@ export default function ProductDetailPage() {
                         <p className="text-sm font-bold text-[var(--text-main)]">{review.user?.name}</p>
                         <p className="text-xxs text-[var(--text-muted)] font-semibold">
                           {new Date(review.createdAt).toLocaleDateString('vi-VN', {
+                            day: '2-digit',
+                            month: '2-digit',
                             year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
                           })}
                         </p>
                       </div>

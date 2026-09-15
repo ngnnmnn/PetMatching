@@ -1429,7 +1429,7 @@ function SpaManagerConsoleContent() {
                       Khoảng thời gian: <span className="font-bold text-primary">{stats.range?.label || '30 ngày gần nhất'}</span>
                       {stats.range?.from && stats.range?.to && (
                         <span className="ml-1 text-gray-400">
-                          ({new Date(stats.range.from).toLocaleDateString('vi-VN')} – {new Date(stats.range.to).toLocaleDateString('vi-VN')})
+                          ({new Date(stats.range.from).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })} – {new Date(stats.range.to).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })})
                         </span>
                       )}
                     </p>
@@ -2833,7 +2833,7 @@ function SpaManagerConsoleContent() {
               <div className="flex justify-between">
                 <span className="text-gray-500 font-bold">Thời gian hẹn:</span>
                 <span className="font-extrabold text-indigo-900">
-                  {new Date(confirmBookingTarget.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {new Date(confirmBookingTarget.scheduledAt).toLocaleDateString('vi-VN')}
+                  {new Date(confirmBookingTarget.scheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {new Date(confirmBookingTarget.scheduledAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                 </span>
               </div>
             </div>

@@ -127,9 +127,15 @@ const compactMoney = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 1,
 });
 
+/**
+ * Định dạng ngày giờ hiển thị trên biểu đồ tổng quan kinh doanh (HH:mm dd/MM/yyyy)
+ */
 const dateTime = new Intl.DateTimeFormat("vi-VN", {
-  dateStyle: "short",
-  timeStyle: "short",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
 const chartColors = {

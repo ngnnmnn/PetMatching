@@ -683,7 +683,7 @@ export default function PromotionsPage() {
                         <span>
                           Hết hạn:{' '}
                           <strong className={cn(isExpired ? 'text-rose-600' : 'text-slate-700')}>
-                            {new Date(voucher.expiredAt).toLocaleDateString('vi-VN')}
+                            {new Date(voucher.expiredAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </strong>
                         </span>
                       ) : (

@@ -679,7 +679,7 @@ export default function ProfilePage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold">{item.blocked.name}</p>
                           <p className="text-xs text-[var(--text-muted)]">
-                            Đã chặn ngày {new Date(item.createdAt).toLocaleDateString('vi-VN')}
+                            Đã chặn ngày {new Date(item.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </p>
                         </div>
                       </div>

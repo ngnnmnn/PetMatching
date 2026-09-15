@@ -165,15 +165,35 @@ export function formatGender(gender?: string) {
   return gender === "MALE" ? "Đực" : gender === "FEMALE" ? "Cái" : (gender ?? "-");
 }
 
+/**
+ * Định dạng giá trị ngày tháng hiển thị theo chuẩn dd/MM/yyyy
+ */
 export function formatDateValue(value?: string | Date | null) {
   if (!value) return "-";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleDateString("vi-VN");
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
 }
 
+/**
+ * Hiển thị ô dữ liệu ngày tháng trên bảng quản trị Admin theo chuẩn dd/MM/yyyy
+ */
 export function adminDateCell(row: AdminRow) {
   const value = row.createdAt ?? row.updatedAt ?? row.scheduledAt;
-  return value ? new Date(value).toLocaleDateString("vi-VN") : "-";
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
 }
 
 export function adminMoneyCell(row: AdminRow) {

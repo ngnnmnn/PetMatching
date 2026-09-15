@@ -1621,7 +1621,14 @@ function StatusBadge({ status }: { status: Pet["status"] }) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("vi-VN").format(new Date(value));
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Chưa cập nhật"
+    : date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
 }
 
 function formatAge(value: string) {
