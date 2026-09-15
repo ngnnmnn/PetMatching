@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
+import { X, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { shippingApi, type HanoiWardOption } from '@/lib/api/shipping';
@@ -14,22 +14,6 @@ function formatCurrency(value: number) {
     currency: 'VND',
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-interface CustomSelectOption {
-  value: string | number;
-  label: string;
-}
-
-interface CustomSelectProps {
-  label: string;
-  placeholder: string;
-  options: CustomSelectOption[];
-  value: string | number | undefined;
-  onChange: (value: string | number, label: string) => void;
-  disabled?: boolean;
-  loading?: boolean;
-  required?: boolean;
 }
 
 function removeDiacritics(str: string) {
@@ -46,126 +30,27 @@ const cleanWardName = (name: string) => {
   return s.trim();
 };
 
-
-function CustomSelect({
-  label,
-  placeholder,
-  options,
-  value,
-  onChange,
-  disabled = false,
-  loading = false,
-  required = false,
-}: CustomSelectProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const selectedOption = options.find((opt) => String(opt.value) === String(value));
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const filteredOptions = options.filter((opt) => {
-    if (!searchTerm.trim()) return true;
-    const s = removeDiacritics(searchTerm).toLowerCase();
-    const l = removeDiacritics(opt.label).toLowerCase();
-    return l.includes(s);
-  });
-
-  return (
-    <div className="relative flex flex-col" ref={containerRef}>
-      <label className="mb-2 flex items-center text-xs font-extrabold text-[var(--text-main)]">
-        {label} {required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-
-      <button
-        type="button"
-        disabled={disabled || loading}
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="flex min-h-12 w-full items-center justify-between rounded-xl border border-[var(--border-color)] bg-[#FCFCFA] px-4 py-3 text-left text-sm transition hover:border-gray-400 focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-      >
-        <span className={`truncate ${!selectedOption ? 'text-gray-400' : 'text-[var(--text-main)] font-semibold'}`}>
-          {loading ? 'Đang tải danh sách...' : selectedOption ? selectedOption.label : placeholder}
-        </span>
-        <ChevronDown className={`size-4 text-gray-400 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && !disabled && (
-        <div className="absolute left-0 right-0 top-full z-[70] mt-2 flex max-h-56 flex-col overflow-hidden rounded-xl border border-[var(--border-color)] bg-white p-2 shadow-2xl animate-in fade-in slide-in-from-top-1 duration-150">
-          {options.length > 5 && (
-            <div className="relative mb-2 shrink-0">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-gray-400" />
-              <input
-                type="text"
-                autoFocus
-                placeholder="Gõ để tìm nhanh..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border-color)] pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary bg-[#FCFCFA]"
-              />
-            </div>
-          )}
-
-          <div className="max-h-40 space-y-0.5 overflow-y-auto overscroll-contain pr-1">
-            {filteredOptions.length === 0 ? (
-              <div className="py-3 text-center text-xs text-gray-400 font-medium">Không tìm thấy dữ liệu</div>
-            ) : (
-              filteredOptions.map((opt) => {
-                const isSelected = String(opt.value) === String(value);
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      onChange(opt.value, opt.label);
-                      setIsOpen(false);
-                      setSearchTerm('');
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition text-left ${isSelected
-                        ? 'bg-[#0F766E]/10 text-[#0F766E] font-bold'
-                        : 'text-[var(--text-main)] hover:bg-gray-100 font-medium'
-                      }`}
-                  >
-                    <span className="truncate">{opt.label}</span>
-                    {isSelected && <Check className="size-3.5 text-[#0F766E] shrink-0 ml-2" />}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+export interface AddressFormData {
+  receiverName: string;
+  receiverPhone: string;
+  provinceName: string;
+  districtName: string;
+  wardName: string;
+  detail: string;
+  provinceId?: number;
+  districtId?: number;
+  wardCode?: string;
+  saveAddressToDb: boolean;
+  setAsDefault: boolean;
+  lat?: number;
+  lng?: number;
+  calculatedShippingFee?: number;
 }
 
 interface AddressFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: {
-    receiverName: string;
-    receiverPhone: string;
-    provinceName: string;
-    districtName: string;
-    wardName: string;
-    detail: string;
-    provinceId?: number;
-    districtId?: number;
-    wardCode?: string;
-    saveAddressToDb: boolean;
-    setAsDefault: boolean;
-    lat?: number;
-    lng?: number;
-    calculatedShippingFee?: number;
-  }) => void;
+  onSubmit: (data: AddressFormData) => void;
 
   savedAddresses?: Address[];
   initialData?: {
@@ -225,8 +110,6 @@ export default function AddressFormModal({
   const [wardCode, setWardCode] = useState<string | undefined>(initialData?.wardCode);
   const [wardName, setWardName] = useState<string>(initialData?.ward || '');
 
-  const [loadingWards, setLoadingWards] = useState(false);
-
   // Cước phí giao hỏa tốc AhaMove tính toán thời gian thực (nếu chưa có địa chỉ thì để null)
   const [dynamicShippingFee, setDynamicShippingFee] = useState<number | null>(null);
   const calculatedShippingFee = showShippingFee ? dynamicShippingFee : null;
@@ -246,7 +129,9 @@ export default function AddressFormModal({
       return;
     }
 
-    if (!hasInitializedRef.current) {
+    if (hasInitializedRef.current) return;
+
+    const timer = window.setTimeout(() => {
       hasInitializedRef.current = true;
       if (initialData?.receiverName || initialData?.detail) {
         setAddressTab('new');
@@ -260,7 +145,14 @@ export default function AddressFormModal({
       } else if (savedAddresses && savedAddresses.length > 0) {
         setAddressTab('saved');
         const defaultAddr = savedAddresses.find((a) => a.isDefault) || savedAddresses[0];
-        handleSelectSavedAddress(defaultAddr);
+        setSelectedSavedAddressId(defaultAddr.id);
+        setReceiverName(defaultAddr.receiverName || '');
+        setReceiverPhone(defaultAddr.receiverPhone || '');
+        setDetail(defaultAddr.detail || '');
+        setWardName(defaultAddr.ward || '');
+        setWardCode(defaultAddr.wardCode || undefined);
+        setSelectedLat(defaultAddr.latitude ?? undefined);
+        setSelectedLng(defaultAddr.longitude ?? undefined);
       } else {
         setAddressTab('new');
         setReceiverName('');
@@ -271,7 +163,9 @@ export default function AddressFormModal({
         setSelectedLat(undefined);
         setSelectedLng(undefined);
       }
-    }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [isOpen, initialData, savedAddresses]);
 
   // Fetch Wards for Hanoi (province_id = 1) when modal is open
@@ -279,7 +173,6 @@ export default function AddressFormModal({
     if (!isOpen) return;
 
     const fetchWards = async () => {
-      setLoadingWards(true);
       try {
         const response = await shippingApi.getHanoiWards();
         const list = response.data;
@@ -303,8 +196,6 @@ export default function AddressFormModal({
       } catch (err) {
         console.error('Failed to load Hanoi wards', err);
         setWards([]);
-      } finally {
-        setLoadingWards(false);
       }
     };
 
@@ -316,11 +207,12 @@ export default function AddressFormModal({
     if (!isOpen) return;
 
     if (!detail || detail.trim().length < 5) {
-      setDynamicShippingFee(null);
-      return;
+      const resetTimer = window.setTimeout(() => setDynamicShippingFee(null), 0);
+      return () => window.clearTimeout(resetTimer);
     }
 
     const fullAddress = [detail, wardName, 'Thành phố Hà Nội'].filter(Boolean).join(', ');
+    let isCurrentRequest = true;
 
     const timer = setTimeout(() => {
       shippingApi
@@ -330,14 +222,17 @@ export default function AddressFormModal({
           addressStr: fullAddress,
         })
         .then((res) => {
-          if (res.data?.feeVnd && typeof res.data.feeVnd === 'number') {
+          if (isCurrentRequest && res.data?.feeVnd && typeof res.data.feeVnd === 'number') {
             setDynamicShippingFee(res.data.feeVnd);
           }
         })
         .catch(() => {});
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      isCurrentRequest = false;
+      clearTimeout(timer);
+    };
   }, [isOpen, detail, wardName, selectedLat, selectedLng]);
 
   // Nạp đầy đủ địa chỉ và tọa độ đã lưu để không phải suy đoán lại vị trí giao hàng.
@@ -350,11 +245,6 @@ export default function AddressFormModal({
     setWardCode(addr.wardCode || undefined);
     setSelectedLat(addr.latitude ?? undefined);
     setSelectedLng(addr.longitude ?? undefined);
-  };
-
-  const handleWardSelect = (val: string | number, label: string) => {
-    setWardCode(String(val));
-    setWardName(label);
   };
 
   /**
@@ -415,11 +305,6 @@ export default function AddressFormModal({
       onClose();
     }
   };
-
-  const wardOptions: CustomSelectOption[] = wards.map((w) => ({
-    value: w.wardCode,
-    label: w.wardName,
-  }));
 
   if (!isOpen) return null;
 
@@ -582,7 +467,7 @@ export default function AddressFormModal({
                       setWardName(wards[0].wardName);
                     }
                   }}
-                  onSelectLocation={async (loc: LocationSearchResult) => {
+                  onSelectLocation={(loc: LocationSearchResult) => {
                     const chosenAddrStr = loc.address || loc.detail;
                     setDetail(chosenAddrStr);
                     if (loc.ward) {
@@ -605,22 +490,8 @@ export default function AddressFormModal({
                     }
                     setSelectedLat(loc.lat);
                     setSelectedLng(loc.lng);
-                    try {
-                      const feeRes = await shippingApi.estimateAhamoveShippingFee({
-                        dropoffLat: loc.lat,
-                        dropoffLng: loc.lng,
-                        addressStr: chosenAddrStr,
-                      });
-                      if (feeRes.data?.feeVnd) {
-                        setDynamicShippingFee(feeRes.data.feeVnd);
-                        toast.success(
-                          `Đã chọn vị trí: ${chosenAddrStr} — Phí ship hỏa tốc AhaMove: ${feeRes.data.formattedFee} (${feeRes.data.distanceKm} km)`,
-                        );
-                      }
-                    } catch (e) {
-                      console.error('Failed to estimate AhaMove fee', e);
-                      toast.success(`Đã chọn vị trí: ${chosenAddrStr}`);
-                    }
+                    // Effect báo giá có debounce sẽ xử lý một lần sau khi tọa độ được cập nhật.
+                    toast.success(`Đã chọn vị trí: ${chosenAddrStr}`);
                   }}
                 />
                 <p className="text-[11px] font-semibold text-teal-800">

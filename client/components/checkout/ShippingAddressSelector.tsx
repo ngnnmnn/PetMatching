@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Plus, MapPin } from 'lucide-react';
 import { Address } from '@/types';
-import AddressFormModal from './AddressFormModal';
+import AddressFormModal, { type AddressFormData } from './AddressFormModal';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import { usersApi } from '@/lib/api/users';
 import { toast } from 'sonner';
@@ -28,7 +28,7 @@ interface ShippingAddressSelectorProps {
     lat?: number;
     lng?: number;
   };
-  onApplyTempAddress?: (data: any) => void;
+  onApplyTempAddress?: (data: AddressFormData) => void;
   title?: string;
   className?: string;
 }
@@ -91,7 +91,7 @@ export default function ShippingAddressSelector({
   };
 
   // Lưu đồng thời thông tin hành chính và tọa độ OpenStreetMap của địa chỉ được chọn.
-  const handleModalSubmit = async (data: any) => {
+  const handleModalSubmit = async (data: AddressFormData) => {
     setIsAddressModalOpen(false);
 
     if (editingAddress) {
@@ -258,7 +258,7 @@ export default function ShippingAddressSelector({
                 </p>
                 {selectedAddressId === addr.id && (!addr.districtId || !addr.wardCode) && (
                   <p className="text-[10px] text-amber-600 font-bold mt-1.5 flex items-center gap-1">
-                    ⚠️ Địa chỉ cũ hoặc thiếu mã khu vực (phí vận chuyển mặc định 30.000₫). Vui lòng bấm &quot;Sửa&quot; để chọn lại phường/xã.
+                    ⚠️ Địa chỉ cũ đang thiếu thông tin vị trí. Vui lòng bấm &quot;Sửa&quot; và chọn lại địa chỉ từ OpenStreetMap để tính phí chính xác.
                   </p>
                 )}
               </div>

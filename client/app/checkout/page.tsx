@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useMemo, useRef, useSyncExternalStore, useCallback } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { isAxiosError } from 'axios';
 import {
   ArrowLeft,
   CreditCard,
@@ -24,11 +26,45 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import AppHeader from '@/components/layout/AppHeader';
 
-import { useCart } from '@/context/CartContext';
-import { usersApi } from '@/lib/api/users';
+import { type CartItem, useCart } from '@/context/CartContext';
+import { type AppliedVoucherResponse, usersApi } from '@/lib/api/users';
 import { shippingApi } from '@/lib/api/shipping';
 import { Address } from '@/types';
 import { PayOSQRModal, PayOSQRData, ShippingAddressSelector, VoucherModal } from '@/components/checkout';
+
+const FREE_SHIPPING_THRESHOLD = 500000;
+
+type ShippingFeeStatus = 'idle' | 'loading' | 'success' | 'error';
+
+interface ShippingDestination {
+  key: string;
+  addressStr: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface ShippingQuote {
+  destinationKey: string;
+  status: ShippingFeeStatus;
+  fee: number | null;
+}
+
+/** Đăng ký rỗng để xác định lần render phía client mà không cần cập nhật state trong effect. */
+function subscribeToMount() {
+  return () => undefined;
+}
+
+/** Xác định trang checkout đã hydrate trên trình duyệt. */
+function useIsMounted() {
+  return useSyncExternalStore(subscribeToMount, () => true, () => false);
+}
+
+/** Lấy thông báo lỗi API an toàn mà không sử dụng kiểu any. */
+function getApiErrorMessage(error: unknown, fallback: string) {
+  if (!isAxiosError<{ message?: string | string[] }>(error)) return fallback;
+  const message = error.response?.data?.message;
+  return Array.isArray(message) ? message.join(', ') : message || fallback;
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
@@ -49,18 +85,16 @@ function CheckoutPageContent() {
     clearCart
   } = useCart();
 
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   // Selection and promo code state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [directCheckoutItem, setDirectCheckoutItem] = useState<any | null>(null);
+  const [directCheckoutItem, setDirectCheckoutItem] = useState<CartItem | null>(null);
   const [promoCode, setPromoCode] = useState('');
-  const [appliedCode, setAppliedCode] = useState('');
-  const [discountPercent, setDiscountPercent] = useState(0);
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [appliedVoucher, setAppliedVoucher] = useState<any | null>(null);
+  const [appliedVoucher, setAppliedVoucher] = useState<AppliedVoucherResponse | null>(null);
+  const appliedQueryCodeRef = useRef('');
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
 
   // Addresses from DB
@@ -84,8 +118,12 @@ function CheckoutPageContent() {
 
   // Phương thức thanh toán (COD hoặc chuyển khoản QR PayOS)
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'QR'>('COD');
-  // Cước phí giao hàng AhaMove (chỉ có giá trị số khi khách hàng đã chọn/nhập địa chỉ)
-  const [calculatedShippingFee, setCalculatedShippingFee] = useState<number | null>(null);
+  // Lưu một báo giá duy nhất theo khóa địa chỉ để kết quả cũ không ghi đè địa chỉ mới.
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuote>({
+    destinationKey: '',
+    status: 'idle',
+    fee: null,
+  });
 
   // PayOS QR Modal State
   const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
@@ -133,26 +171,30 @@ function CheckoutPageContent() {
 
   // Load selected items and direct checkout item from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('petmatch_selected_cart_items');
-    if (stored) {
-      try {
-        setSelectedItemIds(JSON.parse(stored));
-      } catch (e) {
-        console.error(e);
+    const timer = window.setTimeout(() => {
+      const stored = localStorage.getItem('petmatch_selected_cart_items');
+      if (stored) {
+        try {
+          setSelectedItemIds(JSON.parse(stored));
+        } catch (error) {
+          console.error(error);
+        }
       }
-    }
 
-    const storedDirect = localStorage.getItem('petmatch_direct_checkout_item');
-    if (storedDirect) {
-      try {
-        setDirectCheckoutItem(JSON.parse(storedDirect));
-      } catch (e) {
-        console.error(e);
+      const storedDirect = localStorage.getItem('petmatch_direct_checkout_item');
+      if (storedDirect) {
+        try {
+          setDirectCheckoutItem(JSON.parse(storedDirect));
+        } catch (error) {
+          console.error(error);
+        }
       }
-    }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
-  const handleUpdateQty = async (item: any, newQty: number) => {
+  const handleUpdateQty = async (item: CartItem, newQty: number) => {
     if (newQty < 1) {
       toast.error('Số lượng tối thiểu là 1.');
       return;
@@ -174,7 +216,7 @@ function CheckoutPageContent() {
     }
   };
 
-  const handleRemoveItem = async (item: any) => {
+  const handleRemoveItem = async (item: CartItem) => {
     if (directCheckoutItem && item.id === directCheckoutItem.id) {
       setDirectCheckoutItem(null);
       localStorage.removeItem('petmatch_direct_checkout_item');
@@ -204,15 +246,27 @@ function CheckoutPageContent() {
     }
   };
 
-  // Initialize promo code from query parameter if present
-  useEffect(() => {
-    const code = searchParams.get('code') || '';
-    if (code) {
-      handleApplyPromoCode(undefined, code);
-    }
-  }, [searchParams]);
+  // Nếu có mua ngay thì chỉ dùng sản phẩm đó; ngược lại dùng các dòng cart đã chọn.
+  const checkoutItems = useMemo(
+    () =>
+      directCheckoutItem
+        ? [directCheckoutItem]
+        : selectedItemIds.length > 0
+          ? cartItems.filter((item) => selectedItemIds.includes(item.id))
+          : cartItems,
+    [cartItems, directCheckoutItem, selectedItemIds],
+  );
 
-  const handleApplyPromoCode = async (
+  const checkoutTotal = checkoutItems.reduce((acc, item) => {
+    const price = item.variant
+      ? (item.variant.salePrice ?? item.variant.sellingPrice)
+      : (item.product.salePrice ?? item.product.sellingPrice);
+    return acc + price * item.quantity;
+  }, 0);
+
+  const checkoutCount = checkoutItems.reduce((acc, item) => acc + item.quantity, 0);
+
+  const handleApplyPromoCode = useCallback(async (
     e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent,
     targetCode?: string,
   ) => {
@@ -221,51 +275,34 @@ function CheckoutPageContent() {
     if (!code) return;
 
     // Reset current applied voucher first (1 voucher per order rule)
-    setDiscountPercent(0);
-    setDiscountAmount(0);
     setAppliedVoucher(null);
-    setAppliedCode('');
 
     try {
       const response = await usersApi.applyVoucher(code, checkoutTotal);
       if (response.data.success) {
         const voucher = response.data;
         setAppliedVoucher(voucher);
-        setAppliedCode(voucher.code);
-        if (voucher.type === 'PERCENTAGE') {
-          setDiscountPercent(voucher.value);
-          setDiscountAmount(0);
-        } else if (voucher.type === 'FIXED') {
-          setDiscountPercent(0);
-          setDiscountAmount(voucher.discountAmount || voucher.value);
-        } else {
-          setDiscountPercent(0);
-          setDiscountAmount(0);
-        }
         toast.success(voucher.message || 'Áp dụng mã giảm giá thành công!');
       }
-    } catch (err: any) {
-      console.error('Failed to apply voucher', err);
-      const errMsg = err.response?.data?.message || 'Mã giảm giá không hợp lệ hoặc chưa đủ điều kiện.';
-      toast.error(errMsg);
+    } catch (error: unknown) {
+      console.error('Failed to apply voucher', error);
+      toast.error(getApiErrorMessage(error, 'Mã giảm giá không hợp lệ hoặc chưa đủ điều kiện.'));
     }
     setPromoCode('');
-  };
+  }, [checkoutTotal, promoCode]);
 
   const handleRemovePromo = () => {
-    setDiscountPercent(0);
-    setDiscountAmount(0);
     setAppliedVoucher(null);
-    setAppliedCode('');
     toast.message('Đã hủy áp dụng mã giảm giá');
   };
 
-  // If we have a direct checkout item, checkout only that item. Otherwise, filter cart items.
-  const checkoutItems = directCheckoutItem
-    ? [directCheckoutItem]
-    : selectedItemIds.length > 0
-      ? cartItems.filter((item) => selectedItemIds.includes(item.id))
-      : cartItems;
+  // Chỉ tự động áp dụng một lần cho mỗi mã voucher nhận từ URL.
+  useEffect(() => {
+    const code = searchParams.get('code')?.trim().toUpperCase() || '';
+    if (!code || appliedQueryCodeRef.current === code) return;
+    appliedQueryCodeRef.current = code;
+    void handleApplyPromoCode(undefined, code);
+  }, [searchParams, handleApplyPromoCode]);
 
   // Kiểm tra trạng thái tồn kho và mở bán của các sản phẩm trong phiên thanh toán theo thời gian thực
   const invalidCheckoutItems = checkoutItems.filter((item) => {
@@ -285,19 +322,56 @@ function CheckoutPageContent() {
     }
   }, [loading, checkoutItems, router, orderPlaced]);
 
+  const shippingDestination = useMemo<ShippingDestination | null>(() => {
+    let addressStr = '';
+    let latitude: number | undefined;
+    let longitude: number | undefined;
 
-  const checkoutTotal = checkoutItems.reduce((acc, item) => {
-    const price = item.variant
-      ? (item.variant.salePrice ?? item.variant.sellingPrice)
-      : (item.product.salePrice ?? item.product.sellingPrice);
-    return acc + price * item.quantity;
-  }, 0);
+    if (selectedAddressId && selectedAddressId !== 'new') {
+      const address = savedAddresses.find((item) => item.id === selectedAddressId);
+      if (address) {
+        addressStr = `${address.detail}, ${address.ward}, ${address.district}, ${address.province}`;
+        latitude = address.latitude ?? undefined;
+        longitude = address.longitude ?? undefined;
+      }
+    } else {
+      addressStr = [detail, selectedWardName, selectedDistrictName, selectedProvinceName]
+        .filter(Boolean)
+        .join(', ');
+      latitude = selectedLat;
+      longitude = selectedLng;
+    }
 
-  const checkoutCount = checkoutItems.reduce((acc, item) => acc + item.quantity, 0);
+    if (addressStr.trim().length < 5) return null;
 
-  const hasItems = !!directCheckoutItem || selectedItemIds.length > 0;
-  const rawShippingFee = calculatedShippingFee ?? 0;
-  const baseShippingFee = (hasItems && checkoutTotal > 500000) ? 0 : rawShippingFee;
+    return {
+      key: `${latitude ?? ''}:${longitude ?? ''}:${addressStr}`,
+      addressStr,
+      latitude,
+      longitude,
+    };
+  }, [
+    detail,
+    savedAddresses,
+    selectedAddressId,
+    selectedDistrictName,
+    selectedLat,
+    selectedLng,
+    selectedProvinceName,
+    selectedWardName,
+  ]);
+
+  const shippingFeeStatus: ShippingFeeStatus = !shippingDestination
+    ? 'idle'
+    : shippingQuote.destinationKey === shippingDestination.key
+      ? shippingQuote.status
+      : 'loading';
+  const calculatedShippingFee =
+    shippingFeeStatus === 'success' ? shippingQuote.fee : null;
+  const hasFreeShippingByOrderValue = checkoutTotal > FREE_SHIPPING_THRESHOLD;
+  const baseShippingFee = hasFreeShippingByOrderValue
+    ? 0
+    : (calculatedShippingFee ?? 0);
 
   let freeShipDiscount = 0;
   if (appliedVoucher?.type === 'FREE_SHIP') {
@@ -310,24 +384,34 @@ function CheckoutPageContent() {
   }
 
   const shippingFee = Math.max(0, baseShippingFee - freeShipDiscount);
-  const productDiscount = appliedVoucher?.type === 'FREE_SHIP'
-    ? 0
-    : Math.min(checkoutTotal, (checkoutTotal * discountPercent) / 100 + discountAmount);
+  const productDiscount =
+    !appliedVoucher || appliedVoucher.type === 'FREE_SHIP'
+      ? 0
+      : Math.min(
+          checkoutTotal,
+          appliedVoucher.type === 'PERCENTAGE'
+            ? Math.round((checkoutTotal * appliedVoucher.value) / 100)
+            : (appliedVoucher.discountAmount ?? appliedVoucher.value),
+        );
 
   const totalDiscount = appliedVoucher?.type === 'FREE_SHIP' ? freeShipDiscount : productDiscount;
   const finalTotal = Math.max(0, checkoutTotal - productDiscount + shippingFee);
+  const appliedCode = appliedVoucher?.code || '';
+  const hasResolvedShippingFee =
+    hasFreeShippingByOrderValue || shippingFeeStatus === 'success';
 
-  const loadAddresses = async () => {
+  const loadAddresses = useCallback(async () => {
     try {
       const response = await usersApi.getAddresses();
       const data = response.data || [];
       setSavedAddresses(data);
       if (data.length > 0) {
-        // Keep current selection if valid, otherwise default or first one
-        if (!selectedAddressId || selectedAddressId === 'new') {
-          const defaultAddr = data.find((a) => a.isDefault) || data[0];
-          setSelectedAddressId(defaultAddr.id);
-        }
+        const defaultAddress = data.find((address) => address.isDefault) || data[0];
+        setSelectedAddressId((currentId) =>
+          currentId && currentId !== 'new' && data.some((address) => address.id === currentId)
+            ? currentId
+            : defaultAddress.id,
+        );
       } else {
         setSelectedAddressId('new');
       }
@@ -337,65 +421,63 @@ function CheckoutPageContent() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    setIsMounted(true);
-    loadAddresses();
   }, []);
 
-  // Tự động tính cước phí giao hàng hỏa tốc AhaMove thời gian thực từ AhaMove Portal API mỗi khi thay đổi địa chỉ
   useEffect(() => {
-    let targetAddressStr = '';
-    let targetLat: number | undefined = undefined;
-    let targetLng: number | undefined = undefined;
+    const timer = window.setTimeout(() => void loadAddresses(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadAddresses]);
 
-    if (selectedAddressId && selectedAddressId !== 'new') {
-      const addr = savedAddresses.find((a) => a.id === selectedAddressId);
-      if (addr) {
-        targetAddressStr = `${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
-        targetLat = addr.latitude ?? undefined;
-        targetLng = addr.longitude ?? undefined;
-      }
-    } else {
-      if (detail || selectedWardName || selectedDistrictName || selectedProvinceName) {
-        targetAddressStr = [detail, selectedWardName, selectedDistrictName, selectedProvinceName]
-          .filter(Boolean)
-          .join(', ');
-        targetLat = selectedLat;
-        targetLng = selectedLng;
-      }
-    }
+  // Báo giá theo khóa địa chỉ và hủy nhận kết quả khi địa chỉ thay đổi trong lúc API đang xử lý.
+  useEffect(() => {
+    if (!shippingDestination || hasFreeShippingByOrderValue) return;
 
-    if (!targetAddressStr || targetAddressStr.trim().length < 5) {
-      setCalculatedShippingFee(null);
-      return;
-    }
-
-    shippingApi
-      .estimateAhamoveShippingFee({
-        dropoffLat: targetLat,
-        dropoffLng: targetLng,
-        addressStr: targetAddressStr,
-      })
-      .then((res) => {
-        if (res.data?.feeVnd && typeof res.data.feeVnd === 'number') {
-          setCalculatedShippingFee(res.data.feeVnd);
-        }
-      })
-      .catch((err) => {
-        console.warn('Failed to estimate real-time AhaMove shipping fee:', err);
+    let isCurrentRequest = true;
+    const timer = window.setTimeout(async () => {
+      setShippingQuote({
+        destinationKey: shippingDestination.key,
+        status: 'loading',
+        fee: null,
       });
-  }, [
-    selectedAddressId,
-    savedAddresses,
-    detail,
-    selectedWardName,
-    selectedDistrictName,
-    selectedProvinceName,
-    selectedLat,
-    selectedLng,
-  ]);
+
+      try {
+        const response = await shippingApi.estimateAhamoveShippingFee({
+          dropoffLat: shippingDestination.latitude,
+          dropoffLng: shippingDestination.longitude,
+          addressStr: shippingDestination.addressStr,
+        });
+        const fee = response.data?.feeVnd;
+
+        if (isCurrentRequest && typeof fee === 'number' && fee >= 0) {
+          setShippingQuote({
+            destinationKey: shippingDestination.key,
+            status: 'success',
+            fee,
+          });
+        } else if (isCurrentRequest) {
+          setShippingQuote({
+            destinationKey: shippingDestination.key,
+            status: 'error',
+            fee: null,
+          });
+        }
+      } catch (error) {
+        if (isCurrentRequest) {
+          console.warn('Failed to estimate real-time AhaMove shipping fee:', error);
+          setShippingQuote({
+            destinationKey: shippingDestination.key,
+            status: 'error',
+            fee: null,
+          });
+        }
+      }
+    }, 300);
+
+    return () => {
+      isCurrentRequest = false;
+      window.clearTimeout(timer);
+    };
+  }, [hasFreeShippingByOrderValue, shippingDestination]);
 
   // Handle QR Payment Cancel redirection from PayOS
   useEffect(() => {
@@ -558,12 +640,9 @@ function CheckoutPageContent() {
       setOrderPlaced(true);
       setShowSuccessModal(true);
       toast.success('Đã đặt hàng thành công!');
-    } catch (err: any) {
-      console.error('Failed to place order', err);
-      console.error('Order error response details:', err.response?.data);
-      const errMsg = Array.isArray(err.response?.data?.message)
-        ? err.response.data.message.join(', ')
-        : err.response?.data?.message || 'Có lỗi xảy ra trong quá trình đặt hàng.';
+    } catch (error: unknown) {
+      console.error('Failed to place order', error);
+      const errMsg = getApiErrorMessage(error, 'Có lỗi xảy ra trong quá trình đặt hàng.');
 
       if (errMsg.includes('thay đổi') || errMsg.includes('giá') || errMsg.includes('kho')) {
         toast.warning(errMsg, { duration: 6000 });
@@ -791,7 +870,7 @@ function CheckoutPageContent() {
                     <div className="text-xs font-semibold text-[var(--text-main)] space-y-1.5 flex-1">
                       <p className="text-sm font-black text-[#0F766E]">Thanh toán tự động qua PayOS</p>
                       <p className="text-[var(--text-muted)] leading-relaxed">
-                        Hệ thống sẽ chuyển hướng bạn đến cổng thanh toán bảo mật <strong className="font-black text-[#0F766E]">PayOS</strong> ngay sau khi bạn nhấn nút <strong className="font-black text-[#0F766E]">"Đặt hàng"</strong> bên dưới.
+                        Hệ thống sẽ chuyển hướng bạn đến cổng thanh toán bảo mật <strong className="font-black text-[#0F766E]">PayOS</strong> ngay sau khi bạn nhấn nút <strong className="font-black text-[#0F766E]">&quot;Đặt hàng&quot;</strong> bên dưới.
                       </p>
                       <p className="text-[var(--text-muted)] leading-relaxed">
                         Tại đó, PayOS sẽ tạo mã QR động ngân hàng liên kết trực tiếp với tài khoản nhận tiền của bạn với số tiền chính xác là <span className="font-black text-primary">{formatCurrency(finalTotal)}</span> để bạn quét thanh toán tự động và an toàn.
@@ -830,10 +909,12 @@ function CheckoutPageContent() {
                         </div>
                         <p className="text-xs text-gray-700 font-semibold mt-0.5">
                           {appliedVoucher?.type === 'FREE_SHIP'
-                            ? 'Miễn phí vận chuyển 100%'
-                            : discountPercent > 0
-                              ? `Giảm ${discountPercent}% tổng hóa đơn`
-                              : `Giảm ${formatCurrency(discountAmount || appliedVoucher?.discountAmount || 0)}`}
+                            ? appliedVoucher.value === 100 || appliedVoucher.value === 0
+                              ? 'Miễn phí vận chuyển 100%'
+                              : `Giảm ${formatCurrency(appliedVoucher.value)} phí vận chuyển`
+                            : appliedVoucher?.type === 'PERCENTAGE'
+                              ? `Giảm ${appliedVoucher.value}% tổng hóa đơn`
+                              : `Giảm ${formatCurrency(appliedVoucher?.discountAmount ?? appliedVoucher?.value ?? 0)}`}
                         </p>
                       </div>
                     </div>
@@ -886,10 +967,12 @@ function CheckoutPageContent() {
                       <div key={item.id} className="py-4 flex gap-3 items-center border-b border-[var(--border-color)] last:border-b-0">
                         {/* Image */}
                         <div className="aspect-square size-14 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)] shrink-0 relative">
-                          <img
+                          <Image
                             src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
-                            className="w-full h-full object-cover"
+                            fill
+                            sizes="56px"
+                            className="object-cover"
                           />
                         </div>
 
@@ -961,8 +1044,16 @@ function CheckoutPageContent() {
                   <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Phí vận chuyển</span>
                     <span className="text-[var(--text-main)] font-semibold">
-                      {calculatedShippingFee === null ? (
+                      {hasFreeShippingByOrderValue ? (
+                        'Miễn phí'
+                      ) : shippingFeeStatus === 'idle' ? (
                         <span className="text-xs text-amber-700 font-medium font-sans">Chưa chọn địa chỉ</span>
+                      ) : shippingFeeStatus === 'loading' ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-gray-500 font-medium font-sans">
+                          <Loader2 className="size-3 animate-spin" /> Đang tính phí
+                        </span>
+                      ) : shippingFeeStatus === 'error' ? (
+                        <span className="text-xs text-red-600 font-medium font-sans">Chưa thể tính phí</span>
                       ) : shippingFee === 0 ? (
                         'Miễn phí'
                       ) : (
@@ -984,7 +1075,7 @@ function CheckoutPageContent() {
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end text-sm">
                     <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
                     <span className="text-base font-black text-[var(--primary-color)]">
-                      {calculatedShippingFee === null
+                      {!hasResolvedShippingFee
                         ? formatCurrency(Math.max(0, checkoutTotal - productDiscount)) + ' + phí ship'
                         : formatCurrency(finalTotal)}
                     </span>

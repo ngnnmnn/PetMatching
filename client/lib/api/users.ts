@@ -1,5 +1,14 @@
 import api from '@/lib/axios';
-import { Address, ChangePasswordData, ProfileResponse, UpdateProfileData } from '@/types';
+import { Address, ChangePasswordData, ProfileResponse, UpdateProfileData, VoucherType } from '@/types';
+
+export interface AppliedVoucherResponse {
+  success: boolean;
+  code: string;
+  type: VoucherType;
+  value: number;
+  discountAmount?: number;
+  message: string;
+}
 
 export const usersApi = {
   getProfile: () => api.get<ProfileResponse>('/users/profile'),
@@ -49,6 +58,6 @@ export const usersApi = {
     data: { bankCode: string; accountNumber: string; accountName: string; reason: string },
   ) => api.post<any>(`/users/orders/${id}/request-refund`, data),
   applyVoucher: (code: string, totalAmount: number) =>
-    api.post<{ success: boolean; code: string; type: string; value: number; discountAmount?: number; message: string }>('/vouchers/apply', { code, totalAmount }),
+    api.post<AppliedVoucherResponse>('/vouchers/apply', { code, totalAmount }),
 };
 
