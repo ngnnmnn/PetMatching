@@ -1,15 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { PackageCheck, ShoppingCart, Star, X, Sparkles, Eye } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
+import { PackageCheck, Star } from 'lucide-react';
 import { Product } from '@/types';
-import { useCart } from '@/context/CartContext';
 import { cn } from '@/lib/utils';
 
+/**
+ * Định dạng số tiền theo chuẩn tiền tệ Việt Nam (VNĐ)
+ */
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
@@ -18,6 +16,9 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+/**
+ * Tính toán phần trăm giảm giá dựa trên giá bán gốc và giá khuyến mãi
+ */
 function getDiscountPercent(item: { sellingPrice: number; salePrice?: number | null }) {
   if (!item.salePrice || item.salePrice >= item.sellingPrice) {
     return null;
@@ -25,191 +26,91 @@ function getDiscountPercent(item: { sellingPrice: number; salePrice?: number | n
   return Math.round(((item.sellingPrice - item.salePrice) / item.sellingPrice) * 100);
 }
 
-const SIZE_WEIGHT_RANGES: Record<string, { min: number; max: number }> = {
-  s: { min: 0, max: 4 },
-  m: { min: 4, max: 8 },
-  l: { min: 8, max: 15 },
-  xl: { min: 15, max: 30 },
-  xxl: { min: 30, max: 100 },
-  xxxl: { min: 45, max: 150 },
-};
+/**
+ * Lấy mức giá thấp nhất của một sản phẩm:
+ * Tìm giá nhỏ nhất trong các phân loại đang mở bán (isActive !== false),
+ * hoặc giá của sản phẩm gốc nếu không có phân loại.
+ */
+export function getProductLowestPrice(product: any): number {
+  if (!product) return 0;
 
-const getParsedSpecs = (specifications: any): Array<{ key: string; value: string }> => {
-  if (!specifications) return [];
-  try {
-    const obj = typeof specifications === 'string' ? JSON.parse(specifications) : specifications;
-    if (typeof obj === 'object' && obj !== null) {
-      return Object.entries(obj).map(([key, value]) => ({ key, value: String(value) }));
+  const candidatePrices: number[] = [];
+
+  // Lấy giá từ các phân loại sản phẩm đang hoạt động
+  if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+    const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
+    for (const v of activeVariants) {
+      const p = v.salePrice ?? v.sellingPrice;
+      if (typeof p === 'number' && p > 0) {
+        candidatePrices.push(p);
+      }
     }
-  } catch {
-    // Ignore parse error
   }
-  return [];
-};
 
-/** Component thẻ sản phẩm hiển thị thông tin, giá cả, phân loại và nút thêm vào giỏ */
+  // Lấy giá của sản phẩm gốc
+  const basePrice = product.salePrice ?? product.sellingPrice;
+  if (typeof basePrice === 'number' && basePrice > 0) {
+    if (candidatePrices.length === 0) {
+      candidatePrices.push(basePrice);
+    }
+  }
+
+  if (candidatePrices.length > 0) {
+    return Math.min(...candidatePrices);
+  }
+
+  return 0;
+}
+
+/**
+ * Component thẻ sản phẩm tại trang chủ cửa hàng:
+ * - Chỉ hiển thị ảnh đầu tiên của sản phẩm
+ * - Hiển thị giá thấp nhất của sản phẩm đó
+ * - Đã loại bỏ icon con mắt và hover popup
+ * - Đã loại bỏ phần chọn variant bên ngoài danh sách
+ * - Đã loại bỏ nút Thêm vào giỏ / Chọn phân loại theo yêu cầu
+ */
 export default function ProductCard({
   product,
-  selectedPet,
-  selectedPrices,
 }: {
   product: Product;
   selectedPet?: any;
   selectedPrices?: string[];
 }) {
-  const router = useRouter();
-  const [selectedVariant, setSelectedVariant] = useState<any>(null);
-  const [isEyeHovered, setIsEyeHovered] = useState(false);
+  const hasVariants = Boolean(product.variants && product.variants.length > 0);
 
-  const { addToCart } = useCart();
+  // Luôn luôn hiển thị ảnh đại diện đầu tiên của sản phẩm ở danh sách ngoài store
+  const productImage = product.imageUrl || product.images?.[0] || '/placeholder.svg';
 
-  // Mặc định hiển thị ảnh bìa chính của sản phẩm (selectedVariant = null).
-  // Chỉ tự động chọn sẵn variant khi lọc theo thú cưng hoặc khoảng giá.
-  useEffect(() => {
-    if (product.variants && product.variants.length > 0) {
-      const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
-      const availableVariants = activeVariants.length > 0 ? activeVariants : product.variants;
+  // Lấy giá thấp nhất của sản phẩm để hiển thị thống nhất trên toàn hệ thống
+  const lowestPrice = getProductLowestPrice(product);
+  const displayPriceLabel = formatCurrency(lowestPrice);
 
-      // 1. Nếu đang lọc theo thú cưng, ưu tiên chọn phân loại khớp kích thước/cân nặng
-      if (selectedPet && selectedPet.weight > 0) {
-        const w = selectedPet.weight;
-        const matched = availableVariants.find((v: any) => {
-          const nameLower = v.name.toLowerCase();
-          for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
-            if (w >= range.min && w <= range.max) {
-              const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-              if (regex.test(nameLower)) return true;
-            }
-          }
-          return false;
-        });
-        if (matched) {
-          setSelectedVariant(matched);
-          return;
-        }
-      }
+  // Xác định xem sản phẩm có được giảm giá so với giá niêm yết không
+  const originalSellingPrice = product.sellingPrice;
+  const hasDiscount = typeof originalSellingPrice === 'number' && lowestPrice < originalSellingPrice;
 
-      // 2. Nếu đang chọn lọc theo khoảng giá, ưu tiên chọn phân loại CÒN HÀNG có giá khớp với khoảng giá
-      if (selectedPrices && selectedPrices.length > 0) {
-        const matchedInStockByPrice = availableVariants.find((v: any) => {
-          if (Number(v.stock || 0) <= 0) return false;
-          const p = v.salePrice ?? v.sellingPrice;
-          return selectedPrices.some((range) => {
-            if (range === 'under_100k') return p < 100000;
-            if (range === '100k_500k') return p >= 100000 && p <= 500000;
-            if (range === '500k_1m') return p >= 500000 && p <= 1000000;
-            if (range === 'over_1m') return p > 1000000;
-            return false;
-          });
-        });
+  // Tính phần trăm giảm giá thực tế của sản phẩm
+  const discountPercent = typeof originalSellingPrice === 'number' && originalSellingPrice > 0 && lowestPrice < originalSellingPrice
+    ? Math.round(((originalSellingPrice - lowestPrice) / originalSellingPrice) * 100)
+    : (getDiscountPercent(product) || 0);
 
-        const matchedByPrice = matchedInStockByPrice || availableVariants.find((v: any) => {
-          const p = v.salePrice ?? v.sellingPrice;
-          return selectedPrices.some((range) => {
-            if (range === 'under_100k') return p < 100000;
-            if (range === '100k_500k') return p >= 100000 && p <= 500000;
-            if (range === '500k_1m') return p >= 500000 && p <= 1000000;
-            if (range === 'over_1m') return p > 1000000;
-            return false;
-          });
-        });
-
-        if (matchedByPrice) {
-          setSelectedVariant(matchedByPrice);
-          return;
-        }
-      }
-
-      // 3. Mặc định không có bộ lọc -> KHÔNG chọn sẵn variant nào để giữ ảnh bìa gốc của sản phẩm
-      setSelectedVariant(null);
-    } else {
-      setSelectedVariant(null);
-    }
-  }, [product.variants, selectedPet, selectedPrices]);
-
-  const hasVariants = product.variants && product.variants.length > 0;
-  const activeVariants = product.variants?.filter((v: any) => v.isActive !== false) || [];
-  
-  // Tính toán khoảng giá đối với sản phẩm có nhiều phân loại giá khác nhau
-  const variantPrices = activeVariants
-    .map((v: any) => v.salePrice ?? v.sellingPrice)
-    .filter((p: number) => typeof p === 'number' && p > 0);
-
-  const minVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : (product.salePrice ?? product.sellingPrice);
-  const maxVariantPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : (product.salePrice ?? product.sellingPrice);
-  const hasPriceRange = selectedVariant === null && hasVariants && minVariantPrice < maxVariantPrice;
-
-  // Ưu tiên hiển thị Ảnh Bìa Gốc của sản phẩm (`product.imageUrl`), trừ khi người dùng chủ động chọn 1 variant
-  const productImage = selectedVariant?.imageUrl || product.imageUrl || '/placeholder.svg';
-
-  const displayNumericPrice = selectedVariant
-    ? (selectedVariant.salePrice ?? selectedVariant.sellingPrice)
-    : (product.salePrice ?? product.sellingPrice);
-
-  // Hiển thị giá: Dải giá (ví dụ: 99.000đ - 120.000đ) khi chưa chọn variant, hoặc giá đơn khi đã chọn variant
-  const displayPriceLabel = selectedVariant
-    ? formatCurrency(selectedVariant.salePrice ?? selectedVariant.sellingPrice)
-    : hasPriceRange
-    ? `${formatCurrency(minVariantPrice)} - ${formatCurrency(maxVariantPrice)}`
-    : formatCurrency(product.salePrice ?? product.sellingPrice);
-
-  const discount = getDiscountPercent(selectedVariant || product);
+  const discount = discountPercent > 0 ? discountPercent : getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
 
-  const effectiveTotalStock = product.variants && product.variants.length > 0
-    ? product.variants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
+  const effectiveTotalStock = hasVariants
+    ? product.variants!.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
     : (product.stock ?? 0);
-  const currentStock = selectedVariant !== null ? selectedVariant.stock : effectiveTotalStock;
-  const isOutOfStock = currentStock === 0;
-  const productDetailUrl = `/product/${product.id}${selectedVariant ? `?variantId=${selectedVariant.id}` : ''}`;
-
-  // Kiểm tra xem phân loại đang chọn có khớp với cân nặng của thú cưng hay không
-  const isMatchedByPetWeight = !!(
-    selectedPet &&
-    selectedPet.weight > 0 &&
-    selectedVariant &&
-    hasVariants &&
-    (() => {
-      const w = selectedPet.weight;
-      const nameLower = selectedVariant.name.toLowerCase();
-      for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
-        if (w >= range.min && w <= range.max) {
-          const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-          if (regex.test(nameLower)) return true;
-        }
-      }
-      return false;
-    })()
-  );
-
-  /** Thao tác thêm sản phẩm vào giỏ hàng từ thẻ sản phẩm */
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-    if (!token) {
-      toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng.');
-      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-      return;
-    }
-
-    // Nếu sản phẩm có phân loại (variants) nhưng người dùng chưa chọn phân loại nào -> Thông báo yêu cầu chọn phân loại
-    if (hasVariants && !selectedVariant) {
-      toast.warning(`Vui lòng chọn 1 phân loại cho sản phẩm "${product.name}" trước khi thêm vào giỏ hàng!`);
-      return;
-    }
-
-    addToCart(product, 1, false, selectedVariant?.id);
-    toast.success(`Đã thêm sản phẩm "${product.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}" vào giỏ hàng!`);
-  };
+  const isOutOfStock = effectiveTotalStock === 0;
+  const productDetailUrl = `/product/${product.id}`;
 
   return (
     <article
-      className="group relative rounded-2xl border border-[var(--border-color)] bg-white shadow-[0_8px_24px_rgba(26,26,26,0.04)] transition hover:-translate-y-1 hover:border-[#DED8D0] hover:shadow-[0_18px_40px_rgba(26,26,26,0.10)] flex flex-col h-full justify-between z-10 hover:z-50"
+      className="group relative rounded-2xl border border-[var(--border-color)] bg-white shadow-[0_8px_24px_rgba(26,26,26,0.04)] transition hover:-translate-y-1 hover:border-[#DED8D0] hover:shadow-[0_18px_40px_rgba(26,26,26,0.10)] flex flex-col h-full justify-between overflow-hidden"
     >
-      <div>
-        <div className="relative aspect-square overflow-hidden bg-[#F3F0EA] rounded-t-2xl">
-          <Link href={productDetailUrl} className="block h-full w-full">
+      <Link href={productDetailUrl} className="flex flex-col h-full justify-between">
+        <div>
+          <div className="relative aspect-square overflow-hidden bg-[#F3F0EA]">
             <img
               src={productImage}
               alt={product.name}
@@ -219,418 +120,95 @@ export default function ProductCard({
                 (isOutOfStock || product.isActive === false) && "grayscale opacity-60"
               )}
             />
-            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/28 to-transparent opacity-0 transition group-hover:opacity-100" />
-          </Link>
-          
-          {/* Khu vực hiển thị huy hiệu: Nổi bật, Trạng thái mở bán, Bán chạy hoặc Khuyến mãi */}
-          <div className="absolute left-2.5 top-2.5 z-10 flex flex-col items-start gap-1.5 pointer-events-none">
-            {/* Huy hiệu Sản phẩm nổi bật */}
-            {product.isFeatured && (
-              <span className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 text-amber-950 font-black px-2.5 py-1 text-[10px] shadow-md border border-amber-300 animate-fadeIn">
-                ⭐ Nổi bật
+            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/20 to-transparent opacity-0 transition group-hover:opacity-100" />
+
+            {/* Khu vực hiển thị huy hiệu: Nổi bật, Trạng thái mở bán, Bán chạy hoặc Khuyến mãi */}
+            <div className="absolute left-2.5 top-2.5 z-10 flex flex-col items-start gap-1.5 pointer-events-none">
+              {/* Huy hiệu Sản phẩm nổi bật */}
+              {product.isFeatured && (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 text-amber-950 font-black px-2.5 py-1 text-[10px] shadow-md border border-amber-300 animate-fadeIn">
+                  ⭐ Nổi bật
+                </span>
+              )}
+
+              {/* Trạng thái kinh doanh hoặc khuyến mãi */}
+              {product.isActive === false ? (
+                <span className="rounded-lg bg-stone-700 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
+                  Tạm ngưng bán
+                </span>
+              ) : isOutOfStock ? (
+                <span className="rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
+                  Hết hàng
+                </span>
+              ) : (product.soldCount && product.soldCount >= 5) ? (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-red-500 px-2.5 py-1 text-[10px] font-black text-white shadow-md">
+                  🔥 Bán chạy
+                </span>
+              ) : null}
+            </div>
+
+            {/* Low Stock Badge */}
+            {effectiveTotalStock > 0 && effectiveTotalStock <= 5 && (
+              <span className="absolute top-2.5 right-2.5 rounded-lg bg-amber-600 px-2 py-0.5 text-[9px] font-black text-white shadow-xs z-10 animate-pulse">
+                ⚡ Chỉ còn {effectiveTotalStock}
               </span>
             )}
-
-            {/* Trạng thái kinh doanh hoặc khuyến mãi */}
-            {product.isActive === false ? (
-              <span className="rounded-lg bg-stone-700 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
-                Tạm ngưng bán
-              </span>
-            ) : isOutOfStock ? (
-              <span className="rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
-                Hết hàng
-              </span>
-            ) : (product.soldCount && product.soldCount >= 5) ? (
-              <span className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-red-500 px-2.5 py-1 text-[10px] font-black text-white shadow-md">
-                🔥 Bán chạy
-              </span>
-            ) : discount ? (
-              <span className="rounded-lg bg-[var(--primary-color)] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
-                -{discount}%
-              </span>
-            ) : null}
           </div>
 
-          {/* Low Stock Badge */}
-          {currentStock !== undefined && currentStock > 0 && currentStock <= 5 && (
-            <span className="absolute top-2.5 right-11 rounded-lg bg-amber-600 px-2 py-0.5 text-[9px] font-black text-white shadow-xs z-10 animate-pulse">
-              ⚡ Chỉ còn {currentStock}
-            </span>
-          )}
-
-          {/* Recommend badge */}
-          {isMatchedByPetWeight && selectedVariant && (
-            <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 rounded-lg bg-emerald-600 text-[10px] font-black text-white px-2.5 py-1 shadow-md z-10 animate-pulse">
-              <Sparkles className="size-3 fill-white/20" />
-              Gợi ý: {selectedVariant.name.replace(/size\s+/i, 'Size ')}
-            </span>
-          )}
-
-          {/* Quick View Eye Icon Button */}
-          <div
-            className="absolute bottom-2.5 right-2.5 z-20"
-            onMouseEnter={() => setIsEyeHovered(true)}
-            onMouseLeave={() => setIsEyeHovered(false)}
-          >
-            <button
-              type="button"
-              aria-label="Xem nhanh thông tin sản phẩm"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                router.push(productDetailUrl);
-              }}
-              className={cn(
-                "inline-flex size-9 items-center justify-center rounded-full bg-white/95 shadow-sm transition cursor-pointer border border-gray-100",
-                isEyeHovered
-                  ? "bg-orange-500 text-white border-orange-500 shadow-md scale-105"
-                  : "text-[var(--text-main)] hover:text-[var(--primary-color)] hover:bg-orange-50"
-              )}
-              title="Xem nhanh thông tin sản phẩm"
-            >
-              <Eye className="size-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-3 p-4">
-          <Link href={productDetailUrl} className="block group-hover:opacity-90">
-            <div className="min-h-[3.875rem]">
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-xs font-bold uppercase tracking-[0.08em] text-[#0F766E]">{product.brand || 'PetMatch'}</p>
-              </div>
-              <h3 className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-[var(--text-main)] transition duration-200 group-hover:text-[var(--primary-color)]">{product.name}</h3>
+          <div className="space-y-2.5 p-4">
+            <div className="min-h-[3.25rem]">
+              <p className="truncate text-xs font-bold uppercase tracking-[0.08em] text-[#0F766E]">
+                {product.brand || 'PetMatch'}
+              </p>
+              <h3 className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-[var(--text-main)] transition duration-200 group-hover:text-[var(--primary-color)]">
+                {product.name}
+              </h3>
             </div>
-          </Link>
 
-          {/* Variants Selector Quick Chips */}
-          {hasVariants && (
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {product.variants?.map((v: any) => {
-                const isSelected = selectedVariant?.id === v.id;
-                const isChipMatched = selectedPet && selectedPet.weight > 0 && (() => {
-                  const w = selectedPet.weight;
-                  const nameLower = v.name.toLowerCase();
-                  for (const [sizeKey, range] of Object.entries(SIZE_WEIGHT_RANGES)) {
-                    if (w >= range.min && w <= range.max) {
-                      const regex = new RegExp(`\\b(${sizeKey})\\b`, 'i');
-                      if (regex.test(nameLower)) return true;
-                    }
-                  }
-                  return false;
-                })();
-
-                const displayName = v.name
-                  .replace(/size\s+/i, '')
-                  .replace(/màu\s+/i, '')
-                  .trim();
-
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (selectedVariant?.id === v.id) {
-                        setSelectedVariant(null);
-                      } else {
-                        setSelectedVariant(v);
-                      }
-                    }}
-                    className={cn(
-                      "px-2.5 py-1 text-[10px] font-black rounded-lg border transition cursor-pointer flex items-center gap-1",
-                      isSelected
-                        ? "border-[var(--primary-color)] bg-[var(--primary-color)]/10 text-[var(--primary-color)]"
-                        : isChipMatched
-                        ? "border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
-                        : "border-gray-200 bg-slate-50 hover:bg-slate-100 text-gray-600"
-                    )}
-                  >
-                    {isChipMatched && <Sparkles className="size-2.5 fill-current" />}
-                    {displayName}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)] pt-1">
-            <div className="flex items-center gap-2">
-              {product.reviewCount > 0 ? (
-                <span className="inline-flex items-center gap-1">
-                  <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
-                  <span className="font-semibold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
-                  <span>({product.reviewCount})</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-gray-400">
-                  <Star className="size-3.5 text-gray-300 fill-gray-100" />
-                  <span className="font-medium text-[11px]">Mới</span>
-                </span>
-              )}
-              {typeof product.soldCount === 'number' && product.soldCount > 0 && (
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Đã bán {product.soldCount >= 1000 ? `${(product.soldCount / 1000).toFixed(1)}k` : product.soldCount}
-                </span>
-              )}
-            </div>
-            <span className="inline-flex items-center gap-1 rounded-md bg-[#EEF8F5] px-2 py-1 font-semibold text-[#0F766E]">
-              <PackageCheck className="size-3.5" />
-              {speciesLabel}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-4 pt-0 space-y-3">
-        <div className="flex min-h-10 flex-wrap items-end gap-x-2 gap-y-1">
-          <span className="text-base font-extrabold text-[var(--primary-color)]">{displayPriceLabel}</span>
-          {discount && selectedVariant && (
-            <span className="text-xs text-[var(--text-muted)] line-through">
-              {formatCurrency(selectedVariant.sellingPrice)}
-            </span>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={handleAddToCart}
-          disabled={isOutOfStock || product.isActive === false}
-          className={cn(
-            "mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white transition focus-visible:outline-none focus-visible:ring-4 cursor-pointer",
-            (isOutOfStock || product.isActive === false)
-              ? "bg-gray-400 cursor-not-allowed opacity-80"
-              : "bg-[var(--primary-color)] hover:bg-[#cf5017] focus-visible:ring-[rgba(228,93,28,0.18)]"
-          )}
-        >
-          {product.isActive === false ? (
-            <>
-              <X className="size-4" />
-              Tạm ngưng bán
-            </>
-          ) : isOutOfStock ? (
-            <>
-              <X className="size-4" />
-              Tạm hết hàng
-            </>
-          ) : (
-            <>
-              <ShoppingCart className="size-4" />
-              Thêm vào giỏ
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Super Rich & Large Hover Quick Info Popover Card (2x-3x Large Floating Popover) */}
-      <AnimatePresence>
-        {isEyeHovered && (
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            onMouseEnter={() => setIsEyeHovered(true)}
-            onMouseLeave={() => setIsEyeHovered(false)}
-            className="hidden lg:block absolute -top-4 left-1/2 -translate-x-1/2 w-[480px] sm:w-[560px] md:w-[600px] z-50 rounded-3xl border-2 border-orange-400 bg-white p-6 shadow-[0_25px_70px_rgba(0,0,0,0.25)] backdrop-blur-2xl cursor-pointer max-h-[80vh] overflow-y-auto scrollbar-thin"
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(productDetailUrl);
-            }}
-          >
-            <div className="space-y-4 text-left">
-              {/* Header: 2 Columns (Image Preview + Primary Info) */}
-              <div className="grid grid-cols-12 gap-4 items-start pb-4 border-b border-gray-100">
-                {/* Image Preview Thumbnail Column */}
-                <div className="col-span-4 relative aspect-square rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 shadow-xs">
-                  <img
-                    src={productImage}
-                    alt={product.name}
-                    className="size-full object-cover"
-                  />
-                  {discount && (
-                    <span className="absolute top-2 left-2 bg-orange-600 text-white font-black text-[10px] px-2 py-0.5 rounded-lg shadow-sm">
-                      -{discount}%
-                    </span>
-                  )}
-                </div>
-
-                {/* Info Column */}
-                <div className="col-span-8 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-black uppercase text-[#0F766E] tracking-wider">
-                      {product.brand || 'PetMatch'}
-                    </span>
-                    <span className="shrink-0 text-[10px] font-extrabold bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full border border-orange-200">
-                      {speciesLabel}
-                    </span>
-                  </div>
-
-                  <h3 className="text-base font-black text-[var(--text-main)] leading-snug line-clamp-2">
-                    {product.name}
-                  </h3>
-
-                  {/* Rating & Review Count */}
-                  <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-                    {product.reviewCount > 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Star className="size-4 fill-[#F59E0B] text-[#F59E0B]" />
-                        <span className="font-extrabold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
-                        <span>({product.reviewCount} đánh giá)</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-gray-400">
-                        <Star className="size-4 text-gray-300 fill-gray-100" />
-                        <span className="font-bold text-gray-400">Chưa có đánh giá nào</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Price Section */}
-                  <div className="flex items-baseline gap-2.5 pt-1">
-                    <span className="text-2xl font-black text-orange-600">
-                      {displayPriceLabel}
-                    </span>
-                    {discount && (
-                      <span className="text-xs text-gray-400 line-through font-semibold">
-                        {formatCurrency(selectedVariant ? selectedVariant.sellingPrice : product.sellingPrice)}
-                      </span>
-                    )}
-                    {discount && selectedVariant && (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                        Tiết kiệm {formatCurrency((selectedVariant.sellingPrice || product.sellingPrice) - displayNumericPrice)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Stock Level Badge */}
-                  <div>
-                    <span className={cn(
-                      "inline-flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-xl border shadow-2xs",
-                      currentStock > 0
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                        : "bg-red-50 border-red-200 text-red-700"
-                    )}>
-                      <span className={cn("size-2 rounded-full", currentStock > 0 ? "bg-emerald-500" : "bg-red-500")} />
-                      {currentStock > 0 ? `Tồn kho sẵn sàng: Còn ${currentStock} sản phẩm` : 'Hiện đang tạm hết hàng'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pet Customization Recommendation Banner */}
-              {isMatchedByPetWeight && selectedPet && (
-                <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-3 rounded-2xl text-xs font-black text-emerald-800 shadow-2xs">
-                  <div className="size-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    <Sparkles className="size-4 fill-white/20 animate-pulse" />
-                  </div>
-                  <div>
-                    <p className="font-black text-emerald-800">
-                      Được thiết kế & gợi ý phù hợp cho {selectedPet.name} ({selectedPet.weight}kg)
-                    </p>
-                    <p className="text-[11px] font-bold text-emerald-600/90 mt-0.5">
-                      Kích cỡ và thông số sản phẩm khớp với tiêu chuẩn cho {selectedPet.breed || 'thú cưng của bạn'}.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Specifications Grid Table */}
-              {(() => {
-                const specs = getParsedSpecs(product.specifications);
-                if (specs.length > 0) {
-                  return (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider block">
-                        Thông số kỹ thuật sản phẩm:
-                      </span>
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-amber-50/40 p-3 rounded-2xl border border-amber-100">
-                        {specs.map((s, idx) => (
-                          <div key={idx} className="flex items-center justify-between border-b border-amber-200/50 pb-1 last:border-0">
-                            <span className="font-bold text-gray-500">{s.key}:</span>
-                            <span className="font-black text-gray-800 truncate pl-2">{s.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Variants Breakdown Chips / List */}
-              {hasVariants && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider block">
-                    Danh sách phân loại / kích cỡ ({product.variants?.length}):
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)] pt-0.5">
+              <div className="flex items-center gap-2">
+                {product.reviewCount > 0 ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Star className="size-3.5 fill-[#F59E0B] text-[#F59E0B]" />
+                    <span className="font-semibold text-[var(--text-main)]">{product.rating.toFixed(1)}</span>
+                    <span>({product.reviewCount})</span>
                   </span>
-                  <div className="flex flex-wrap gap-2">
-                    {product.variants?.map((v: any) => {
-                      const isSelected = selectedVariant?.id === v.id;
-                      return (
-                        <div
-                          key={v.id}
-                          className={cn(
-                            "px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-2",
-                            isSelected
-                              ? "border-orange-500 bg-orange-50 text-orange-700 shadow-2xs"
-                              : "border-gray-200 bg-gray-50 text-gray-600"
-                          )}
-                        >
-                          <span className="font-black">{v.name}</span>
-                          <span className="text-[10px] text-gray-400">|</span>
-                          <span className="font-extrabold text-orange-600">{formatCurrency(v.salePrice ?? v.sellingPrice)}</span>
-                          <span className="text-[10px] text-gray-400">({v.stock} kho)</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Description Snippet */}
-              {product.description && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider block">
-                    Mô tả chi tiết:
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-gray-400">
+                    <Star className="size-3.5 text-gray-300 fill-gray-100" />
+                    <span className="font-medium text-[11px]">Mới</span>
                   </span>
-                  <p className="text-xs text-gray-600 leading-relaxed line-clamp-4 bg-slate-50/90 p-3.5 rounded-2xl border border-slate-100 font-medium">
-                    {product.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Actions Footer */}
-              <div className="pt-2 grid grid-cols-2 gap-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={handleAddToCart}
-                  disabled={product.stock === 0 || currentStock === 0}
-                  className={cn(
-                    "py-3 px-4 rounded-2xl text-xs font-black text-white transition flex items-center justify-center gap-2 shadow-md cursor-pointer",
-                    (product.stock === 0 || currentStock === 0)
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-orange-500 hover:bg-orange-600"
-                  )}
-                >
-                  <ShoppingCart className="size-4" />
-                  <span>Thêm vào giỏ hàng</span>
-                </button>
-
-                <Link
-                  href={productDetailUrl}
-                  className="py-3 px-4 rounded-2xl bg-[#0F766E] hover:bg-[#115E59] text-white text-xs font-black transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
-                >
-                  <span>Trang sản phẩm đầy đủ</span>
-                  <Eye className="size-4" />
-                </Link>
+                )}
+                {typeof product.soldCount === 'number' && product.soldCount > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Đã bán {product.soldCount >= 1000 ? `${(product.soldCount / 1000).toFixed(1)}k` : product.soldCount}
+                  </span>
+                )}
               </div>
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#EEF8F5] px-2 py-1 font-semibold text-[#0F766E]">
+                <PackageCheck className="size-3.5" />
+                {speciesLabel}
+              </span>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+
+        <div className="p-4 pt-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-base font-extrabold text-[var(--primary-color)]">{displayPriceLabel}</span>
+            {hasDiscount && discountPercent > 0 && (
+              <>
+                <span className="text-xs text-[var(--text-muted)] line-through">
+                  {formatCurrency(originalSellingPrice)}
+                </span>
+                <span className="inline-flex items-center rounded bg-red-100/80 px-1.5 py-0.5 text-[10px] font-black text-[#EE4D2D]">
+                  -{discountPercent}%
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </Link>
     </article>
   );
 }
-

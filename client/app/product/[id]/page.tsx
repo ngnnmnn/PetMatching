@@ -64,6 +64,7 @@ export default function ProductDetailPage() {
 
   const [activeImage, setActiveImage] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
+  const [quantityError, setQuantityError] = useState<string | null>(null);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const [canUserReview, setCanUserReview] = useState(false);
@@ -174,17 +175,48 @@ export default function ProductDetailPage() {
     fetchProductData();
   }, [productId]);
 
+  /** Tăng số lượng sản phẩm mua */
   const handleIncrement = () => {
     const stock = selectedVariant ? selectedVariant.stock : product?.stock;
-    if (stock && quantity >= stock) {
-      toast.warning(`Chỉ còn lại ${stock} sản phẩm trong kho`);
+    const maxStock = typeof stock === 'number' ? stock : 999;
+    if (maxStock > 0 && quantity >= maxStock) {
+      setQuantity(maxStock);
+      setQuantityError('quá số lượng tối đa trong kho');
       return;
     }
     setQuantity((prev) => prev + 1);
+    setQuantityError(null);
   };
 
+  /** Giảm số lượng sản phẩm mua */
   const handleDecrement = () => {
     setQuantity((prev) => (prev > 1 ? prev - 1 : 1));
+    setQuantityError(null);
+  };
+
+  /**
+   * Xử lý khi người dùng trực tiếp nhập số lượng vào ô input:
+   * Nếu vượt quá số lượng tồn kho sẽ tự động chuyển về số lượng tối đa và hiển thị cảnh báo lỗi
+   */
+  const handleQuantityInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value.replace(/\D/g, '');
+    const stock = selectedVariant ? selectedVariant.stock : product?.stock;
+    const maxStock = typeof stock === 'number' ? stock : 999;
+
+    if (!rawVal) {
+      setQuantity(1);
+      setQuantityError(null);
+      return;
+    }
+
+    const val = parseInt(rawVal, 10);
+    if (maxStock > 0 && val > maxStock) {
+      setQuantity(maxStock);
+      setQuantityError('quá số lượng tối đa trong kho');
+    } else {
+      setQuantity(val <= 0 ? 1 : val);
+      setQuantityError(null);
+    }
   };
 
   const handleAddToCart = () => {
@@ -622,7 +654,7 @@ export default function ProductDetailPage() {
               {/* Price section */}
               <div className="rounded-2xl bg-[#FAF6F0] p-5 mt-5 border border-[#F4EBE0]">
                 <p className="text-xs font-bold text-[var(--text-muted)] mb-1.5 uppercase tracking-wider">Giá bán</p>
-                <div className="flex flex-wrap items-baseline gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-3xl font-black text-[var(--primary-color)]">
                     {formatCurrency(displayPrice)}
                   </span>
@@ -631,8 +663,8 @@ export default function ProductDetailPage() {
                       <span className="text-base text-[var(--text-muted)] line-through">
                         {formatCurrency(sellingPrice)}
                       </span>
-                      <span className="inline-block rounded-md bg-[var(--primary-color)]/10 px-2 py-0.5 text-xs font-black text-[var(--primary-color)]">
-                        Tiết kiệm {Math.round(100 - (displayPrice / product.sellingPrice) * 100)}%
+                      <span className="inline-flex items-center rounded bg-red-100/80 px-2 py-0.5 text-xs font-black text-[#EE4D2D]">
+                        -{sellingPrice > 0 ? Math.round(((sellingPrice - displayPrice) / sellingPrice) * 100) : (discount || 0)}%
                       </span>
                     </>
                   )}
@@ -651,29 +683,44 @@ export default function ProductDetailPage() {
             <div className="mt-6 space-y-4">
               {/* Quantity selector */}
               {currentStock !== 0 && (
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-extrabold text-[var(--text-main)]">Số lượng</span>
-                  <div className="flex items-center rounded-xl border border-[var(--border-color)] bg-white p-1 shadow-sm">
-                    <button
-                      type="button"
-                      onClick={handleDecrement}
-                      className="inline-flex size-9 items-center justify-center rounded-lg bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black active:scale-95"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </button>
-                    <span className="w-12 text-center text-sm font-black text-[var(--text-main)]">{quantity}</span>
-                    <button
-                      type="button"
-                      onClick={handleIncrement}
-                      className="inline-flex size-9 items-center justify-center rounded-lg bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black active:scale-95"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-extrabold text-[var(--text-main)]">Số lượng</span>
+                    <div className="flex items-center rounded-xl border border-[var(--border-color)] bg-white p-1 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={handleDecrement}
+                        className="inline-flex size-9 items-center justify-center rounded-lg bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black active:scale-95 cursor-pointer"
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={quantity}
+                        onChange={handleQuantityInputChange}
+                        className="w-14 text-center text-sm font-black text-[var(--text-main)] bg-transparent focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleIncrement}
+                        className="inline-flex size-9 items-center justify-center rounded-lg bg-gray-50 text-gray-600 transition hover:bg-gray-100 hover:text-black active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {currentStock !== undefined && currentStock !== null && (
+                      <span className="text-xs font-bold text-[var(--text-muted)] animate-fadeIn">
+                        (Còn {currentStock} sản phẩm trong kho)
+                      </span>
+                    )}
                   </div>
-                  {currentStock !== undefined && currentStock !== null && (
-                    <span className="text-xs font-bold text-[var(--text-muted)] animate-fadeIn">
-                      (Còn {currentStock} sản phẩm trong kho)
-                    </span>
+                  {/* Thông báo lỗi quá số lượng tối đa trong kho */}
+                  {quantityError && (
+                    <p className="text-xs font-bold text-red-600 animate-fadeIn pl-1 flex items-center gap-1">
+                      <span>⚠️</span>
+                      <span>{quantityError}</span>
+                    </p>
                   )}
                 </div>
               )}

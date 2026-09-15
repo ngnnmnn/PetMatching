@@ -11,6 +11,7 @@ export class CartService {
 
   /**
    * Lấy danh sách sản phẩm trong giỏ hàng của người dùng.
+   * Sắp xếp theo thời gian thêm vào giỏ (createdAt giảm dần: sản phẩm thêm sau nằm ở trên cùng).
    * Xử lý an toàn: tự động lọc bỏ các sản phẩm không còn tồn tại và bọc try-catch tránh lỗi 500.
    */
   async getCart(userId: string) {
@@ -18,7 +19,7 @@ export class CartService {
       const items = await this.prisma.cartItem.findMany({
         where: { userId },
         include: { product: true, variant: true },
-        orderBy: { updatedAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
       });
 
       // Lọc bỏ những sản phẩm đã bị xóa khỏi hệ thống

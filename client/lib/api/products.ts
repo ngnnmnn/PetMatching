@@ -5,7 +5,8 @@ export interface ProductFilters {
   category?: string;
   targetSpecies?: string;
   search?: string;
-  sortBy?: 'popular' | 'newest' | 'price_asc' | 'price_desc';
+  // Các tiêu chí sắp xếp: nổi bật/mặc định, mới nhất, giá tăng/giảm, đánh giá cao, giảm giá nhiều
+  sortBy?: 'popular' | 'newest' | 'price_asc' | 'price_desc' | 'rating_desc' | 'discount_desc';
   page?: number;
   limit?: number;
 }

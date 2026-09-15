@@ -8,6 +8,19 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GetProductsDto } from './dto/get-products.dto';
 
+/**
+ * Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không phân biệt có dấu và không dấu
+ */
+function removeVietnameseTones(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
 @Injectable()
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
@@ -106,8 +119,8 @@ export class ProductsService {
   }
 
   /**
-   * Lấy danh sách sản phẩm phân trang theo các tiêu chí lọc (Danh mục, Loài thú cưng, Từ khóa)
-   * và thuật toán xếp hạng đa tầng (Phổ biến, Mới nhất, Giá tăng/giảm).
+   * Lấy danh sách sản phẩm phân trang theo các tiêu chí lọc (Danh mục, Loài thú cưng, Từ khóa có/không dấu)
+   * và thuật toán xếp hạng đa tầng (Nổi bật -> Bán chạy -> Rating -> Còn lại).
    */
   async getProducts(dto: GetProductsDto) {
     const {
@@ -129,28 +142,32 @@ export class ProductsService {
       where.OR = [{ targetSpecies }, { targetSpecies: 'ALL' }];
     }
 
+    // Tải toàn bộ sản phẩm thỏa mãn điều kiện trạng thái, danh mục, loài
+    const allDbProducts = await this.prisma.product.findMany({
+      where,
+      include: { variants: true },
+    });
+
+    // Lọc theo từ khóa tìm kiếm (hỗ trợ có dấu hoặc không dấu tiếng Việt)
+    let filteredProducts = allDbProducts;
     if (search?.trim()) {
-      const keyword = search.trim();
-      where.AND = [
-        ...(Array.isArray(where.AND) ? where.AND : []),
-        {
-          OR: [
-            { name: { contains: keyword, mode: 'insensitive' } },
-            { brand: { contains: keyword, mode: 'insensitive' } },
-            { description: { contains: keyword, mode: 'insensitive' } },
-          ],
-        },
-      ];
+      const normKeyword = removeVietnameseTones(search);
+      filteredProducts = filteredProducts.filter((p) => {
+        const normName = removeVietnameseTones(p.name || '');
+        const normBrand = removeVietnameseTones(p.brand || '');
+        const normDesc = removeVietnameseTones(p.description || '');
+        return (
+          normName.includes(normKeyword) ||
+          normBrand.includes(normKeyword) ||
+          normDesc.includes(normKeyword)
+        );
+      });
     }
 
+    const total = filteredProducts.length;
     const skip = (page - 1) * limit;
 
     if (sortBy === 'price_asc' || sortBy === 'price_desc') {
-      const [allProducts, total] = await this.prisma.$transaction([
-        this.prisma.product.findMany({ where, include: { variants: true } }),
-        this.prisma.product.count({ where }),
-      ]);
-
       const getEffectivePrice = (p: any) => {
         if (p.variants && p.variants.length > 0) {
           const activeVars = p.variants.filter((v: any) => v.isActive !== false);
@@ -163,7 +180,7 @@ export class ProductsService {
         return p.salePrice ?? (p.sellingPrice || 0);
       };
 
-      const sorted = allProducts
+      const sorted = filteredProducts
         .sort((a, b) => {
           const availA = this.getProductAvailability(a);
           const availB = this.getProductAvailability(b);
@@ -186,28 +203,110 @@ export class ProductsService {
       };
     }
 
+    // Sắp xếp theo đánh giá: rating cao hơn lên trước, nếu cùng sao xét số lượt đánh giá nhiều hơn lên trước
+    if (sortBy === 'rating_desc') {
+      const sorted = filteredProducts
+        .sort((a, b) => {
+          const availA = this.getProductAvailability(a);
+          const availB = this.getProductAvailability(b);
+          if (availB !== availA) return availB - availA; // Còn hàng lên trước, hết hàng xuống cuối
+
+          // 1. Rating giảm dần
+          const rateA = Number(a.rating || 0);
+          const rateB = Number(b.rating || 0);
+          if (rateB !== rateA) return rateB - rateA;
+
+          // 2. Cùng rating xét theo số lượng người đánh giá (reviewCount) càng nhiều thì ở trên
+          const revA = Number(a.reviewCount || 0);
+          const revB = Number(b.reviewCount || 0);
+          if (revB !== revA) return revB - revA;
+
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(skip, skip + limit);
+
+      const data = await this.attachSoldCount(sorted);
+
+      return {
+        data,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      };
+    }
+
+    // Sắp xếp theo giảm giá: sản phẩm giảm giá nhiều hơn thì đẩy lên trên
+    if (sortBy === 'discount_desc') {
+      const getProductDiscountPercent = (p: any) => {
+        const getEffectivePrice = (item: any) => {
+          if (item.variants && item.variants.length > 0) {
+            const activeVars = item.variants.filter((v: any) => v.isActive !== false);
+            const vars = activeVars.length > 0 ? activeVars : item.variants;
+            const prices = vars.map((v: any) => v.salePrice ?? v.sellingPrice).filter((pr: number) => pr > 0);
+            if (prices.length > 0) return Math.min(...prices);
+          }
+          return item.salePrice ?? (item.sellingPrice || 0);
+        };
+        const lowest = getEffectivePrice(p);
+        const original = p.sellingPrice;
+        if (typeof original === 'number' && original > 0 && lowest < original) {
+          return Math.round(((original - lowest) / original) * 100);
+        }
+        return 0;
+      };
+
+      const sorted = filteredProducts
+        .sort((a, b) => {
+          const availA = this.getProductAvailability(a);
+          const availB = this.getProductAvailability(b);
+          if (availB !== availA) return availB - availA; // Còn hàng lên trước, hết hàng xuống cuối
+
+          // 1. Phần trăm giảm giá cao hơn lên trước
+          const discA = getProductDiscountPercent(a);
+          const discB = getProductDiscountPercent(b);
+          if (discB !== discA) return discB - discA;
+
+          // 2. Cùng % giảm thì xét số tiền giảm
+          const diffA = (a.sellingPrice || 0) - (a.salePrice ?? a.sellingPrice ?? 0);
+          const diffB = (b.sellingPrice || 0) - (b.salePrice ?? b.sellingPrice ?? 0);
+          if (diffB !== diffA) return diffB - diffA;
+
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(skip, skip + limit);
+
+      const data = await this.attachSoldCount(sorted);
+
+      return {
+        data,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      };
+    }
+
     if (sortBy === 'popular') {
-      const [allProducts, total] = await this.prisma.$transaction([
-        this.prisma.product.findMany({ where, include: { variants: true } }),
-        this.prisma.product.count({ where }),
-      ]);
+      const productsWithSales = await this.attachSoldCount(filteredProducts);
 
-      const productsWithSales = await this.attachSoldCount(allProducts);
-
-      // Multi-tier ranking: availability -> soldCount -> rating -> reviewCount -> isFeatured -> createdAt
+      // Thứ tự sắp xếp đa tầng: Còn hàng -> Nổi bật -> Bán chạy -> Rating -> Còn lại
       const sorted = productsWithSales.sort((a, b) => {
         const availA = this.getProductAvailability(a);
         const availB = this.getProductAvailability(b);
         if (availB !== availA) return availB - availA; // Còn hàng lên trên, hết hàng xuống dưới
 
+        // 1. Nổi bật (isFeatured)
+        const featA = a.isFeatured ? 1 : 0;
+        const featB = b.isFeatured ? 1 : 0;
+        if (featB !== featA) return featB - featA;
+
+        // 2. Bán chạy (soldCount)
         if (b.soldCount !== a.soldCount) return b.soldCount - a.soldCount;
+
+        // 3. Đánh giá (Rating & reviewCount)
         if (b.rating !== a.rating) return b.rating - a.rating;
         if (b.reviewCount !== a.reviewCount) return b.reviewCount - a.reviewCount;
-        if ((b.isFeatured ? 1 : 0) !== (a.isFeatured ? 1 : 0)) return (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0);
+
+        // 4. Các sản phẩm còn lại theo ngày tạo
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
 
-      // Apply category diversity cap (max 3 items per category on page 1) when browsing all categories
+      // Áp dụng giới hạn đa dạng danh mục (tối đa 3 sản phẩm/danh mục ở trang 1) khi xem tất cả
       let finalOrderedProducts = sorted;
       if (!category) {
         finalOrderedProducts = this.applyCategoryDiversity(sorted, limit, 3);
@@ -221,15 +320,7 @@ export class ProductsService {
       };
     }
 
-    const [allProducts, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
-        where,
-        include: { variants: true },
-      }),
-      this.prisma.product.count({ where }),
-    ]);
-
-    const sorted = allProducts
+    const sorted = filteredProducts
       .sort((a, b) => {
         const availA = this.getProductAvailability(a);
         const availB = this.getProductAvailability(b);

@@ -8,11 +8,13 @@ import AppHeader from '@/components/layout/AppHeader';
 import { useProducts } from '@/hooks/useProducts';
 import ProductFilterSidebar from '@/components/home/ProductFilterSidebar';
 import ProductGrid from '@/components/home/ProductGrid';
+import { getProductLowestPrice } from '@/components/home/ProductCard';
 import SearchFilterBar from '@/components/home/SearchFilterBar';
 import Footer from '@/components/layout/Footer';
 import api from '@/lib/axios';
 import { productsApi } from '@/lib/api/products';
 import { cn } from '@/lib/utils';
+import { removeVietnameseTones } from '@/lib/hanoi-wards';
 import { toast } from 'sonner';
 import {
   Pagination,
@@ -23,7 +25,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 
-type SortKey = 'popular' | 'newest' | 'price_asc' | 'price_desc';
+type SortKey = 'popular' | 'newest' | 'price_asc' | 'price_desc' | 'rating_desc' | 'discount_desc';
 
 const QUICK_CATEGORIES = [
   { name: 'Thức ăn cho Chó', category: 'DOG_FOOD', icon: '🐶', desc: 'Dinh dưỡng cân bằng' },
@@ -97,14 +99,14 @@ const isSizeCompatible = (product: any, petWeight: number) => {
 /** Kiểm tra sản phẩm có giới hạn cân nặng phù hợp với thú cưng hay không */
 const isWeightCompatible = (product: any, petWeight: number) => {
   const text = `${product.name} ${product.description || ''}`.toLowerCase();
-  
+
   const underRegexes = [
     /dưới\s*(\d+(?:\.\d+)?)\s*kg/g,
     /tối\s*đa\s*(\d+(?:\.\d+)?)\s*kg/g,
     /<\s*(\d+(?:\.\d+)?)\s*kg/g,
     /(\d+(?:\.\d+)?)\s*kg\s*trở\s*xuống/g
   ];
-  
+
   for (const regex of underRegexes) {
     let match;
     while ((match = regex.exec(text)) !== null) {
@@ -136,14 +138,17 @@ function ShopPageContent() {
   const searchParams = useSearchParams();
   const initialCategory = searchParams.get('category');
 
-  const { products, loading, error, filters, setFilters } = useProducts({ 
+  const { products, loading, error, filters, setFilters } = useProducts({
     limit: 48,
-    category: undefined 
+    category: undefined
   });
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [selectedPrices, setSelectedPrices] = useState<string[]>([]);
+  const [customMinPrice, setCustomMinPrice] = useState<number | undefined>(undefined);
+  const [customMaxPrice, setCustomMaxPrice] = useState<number | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [isFilterOpen, setIsFilterOpen] = useState(true);
   const [filterResetKey, setFilterResetKey] = useState(0);
   const [dbCategories, setDbCategories] = useState<Array<{ id: string; name: string; slug: string }>>([]);
 
@@ -296,13 +301,15 @@ function ShopPageContent() {
     }
   }, [initialSearch, setFilters]);
 
-  // Reset page to 1 when filters or selectedCategories/Prices or selectedPet change
+  // Reset page to 1 when filters or selectedCategories/selectedRating or custom min/max or selectedPet change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedCategories, selectedPrices, filters.search, filters.targetSpecies, selectedPet]);
+  }, [selectedCategories, selectedRating, selectedPrices, customMinPrice, customMaxPrice, searchQuery, filters.targetSpecies, selectedPet]);
 
+  /** Xử lý tìm kiếm từ khóa hỗ trợ cả có dấu và không dấu */
   const handleSearch = useCallback(
     (searchValue: string) => {
+      setSearchQuery(searchValue);
       setFilters((previous) => ({ ...previous, search: searchValue || undefined, page: 1 }));
     },
     [setFilters],
@@ -326,11 +333,16 @@ function ShopPageContent() {
     [setFilters],
   );
 
-  const resetShop = useCallback(() => {
+  /** Đặt lại toàn bộ bộ lọc về trạng thái ban đầu */
+  const handleClearAllFilters = useCallback(() => {
     setSelectedCategories([]);
     setSelectedPrices([]);
+    setSelectedRating(null);
+    setCustomMinPrice(undefined);
+    setCustomMaxPrice(undefined);
     setSelectedPet(null);
     setShowPetRow(false);
+    setSearchQuery('');
     setCurrentPage(1);
     setFilters({ limit: 48, page: 1, sortBy: 'popular' });
     setFilterResetKey((key) => key + 1);
@@ -338,32 +350,26 @@ function ShopPageContent() {
     router.replace('/shop', { scroll: false });
   }, [router, setFilters]);
 
-  useEffect(() => {
-    window.addEventListener('shop-reset', resetShop);
-    return () => window.removeEventListener('shop-reset', resetShop);
-  }, [resetShop]);
+  // Kiểm tra xem có bộ lọc nào đang hoạt động hay không
+  const hasActiveFilters = Boolean(
+    (filters.targetSpecies && filters.targetSpecies !== 'ALL') ||
+    selectedCategories.length > 0 ||
+    selectedRating !== null ||
+    customMinPrice !== undefined ||
+    customMaxPrice !== undefined ||
+    selectedPet !== null ||
+    Boolean(searchQuery.trim())
+  );
 
-  /** Kiểm tra khả năng mở bán và tồn kho thực tế của sản phẩm (khớp theo khoảng giá nếu có) */
+  useEffect(() => {
+    window.addEventListener('shop-reset', handleClearAllFilters);
+    return () => window.removeEventListener('shop-reset', handleClearAllFilters);
+  }, [handleClearAllFilters]);
+
+  /** Kiểm tra khả năng mở bán và tồn kho thực tế của sản phẩm */
   const getProductAvailability = (p: any): number => {
     if (p.isActive === false) return 0;
     if (p.variants && p.variants.length > 0) {
-      // Nếu đang lọc theo khoảng giá, kiểm tra xem có phân loại nào VỪA CÒN HÀNG VỪA KHỚP GIÁ không
-      if (selectedPrices && selectedPrices.length > 0) {
-        const hasInStockMatchingVariant = p.variants.some((v: any) => {
-          if (v.isActive === false || Number(v.stock || 0) <= 0) return false;
-          const price = v.salePrice ?? v.sellingPrice;
-          return selectedPrices.some((range) => {
-            if (range === 'under_100k') return price < 100000;
-            if (range === '100k_500k') return price >= 100000 && price <= 500000;
-            if (range === '500k_1m') return price >= 500000 && price <= 1000000;
-            if (range === 'over_1m') return price > 1000000;
-            return false;
-          });
-        });
-        if (hasInStockMatchingVariant) return 1;
-        return 0; // Phân loại khớp giá đã HẾT HÀNG -> Đẩy xuống cuối!
-      }
-
       const activeVars = p.variants.filter((v: any) => v.isActive !== false);
       if (activeVars.length === 0) return 0;
       const totalStock = activeVars.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0);
@@ -372,61 +378,135 @@ function ShopPageContent() {
     return Number(p.stock || 0) > 0 ? 1 : 0;
   };
 
-  // Client-side category, price, and pet customization filtering on full loaded catalog
+  // Client-side category, price, rating, search, and pet customization filtering on full loaded catalog
   const filteredProducts = products
     .filter((product) => {
-    // 1. Pet Customization Filter (species, weight, size)
-    if (selectedPet) {
-      // Check target species (double check client-side)
-      if (product.targetSpecies !== 'ALL' && product.targetSpecies !== selectedPet.species) {
-        return false;
-      }
-      
-      const petWeight = selectedPet.weight || 0;
-      if (petWeight > 0) {
-        if (!isWeightCompatible(product, petWeight)) return false;
-        if (!isSizeCompatible(product, petWeight)) return false;
-      }
-    }
-
-    // 2. Category filter
-    const matchesCategory =
-      selectedCategories.length === 0 || selectedCategories.includes(product.category);
-
-    if (!matchesCategory) return false;
-
-    // 4. Price filter based on min effective price of product or its active variants
-    const getEffectiveProductPrice = (p: any) => {
-      if (p.variants && p.variants.length > 0) {
-        const activeVars = p.variants.filter((v: any) => v.isActive !== false);
-        const vars = activeVars.length > 0 ? activeVars : p.variants;
-        const prices = vars.map((v: any) => v.salePrice ?? v.sellingPrice).filter((pr: number) => pr > 0);
-        if (prices.length > 0) {
-          return Math.min(...prices);
+      // 0. Tìm kiếm từ khóa không phân biệt có dấu / không dấu tiếng Việt
+      if (searchQuery.trim()) {
+        const normQuery = removeVietnameseTones(searchQuery);
+        const normName = removeVietnameseTones(product.name || '');
+        const normBrand = removeVietnameseTones(product.brand || '');
+        const normDesc = removeVietnameseTones(product.description || '');
+        if (!normName.includes(normQuery) && !normBrand.includes(normQuery) && !normDesc.includes(normQuery)) {
+          return false;
         }
       }
-      return p.salePrice ?? (p.sellingPrice || 0);
-    };
 
-    const matchesPrice =
-      selectedPrices.length === 0 ||
-      selectedPrices.some((range) => {
-        const price = getEffectiveProductPrice(product);
-        if (range === 'under_100k') return price < 100000;
-        if (range === '100k_500k') return price >= 100000 && price <= 500000;
-        if (range === '500k_1m') return price >= 500000 && price <= 1000000;
-        if (range === 'over_1m') return price > 1000000;
-        return false;
-      });
+      // 1. Pet Customization Filter (species, weight, size)
+      if (selectedPet) {
+        // Check target species (double check client-side)
+        if (product.targetSpecies !== 'ALL' && product.targetSpecies !== selectedPet.species) {
+          return false;
+        }
 
-    return matchesPrice;
-  })
-  .sort((a, b) => {
-    // Đẩy các sản phẩm hết hàng hoặc tạm ngưng bán xuống CUỐI DANH SÁCH
-    const availA = getProductAvailability(a);
-    const availB = getProductAvailability(b);
-    return availB - availA;
-  });
+        const petWeight = selectedPet.weight || 0;
+        if (petWeight > 0) {
+          if (!isWeightCompatible(product, petWeight)) return false;
+          if (!isSizeCompatible(product, petWeight)) return false;
+        }
+      }
+
+      // 2. Category filter
+      const matchesCategory =
+        selectedCategories.length === 0 || selectedCategories.includes(product.category);
+
+      if (!matchesCategory) return false;
+
+      // 3. Price filter: Lọc theo giá thấp nhất của sản phẩm theo yêu cầu
+      const lowestPrice = getProductLowestPrice(product);
+
+      // Custom Min-Max Price filter (Kiểm tra nếu người dùng tự nhập khoảng giá)
+      if (customMinPrice !== undefined && lowestPrice < customMinPrice) return false;
+      if (customMaxPrice !== undefined && lowestPrice > customMaxPrice) return false;
+
+      // 4. Rating filter: Lọc theo đánh giá tối thiểu của sản phẩm theo yêu cầu
+      if (selectedRating !== null && selectedRating !== undefined) {
+        const productRating = Number(product.rating || 0);
+        if (productRating < selectedRating) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      // 1. Còn hàng / mở bán lên trước, hết hàng / tạm ngưng xuống cuối
+      const availA = getProductAvailability(a);
+      const availB = getProductAvailability(b);
+      if (availB !== availA) return availB - availA;
+
+      // 2. Nếu người dùng chọn tiêu chí sắp xếp cụ thể (tính theo giá thấp nhất của sản phẩm)
+      if (filters.sortBy === 'price_asc') {
+        const pA = getProductLowestPrice(a);
+        const pB = getProductLowestPrice(b);
+        if (pA !== pB) return pA - pB;
+      } else if (filters.sortBy === 'price_desc') {
+        const pA = getProductLowestPrice(a);
+        const pB = getProductLowestPrice(b);
+        if (pA !== pB) return pB - pA;
+      } else if (filters.sortBy === 'rating_desc') {
+        // Sắp xếp theo đánh giá: rating sao cao hơn lên trước; cùng sao thì ai nhiều người đánh giá hơn lên trước
+        const rateA = Number(a.rating || 0);
+        const rateB = Number(b.rating || 0);
+        if (rateB !== rateA) return rateB - rateA;
+        const revA = Number(a.reviewCount || 0);
+        const revB = Number(b.reviewCount || 0);
+        if (revB !== revA) return revB - revA;
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tB - tA;
+      } else if (filters.sortBy === 'discount_desc') {
+        // Sắp xếp theo giảm giá: hàng nào giảm giá nhiều hơn thì đẩy lên trên (% giảm giá cao hơn -> số tiền giảm)
+        const getDiscountPercent = (p: any) => {
+          const lowest = getProductLowestPrice(p);
+          const original = p.sellingPrice;
+          if (typeof original === 'number' && original > 0 && lowest < original) {
+            return Math.round(((original - lowest) / original) * 100);
+          }
+          return 0;
+        };
+        const discA = getDiscountPercent(a);
+        const discB = getDiscountPercent(b);
+        if (discB !== discA) return discB - discA;
+
+        // Nếu cùng % giảm thì xét chênh lệch số tiền giảm nhiều hơn
+        const diffA = (a.sellingPrice || 0) - getProductLowestPrice(a);
+        const diffB = (b.sellingPrice || 0) - getProductLowestPrice(b);
+        if (diffB !== diffA) return diffB - diffA;
+
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tB - tA;
+      } else if (filters.sortBy === 'newest') {
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (tB !== tA) return tB - tA;
+      }
+
+      // 3. Thứ tự hiển thị phân tầng theo yêu cầu:
+      // Nổi bật -> Bán chạy -> Rating -> Các sản phẩm còn lại (nếu trùng xét tiếp mức thấp hơn)
+      // Mức 1: Nổi bật (isFeatured)
+      const featA = a.isFeatured ? 1 : 0;
+      const featB = b.isFeatured ? 1 : 0;
+      if (featB !== featA) return featB - featA;
+
+      // Mức 2: Bán chạy (soldCount)
+      const soldA = Number(a.soldCount || 0);
+      const soldB = Number(b.soldCount || 0);
+      if (soldB !== soldA) return soldB - soldA;
+
+      // Mức 3: Rating & số lượt đánh giá
+      const rateA = Number(a.rating || 0);
+      const rateB = Number(b.rating || 0);
+      if (rateB !== rateA) return rateB - rateA;
+
+      const revA = Number(a.reviewCount || 0);
+      const revB = Number(b.reviewCount || 0);
+      if (revB !== revA) return revB - revA;
+
+      // Mức 4: Các sản phẩm còn lại theo ngày tạo
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
 
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
   const paginatedProducts = filteredProducts.slice(
@@ -450,18 +530,18 @@ function ShopPageContent() {
 
   const dynamicQuickCategories = dbCategories.length > 0
     ? dbCategories.map((cat) => ({
-        name: cat.name,
-        category: cat.slug || cat.name,
-        icon: getCategoryIcon(cat.slug || cat.name),
-        desc: 'Sản phẩm chất lượng',
-      }))
+      name: cat.name,
+      category: cat.slug || cat.name,
+      icon: getCategoryIcon(cat.slug || cat.name),
+      desc: 'Sản phẩm chất lượng',
+    }))
     : QUICK_CATEGORIES;
 
   const dynamicSidebarCategories = dbCategories.length > 0
     ? dbCategories.map((cat) => ({
-        value: cat.slug || cat.name,
-        label: cat.name,
-      }))
+      value: cat.slug || cat.name,
+      label: cat.name,
+    }))
     : undefined;
 
   return (
@@ -479,55 +559,13 @@ function ShopPageContent() {
           id="shop-main-grid"
           className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 transition-all duration-300"
         >
-          {/* Quick Categories Section - Single Row Horizontal Scroll */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300 scroll-smooth">
-              {dynamicQuickCategories.map((cat, idx) => {
-                const isActive = selectedCategories.includes(cat.category);
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      if (isActive) {
-                        setSelectedCategories([]);
-                      } else {
-                        setSelectedCategories([cat.category]);
-                      }
-                    }}
-                    className={cn(
-                      "flex flex-col items-center justify-center p-4 min-w-[140px] sm:min-w-[160px] rounded-2xl border-2 transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer group shadow-2xs shrink-0 select-none",
-                      isActive
-                        ? "border-[var(--primary-color)] bg-orange-50/40 shadow-xs"
-                        : "border-[#EFEAE2]/80 bg-[#FAF9F7] hover:bg-white hover:border-[var(--primary-color)] hover:shadow-xs"
-                    )}
-                  >
-                    <span className="text-2xl mb-1.5 filter drop-shadow-xs group-hover:scale-110 transition-transform duration-300">
-                      {cat.icon}
-                    </span>
-                    <span className="text-xs font-black text-[var(--text-main)] text-center whitespace-nowrap">
-                      {cat.name}
-                    </span>
-                    <span className="text-[9px] text-[var(--text-muted)] font-extrabold mt-0.5 text-center whitespace-nowrap">
-                      {cat.desc}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
           <section className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4 border-[#EFEAE2]">
               <div>
                 <h1 className="flex items-center gap-2 text-2xl sm:text-3xl font-black text-[var(--text-main)]">
                   <Grid3X3 className="size-6 text-[#0F766E]" />
-                  Cửa hàng phụ kiện
+                  Cửa hàng
                 </h1>
-                {!loading && (
-                  <p className="mt-1 text-sm text-[var(--text-muted)] font-bold">
-                    Tìm thấy {filteredProducts.length} sản phẩm phù hợp
-                  </p>
-                )}
               </div>
 
               {/* Custom Pet Filter Button */}
@@ -553,20 +591,6 @@ function ShopPageContent() {
                     </button>
                   </div>
                 )}
-
-                {/* Toggle Filter Button */}
-                <button
-                  onClick={() => setIsFilterOpen((prev) => !prev)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-4.5 py-2.5 rounded-2xl text-xs font-black transition active:scale-95 cursor-pointer border shadow-sm",
-                    isFilterOpen
-                      ? "bg-slate-100 border-slate-200 text-[var(--text-main)] hover:bg-slate-200"
-                      : "bg-white border-gray-200 text-gray-600 hover:bg-slate-50"
-                  )}
-                >
-                  <Filter className="size-3.5 text-gray-500" />
-                  {isFilterOpen ? 'Ẩn bộ lọc' : 'Hiện bộ lọc'}
-                </button>
 
                 <button
                   onClick={() => {
@@ -611,7 +635,7 @@ function ShopPageContent() {
                     <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-wider block">
                       Chọn thú cưng của bạn để nhận đề xuất kích cỡ:
                     </span>
-                    
+
                     {isLoadingPets ? (
                       <div className="flex items-center gap-3 bg-slate-50 dark:bg-zinc-950 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800 text-xs font-bold text-[var(--text-muted)]">
                         <Loader2 className="size-4 animate-spin text-orange-500" />
@@ -693,28 +717,30 @@ function ShopPageContent() {
 
             {/* Sidebar + Products Grid */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start mt-6">
-              {/* Left Column: Filter Sidebar */}
-              {isFilterOpen && (
-                <div className="lg:col-span-3">
-                  <ProductFilterSidebar
-                    species={filters.targetSpecies ?? ''}
-                    selectedCategories={selectedCategories}
-                    selectedPrices={selectedPrices}
-                    onSpeciesChange={handleSpeciesChange}
-                    onCategoriesChange={setSelectedCategories}
-                    onPricesChange={setSelectedPrices}
-                    dynamicCategories={dynamicSidebarCategories}
-                  />
-                </div>
-              )}
+              {/* Left Column: Filter Sidebar - Luôn hiển thị cố định */}
+              <div className="lg:col-span-3">
+                <ProductFilterSidebar
+                  species={filters.targetSpecies ?? ''}
+                  selectedCategories={selectedCategories}
+                  selectedRating={selectedRating}
+                  customMinPrice={customMinPrice}
+                  customMaxPrice={customMaxPrice}
+                  onSpeciesChange={handleSpeciesChange}
+                  onCategoriesChange={setSelectedCategories}
+                  onRatingChange={setSelectedRating}
+                  onCustomPriceChange={(min, max) => {
+                    setCustomMinPrice(min);
+                    setCustomMaxPrice(max);
+                    setCurrentPage(1);
+                  }}
+                  onClearAllFilters={handleClearAllFilters}
+                  hasActiveFilters={hasActiveFilters}
+                  dynamicCategories={dynamicSidebarCategories}
+                />
+              </div>
 
               {/* Right Column: Search + Grid */}
-              <div
-                className={cn(
-                  "space-y-6 transition-all duration-300",
-                  isFilterOpen ? "lg:col-span-9" : "lg:col-span-12"
-                )}
-              >
+              <div className="space-y-6 lg:col-span-9 transition-all duration-300">
                 <SearchFilterBar
                   key={filterResetKey}
                   onSearch={handleSearch}
@@ -733,11 +759,7 @@ function ShopPageContent() {
                   loading={loading}
                   selectedPet={selectedPet}
                   selectedPrices={selectedPrices}
-                  gridClassName={
-                    isFilterOpen
-                      ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-                      : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
-                  }
+                  gridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
                 />
 
                 {/* Pagination Controls */}

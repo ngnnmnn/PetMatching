@@ -17,8 +17,8 @@ export class GetProductsDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['popular', 'newest', 'price_asc', 'price_desc'])
-  sortBy?: 'popular' | 'newest' | 'price_asc' | 'price_desc';
+  @IsIn(['popular', 'newest', 'price_asc', 'price_desc', 'rating_desc', 'discount_desc'])
+  sortBy?: 'popular' | 'newest' | 'price_asc' | 'price_desc' | 'rating_desc' | 'discount_desc';
 
   @IsOptional()
   @Type(() => Number)
