@@ -612,7 +612,14 @@ export default function SpaHome() {
                     <div className="space-y-3">
                       {matchedReviews.map((rev: any, idx: number) => {
                         const serviceName = rev.booking?.service?.name || rev.booking?.category?.name || detailCard.title;
-                        const reviewDate = rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('vi-VN') : '';
+                        // Định dạng ngày đánh giá theo chuẩn dd/MM/yyyy
+                        const reviewDate = rev.createdAt
+                          ? new Date(rev.createdAt).toLocaleDateString('vi-VN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            })
+                          : '';
 
                         return (
                           <div key={idx} className="p-3.5 bg-gray-50/80 border border-gray-200 rounded-2xl space-y-2">

@@ -54,9 +54,19 @@ function petDocument(pet: PetWithOwner, type: PetDocument["type"]) {
   return (pet.documents ?? []).find((document) => document.type === type);
 }
 
+/**
+ * Định dạng ngày sinh thú cưng theo chuẩn dd/MM/yyyy
+ */
 function formatDate(value?: string | null) {
   if (!value) return "Chưa cập nhật";
-  return new Intl.DateTimeFormat("vi-VN").format(new Date(value));
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Chưa cập nhật"
+    : date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
 }
 
 function formatAge(value?: string | null) {

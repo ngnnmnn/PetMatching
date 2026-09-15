@@ -25,7 +25,7 @@ type AuthenticatedRequest = {
 @Controller('api/cart')
 @UseGuards(JwtAuthGuard)
 export class CartController {
-  constructor(private readonly cartService: CartService) {}
+  constructor(private readonly cartService: CartService) { }
 
   /**
    * Lấy danh sách sản phẩm trong giỏ hàng của người dùng đang đăng nhập

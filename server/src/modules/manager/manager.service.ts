@@ -1671,7 +1671,7 @@ export class ManagerService {
         'Khách hàng': name,
         SĐT: phone,
         'Địa chỉ giao hàng': address,
-        'Ngày đặt': new Date(o.createdAt).toLocaleDateString('vi-VN'),
+        'Ngày đặt': new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
         'Sản phẩm': itemsList,
         'Tổng thanh toán': o.totalAmount,
         'Trạng thái': statusLabels[o.status] || o.status,
@@ -1682,7 +1682,7 @@ export class ManagerService {
           : '',
         'Chủ tài khoản Nhận hoàn tiền': o.refundAccountName || '',
         'Ngày hoàn tiền': o.refundedAt
-          ? new Date(o.refundedAt).toLocaleDateString('vi-VN')
+          ? new Date(o.refundedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
           : '',
       };
     });

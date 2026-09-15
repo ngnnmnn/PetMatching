@@ -1598,26 +1598,22 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     let salePrice: number | null = null;
     if (variantForm.discountType === 'AMOUNT' && variantForm.discountValue) {
       const val = Number(variantForm.discountValue);
-      if (isNaN(val) || val < 0) {
-        toast.error('Số tiền giảm giá không hợp lệ.');
+      if (isNaN(val) || val <= 0) {
+        toast.error('Số tiền giảm giá phải lớn hơn 0.');
         return;
       }
-      if (val > 0) {
-        if (val > ip) {
-          toast.error(`Số tiền giảm giá tối đa không được vượt quá giá nhập (${ip.toLocaleString('vi-VN')}đ).`);
-          return;
-        }
-        salePrice = sellingPrice - val;
+      if (val > ip) {
+        toast.error(`Số tiền giảm giá tối đa không được vượt quá giá nhập (${ip.toLocaleString('vi-VN')}đ).`);
+        return;
       }
+      salePrice = sellingPrice - val;
     } else if (variantForm.discountType === 'PERCENT' && variantForm.discountValue) {
       const pct = Number(variantForm.discountValue);
-      if (isNaN(pct) || pct < 0 || pct > 100) {
+      if (isNaN(pct) || pct <= 0 || pct > 100) {
         toast.error('Phần trăm giảm giá phải từ 0% đến 100%.');
         return;
       }
-      if (pct > 0) {
-        salePrice = sellingPrice - Math.round((sellingPrice * pct) / 100);
-      }
+      salePrice = sellingPrice - Math.round((sellingPrice * pct) / 100);
     }
 
     setSubmittingVariant(true);
@@ -1972,26 +1968,22 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     let calculatedSalePrice: number | null = null;
     if (productForm.discountType === 'AMOUNT' && productForm.discountValue) {
       const val = Number(productForm.discountValue);
-      if (isNaN(val) || val < 0) {
-        toast.error('Số tiền giảm giá không hợp lệ.');
+      if (isNaN(val) || val <= 0) {
+        toast.error('Số tiền giảm giá phải lớn hơn 0.');
         return;
       }
-      if (val > 0) {
-        if (minImportPrice > 0 && val > minImportPrice) {
-          toast.error(`Số tiền giảm giá tối đa không được vượt quá giá nhập hàng (${minImportPrice.toLocaleString('vi-VN')}đ).`);
-          return;
-        }
-        calculatedSalePrice = Math.max(1, effectiveSellingPrice - val);
+      if (minImportPrice > 0 && val > minImportPrice) {
+        toast.error(`Số tiền giảm giá tối đa không được vượt quá giá nhập hàng (${minImportPrice.toLocaleString('vi-VN')}đ).`);
+        return;
       }
+      calculatedSalePrice = Math.max(1, effectiveSellingPrice - val);
     } else if (productForm.discountType === 'PERCENT' && productForm.discountValue) {
       const pct = Number(productForm.discountValue);
-      if (isNaN(pct) || pct < 0 || pct > 100) {
+      if (isNaN(pct) || pct <= 0 || pct > 100) {
         toast.error('Phần trăm giảm giá phải từ 0% đến 100%.');
         return;
       }
-      if (pct > 0) {
-        calculatedSalePrice = Math.max(1, effectiveSellingPrice - Math.round((effectiveSellingPrice * pct) / 100));
-      }
+      calculatedSalePrice = Math.max(1, effectiveSellingPrice - Math.round((effectiveSellingPrice * pct) / 100));
     }
 
     setSubmittingProduct(true);
@@ -2714,7 +2706,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             setProductForm({
                               ...productForm,
                               discountType: nextType,
-                              discountValue: nextType === 'NONE' ? '' : (productForm.discountValue && productForm.discountValue !== '' ? productForm.discountValue : '0'),
+                              discountValue: nextType === 'NONE' ? '' : productForm.discountValue,
                             });
                           }}
                           className="w-1/2 h-10 border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-white focus:outline-none focus:border-primary hover:border-gray-400 cursor-pointer transition shadow-2xs"
@@ -2728,16 +2720,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                           inputMode="numeric"
                           disabled={productForm.discountType === 'NONE'}
                           placeholder={productForm.discountType === 'NONE' ? '— Không giảm —' : (productForm.discountType === 'AMOUNT' ? 'Nhập số tiền giảm (Ví dụ: 15.000)' : 'Nhập % giảm (Ví dụ: 15)')}
-                          value={productForm.discountType === 'NONE' ? '' : (productForm.discountType === 'AMOUNT' ? formatNumberWithDots(productForm.discountValue !== '' ? productForm.discountValue : '0') : (productForm.discountValue !== '' ? productForm.discountValue : '0'))}
-                          onFocus={(e) => {
-                            if (!productForm.discountValue || productForm.discountValue === '') {
-                              setProductForm({ ...productForm, discountValue: '0' });
-                            }
-                            e.target.select();
-                          }}
-                          onClick={(e: any) => {
-                            e.target.select();
-                          }}
+                          value={productForm.discountType === 'NONE' ? '' : (productForm.discountType === 'AMOUNT' ? formatNumberWithDots(productForm.discountValue) : productForm.discountValue)}
                           onChange={(e) => {
                             const raw = productForm.discountType === 'AMOUNT' ? parseRawNumber(e.target.value) : e.target.value;
                             setProductForm({ ...productForm, discountValue: raw });
@@ -3110,7 +3093,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     setVariantForm({
                                       ...variantForm,
                                       discountType: nextType,
-                                      discountValue: nextType === 'NONE' ? '' : (variantForm.discountValue && variantForm.discountValue !== '' ? variantForm.discountValue : '0'),
+                                      discountValue: nextType === 'NONE' ? '' : variantForm.discountValue,
                                     });
                                   }}
                                   className="w-1/2 h-9 border border-gray-300 bg-white rounded-xl px-1.5 text-[10px] font-bold text-gray-800 focus:outline-none focus:border-primary hover:border-gray-400 cursor-pointer shadow-2xs"
@@ -3124,16 +3107,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                   inputMode="numeric"
                                   disabled={variantForm.discountType === 'NONE'}
                                   placeholder={variantForm.discountType === 'NONE' ? '— Không giảm —' : (variantForm.discountType === 'AMOUNT' ? 'Ví dụ: 15.000' : 'Ví dụ: 15 (%)')}
-                                  value={variantForm.discountType === 'NONE' ? '' : (variantForm.discountType === 'AMOUNT' ? formatNumberWithDots(variantForm.discountValue !== '' ? variantForm.discountValue : '0') : (variantForm.discountValue !== '' ? variantForm.discountValue : '0'))}
-                                  onFocus={(e) => {
-                                    if (!variantForm.discountValue || variantForm.discountValue === '') {
-                                      setVariantForm({ ...variantForm, discountValue: '0' });
-                                    }
-                                    e.target.select();
-                                  }}
-                                  onClick={(e: any) => {
-                                    e.target.select();
-                                  }}
+                                  value={variantForm.discountType === 'NONE' ? '' : (variantForm.discountType === 'AMOUNT' ? formatNumberWithDots(variantForm.discountValue) : variantForm.discountValue)}
                                   onChange={(e) => {
                                     const raw = variantForm.discountType === 'AMOUNT' ? parseRawNumber(e.target.value) : e.target.value;
                                     setVariantForm({ ...variantForm, discountValue: raw });
@@ -3774,7 +3748,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     </div>
                                   </div>
                                   <span className="text-[10px] font-black text-gray-400">
-                                    {new Date(item.createdAt).toLocaleDateString('vi-VN')}
+                                    {new Date(item.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                                   </span>
                                 </div>
                                 <p className="text-xs font-semibold text-gray-700 pl-12 leading-relaxed">
@@ -3928,7 +3902,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               setVariantForm({
                                 ...variantForm,
                                 discountType: nextType,
-                                discountValue: nextType === 'NONE' ? '' : (variantForm.discountValue && variantForm.discountValue !== '' ? variantForm.discountValue : '0'),
+                                discountValue: nextType === 'NONE' ? '' : variantForm.discountValue,
                               });
                             }}
                             className="w-1/2 rounded-xl border border-gray-300 bg-white px-2 py-2 text-[10px] font-bold text-gray-800 focus:bg-white focus:border-primary hover:border-gray-400 focus:outline-none cursor-pointer shadow-2xs"
@@ -3942,16 +3916,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             inputMode="numeric"
                             disabled={variantForm.discountType === 'NONE'}
                             placeholder={variantForm.discountType === 'NONE' ? '— Không giảm —' : (variantForm.discountType === 'AMOUNT' ? 'Ví dụ: 15.000' : 'Ví dụ: 15')}
-                            value={variantForm.discountType === 'NONE' ? '' : (variantForm.discountType === 'AMOUNT' ? formatNumberWithDots(variantForm.discountValue !== '' ? variantForm.discountValue : '0') : (variantForm.discountValue !== '' ? variantForm.discountValue : '0'))}
-                            onFocus={(e) => {
-                              if (!variantForm.discountValue || variantForm.discountValue === '') {
-                                setVariantForm({ ...variantForm, discountValue: '0' });
-                              }
-                              e.target.select();
-                            }}
-                            onClick={(e: any) => {
-                              e.target.select();
-                            }}
+                            value={variantForm.discountType === 'NONE' ? '' : (variantForm.discountType === 'AMOUNT' ? formatNumberWithDots(variantForm.discountValue) : variantForm.discountValue)}
                             onChange={(e) => {
                               const raw = variantForm.discountType === 'AMOUNT' ? parseRawNumber(e.target.value) : e.target.value;
                               setVariantForm({ ...variantForm, discountValue: raw });
@@ -4657,7 +4622,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-[#8A8980]">
-                            {new Date(o.createdAt).toLocaleDateString('vi-VN')}
+                            {new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </td>
                           <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(o.totalAmount)}</td>
                           <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -5565,9 +5530,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                   <span className="text-[10px] text-gray-400 font-bold mt-0.5 block flex items-center gap-1">
                                     <Calendar className="size-3" />
                                     {new Date(order.createdAt).toLocaleDateString('vi-VN', {
+                                      day: '2-digit',
+                                      month: '2-digit',
                                       year: 'numeric',
-                                      month: 'long',
-                                      day: 'numeric',
                                       hour: '2-digit',
                                       minute: '2-digit'
                                     })}
@@ -5968,7 +5933,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         <div className="text-right">
                           <p className="text-sm font-black text-[var(--primary-color)]">{currency.format(o.totalAmount)}</p>
                           <p className="text-[10px] font-semibold text-[#8A8980]">
-                            {new Date(o.createdAt).toLocaleDateString('vi-VN')}
+                            {new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </p>
                         </div>
                       </div>

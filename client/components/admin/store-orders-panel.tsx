@@ -1130,7 +1130,13 @@ function formatMoney(value: number) {
 function formatDate(value?: string | Date | null) {
   if (!value) return "-";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleDateString("vi-VN");
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
 }
 function formatTime(value?: string | Date | null) {
   if (!value) return "-";

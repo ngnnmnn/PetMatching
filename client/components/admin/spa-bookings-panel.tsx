@@ -80,6 +80,7 @@ type SpaBookingRow = {
 };
 type DateFilter = 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM';
 type PaymentFilter = 'ALL' | 'PAID' | 'PENDING' | 'REFUNDED' | 'UNPAID';
+type SortOrder = 'UPCOMING_FIRST' | 'SCHEDULED_DESC' | 'SCHEDULED_ASC' | 'CREATED_DESC';
 
 const PAGE_SIZE = 10;
 const ACTIVE_STATUSES = ['CHECK_IN', 'IN_PROGRESS'];
@@ -105,6 +106,7 @@ export function SpaBookingsPanel({
   const [status, setStatus] = useState('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('ALL');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('UPCOMING_FIRST');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [attentionOnly, setAttentionOnly] = useState(false);
@@ -120,9 +122,12 @@ export function SpaBookingsPanel({
     attention: bookings.filter((booking) => getAttentionReasons(booking).length > 0).length,
   }), [bookings]);
 
+  /**
+   * Lọc và sắp xếp danh sách lịch hẹn Spa theo tiêu chí người dùng lựa chọn
+   */
   const filteredBookings = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('vi');
-    return bookings.filter((booking) => {
+    const filtered = bookings.filter((booking) => {
       if (normalizedSearch && !bookingMatchesSearch(booking, normalizedSearch)) return false;
       if (status === 'ACTIVE_SERVICE' && !ACTIVE_STATUSES.includes(booking.status ?? '')) return false;
       if (status !== 'ALL' && status !== 'ACTIVE_SERVICE' && booking.status !== status) return false;
@@ -131,14 +136,73 @@ export function SpaBookingsPanel({
       if (attentionOnly && getAttentionReasons(booking).length === 0) return false;
       return true;
     });
-  }, [attentionOnly, bookings, dateFilter, dateFrom, dateTo, paymentFilter, search, status]);
+
+    if (sortOrder === 'SCHEDULED_ASC') {
+      return [...filtered].sort((a, b) => {
+        const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+        const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+        return timeA - timeB;
+      });
+    }
+
+    if (sortOrder === 'CREATED_DESC') {
+      return [...filtered].sort((a, b) => {
+        const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return createdB - createdA;
+      });
+    }
+
+    if (sortOrder === 'UPCOMING_FIRST') {
+      // Ưu tiên hiển thị lịch hẹn sắp tới trước (từ gần đến xa), sau đó đến các lịch quá khứ (từ gần về xa)
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const nowTime = now.getTime();
+
+      const upcoming = filtered
+        .filter((b) => {
+          const time = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+          return time >= nowTime;
+        })
+        .sort((a, b) => {
+          const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+          const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+          return timeA - timeB;
+        });
+
+      const past = filtered
+        .filter((b) => {
+          const time = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+          return time < nowTime;
+        })
+        .sort((a, b) => {
+          const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+          const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+          return timeB - timeA;
+        });
+
+      return [...upcoming, ...past];
+    }
+
+    // Mặc định SCHEDULED_DESC: Ngày hẹn giảm dần từ tương lai xa về quá khứ
+    return [...filtered].sort((a, b) => {
+      const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+      const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return createdB - createdA;
+    });
+  }, [attentionOnly, bookings, dateFilter, dateFrom, dateTo, paymentFilter, search, sortOrder, status]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBookings.length / PAGE_SIZE));
   const activePage = Math.min(currentPage, totalPages);
   const pageBookings = filteredBookings.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
   const hasFilters = Boolean(
     search || status !== 'ALL' || dateFilter !== 'ALL' ||
-      paymentFilter !== 'ALL' || attentionOnly,
+    paymentFilter !== 'ALL' || sortOrder !== 'UPCOMING_FIRST' || attentionOnly,
   );
 
   const resetFilters = () => {
@@ -146,6 +210,7 @@ export function SpaBookingsPanel({
     setStatus('ALL');
     setDateFilter('ALL');
     setPaymentFilter('ALL');
+    setSortOrder('UPCOMING_FIRST');
     setDateFrom('');
     setDateTo('');
     setAttentionOnly(false);
@@ -181,8 +246,8 @@ export function SpaBookingsPanel({
           <SummaryCard label="Cần chú ý" value={stats.attention} icon={AlertTriangle} tone="red" onClick={() => updateFilter(() => setAttentionOnly(true))} />
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="relative xl:col-span-2">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <label className="relative xl:col-span-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={search}
@@ -197,7 +262,6 @@ export function SpaBookingsPanel({
             ariaLabel="Lọc theo trạng thái"
             options={[
               { value: 'ALL', label: 'Tất cả trạng thái' },
-              { value: 'ACTIVE_SERVICE', label: 'Đang phục vụ' },
               ...Object.entries(SPA_STATUS_META).map(([value, meta]) => ({ value, label: meta.label })),
             ]}
           />
@@ -223,6 +287,17 @@ export function SpaBookingsPanel({
               { value: 'THIS_WEEK', label: 'Tuần này' },
               { value: 'THIS_MONTH', label: 'Tháng này' },
               { value: 'CUSTOM', label: 'Khoảng ngày' },
+            ]}
+          />
+          <FilterSelect
+            value={sortOrder}
+            onChange={(value) => updateFilter(() => setSortOrder(value as SortOrder))}
+            ariaLabel="Sắp xếp danh sách"
+            options={[
+              { value: 'UPCOMING_FIRST', label: 'Lịch sắp tới → Đã qua' },
+              { value: 'SCHEDULED_DESC', label: 'Ngày hẹn: Giảm dần' },
+              { value: 'SCHEDULED_ASC', label: 'Ngày hẹn: Tăng dần' },
+              { value: 'CREATED_DESC', label: 'Mới đặt gần đây' },
             ]}
           />
           {dateFilter === 'CUSTOM' && (
@@ -391,7 +466,7 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
           </DetailSection>
 
           <DetailSection icon={UserRound} title="Khách hàng và thú cưng">
-              <DetailGrid>
+            <DetailGrid>
               <DetailField label="Khách hàng" value={getCustomerName(booking)} />
               <DetailField label="Email" value={customerEmail ?? '-'} wide />
               <DetailField label="Số điện thoại" value={customerPhone ?? '-'} />
@@ -575,20 +650,37 @@ function formatMoney(value: number) {
   return `${new Intl.NumberFormat('vi-VN').format(value)}đ`;
 }
 
+/**
+ * Định dạng ngày theo chuẩn dd/MM/yyyy
+ */
 function formatDate(value?: string | Date | null) {
   if (!value) return '-';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('vi-VN');
+  return Number.isNaN(date.getTime())
+    ? '-'
+    : date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
 }
 
+/**
+ * Định dạng giờ theo chuẩn HH:mm
+ */
 function formatTime(value?: string | Date | null) {
   if (!value) return '-';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * Định dạng ngày giờ theo chuẩn HH:mm dd/MM/yyyy
+ */
 function formatDateTime(value?: string | Date | null) {
   if (!value) return '-';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+  return Number.isNaN(date.getTime())
+    ? '-'
+    : `${date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ${date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 }

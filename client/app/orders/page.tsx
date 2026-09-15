@@ -87,10 +87,8 @@ function formatCurrency(value: number) {
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('vi-VN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
+  if (Number.isNaN(date.getTime())) return '-';
+  return `${date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ${date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 }
 
 // Parses stored address string back to fields with fallback support
