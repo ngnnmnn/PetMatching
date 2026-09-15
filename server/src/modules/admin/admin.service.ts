@@ -1404,6 +1404,7 @@ export class AdminService {
     return { success: true };
   }
 
+  /** Lấy hồ sơ hệ thống cùng tọa độ điểm lấy hàng đã được Admin xác nhận. */
   async getSystemProfile() {
     const [store, spa] = await Promise.all([
       this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } }),
@@ -1414,16 +1415,21 @@ export class AdminService {
       name: store?.name || spa?.name || 'PetMatching',
       description: store?.description || spa?.description || '',
       address: store?.address?.trim() || spa?.address?.trim() || '',
+      latitude: store?.latitude ?? null,
+      longitude: store?.longitude ?? null,
       phone: store?.phone?.trim() || spa?.phone?.trim() || '',
     };
   }
 
+  /** Đồng bộ thông tin dùng chung sang Store/Spa và lưu tọa độ OpenStreetMap cho Store. */
   async updateSystemProfile(
     actor: AdminActor,
     dto: {
       name: string;
       description?: string;
       address: string;
+      latitude: number;
+      longitude: number;
       phone: string;
     },
   ) {
@@ -1436,6 +1442,18 @@ export class AdminService {
     if (!shared.name || !shared.address || !shared.phone) {
       throw new BadRequestException(
         'Tên, địa chỉ và số điện thoại không được để trống.',
+      );
+    }
+    if (
+      !Number.isFinite(dto.latitude) ||
+      !Number.isFinite(dto.longitude) ||
+      dto.latitude < -90 ||
+      dto.latitude > 90 ||
+      dto.longitude < -180 ||
+      dto.longitude > 180
+    ) {
+      throw new BadRequestException(
+        'Vui lòng chọn địa chỉ hợp lệ từ OpenStreetMap.',
       );
     }
 
@@ -1459,7 +1477,11 @@ export class AdminService {
       await Promise.all([
         tx.store.update({
           where: { id: store.id },
-          data: shared,
+          data: {
+            ...shared,
+            latitude: dto.latitude,
+            longitude: dto.longitude,
+          },
         }),
         tx.addressSpa.update({
           where: { id: spa.id },
@@ -1473,9 +1495,13 @@ export class AdminService {
       'ADMIN_UPDATE_SYSTEM_PROFILE',
       'SystemProfile',
       'shared',
-      shared,
+      { ...shared, latitude: dto.latitude, longitude: dto.longitude },
     );
-    return shared;
+    return {
+      ...shared,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+    };
   }
 
   async getStoreProducts() {

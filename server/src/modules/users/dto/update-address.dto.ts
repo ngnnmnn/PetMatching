@@ -50,6 +50,14 @@ export class UpdateAddressDto {
   wardCode?: string;
 
   @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
 }

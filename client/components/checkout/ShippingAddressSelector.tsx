@@ -90,6 +90,7 @@ export default function ShippingAddressSelector({
     }
   };
 
+  // Lưu đồng thời thông tin hành chính và tọa độ OpenStreetMap của địa chỉ được chọn.
   const handleModalSubmit = async (data: any) => {
     setIsAddressModalOpen(false);
 
@@ -105,6 +106,8 @@ export default function ShippingAddressSelector({
           provinceId: data.provinceId,
           districtId: data.districtId,
           wardCode: data.wardCode,
+          latitude: data.lat,
+          longitude: data.lng,
           isDefault: data.setAsDefault,
         });
         toast.success('Đã cập nhật thông tin địa chỉ thành công.');
@@ -128,6 +131,8 @@ export default function ShippingAddressSelector({
             provinceId: data.provinceId,
             districtId: data.districtId,
             wardCode: data.wardCode,
+            latitude: data.lat,
+            longitude: data.lng,
             isDefault: data.setAsDefault,
           });
           toast.success('Đã thêm và lưu địa chỉ mới thành công.');

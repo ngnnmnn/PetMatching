@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentService } from '../payment/payment.service';
 import { PetsService } from '../pets/pets.service';
+import { ShippingService } from '../shipping/shipping.service';
 import { UsersService } from './users.service';
 
 describe('UsersService account deletion policy', () => {
@@ -61,6 +62,7 @@ describe('UsersService account deletion policy', () => {
       cloudinary as unknown as CloudinaryService,
       {} as NotificationsService,
       petsService as unknown as PetsService,
+      {} as ShippingService,
     );
     return { service, tx, petsService };
   }

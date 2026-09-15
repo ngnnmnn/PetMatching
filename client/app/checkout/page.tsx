@@ -95,6 +95,7 @@ function CheckoutPageContent() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [createdOrderId, setCreatedOrderId] = useState('');
+  const [placedOrderTotal, setPlacedOrderTotal] = useState<number | null>(null);
   const [finalAddressStr, setFinalAddressStr] = useState('');
   const [recipientNameStr, setRecipientNameStr] = useState('');
   const [recipientPhoneStr, setRecipientPhoneStr] = useState('');
@@ -353,8 +354,8 @@ function CheckoutPageContent() {
       const addr = savedAddresses.find((a) => a.id === selectedAddressId);
       if (addr) {
         targetAddressStr = `${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
-        targetLat = selectedLat;
-        targetLng = selectedLng;
+        targetLat = addr.latitude ?? undefined;
+        targetLng = addr.longitude ?? undefined;
       }
     } else {
       if (detail || selectedWardName || selectedDistrictName || selectedProvinceName) {
@@ -446,6 +447,8 @@ function CheckoutPageContent() {
     let phoneStr = '';
     let targetDistrictId: number | undefined = undefined;
     let targetWardCode: string | undefined = undefined;
+    let targetShippingLat: number | undefined = undefined;
+    let targetShippingLng: number | undefined = undefined;
 
     setSubmitting(true);
 
@@ -470,6 +473,8 @@ function CheckoutPageContent() {
         finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${detail.trim()}, ${selectedWardName}, ${selectedDistrictName}, ${selectedProvinceName}`;
         targetDistrictId = selectedDistrictId;
         targetWardCode = selectedWardCode;
+        targetShippingLat = selectedLat;
+        targetShippingLng = selectedLng;
       } else {
         // Use saved address
         const addr = savedAddresses.find((a) => a.id === selectedAddressId);
@@ -483,6 +488,8 @@ function CheckoutPageContent() {
         finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
         targetDistrictId = addr.districtId ?? undefined;
         targetWardCode = addr.wardCode ?? undefined;
+        targetShippingLat = addr.latitude ?? undefined;
+        targetShippingLng = addr.longitude ?? undefined;
       }
 
       if (userNote.trim()) {
@@ -494,11 +501,6 @@ function CheckoutPageContent() {
         productId: item.productId,
         variantId: item.variantId || null,
         quantity: Number(item.quantity),
-        price: Number(
-          item.variant
-            ? (item.variant.salePrice ?? item.variant.sellingPrice)
-            : (item.product.salePrice ?? item.product.sellingPrice)
-        ),
       }));
 
       // Toast feedback if QR selected
@@ -508,11 +510,11 @@ function CheckoutPageContent() {
 
       // Create Order in DB
       const res = await usersApi.createOrder({
-        totalAmount: Number(checkoutTotal + baseShippingFee),
-        shippingFee: Number(baseShippingFee),
         shippingAddress: finalAddress,
         districtId: targetDistrictId,
         wardCode: targetWardCode,
+        shippingLatitude: targetShippingLat,
+        shippingLongitude: targetShippingLng,
         paymentMethod: paymentMethod,
         voucherCode: appliedVoucher?.code || undefined,
         items: orderItems,
@@ -521,6 +523,7 @@ function CheckoutPageContent() {
       toast.dismiss('payos-loading');
       const orderData = res.data;
       setOrderPlaced(true);
+      setPlacedOrderTotal(Number(orderData.totalAmount));
 
       if (paymentMethod === 'QR') {
         if (orderData.status === 'PAYMENT_ERROR' || (!orderData.qrData && !orderData.checkoutUrl)) {
@@ -536,7 +539,7 @@ function CheckoutPageContent() {
                   accountNumber: '970422',
                   accountName: 'PETMATCHING',
                   bin: '970422',
-                  amount: Number(finalTotal),
+                  amount: Number(orderData.totalAmount),
                   description: `PM${orderData.orderCode}`,
                   checkoutUrl: orderData.checkoutUrl,
                 },
@@ -1084,7 +1087,7 @@ function CheckoutPageContent() {
               </div>
               <div className="flex justify-between font-bold pt-2 border-t border-[var(--border-color)] text-sm">
                 <span className="text-[var(--text-main)]">Tổng tiền thanh toán:</span>
-                <span className="text-[var(--primary-color)]">{formatCurrency(finalTotal)}</span>
+                <span className="text-[var(--primary-color)]">{formatCurrency(placedOrderTotal ?? finalTotal)}</span>
               </div>
             </div>
 

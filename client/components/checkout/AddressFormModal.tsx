@@ -5,6 +5,7 @@ import { X, MapPin, ChevronDown, Search, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { shippingApi, type HanoiWardOption } from '@/lib/api/shipping';
+import type { Address } from '@/types';
 import AddressAutocompleteInput, { LocationSearchResult } from './AddressAutocompleteInput';
 
 function formatCurrency(value: number) {
@@ -166,7 +167,7 @@ interface AddressFormModalProps {
     calculatedShippingFee?: number;
   }) => void;
 
-  savedAddresses?: any[];
+  savedAddresses?: Address[];
   initialData?: {
     receiverName?: string;
     receiverPhone?: string;
@@ -177,6 +178,8 @@ interface AddressFormModalProps {
     provinceId?: number;
     districtId?: number;
     wardCode?: string;
+    latitude?: number | null;
+    longitude?: number | null;
   };
   title?: string;
   submitButtonText?: string;
@@ -252,6 +255,8 @@ export default function AddressFormModal({
         setDetail(initialData.detail || '');
         setWardName(initialData.ward || '');
         setWardCode(initialData.wardCode);
+        setSelectedLat(initialData.latitude ?? undefined);
+        setSelectedLng(initialData.longitude ?? undefined);
       } else if (savedAddresses && savedAddresses.length > 0) {
         setAddressTab('saved');
         const defaultAddr = savedAddresses.find((a) => a.isDefault) || savedAddresses[0];
@@ -263,6 +268,8 @@ export default function AddressFormModal({
         setDetail('');
         setWardName('');
         setWardCode(undefined);
+        setSelectedLat(undefined);
+        setSelectedLng(undefined);
       }
     }
   }, [isOpen, initialData, savedAddresses]);
@@ -333,13 +340,16 @@ export default function AddressFormModal({
     return () => clearTimeout(timer);
   }, [isOpen, detail, wardName, selectedLat, selectedLng]);
 
-  const handleSelectSavedAddress = (addr: any) => {
+  // Nạp đầy đủ địa chỉ và tọa độ đã lưu để không phải suy đoán lại vị trí giao hàng.
+  const handleSelectSavedAddress = (addr: Address) => {
     setSelectedSavedAddressId(addr.id);
-    setReceiverName(addr.receiverName || addr.name || '');
-    setReceiverPhone(addr.phone || addr.receiverPhone || '');
+    setReceiverName(addr.receiverName || '');
+    setReceiverPhone(addr.receiverPhone || '');
     setDetail(addr.detail || '');
     setWardName(addr.ward || '');
     setWardCode(addr.wardCode || undefined);
+    setSelectedLat(addr.latitude ?? undefined);
+    setSelectedLng(addr.longitude ?? undefined);
   };
 
   const handleWardSelect = (val: string | number, label: string) => {
@@ -368,6 +378,11 @@ export default function AddressFormModal({
 
     if (detail.trim().length < 5) {
       toast.error('Vui lòng nhập địa chỉ cụ thể (tối thiểu 5 ký tự) để AhaMove giao hàng chính xác.');
+      return;
+    }
+
+    if (selectedLat == null || selectedLng == null) {
+      toast.error('Vui lòng chọn địa chỉ từ danh sách gợi ý OpenStreetMap để xác định đúng vị trí giao hàng.');
       return;
     }
 
@@ -493,9 +508,9 @@ export default function AddressFormModal({
                   />
                   <div className="flex-1 text-xs space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-sm text-[var(--text-main)]">{addr.receiverName || addr.name}</span>
+                      <span className="font-extrabold text-sm text-[var(--text-main)]">{addr.receiverName}</span>
                       <span className="text-gray-400">•</span>
-                      <span className="font-mono text-gray-600">{addr.phone || addr.receiverPhone}</span>
+                      <span className="font-mono text-gray-600">{addr.receiverPhone}</span>
                       {addr.isDefault && (
                         <span className="bg-[#0F766E]/10 text-[#0F766E] text-[10px] font-black px-1.5 py-0.5 rounded">
                           Mặc định

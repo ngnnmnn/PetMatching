@@ -24,6 +24,7 @@ import { PaymentService } from '../payment/payment.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PetsService } from '../pets/pets.service';
+import { ShippingService } from '../shipping/shipping.service';
 
 type User = {
   id: string;
@@ -78,6 +79,7 @@ export class UsersService {
     private cloudinary: CloudinaryService,
     private readonly notifications: NotificationsService,
     private readonly petsService: PetsService,
+    private readonly shippingService: ShippingService,
   ) {}
 
   private async syncProductStockTx(tx: any, productId: string) {
@@ -558,6 +560,7 @@ export class UsersService {
     });
   }
 
+  /** Lưu địa chỉ khách hàng kèm tọa độ OpenStreetMap để tái sử dụng tại Checkout. */
   async createAddress(userId: string, dto: CreateAddressDto) {
     return this.prisma.$transaction(async (tx) => {
       const addressCount = await tx.address.count({ where: { userId } });
@@ -580,6 +583,7 @@ export class UsersService {
     });
   }
 
+  /** Cập nhật địa chỉ thuộc user, bao gồm tọa độ mới khi người dùng chọn lại vị trí. */
   async updateAddress(
     userId: string,
     addressId: string,
@@ -689,9 +693,18 @@ export class UsersService {
     }
   }
 
+  /**
+   * Tạo đơn bằng giá sản phẩm, phí vận chuyển và khuyến mãi được xác thực hoàn toàn ở backend.
+   */
   async createOrder(userId: string, dto: CreateOrderDto) {
-
     const payosItems: { name: string; quantity: number; price: number }[] = [];
+    const estimatedShippingFee = (
+      await this.shippingService.estimateAhamoveShippingFee(
+        dto.shippingLatitude,
+        dto.shippingLongitude,
+        dto.shippingAddress,
+      )
+    ).feeVnd;
     const paymentMethod = dto.paymentMethod === 'QR' ? 'QR' : 'COD';
     const orderCode =
       paymentMethod === 'QR'
@@ -707,7 +720,15 @@ export class UsersService {
         throw new NotFoundException('Không tìm thấy tài khoản.');
       }
 
-      // 1. Check stock for each item and decrement
+      let itemsSubtotal = 0;
+      const resolvedOrderItems: Array<{
+        productId: string;
+        variantId: string | null;
+        quantity: number;
+        price: number;
+      }> = [];
+
+      // 1. Kiểm tra tồn kho và lấy lại giá bán hiện hành trực tiếp từ database.
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
           where: { id: item.productId },
@@ -738,6 +759,12 @@ export class UsersService {
             );
           }
 
+          if (variant.productId !== product.id) {
+            throw new BadRequestException(
+              `Biến thể "${variant.name}" không thuộc sản phẩm "${product.name}".`,
+            );
+          }
+
           if (!variant.isActive) {
             throw new BadRequestException(
               `Biến thể "${variant.name}" của sản phẩm "${product.name}" hiện không hoạt động.`,
@@ -751,26 +778,36 @@ export class UsersService {
           }
 
           const expectedPrice = variant.salePrice ?? variant.sellingPrice;
-          if (Math.abs(expectedPrice - item.price) > 0.01) {
-            const oldStr = item.price.toLocaleString('vi-VN') + 'đ';
-            const newStr = expectedPrice.toLocaleString('vi-VN') + 'đ';
-            throw new BadRequestException(
-              `Giá của phân loại "${variant.name}" (${product.name}) đã được thay đổi từ ${oldStr} thành ${newStr}. Vui lòng kiểm tra lại đơn hàng trước khi đặt hàng.`,
-            );
-          }
 
-          // Decrement variant stock
-          await tx.productVariant.update({
-            where: { id: item.variantId },
+          // Trừ kho có điều kiện để hai yêu cầu đồng thời không thể bán vượt tồn kho.
+          const variantStockUpdate = await tx.productVariant.updateMany({
+            where: {
+              id: item.variantId,
+              productId: product.id,
+              isActive: true,
+              stock: { gte: item.quantity },
+            },
             data: {
               stock: {
                 decrement: item.quantity,
               },
             },
           });
+          if (variantStockUpdate.count !== 1) {
+            throw new BadRequestException(
+              `Biến thể "${variant.name}" không còn đủ tồn kho.`,
+            );
+          }
           await this.syncProductStockTx(tx, item.productId);
 
           itemName = `${product.name} (${variant.name})`;
+          itemsSubtotal += expectedPrice * item.quantity;
+          resolvedOrderItems.push({
+            productId: product.id,
+            variantId: variant.id,
+            quantity: item.quantity,
+            price: expectedPrice,
+          });
         } else {
           // Fallback to product stock checking
           if (
@@ -784,34 +821,48 @@ export class UsersService {
           }
 
           const expectedPrice = product.salePrice ?? product.sellingPrice;
-          if (Math.abs(expectedPrice - item.price) > 0.01) {
-            const oldStr = item.price.toLocaleString('vi-VN') + 'đ';
-            const newStr = expectedPrice.toLocaleString('vi-VN') + 'đ';
-            throw new BadRequestException(
-              `Giá của sản phẩm "${product.name}" đã được thay đổi từ ${oldStr} thành ${newStr}. Vui lòng kiểm tra lại đơn hàng trước khi đặt hàng.`,
-            );
-          }
 
           if (product.stock !== null && product.stock !== undefined) {
-            // Decrement product stock
-            await tx.product.update({
-              where: { id: item.productId },
+            // Trừ kho có điều kiện để bảo toàn tồn kho khi đặt hàng đồng thời.
+            const productStockUpdate = await tx.product.updateMany({
+              where: {
+                id: item.productId,
+                isActive: true,
+                stock: { gte: item.quantity },
+              },
               data: {
                 stock: {
                   decrement: item.quantity,
                 },
               },
             });
+            if (productStockUpdate.count !== 1) {
+              throw new BadRequestException(
+                `Sản phẩm "${product.name}" không còn đủ tồn kho.`,
+              );
+            }
           }
+
+          itemsSubtotal += expectedPrice * item.quantity;
+          resolvedOrderItems.push({
+            productId: product.id,
+            variantId: null,
+            quantity: item.quantity,
+            price: expectedPrice,
+          });
         }
 
         // Store name for PayOS (strip special characters and accents, limit length)
         payosItems.push({
           name: cleanItemNameForPayOS(itemName),
           quantity: item.quantity,
-          price: Math.round(item.price),
+          price: Math.round(
+            resolvedOrderItems[resolvedOrderItems.length - 1].price,
+          ),
         });
       }
+
+      const shippingFee = itemsSubtotal > 500000 ? 0 : estimatedShippingFee;
 
       // 4. Validate and apply Voucher
       let discountAmount = 0;
@@ -835,34 +886,35 @@ export class UsersService {
           throw new BadRequestException('Mã giảm giá đã hết hạn sử dụng.');
         }
 
+        if (voucher.startDate && voucher.startDate > new Date()) {
+          throw new BadRequestException('Mã giảm giá chưa đến thời gian sử dụng.');
+        }
+
         if (voucher.maxUsage && voucher.usedCount >= voucher.maxUsage) {
           throw new BadRequestException('Mã giảm giá đã hết lượt sử dụng.');
         }
 
+        if (voucher.minOrderAmount && itemsSubtotal < voucher.minOrderAmount) {
+          throw new BadRequestException(
+            `Đơn hàng tối thiểu để sử dụng mã này là ${voucher.minOrderAmount.toLocaleString('vi-VN')}đ.`,
+          );
+        }
+
         if (voucher.type === 'FREE_SHIP') {
-          const ship = dto.shippingFee || 0;
-          if (voucher.value && voucher.value > 0 && voucher.value <= 100) {
-            discountAmount = Math.min(ship, (ship * voucher.value) / 100);
+          if (voucher.value === 100 || voucher.value === 0) {
+            discountAmount = shippingFee;
           } else {
-            discountAmount = ship;
+            discountAmount = Math.min(shippingFee, voucher.value);
           }
           if (voucher.maxDiscountAmount) {
             discountAmount = Math.min(discountAmount, voucher.maxDiscountAmount);
           }
         } else if (voucher.type === 'PERCENTAGE') {
-          const itemsSubtotal = dto.items.reduce(
-            (sum, item) => sum + item.price * item.quantity,
-            0,
-          );
-          discountAmount = (itemsSubtotal * voucher.value) / 100;
+          discountAmount = Math.round((itemsSubtotal * voucher.value) / 100);
           if (voucher.maxDiscountAmount) {
             discountAmount = Math.min(discountAmount, voucher.maxDiscountAmount);
           }
         } else if (voucher.type === 'FIXED') {
-          const itemsSubtotal = dto.items.reduce(
-            (sum, item) => sum + item.price * item.quantity,
-            0,
-          );
           discountAmount = Math.min(itemsSubtotal, voucher.value);
         }
 
@@ -895,6 +947,11 @@ export class UsersService {
         throw new NotFoundException('Cửa hàng chưa được cấu hình.');
       }
 
+      const totalAmount = Math.max(
+        0,
+        itemsSubtotal + shippingFee - discountAmount,
+      );
+
       return tx.order.create({
         data: {
           id: generatedId,
@@ -903,24 +960,26 @@ export class UsersService {
           customerEmailSnapshot: customer.email,
           customerPhoneSnapshot: customer.phone,
           storeId,
-          totalAmount: Math.max(0, dto.totalAmount - discountAmount),
-          shippingFee: dto.shippingFee || 0,
+          totalAmount,
+          shippingFee,
           discountAmount,
           voucherCode: appliedVoucherCode,
           shippingAddress: dto.shippingAddress,
           districtId: dto.districtId,
           wardCode: dto.wardCode,
+          shippingLatitude: dto.shippingLatitude,
+          shippingLongitude: dto.shippingLongitude,
           status: 'PENDING',
           payment: {
             create: {
               sourceType: 'STORE_ORDER',
               method: paymentMethod,
-              amount: Math.max(0, dto.totalAmount - discountAmount),
+              amount: totalAmount,
               orderCode,
             },
           },
           items: {
-            create: dto.items.map((item) => ({
+            create: resolvedOrderItems.map((item) => ({
               productId: item.productId,
               variantId: item.variantId || null,
               quantity: item.quantity,

@@ -252,11 +252,13 @@ export class AdminController {
   }
 
   @Get('system-profile')
+  /** Trả hồ sơ hệ thống và tọa độ điểm lấy hàng cho màn quản trị. */
   getSystemProfile() {
     return this.adminService.getSystemProfile();
   }
 
   @Put('system-profile')
+  /** Nhận địa chỉ OpenStreetMap đã chọn và chuyển sang service để lưu đồng bộ. */
   updateSystemProfile(
     @Req() request: AuthenticatedRequest,
     @Body()
@@ -264,6 +266,8 @@ export class AdminController {
       name: string;
       description?: string;
       address: string;
+      latitude: number;
+      longitude: number;
       phone: string;
     },
   ) {

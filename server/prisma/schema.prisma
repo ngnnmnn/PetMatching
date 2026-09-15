@@ -356,6 +356,8 @@ model Store {
   name        String
   description String?
   address     String?
+  latitude    Float?
+  longitude   Float?
   phone       String?
   status      ApprovalStatus @default(PENDING)
   createdAt   DateTime       @default(now())
@@ -415,6 +417,8 @@ model Address {
   provinceId    Int?
   districtId    Int?
   wardCode      String?
+  latitude      Float?
+  longitude     Float?
   isDefault     Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -438,6 +442,8 @@ model Order {
   shippingAddress       String
   districtId            Int?
   wardCode              String?
+  shippingLatitude      Float?
+  shippingLongitude     Float?
   shippingStatus        String?
   /// Mã vận đơn AhaMove khi được tạo đơn thành công
   ahamoveOrderCode      String?
