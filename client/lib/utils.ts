@@ -100,4 +100,3 @@ export function getPetEligibleDate(dob?: string | Date | null): string | null {
   eligibleDate.setMonth(eligibleDate.getMonth() + 12);
   return eligibleDate.toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
 }
-

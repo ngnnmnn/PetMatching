@@ -432,5 +432,3 @@ export interface CreateBookingData {
   scheduledAt: string;
   note?: string;
 }
-
-

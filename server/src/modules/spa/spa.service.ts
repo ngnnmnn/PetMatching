@@ -1500,7 +1500,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     // Phân tách đơn và doanh thu kỳ hiện tại và kỳ trước theo khoảng thời gian đã chọn
     const getBookingDate = (b: any) => (b.createdAt ? new Date(b.createdAt) : new Date(b.scheduledAt));
-    
+
     // Tất cả lịch hẹn trong kỳ lọc
     const bookingsInPeriod = bookings.filter((b) => {
       const d = getBookingDate(b);

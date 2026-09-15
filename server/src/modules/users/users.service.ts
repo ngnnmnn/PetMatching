@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { findConfiguredStoreId } from '../../common/store.utils';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
@@ -889,11 +890,8 @@ export class UsersService {
         randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
       }
       const generatedId = `PM-${year}${month}${date}-${randomChars}`;
-      const store = await tx.store.findFirst({
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      });
-      if (!store) {
+      const storeId = await findConfiguredStoreId(tx);
+      if (!storeId) {
         throw new NotFoundException('Cửa hàng chưa được cấu hình.');
       }
 
@@ -904,7 +902,7 @@ export class UsersService {
           customerNameSnapshot: customer.name,
           customerEmailSnapshot: customer.email,
           customerPhoneSnapshot: customer.phone,
-          storeId: store.id,
+          storeId,
           totalAmount: Math.max(0, dto.totalAmount - discountAmount),
           shippingFee: dto.shippingFee || 0,
           discountAmount,
