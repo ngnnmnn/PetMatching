@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { HANOI_WARDS } from '../matching/hanoi-wards';
 import { ShippingSimulatorService } from './shipping-simulator.service';
@@ -85,16 +80,19 @@ export class ShippingService {
    * Trả về tọa độ GPS tương đối (vĩ độ, kinh độ) dựa trên Quận/Huyện/Xã/Phường địa chỉ giao hàng của khách
    * @param addressStr Địa chỉ giao hàng của khách
    */
-  private getDistrictCoordinates(addressStr: string): { lat: number; lng: number } {
+  private getDistrictCoordinates(addressStr: string): {
+    lat: number;
+    lng: number;
+  } {
     const addr = (addressStr || '').toLowerCase();
     if (addr.includes('hòa lạc') || addr.includes('hoa lac') || addr.includes('thạch hòa') || addr.includes('tiến xuân')) {
       return { lat: 21.0188, lng: 105.5264 }; // Tọa độ GPS khu vực Hòa Lạc - Thạch Thất (33.81 km)
     }
     if (addr.includes('xuân mai') || addr.includes('xuan mai') || addr.includes('chúc sơn')) {
-      return { lat: 20.8833, lng: 105.7000 };
+      return { lat: 20.8833, lng: 105.7 };
     }
     if (addr.includes('sơn tây') || addr.includes('son tay')) {
-      return { lat: 21.1333, lng: 105.5000 };
+      return { lat: 21.1333, lng: 105.5 };
     }
     if (addr.includes('nội bài') || addr.includes('noi bai')) {
       return { lat: 21.2185, lng: 105.8042 };
@@ -104,36 +102,55 @@ export class ShippingService {
     if (addr.includes('đống đa') || addr.includes('đường láng') || addr.includes('láng')) return { lat: 21.0125, lng: 105.8272 };
     if (addr.includes('ba đình')) return { lat: 21.0333, lng: 105.8233 };
     if (addr.includes('cầu giấy')) return { lat: 21.0362, lng: 105.7905 };
-    if (addr.includes('thanh xuân')) return { lat: 20.9980, lng: 105.8080 };
+    if (addr.includes('thanh xuân')) return { lat: 20.998, lng: 105.808 };
     if (addr.includes('tây hồ')) return { lat: 21.0667, lng: 105.8167 };
-    if (addr.includes('hoàng mai')) return { lat: 20.9783, lng: 105.8550 };
-    if (addr.includes('long biên')) return { lat: 21.0450, lng: 105.8850 };
-    if (addr.includes('hà đông')) return { lat: 20.9720, lng: 105.7770 };
-    if (addr.includes('nam từ liêm')) return { lat: 21.0170, lng: 105.7640 };
-    if (addr.includes('bắc từ liêm')) return { lat: 21.0710, lng: 105.7560 };
-    if (addr.includes('thanh trì')) return { lat: 20.9500, lng: 105.8500 };
+    if (addr.includes('hoàng mai')) return { lat: 20.9783, lng: 105.855 };
+    if (addr.includes('long biên')) return { lat: 21.045, lng: 105.885 };
+    if (addr.includes('hà đông')) return { lat: 20.972, lng: 105.777 };
+    if (addr.includes('nam từ liêm')) return { lat: 21.017, lng: 105.764 };
+    if (addr.includes('bắc từ liêm')) return { lat: 21.071, lng: 105.756 };
+    if (addr.includes('thanh trì')) return { lat: 20.95, lng: 105.85 };
     if (addr.includes('gia lâm')) return { lat: 21.0167, lng: 105.9333 };
-    if (addr.includes('đông anh')) return { lat: 21.1333, lng: 105.8500 };
-    if (addr.includes('sóc sơn')) return { lat: 21.2667, lng: 105.8500 };
-    if (addr.includes('hoài đức')) return { lat: 21.0167, lng: 105.7000 };
+    if (addr.includes('đông anh')) return { lat: 21.1333, lng: 105.85 };
+    if (addr.includes('sóc sơn')) return { lat: 21.2667, lng: 105.85 };
+    if (addr.includes('hoài đức')) return { lat: 21.0167, lng: 105.7 };
     if (addr.includes('quốc oai')) return { lat: 20.9833, lng: 105.6333 };
     if (addr.includes('thạch thất')) return { lat: 21.0333, lng: 105.5333 };
-    if (addr.includes('chương mỹ')) return { lat: 20.8833, lng: 105.7000 };
+    if (addr.includes('chương mỹ')) return { lat: 20.8833, lng: 105.7 };
     if (addr.includes('thanh oai')) return { lat: 20.8667, lng: 105.7833 };
     if (addr.includes('thường tín')) return { lat: 20.8667, lng: 105.8667 };
-    if (addr.includes('phú xuyên')) return { lat: 20.7333, lng: 105.9000 };
+    if (addr.includes('phú xuyên')) return { lat: 20.7333, lng: 105.9 };
     if (addr.includes('ứng hòa')) return { lat: 20.7333, lng: 105.7833 };
     if (addr.includes('mỹ đức')) return { lat: 20.6833, lng: 105.7333 };
     if (addr.includes('ba vì')) return { lat: 21.2333, lng: 105.3833 };
-    if (addr.includes('phúc thọ')) return { lat: 21.1000, lng: 105.5667 };
-    if (addr.includes('đan phượng')) return { lat: 21.1000, lng: 105.6667 };
+    if (addr.includes('phúc thọ')) return { lat: 21.1, lng: 105.5667 };
+    if (addr.includes('đan phượng')) return { lat: 21.1, lng: 105.6667 };
     if (addr.includes('mê linh')) return { lat: 21.1833, lng: 105.7167 };
     return { lat: 21.0285, lng: 105.8542 };
   }
 
   /**
-   * Store is a singleton in PetMatching. Its Admin-managed profile is the
-   * single source of truth for every AhaMove pickup.
+   * Ưu tiên tọa độ OpenStreetMap đã lưu; chỉ suy ra từ chuỗi địa chỉ cho dữ liệu cũ chưa có tọa độ.
+   */
+  private resolveCoordinates(latitude: number | null | undefined, longitude: number | null | undefined, address: string): { lat: number; lng: number } {
+    if (
+      typeof latitude === 'number' &&
+      Number.isFinite(latitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      typeof longitude === 'number' &&
+      Number.isFinite(longitude) &&
+      longitude >= -180 &&
+      longitude <= 180
+    ) {
+      return { lat: latitude, lng: longitude };
+    }
+
+    return this.getDistrictCoordinates(address);
+  }
+
+  /**
+   * Lấy Store duy nhất do Admin quản lý làm nguồn điểm lấy hàng cho mọi luồng AhaMove.
    */
   private async getStorePickupPoint() {
     const store = await this.prisma.store.findFirst({
@@ -142,6 +159,8 @@ export class ShippingService {
         name: true,
         phone: true,
         address: true,
+        latitude: true,
+        longitude: true,
       },
     });
 
@@ -153,16 +172,16 @@ export class ShippingService {
     const phone = store.phone?.trim();
     const address = store.address?.trim();
     if (!name || !phone || !address) {
-      throw new BadRequestException(
-        'Vui lòng cập nhật đầy đủ tên, số điện thoại và địa chỉ cửa hàng trong trang Admin.',
-      );
+      throw new BadRequestException('Vui lòng cập nhật đầy đủ tên, số điện thoại và địa chỉ cửa hàng trong trang Admin.');
     }
+
+    const coordinates = this.resolveCoordinates(store.latitude, store.longitude, address);
 
     return {
       name,
       phone,
       address,
-      ...this.getDistrictCoordinates(address),
+      ...coordinates,
     };
   }
 
@@ -219,16 +238,14 @@ export class ShippingService {
         const dropoffAddress = parsedAddress.address || 'Số 100 Phố Huế, Hai Bà Trưng, Hà Nội';
         const recipientName = parsedAddress.name || order.customerNameSnapshot || order.user?.name || 'Khách hàng PetMatching';
         const recipientPhone = parsedAddress.phone || order.customerPhoneSnapshot || order.user?.phone || '0988888888';
-        const dropoffCoords = this.getDistrictCoordinates(dropoffAddress);
+        const dropoffCoords = this.resolveCoordinates(order.shippingLatitude, order.shippingLongitude, dropoffAddress);
 
         // 4. Tính toán tổng tiền thu COD từ khách hàng
         // Nếu đơn hàng thanh toán COD: thu đúng tổng giá trị đơn hàng (order.totalAmount - đã bao gồm tiền sản phẩm & phí ship)
         // Nếu đơn hàng đã thanh toán online (PayOS/QR status = 'PAID'): COD = 0 (tài xế chỉ giao hàng, không thu thêm tiền)
         const isAlreadyPaid = order.payment?.status === 'PAID';
         const codAmount = isAlreadyPaid ? 0 : Math.round(Number(order.totalAmount || 0));
-        const remarksText = codAmount > 0
-          ? `[PETMATCHING] Thu COD người nhận: ${codAmount.toLocaleString('vi-VN')}đ (Đơn hàng #${order.id})`
-          : `[PETMATCHING] Đã thanh toán Online (Không thu tiền khách - Đơn hàng #${order.id})`;
+        const remarksText = codAmount > 0 ? `[PETMATCHING] Thu COD người nhận: ${codAmount.toLocaleString('vi-VN')}đ (Đơn hàng #${order.id})` : `[PETMATCHING] Đã thanh toán Online (Không thu tiền khách - Đơn hàng #${order.id})`;
 
         const body: any = {
           service_id: 'HAN-BIKE',
@@ -309,9 +326,7 @@ export class ShippingService {
         ahamoveOrderCode,
         shippingStatus: 'ASSIGNING',
         status: 'SHIPPED',
-        shippingNote: isRealAhamoveCreated
-          ? 'Đã phát đơn thành công lên Dashboard AhaMove Staging (business-stg.ahamove.com)'
-          : 'Đã tạo vận đơn hỏa tốc AhaMove Sandbox (Tự động giả lập tiến trình)',
+        shippingNote: isRealAhamoveCreated ? 'Đã phát đơn thành công lên Dashboard AhaMove Staging (business-stg.ahamove.com)' : 'Đã tạo vận đơn hỏa tốc AhaMove Sandbox (Tự động giả lập tiến trình)',
       },
     });
 
@@ -322,9 +337,7 @@ export class ShippingService {
 
     return {
       success: true,
-      message: isRealAhamoveCreated
-        ? `Đã đẩy đơn thành công lên AhaMove Portal! Mã đơn: ${ahamoveOrderCode}`
-        : `Đã tạo đơn hỏa tốc AhaMove Sandbox! Mã: ${ahamoveOrderCode}`,
+      message: isRealAhamoveCreated ? `Đã đẩy đơn thành công lên AhaMove Portal! Mã đơn: ${ahamoveOrderCode}` : `Đã tạo đơn hỏa tốc AhaMove Sandbox! Mã: ${ahamoveOrderCode}`,
       ahamoveOrderCode,
       order: updatedOrder,
     };
@@ -339,16 +352,14 @@ export class ShippingService {
   async handleAhamoveWebhook(payload: any) {
     this.logger.log(`[AhaMove Webhook] Nhận payload: ${JSON.stringify(payload)}`);
 
-    const orderCode =
-      payload.order_id ||
-      payload.order_code ||
-      payload.shared_link_id ||
-      payload.id ||
-      payload._id;
+    const orderCode = payload.order_id || payload.order_code || payload.shared_link_id || payload.id || payload._id;
     const status = (payload.status || payload.order_status || '').toUpperCase();
 
     if (!orderCode) {
-      return { success: false, message: 'Thiếu mã đơn hàng AhaMove trong Webhook' };
+      return {
+        success: false,
+        message: 'Thiếu mã đơn hàng AhaMove trong Webhook',
+      };
     }
 
     const order = await this.prisma.order.findFirst({
@@ -410,12 +421,7 @@ export class ShippingService {
     });
 
     // Tự động thanh toán cho đơn hàng COD khi giao hàng thành công từ AhaMove
-    if (
-      targetStatus === 'DELIVERED' &&
-      order.payment &&
-      order.payment.method === 'COD' &&
-      order.payment.status !== 'PAID'
-    ) {
+    if (targetStatus === 'DELIVERED' && order.payment && order.payment.method === 'COD' && order.payment.status !== 'PAID') {
       await this.prisma.payment.update({
         where: { id: order.payment.id },
         data: { status: 'PAID', paidAt: new Date() },
@@ -436,24 +442,8 @@ export class ShippingService {
    * @param addressStr Chuỗi địa chỉ giao hàng (tùy chọn)
    */
   async estimateAhamoveShippingFee(dropoffLat?: number, dropoffLng?: number, addressStr?: string) {
-    let lat = dropoffLat;
-    let lng = dropoffLng;
-
-    // Nếu không có tọa độ GPS truyền trực tiếp, tự động suy ra tọa độ từ chuỗi địa chỉ
-    if ((!lat || !lng) && addressStr) {
-      const coords = this.getDistrictCoordinates(addressStr);
-      lat = coords.lat;
-      lng = coords.lng;
-    }
-
-    if (!lat || !lng) {
-      lat = 21.0285; // Mặc định trung tâm Hà Nội nếu thiếu thông tin
-      lng = 105.8432;
-    }
-
-    const pickupAddress = 'Số 1 Đại Cổ Việt, Hai Bà Trưng, Hà Nội';
-    const pickupLat = 21.0069;
-    const pickupLng = 105.8432;
+    const pickup = await this.getStorePickupPoint();
+    const dropoff = this.resolveCoordinates(dropoffLat, dropoffLng, addressStr || '');
     const apiKey = process.env.AHAMOVE_API_KEY || 'sk_test_1oSlooJ79RRzEzAPV4xHQfEQEmuC0FYe';
     const mobile = process.env.AHAMOVE_MOBILE || '84869098696';
     const baseUrl = process.env.AHAMOVE_API_URL || 'https://partner-apistg.ahamove.com';
@@ -475,8 +465,12 @@ export class ShippingService {
         const estimateBody = {
           service_id: 'HAN-BIKE',
           path: [
-            { address: pickupAddress, lat: pickupLat, lng: pickupLng },
-            { address: addressStr || 'Địa chỉ giao hàng', lat, lng },
+            { address: pickup.address, lat: pickup.lat, lng: pickup.lng },
+            {
+              address: addressStr || 'Địa chỉ giao hàng',
+              lat: dropoff.lat,
+              lng: dropoff.lng,
+            },
           ],
         };
 
@@ -491,11 +485,7 @@ export class ShippingService {
 
         if (feeRes.ok) {
           const feeData = await feeRes.json();
-          const ahaFee =
-            feeData?.total_price ||
-            feeData?.total_fee ||
-            feeData?.fee ||
-            (Array.isArray(feeData) && (feeData[0]?.total_price || feeData[0]?.fee));
+          const ahaFee = feeData?.total_price || feeData?.total_fee || feeData?.fee || (Array.isArray(feeData) && (feeData[0]?.total_price || feeData[0]?.fee));
 
           if (ahaFee && typeof ahaFee === 'number' && ahaFee > 0) {
             estimatedFee = Math.round(ahaFee);
@@ -510,14 +500,9 @@ export class ShippingService {
 
     // Tính toán khoảng cách Haversine giữa điểm shop và điểm giao
     const R = 6371;
-    const dLat = ((lat - pickupLat) * Math.PI) / 180;
-    const dLon = ((lng - pickupLng) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((pickupLat * Math.PI) / 180) *
-        Math.cos((lat * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
+    const dLat = ((dropoff.lat - pickup.lat) * Math.PI) / 180;
+    const dLon = ((dropoff.lng - pickup.lng) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos((pickup.lat * Math.PI) / 180) * Math.cos((dropoff.lat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distanceKm = Number((R * c).toFixed(2));
 
@@ -534,7 +519,10 @@ export class ShippingService {
       feeVnd: estimatedFee,
       isRealAhamoveFee,
       distanceKm,
-      formattedFee: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(estimatedFee),
+      formattedFee: new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+      }).format(estimatedFee),
     };
   }
 
@@ -575,7 +563,7 @@ export class ShippingService {
 
         if (token) {
           const detailRes = await fetch(`${baseUrl}/v3/orders/${order.ahamoveOrderCode}`, {
-              headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` },
           });
 
           if (detailRes.ok) {
@@ -592,17 +580,7 @@ export class ShippingService {
 
               // Tự động cập nhật Database nếu trạng thái trên AhaMove Portal có thay đổi
               let targetOrderStatus: any = order.status;
-              const activeStatuses = [
-                'ACCEPTED',
-                'IN_PROCESS',
-                'IN PROCESS',
-                'DELIVERING',
-                'ON_TRIP',
-                'TRIP_START',
-                'ASSIGNING',
-                'CONFIRMED',
-                'PICKED',
-              ];
+              const activeStatuses = ['ACCEPTED', 'IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'ASSIGNING', 'CONFIRMED', 'PICKED'];
               const completedStatuses = ['COMPLETED', 'DELIVERED', 'SUCCESSFUL', 'FINISHED'];
               const cancelledStatuses = ['CANCELLED', 'FAILED', 'REJECTED'];
 
@@ -670,11 +648,7 @@ export class ShippingService {
       },
     ];
 
-    const isAccepted =
-      currentStatus === 'ACCEPTED' ||
-      currentStatus === 'IN_PROCESS' ||
-      currentStatus === 'IN PROCESS' ||
-      currentStatus === 'COMPLETED';
+    const isAccepted = currentStatus === 'ACCEPTED' || currentStatus === 'IN_PROCESS' || currentStatus === 'IN PROCESS' || currentStatus === 'COMPLETED';
 
     if (isAccepted) {
       trackingEvents.push({
@@ -688,10 +662,7 @@ export class ShippingService {
       });
     }
 
-    const isInProcess =
-      currentStatus === 'IN_PROCESS' ||
-      currentStatus === 'IN PROCESS' ||
-      currentStatus === 'COMPLETED';
+    const isInProcess = currentStatus === 'IN_PROCESS' || currentStatus === 'IN PROCESS' || currentStatus === 'COMPLETED';
 
     if (isInProcess) {
       trackingEvents.push({
@@ -760,9 +731,7 @@ export class ShippingService {
 
     try {
       // 1. Tra cứu qua Photon OpenStreetMap Engine
-      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
-        q + ' Hà Nội',
-      )}&limit=12`;
+      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q + ' Hà Nội')}&limit=12`;
       const photonRes = await fetch(photonUrl);
       if (photonRes.ok) {
         const photonData = await photonRes.json();
@@ -813,9 +782,7 @@ export class ShippingService {
     try {
       // 2. Tra cứu bổ sung qua Nominatim OpenStreetMap Engine nếu kết quả quá ít
       if (results.length < 3) {
-        const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          q + ', Hà Nội',
-        )}&format=json&addressdetails=1&limit=8`;
+        const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Hà Nội')}&format=json&addressdetails=1&limit=8`;
         const nomRes = await fetch(nomUrl, {
           headers: { 'User-Agent': 'PetMatching/1.0' },
         });
@@ -835,12 +802,7 @@ export class ShippingService {
               const lowerAddr = cleanAddr.toLowerCase();
 
               // Loại bỏ các địa điểm ở TP.HCM / Sài Gòn / Tỉnh khác bị trùng từ khóa "Hà Nội" trong tên quán
-              const isOtherProvince =
-                lowerAddr.includes('hồ chí minh') ||
-                lowerAddr.includes('sài gòn') ||
-                lowerAddr.includes('đà nẵng') ||
-                lowerAddr.includes('bình dương') ||
-                lowerAddr.includes('đồng nai');
+              const isOtherProvince = lowerAddr.includes('hồ chí minh') || lowerAddr.includes('sài gòn') || lowerAddr.includes('đà nẵng') || lowerAddr.includes('bình dương') || lowerAddr.includes('đồng nai');
               if (isOtherProvince) continue;
 
               const houseNum = addrObj.house_number ? `Số ${addrObj.house_number}, ` : '';
@@ -900,4 +862,3 @@ export class ShippingService {
     return { success: true, count: activeOrders.length, updated: updatedCount };
   }
 }
-

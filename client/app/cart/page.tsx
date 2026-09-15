@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useSyncExternalStore } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,11 +12,24 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import AppHeader from '@/components/layout/AppHeader';
-import { useCart } from '@/context/CartContext';
+import { type CartItem, useCart } from '@/context/CartContext';
 
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+const FREE_SHIPPING_THRESHOLD = 500000;
+
+/** Đăng ký rỗng để React phân biệt lần render server và client mà không cần cập nhật state trong effect. */
+function subscribeToMount() {
+  return () => undefined;
+}
+
+/** Xác định component đã chạy trên trình duyệt để tránh lệch giao diện khi hydrate dữ liệu giỏ hàng. */
+function useIsMounted() {
+  return useSyncExternalStore(subscribeToMount, () => true, () => false);
+}
+
+/** Định dạng số tiền trong giỏ hàng theo đơn vị Việt Nam đồng. */
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
@@ -24,6 +38,37 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+/** Lấy đúng đơn giá hiện tại, ưu tiên giá của phân loại sản phẩm nếu có. */
+function getCartItemPrice(item: CartItem) {
+  return item.variant
+    ? (item.variant.salePrice ?? item.variant.sellingPrice)
+    : (item.product.salePrice ?? item.product.sellingPrice);
+}
+
+/** Kiểm tra khả năng mua và số lượng tồn kho hiện tại của một dòng giỏ hàng. */
+function getItemStockStatus(item: CartItem) {
+  const isProductInactive = item.product?.isActive === false;
+  const isVariantInactive = !!item.variant && item.variant.isActive === false;
+  const isInactive = isProductInactive || isVariantInactive;
+
+  const availableStock = item.variant
+    ? (item.variant.stock ?? 0)
+    : (item.product?.stock ?? 0);
+
+  const isOutOfStock = availableStock <= 0;
+  const isStockInsufficient = availableStock < item.quantity;
+  const isUnpurchasable = isInactive || isOutOfStock || isStockInsufficient;
+
+  return {
+    isInactive,
+    availableStock,
+    isOutOfStock,
+    isStockInsufficient,
+    isUnpurchasable,
+  };
+}
+
+/** Hiển thị giỏ hàng, quản lý lựa chọn sản phẩm và tạm tính trước khi thanh toán. */
 export default function CartPage() {
   const router = useRouter();
   const {
@@ -32,60 +77,16 @@ export default function CartPage() {
     updateQuantity
   } = useCart();
 
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = useIsMounted();
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
+  const purchasableItems = cartItems.filter(
+    (item) => !getItemStockStatus(item).isUnpurchasable,
+  );
+  const validSelectedItemIds = selectedItemIds.filter((id) =>
+    purchasableItems.some((item) => item.id === id),
+  );
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // Initialize selectedItemIds when cart is first loaded (defaulting to unchecked)
-  useEffect(() => {
-    if (isMounted && cartItems.length > 0 && !hasInitializedSelection) {
-      setSelectedItemIds([]);
-      setHasInitializedSelection(true);
-    }
-  }, [cartItems, isMounted, hasInitializedSelection]);
-
-  // Helper kiểm tra trạng thái mở bán và tồn kho của từng sản phẩm trong giỏ hàng
-  const getItemStockStatus = (item: any) => {
-    const isProductInactive = item.product?.isActive === false;
-    const isVariantInactive = !!item.variant && item.variant.isActive === false;
-    const isInactive = isProductInactive || isVariantInactive;
-
-    const availableStock = item.variant
-      ? (item.variant.stock ?? 0)
-      : (item.product?.stock ?? 0);
-
-    const isOutOfStock = availableStock <= 0;
-    const isStockInsufficient = availableStock < item.quantity;
-    const isUnpurchasable = isInactive || isOutOfStock || isStockInsufficient;
-
-    return {
-      isInactive,
-      availableStock,
-      isOutOfStock,
-      isStockInsufficient,
-      isUnpurchasable,
-    };
-  };
-
-  // Tự động bỏ chọn các sản phẩm đã hết hàng hoặc ngưng bán khi dữ liệu giỏ hàng cập nhật realtime
-  useEffect(() => {
-    if (hasInitializedSelection) {
-      setSelectedItemIds((prev) =>
-        prev.filter((id) => {
-          const item = cartItems.find((ci) => ci.id === id);
-          if (!item) return false;
-          const status = getItemStockStatus(item);
-          return !status.isUnpurchasable;
-        })
-      );
-    }
-  }, [cartItems, hasInitializedSelection]);
-
-  const handleToggleSelectItem = (item: any) => {
+  const handleToggleSelectItem = (item: CartItem) => {
     const status = getItemStockStatus(item);
     if (status.isInactive) {
       toast.warning(`Sản phẩm "${item.product?.name || 'này'}" hiện đang tạm ngưng bán, không thể chọn mua.`);
@@ -109,7 +110,7 @@ export default function CartPage() {
       const status = getItemStockStatus(item);
       return !status.isUnpurchasable;
     });
-    if (selectedItemIds.length === validItems.length && validItems.length > 0) {
+    if (validSelectedItemIds.length === validItems.length && validItems.length > 0) {
       setSelectedItemIds([]);
     } else {
       setSelectedItemIds(validItems.map((item) => item.id));
@@ -117,12 +118,12 @@ export default function CartPage() {
   };
 
   const handleProceedToCheckout = () => {
-    if (selectedItemIds.length === 0) {
+    if (validSelectedItemIds.length === 0) {
       toast.warning('Vui lòng chọn ít nhất 1 sản phẩm hợp lệ còn hàng để thanh toán.');
       return;
     }
 
-    const selectedItems = cartItems.filter((i) => selectedItemIds.includes(i.id));
+    const selectedItems = cartItems.filter((i) => validSelectedItemIds.includes(i.id));
     for (const item of selectedItems) {
       const status = getItemStockStatus(item);
       if (status.isInactive) {
@@ -139,7 +140,7 @@ export default function CartPage() {
       }
     }
 
-    localStorage.setItem('petmatch_selected_cart_items', JSON.stringify(selectedItemIds));
+    localStorage.setItem('petmatch_selected_cart_items', JSON.stringify(validSelectedItemIds));
     localStorage.removeItem('petmatch_direct_checkout_item');
     router.push('/checkout');
   };
@@ -158,18 +159,23 @@ export default function CartPage() {
   }
 
   // Calculate totals based on selected items only
-  const selectedItems = cartItems.filter((item) => selectedItemIds.includes(item.id));
+  const selectedItems = cartItems.filter((item) => validSelectedItemIds.includes(item.id));
 
   const selectedTotal = selectedItems.reduce((acc, item) => {
-    const price = item.product.salePrice ?? item.product.sellingPrice;
-    return acc + price * item.quantity;
+    return acc + getCartItemPrice(item) * item.quantity;
   }, 0);
 
   const selectedCount = selectedItems.reduce((acc, item) => acc + item.quantity, 0);
 
-  // Shipping Fee Logic: Free shipping for orders > 500k, otherwise 30k
-  const shippingFee = selectedTotal > 500000 || selectedTotal === 0 ? 0 : 30000;
-  const finalTotal = selectedTotal + shippingFee;
+  // Cart chỉ xác định miễn phí vận chuyển; phí thực tế được tính theo địa chỉ tại checkout.
+  const isFreeShipping = selectedTotal > FREE_SHIPPING_THRESHOLD;
+  const amountNeededForFreeShipping = Math.max(
+    0,
+    FREE_SHIPPING_THRESHOLD - selectedTotal + 1,
+  );
+  const areAllPurchasableItemsSelected =
+    purchasableItems.length > 0 &&
+    purchasableItems.every((item) => validSelectedItemIds.includes(item.id));
 
   return (
     <main className="min-h-screen bg-[var(--bg-page)] text-[var(--text-main)] pb-16">
@@ -216,7 +222,7 @@ export default function CartPage() {
                 <div className="bg-[#FCFCFA] px-4 py-3 border-b border-[var(--border-color)] flex items-center gap-3">
                   <input
                     type="checkbox"
-                    checked={selectedItemIds.length === cartItems.length && cartItems.length > 0}
+                    checked={areAllPurchasableItemsSelected}
                     onChange={handleToggleSelectAll}
                     className="size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] cursor-pointer shrink-0"
                     id="select-all-cart"
@@ -228,9 +234,7 @@ export default function CartPage() {
 
                 <div className="divide-y divide-[var(--border-color)]">
                   {cartItems.map((item) => {
-                    const price = item.variant
-                      ? (item.variant.salePrice ?? item.variant.sellingPrice)
-                      : (item.product.salePrice ?? item.product.sellingPrice);
+                    const price = getCartItemPrice(item);
                     const originalPrice = item.variant
                       ? item.variant.sellingPrice
                       : item.product.sellingPrice;
@@ -248,7 +252,7 @@ export default function CartPage() {
                           <input
                             type="checkbox"
                             disabled={status.isUnpurchasable}
-                            checked={selectedItemIds.includes(item.id)}
+                            checked={validSelectedItemIds.includes(item.id)}
                             onChange={() => handleToggleSelectItem(item)}
                             className={cn(
                               "size-5 rounded border-[var(--border-color)] text-[var(--primary-color)] focus:ring-[var(--primary-color)] accent-[var(--primary-color)] shrink-0",
@@ -259,10 +263,12 @@ export default function CartPage() {
 
                         {/* Product Image */}
                         <Link href={`/product/${item.productId}`} className="shrink-0 aspect-square w-20 sm:w-24 rounded-lg overflow-hidden bg-[#FAF9F5] border border-[var(--border-color)] relative">
-                          <img
+                          <Image
                             src={(item.variant && item.variant.imageUrl) || item.product.imageUrl || '/placeholder.svg'}
                             alt={item.product.name}
-                            className={cn("w-full h-full object-cover transition-all", status.isUnpurchasable && "grayscale opacity-50")}
+                            fill
+                            sizes="(max-width: 640px) 80px, 96px"
+                            className={cn("object-cover transition-all", status.isUnpurchasable && "grayscale opacity-50")}
                           />
                         </Link>
 
@@ -367,27 +373,31 @@ export default function CartPage() {
                   <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Phí vận chuyển (Tạm tính)</span>
                     <span className="text-[var(--text-main)]">
-                      {shippingFee === 0 ? 'Miễn phí' : formatCurrency(shippingFee)}
+                      {selectedTotal === 0
+                        ? '—'
+                        : isFreeShipping
+                          ? 'Miễn phí'
+                          : 'Tính tại bước thanh toán'}
                     </span>
                   </div>
-                  {shippingFee > 0 && (
+                  {selectedTotal > 0 && !isFreeShipping && (
                     <div className="space-y-1">
                       <p className="text-[10px] text-amber-600 font-extrabold mt-0.5">
-                        Mua thêm {formatCurrency(500000 - selectedTotal)} để được Miễn phí vận chuyển!
+                        Mua thêm {formatCurrency(amountNeededForFreeShipping)} để được miễn phí vận chuyển!
                       </p>
                       <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
-                        * Phí vận chuyển thực tế sẽ được tính chính xác tại trang thanh toán dựa trên địa chỉ giao hàng của bạn.
+                        * Phí vận chuyển được tính theo địa chỉ giao hàng tại bước thanh toán.
                       </p>
                     </div>
                   )}
 
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end">
-                    <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
-                    <span className="text-xl font-black text-[var(--primary-color)]">{formatCurrency(finalTotal)}</span>
+                    <span className="text-sm font-black text-[var(--text-main)]">Tạm tính</span>
+                    <span className="text-xl font-black text-[var(--primary-color)]">{formatCurrency(selectedTotal)}</span>
                   </div>
 
                   <button
-                    disabled={selectedItemIds.length === 0}
+                    disabled={validSelectedItemIds.length === 0}
                     onClick={handleProceedToCheckout}
                     className="w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--primary-color)] px-6 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#cf5017] focus-visible:outline-none disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed cursor-pointer"
                   >

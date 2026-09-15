@@ -31,6 +31,8 @@ export interface Address {
   provinceId?: number | null;
   districtId?: number | null;
   wardCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -69,6 +71,8 @@ export interface Order {
   shippingAddress: string;
   districtId?: number | null;
   wardCode?: string | null;
+  shippingLatitude?: number | null;
+  shippingLongitude?: number | null;
   shippingStatus?: string | null;
   deliveryProofUrl?: string | null;
   shippingNote?: string | null;

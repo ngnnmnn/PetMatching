@@ -1,5 +1,14 @@
 import api from '@/lib/axios';
-import { Address, ChangePasswordData, ProfileResponse, UpdateProfileData } from '@/types';
+import { Address, ChangePasswordData, ProfileResponse, UpdateProfileData, VoucherType } from '@/types';
+
+export interface AppliedVoucherResponse {
+  success: boolean;
+  code: string;
+  type: VoucherType;
+  value: number;
+  discountAmount?: number;
+  message: string;
+}
 
 export const usersApi = {
   getProfile: () => api.get<ProfileResponse>('/users/profile'),
@@ -28,14 +37,14 @@ export const usersApi = {
     api.patch<Address>(`/users/addresses/${id}/default`),
   getOrders: () => api.get<any[]>('/users/orders'),
   createOrder: (data: {
-    totalAmount: number;
-    shippingFee?: number;
     shippingAddress: string;
     districtId?: number;
     wardCode?: string;
+    shippingLatitude?: number;
+    shippingLongitude?: number;
     paymentMethod?: string;
     voucherCode?: string;
-    items: { productId: string; quantity: number; price: number }[];
+    items: { productId: string; variantId?: string | null; quantity: number }[];
   }) => api.post<any>('/users/orders', data),
   cancelOrder: (id: string) => api.patch<any>(`/users/orders/${id}/cancel`),
   deleteOrder: (id: string) => api.delete<any>(`/users/orders/${id}`),
@@ -49,6 +58,6 @@ export const usersApi = {
     data: { bankCode: string; accountNumber: string; accountName: string; reason: string },
   ) => api.post<any>(`/users/orders/${id}/request-refund`, data),
   applyVoucher: (code: string, totalAmount: number) =>
-    api.post<{ success: boolean; code: string; type: string; value: number; discountAmount?: number; message: string }>('/vouchers/apply', { code, totalAmount }),
+    api.post<AppliedVoucherResponse>('/vouchers/apply', { code, totalAmount }),
 };
 

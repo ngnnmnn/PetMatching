@@ -122,7 +122,7 @@ export const adminApi = {
   updateBreed: (id: string, data: UpdateBreedPayload) => api.patch<Breed>(`/admin/breeds/${id}`, data),
   deleteBreed: (id: string) => api.delete(`/admin/breeds/${id}`),
   systemProfile: () => api.get("/admin/system-profile"),
-  updateSystemProfile: (data: { name: string; description?: string; address: string; phone: string }) =>
+  updateSystemProfile: (data: { name: string; description?: string; address: string; latitude: number; longitude: number; phone: string }) =>
     api.put("/admin/system-profile", data),
   storeDashboard: (params?: AdminDashboardParams) => api.get("/admin/store-dashboard", { params }),
   storeProducts: () => api.get("/admin/store-products"),
