@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { matchesAdminStatusFilter } from '@/components/admin/admin-section-utils';
 
 type SpaServiceSummary = {
   id: string;
@@ -79,11 +80,26 @@ type SpaBookingRow = {
   feedback?: { rateStaff: number; rateServices: number; comment?: string | null; createdAt?: string | null } | null;
 };
 type DateFilter = 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM';
-type PaymentFilter = 'ALL' | 'PAID' | 'PENDING' | 'REFUNDED' | 'UNPAID';
-type SortOrder = 'UPCOMING_FIRST' | 'SCHEDULED_DESC' | 'SCHEDULED_ASC' | 'CREATED_DESC';
+type PaymentFilter = 'ALL' | 'PAID' | 'PENDING' | 'CANCELLED' | 'RETRY';
 
 const PAGE_SIZE = 10;
-const ACTIVE_STATUSES = ['CHECK_IN', 'IN_PROGRESS'];
+
+const SPA_STATUS_FILTER_OPTIONS = [
+  { value: 'ALL', label: 'Tất cả lịch' },
+  { value: 'PENDING', label: 'Chờ xác nhận', statuses: ['PENDING'] },
+  { value: 'CONFIRMED', label: 'Đã xác nhận', statuses: ['CONFIRMED'] },
+  { value: 'ACTIVE_SERVICE', label: 'Đang phục vụ', statuses: ['CHECK_IN', 'IN_PROGRESS'] },
+  { value: 'COMPLETED', label: 'Hoàn thành', statuses: ['COMPLETED'] },
+  { value: 'CANCELLED', label: 'Đã hủy / Không đến', statuses: ['CANCELLED', 'NO_SHOW'] },
+];
+
+const SPA_PAYMENT_FILTER_OPTIONS = [
+  { value: 'ALL', label: 'Tất cả thanh toán' },
+  { value: 'PENDING', label: 'Chưa thanh toán', statuses: ['PENDING', 'UNPAID'] },
+  { value: 'PAID', label: 'Đã thanh toán', statuses: ['PAID'] },
+  { value: 'CANCELLED', label: 'Đã hủy thanh toán', statuses: ['CANCELLED'] },
+  { value: 'RETRY', label: 'Cần thanh toán lại', statuses: ['PAYMENT_ERROR', 'EXPIRED'] },
+];
 
 const SPA_STATUS_META: Record<string, { label: string; className: string }> = {
   PENDING: { label: 'Chờ xác nhận', className: 'border-amber-200 bg-amber-50 text-amber-700' },
@@ -106,7 +122,6 @@ export function SpaBookingsPanel({
   const [status, setStatus] = useState('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('ALL');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('UPCOMING_FIRST');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [attentionOnly, setAttentionOnly] = useState(false);
@@ -117,92 +132,49 @@ export function SpaBookingsPanel({
     total: bookings.length,
     today: bookings.filter((booking) => isSameLocalDay(booking.scheduledAt, new Date())).length,
     pending: bookings.filter((booking) => booking.status === 'PENDING').length,
-    active: bookings.filter((booking) => ACTIVE_STATUSES.includes(booking.status ?? '')).length,
+    active: bookings.filter((booking) =>
+      matchesAdminStatusFilter(
+        booking.status,
+        'ACTIVE_SERVICE',
+        SPA_STATUS_FILTER_OPTIONS,
+      ),
+    ).length,
     completed: bookings.filter((booking) => booking.status === 'COMPLETED').length,
     attention: bookings.filter((booking) => getAttentionReasons(booking).length > 0).length,
   }), [bookings]);
 
-  /**
-   * Lọc và sắp xếp danh sách lịch hẹn Spa theo tiêu chí người dùng lựa chọn
-   */
   const filteredBookings = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('vi');
     const filtered = bookings.filter((booking) => {
       if (normalizedSearch && !bookingMatchesSearch(booking, normalizedSearch)) return false;
-      if (status === 'ACTIVE_SERVICE' && !ACTIVE_STATUSES.includes(booking.status ?? '')) return false;
-      if (status !== 'ALL' && status !== 'ACTIVE_SERVICE' && booking.status !== status) return false;
-      if (paymentFilter !== 'ALL' && getPaymentStatus(booking) !== paymentFilter) return false;
+      if (!matchesAdminStatusFilter(booking.status, status, SPA_STATUS_FILTER_OPTIONS)) return false;
+      if (!matchesAdminStatusFilter(getPaymentStatus(booking), paymentFilter, SPA_PAYMENT_FILTER_OPTIONS)) return false;
       if (!matchesDateFilter(booking.scheduledAt, dateFilter, dateFrom, dateTo)) return false;
       if (attentionOnly && getAttentionReasons(booking).length === 0) return false;
       return true;
     });
 
-    if (sortOrder === 'SCHEDULED_ASC') {
-      return [...filtered].sort((a, b) => {
-        const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
-        const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-        return timeA - timeB;
-      });
-    }
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const todayTime = startOfToday.getTime();
 
-    if (sortOrder === 'CREATED_DESC') {
-      return [...filtered].sort((a, b) => {
-        const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return createdB - createdA;
-      });
-    }
-
-    if (sortOrder === 'UPCOMING_FIRST') {
-      // Ưu tiên hiển thị lịch hẹn sắp tới trước (từ gần đến xa), sau đó đến các lịch quá khứ (từ gần về xa)
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      const nowTime = now.getTime();
-
-      const upcoming = filtered
-        .filter((b) => {
-          const time = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-          return time >= nowTime;
-        })
-        .sort((a, b) => {
-          const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
-          const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-          return timeA - timeB;
-        });
-
-      const past = filtered
-        .filter((b) => {
-          const time = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-          return time < nowTime;
-        })
-        .sort((a, b) => {
-          const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
-          const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-          return timeB - timeA;
-        });
-
-      return [...upcoming, ...past];
-    }
-
-    // Mặc định SCHEDULED_DESC: Ngày hẹn giảm dần từ tương lai xa về quá khứ
     return [...filtered].sort((a, b) => {
       const timeA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
       const timeB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
-      if (timeB !== timeA) {
-        return timeB - timeA;
-      }
-      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return createdB - createdA;
+      const groupA = timeA >= todayTime ? 0 : 1;
+      const groupB = timeB >= todayTime ? 0 : 1;
+
+      if (groupA !== groupB) return groupA - groupB;
+      return groupA === 0 ? timeA - timeB : timeB - timeA;
     });
-  }, [attentionOnly, bookings, dateFilter, dateFrom, dateTo, paymentFilter, search, sortOrder, status]);
+  }, [attentionOnly, bookings, dateFilter, dateFrom, dateTo, paymentFilter, search, status]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBookings.length / PAGE_SIZE));
   const activePage = Math.min(currentPage, totalPages);
   const pageBookings = filteredBookings.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
   const hasFilters = Boolean(
     search || status !== 'ALL' || dateFilter !== 'ALL' ||
-    paymentFilter !== 'ALL' || sortOrder !== 'UPCOMING_FIRST' || attentionOnly,
+    paymentFilter !== 'ALL' || attentionOnly,
   );
 
   const resetFilters = () => {
@@ -210,7 +182,6 @@ export function SpaBookingsPanel({
     setStatus('ALL');
     setDateFilter('ALL');
     setPaymentFilter('ALL');
-    setSortOrder('UPCOMING_FIRST');
     setDateFrom('');
     setDateTo('');
     setAttentionOnly(false);
@@ -240,14 +211,14 @@ export function SpaBookingsPanel({
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <SummaryCard label="Tổng lịch" value={stats.total} icon={CalendarDays} onClick={resetFilters} />
           <SummaryCard label="Hôm nay" value={stats.today} icon={Clock3} onClick={() => updateFilter(() => setDateFilter('TODAY'))} />
-          <SummaryCard label="Đang chờ" value={stats.pending} icon={Clock3} tone="amber" onClick={() => updateFilter(() => setStatus('PENDING'))} />
+          <SummaryCard label="Chờ xác nhận" value={stats.pending} icon={Clock3} tone="amber" onClick={() => updateFilter(() => setStatus('PENDING'))} />
           <SummaryCard label="Đang phục vụ" value={stats.active} icon={UserRound} tone="blue" onClick={() => updateFilter(() => setStatus('ACTIVE_SERVICE'))} />
           <SummaryCard label="Hoàn thành" value={stats.completed} icon={CheckCircle2} tone="green" onClick={() => updateFilter(() => setStatus('COMPLETED'))} />
           <SummaryCard label="Cần chú ý" value={stats.attention} icon={AlertTriangle} tone="red" onClick={() => updateFilter(() => setAttentionOnly(true))} />
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <label className="relative xl:col-span-1">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr]">
+          <label className="relative">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={search}
@@ -260,22 +231,13 @@ export function SpaBookingsPanel({
             value={status}
             onChange={(value) => updateFilter(() => setStatus(value))}
             ariaLabel="Lọc theo trạng thái"
-            options={[
-              { value: 'ALL', label: 'Tất cả trạng thái' },
-              ...Object.entries(SPA_STATUS_META).map(([value, meta]) => ({ value, label: meta.label })),
-            ]}
+            options={SPA_STATUS_FILTER_OPTIONS}
           />
           <FilterSelect
             value={paymentFilter}
             onChange={(value) => updateFilter(() => setPaymentFilter(value as PaymentFilter))}
             ariaLabel="Lọc theo thanh toán"
-            options={[
-              { value: 'ALL', label: 'Tất cả thanh toán' },
-              { value: 'PAID', label: 'Đã thanh toán' },
-              { value: 'PENDING', label: 'Chờ thanh toán' },
-              { value: 'REFUNDED', label: 'Đã hoàn tiền' },
-              { value: 'UNPAID', label: 'Chưa thanh toán' },
-            ]}
+            options={SPA_PAYMENT_FILTER_OPTIONS}
           />
           <FilterSelect
             value={dateFilter}
@@ -289,32 +251,12 @@ export function SpaBookingsPanel({
               { value: 'CUSTOM', label: 'Khoảng ngày' },
             ]}
           />
-          <FilterSelect
-            value={sortOrder}
-            onChange={(value) => updateFilter(() => setSortOrder(value as SortOrder))}
-            ariaLabel="Sắp xếp danh sách"
-            options={[
-              { value: 'UPCOMING_FIRST', label: 'Lịch sắp tới → Đã qua' },
-              { value: 'SCHEDULED_DESC', label: 'Ngày hẹn: Giảm dần' },
-              { value: 'SCHEDULED_ASC', label: 'Ngày hẹn: Tăng dần' },
-              { value: 'CREATED_DESC', label: 'Mới đặt gần đây' },
-            ]}
-          />
           {dateFilter === 'CUSTOM' && (
-            <>
+            <div className="grid gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4">
               <Input type="date" value={dateFrom} aria-label="Từ ngày" onChange={(event) => updateFilter(() => setDateFrom(event.target.value))} />
               <Input type="date" value={dateTo} aria-label="Đến ngày" onChange={(event) => updateFilter(() => setDateTo(event.target.value))} />
-            </>
+            </div>
           )}
-          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-bold text-foreground/75">
-            <input
-              type="checkbox"
-              checked={attentionOnly}
-              onChange={(event) => updateFilter(() => setAttentionOnly(event.target.checked))}
-              className="size-4 accent-primary"
-            />
-            Chỉ lịch cần chú ý
-          </label>
           {hasFilters && (
             <Button type="button" variant="ghost" className="justify-self-start text-red-600" onClick={resetFilters}>
               Đặt lại bộ lọc
@@ -374,7 +316,7 @@ export function SpaBookingsPanel({
                         ))}
                         {attentionReasons.length > 2 && <p className="text-xs font-bold text-muted-foreground">+{attentionReasons.length - 2} cảnh báo khác</p>}
                       </div>
-                    ) : <span className="text-xs font-semibold text-muted-foreground/70">Ổn định</span>}
+                    ) : <span className="text-xs font-semibold text-muted-foreground/70">Hoàn tất</span>}
                   </td>
                   <td className="px-4 py-4">
                     <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedBooking(booking); }}>
@@ -560,6 +502,7 @@ function bookingMatchesSearch(booking: SpaBookingRow, search: string) {
 
 function getAttentionReasons(booking: SpaBookingRow) {
   const reasons: string[] = [];
+  const paymentStatus = getPaymentStatus(booking);
   if (booking.status === 'NO_SHOW') reasons.push('Khách không đến');
   if (booking.status === 'CANCELLED') reasons.push(booking.cancelReason ? `Đã hủy: ${booking.cancelReason}` : 'Lịch đã bị hủy');
   if (booking.issueReported) reasons.push(`Có sự cố: ${booking.issueReported}`);
@@ -569,7 +512,13 @@ function getAttentionReasons(booking: SpaBookingRow) {
   const now = Date.now();
   const isUpcomingSoon = scheduledAt >= now && scheduledAt <= now + 24 * 60 * 60 * 1000;
   if (!booking.staff && isUpcomingSoon && ['PENDING', 'CONFIRMED'].includes(booking.status ?? '')) reasons.push('Sắp đến giờ nhưng chưa phân công nhân viên');
-  if (booking.status === 'COMPLETED' && getPaymentStatus(booking) !== 'PAID') reasons.push('Đã hoàn thành nhưng chưa ghi nhận thanh toán');
+  if (booking.status === 'IN_PROGRESS' && ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'].includes(paymentStatus)) {
+    reasons.push('Thanh toán chưa thành công, cần thực hiện lại');
+  }
+  if (booking.status === 'COMPLETED' && paymentStatus !== 'PAID') reasons.push('Đã hoàn thành nhưng chưa ghi nhận thanh toán');
+  if (['CANCELLED', 'NO_SHOW'].includes(booking.status ?? '') && paymentStatus === 'PAID') {
+    reasons.push('Lịch đã kết thúc nhưng thanh toán vẫn ở trạng thái đã thu tiền');
+  }
   return reasons;
 }
 
