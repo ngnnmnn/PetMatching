@@ -414,17 +414,24 @@ export class UsersService {
         'USER',
       );
 
-      const [nonCompletedOrdersWithMedia, messagesWithImages] =
-        await Promise.all([
-          tx.order.findMany({
-            where: { userId, status: { not: OrderStatus.DELIVERED } },
-            select: { refundProofUrl: true, deliveryProofUrl: true },
-          }),
-          tx.message.findMany({
-            where: { senderId: userId, imageUrl: { not: null } },
-            select: { imageUrl: true },
-          }),
-        ]);
+      const [
+        nonCompletedOrdersWithMedia,
+        messagesWithImages,
+        reportsCreatedWithEvidence,
+      ] = await Promise.all([
+        tx.order.findMany({
+          where: { userId, status: { not: OrderStatus.DELIVERED } },
+          select: { refundProofUrl: true, deliveryProofUrl: true },
+        }),
+        tx.message.findMany({
+          where: { senderId: userId, imageUrl: { not: null } },
+          select: { imageUrl: true },
+        }),
+        tx.petReport.findMany({
+          where: { userId },
+          select: { evidenceUrls: true },
+        }),
+      ]);
       await tx.order.updateMany({
         where: { userId, status: OrderStatus.DELIVERED },
         data: { userId: null },
@@ -491,6 +498,9 @@ export class UsersService {
             order.deliveryProofUrl,
           ]),
           ...messagesWithImages.map((message) => message.imageUrl),
+          ...reportsCreatedWithEvidence.flatMap(
+            (report) => report.evidenceUrls,
+          ),
         ].filter((url): url is string => Boolean(url)),
       };
     });

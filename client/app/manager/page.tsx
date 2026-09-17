@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { downloadExcelFile } from '@/lib/download-file';
 import {
   FileSpreadsheet,
   Filter,
@@ -1000,11 +1001,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         onlyRefunded: exportOnlyRefunded || undefined,
       });
 
-      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-
       let filename = 'danh_sach_don_hang';
       if (exportAllTime) {
         filename += '_toan_bo_thoi_gian';
@@ -1015,12 +1011,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         filename += '_da_duyet_hoan_tien';
       }
       filename += '.xlsx';
-
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadExcelFile(res.data, filename);
 
       toast.success('Xuất file Excel thành công!');
       setIsExportModalOpen(false);

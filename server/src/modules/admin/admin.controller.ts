@@ -9,6 +9,7 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,8 @@ import {
 import { AdminGuard } from '../../common/auth/admin.guard';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
+import type { Response } from 'express';
+import { EXCEL_MIME_TYPE } from '../../common/excel.utils';
 import { AdminService } from './admin.service';
 import {
   GrantSpaManagerDto,
@@ -53,6 +56,28 @@ export class AdminController {
     @Query('to') to?: string,
   ) {
     return this.adminService.getDashboard({ range, from, to });
+  }
+
+  @Get('report/export')
+  async exportReport(
+    @Req() request: AuthenticatedRequest,
+    @Res() response: Response,
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const buffer = await this.adminService.exportAdminReport(request.user, {
+      range,
+      from,
+      to,
+    });
+    response.set({
+      'Content-Type': EXCEL_MIME_TYPE,
+      'Content-Disposition':
+        'attachment; filename="petmatching_admin_report.xlsx"',
+      'Content-Length': buffer.length,
+    });
+    response.end(buffer);
   }
 
   @Get('users')

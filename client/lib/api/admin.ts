@@ -95,6 +95,8 @@ export type UpdateBreedPayload = {
 
 export const adminApi = {
   dashboard: (params?: AdminDashboardParams) => api.get("/admin/dashboard", { params }),
+  exportReport: (params?: AdminDashboardParams) =>
+    api.get<Blob>("/admin/report/export", { params, responseType: "blob" }),
   users: () => api.get("/admin/users"),
   updateUserRole: (id: string, role: AdminRole) => api.patch(`/admin/users/${id}/role`, { role }),
   grantSpaManager: (id: string, allowReassignment = false) => api.patch(`/admin/users/${id}/spa-manager/grant`, { allowReassignment }),

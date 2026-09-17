@@ -55,6 +55,7 @@ import {
   UpdateBreedDto,
 } from './dto/admin-actions.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { buildAdminReportExcel } from './admin-report.excel';
 
 type AdminActor = {
   id: string;
@@ -307,6 +308,43 @@ export class AdminService {
         revenueSeries,
       },
     };
+  }
+
+  async exportAdminReport(
+    actor: AdminActor,
+    query: { range?: string; from?: string; to?: string } = {},
+  ) {
+    const generatedAt = new Date();
+    const [dashboard, users, pets] = await Promise.all([
+      this.getDashboard(query),
+      this.getUsers({}),
+      this.getPets({}),
+    ]);
+
+    const buffer = buildAdminReportExcel({
+      generatedAt,
+      range: dashboard.analytics.range,
+      revenue: dashboard.analytics.revenue,
+      revenueSeries: dashboard.analytics.revenueSeries,
+      users,
+      pets,
+    });
+
+    await this.audit(
+      actor.id,
+      'ADMIN_EXPORT_EXCEL_REPORT',
+      'AdminReport',
+      generatedAt.toISOString(),
+      {
+        range: dashboard.analytics.range.label,
+        from: dashboard.analytics.range.from,
+        to: dashboard.analytics.range.to,
+        userCount: users.length,
+        petCount: pets.length,
+      },
+    );
+
+    return buffer;
   }
 
   getUsers(query: {

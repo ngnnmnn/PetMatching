@@ -35,6 +35,15 @@ describe('PetsService deletion policy', () => {
       matchingRequest: {
         deleteMany: jest.fn().mockResolvedValue({ count: 3 }),
       },
+      petReport: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            evidenceUrls: [
+              'https://res.cloudinary.com/demo/image/upload/report.jpg',
+            ],
+          },
+        ]),
+      },
     };
     const prisma = {
       $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
@@ -79,7 +88,10 @@ describe('PetsService deletion policy', () => {
       }),
     );
     expect(tx.pet.deleteMany).toHaveBeenCalled();
-    expect(cloudinary.destroyByUrl).toHaveBeenCalledTimes(2);
+    expect(cloudinary.destroyByUrl).toHaveBeenCalledTimes(3);
+    expect(cloudinary.destroyByUrl).toHaveBeenCalledWith(
+      'https://res.cloudinary.com/demo/image/upload/report.jpg',
+    );
   });
 
   it('blocks deletion when a Spa booking is confirmed', async () => {
