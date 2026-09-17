@@ -4,6 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as XLSX from 'xlsx';
+import {
+  appendJsonSheet,
+  createWorkbook,
+  writeWorkbook,
+} from '../../common/excel.utils';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
@@ -1637,15 +1642,9 @@ export class ManagerService {
       };
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh sách đơn hàng');
-
-    const buffer = XLSX.write(workbook, {
-      type: 'buffer',
-      bookType: 'xlsx',
-    }) as Buffer;
-    return buffer;
+    const workbook = createWorkbook();
+    appendJsonSheet(workbook, 'Danh sách đơn hàng', exportData);
+    return writeWorkbook(workbook);
   }
 
   async getProductVariants(productId: string) {
