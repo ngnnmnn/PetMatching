@@ -29,6 +29,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import { type CartItem, useCart } from '@/context/CartContext';
 import { type AppliedVoucherResponse, usersApi } from '@/lib/api/users';
 import { shippingApi } from '@/lib/api/shipping';
+import { productsApi } from '@/lib/api/products';
 import { Address } from '@/types';
 import { PayOSQRModal, PayOSQRData, ShippingAddressSelector, VoucherModal } from '@/components/checkout';
 
@@ -82,11 +83,13 @@ function CheckoutPageContent() {
     cartItems,
     removeFromCart,
     updateQuantity,
-    clearCart
+    clearCart,
+    refreshCart,
   } = useCart();
 
   const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
+  const [isCheckoutInitialized, setIsCheckoutInitialized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Selection and promo code state
@@ -169,9 +172,22 @@ function CheckoutPageContent() {
     }
   };
 
-  // Load selected items and direct checkout item from localStorage
+  // Hiển thị lại thông báo cảnh báo thay đổi giá/kho sau khi trang tự động nạp lại (Reload)
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    if (typeof window === 'undefined') return;
+    const pendingWarning = sessionStorage.getItem('petmatch_checkout_price_warning');
+    if (pendingWarning) {
+      sessionStorage.removeItem('petmatch_checkout_price_warning');
+      toast.warning(pendingWarning, {
+        duration: 10000,
+        description: 'Giá sản phẩm và đơn hàng đã được tự động cập nhật theo giá mới nhất của cửa hàng.',
+      });
+    }
+  }, []);
+
+  // Load selected items and direct checkout item from localStorage, and update with latest prices & stocks from DB
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
       const stored = localStorage.getItem('petmatch_selected_cart_items');
       if (stored) {
         try {
@@ -184,15 +200,36 @@ function CheckoutPageContent() {
       const storedDirect = localStorage.getItem('petmatch_direct_checkout_item');
       if (storedDirect) {
         try {
-          setDirectCheckoutItem(JSON.parse(storedDirect));
+          const item: CartItem = JSON.parse(storedDirect);
+          try {
+            const res = await productsApi.getById(item.productId);
+            const p = res.data;
+            const v = item.variantId && p.variants ? p.variants.find((v: any) => v.id === item.variantId) : null;
+            const updatedItem: CartItem = {
+              ...item,
+              product: p,
+              variant: v || item.variant,
+            };
+            setDirectCheckoutItem(updatedItem);
+            localStorage.setItem('petmatch_direct_checkout_item', JSON.stringify(updatedItem));
+          } catch {
+            setDirectCheckoutItem(item);
+          }
         } catch (error) {
           console.error(error);
         }
       }
+
+      if (refreshCart) {
+        await refreshCart();
+      }
+
+      // Đánh dấu khởi tạo sản phẩm thanh toán hoàn tất
+      setIsCheckoutInitialized(true);
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [refreshCart]);
 
   const handleUpdateQty = async (item: CartItem, newQty: number) => {
     if (newQty < 1) {
@@ -315,12 +352,12 @@ function CheckoutPageContent() {
 
   const hasInvalidItems = invalidCheckoutItems.length > 0;
 
-  // Redirect to cart if empty and not loading, unless order has been placed successfully
+  // Redirect to cart ONLY when checkout items initialization is finished and list is truly empty
   useEffect(() => {
-    if (!loading && checkoutItems.length === 0 && !orderPlaced) {
+    if (!loading && isCheckoutInitialized && checkoutItems.length === 0 && !orderPlaced) {
       router.push('/cart');
     }
-  }, [loading, checkoutItems, router, orderPlaced]);
+  }, [loading, isCheckoutInitialized, checkoutItems.length, router, orderPlaced]);
 
   const shippingDestination = useMemo<ShippingDestination | null>(() => {
     let addressStr = '';
@@ -579,12 +616,18 @@ function CheckoutPageContent() {
       }
 
       // Chuẩn bị danh sách sản phẩm đặt hàng (bao gồm giá đang hiển thị trên UI để Server đối chiếu kiểm tra lệch giá)
-      const orderItems = checkoutItems.map((item) => ({
-        productId: item.productId,
-        variantId: item.variantId || null,
-        quantity: Number(item.quantity),
-        price: Number(item.salePrice ?? item.price ?? 0),
-      }));
+      const orderItems = checkoutItems.map((item) => {
+        const itemPrice = item.variant
+          ? (item.variant.salePrice ?? item.variant.sellingPrice)
+          : (item.product?.salePrice ?? item.product?.sellingPrice ?? 0);
+
+        return {
+          productId: item.productId,
+          variantId: item.variantId || null,
+          quantity: Number(item.quantity),
+          price: Number(itemPrice),
+        };
+      });
 
       // Toast feedback if QR selected
       if (paymentMethod === 'QR') {
@@ -645,12 +688,16 @@ function CheckoutPageContent() {
       console.error('Failed to place order', error);
       const errMsg = getApiErrorMessage(error, 'Có lỗi xảy ra trong quá trình đặt hàng.');
 
-      if (errMsg.includes('thay đổi') || errMsg.includes('giá') || errMsg.includes('kho')) {
+      if (errMsg.includes('thay đổi') || errMsg.includes('giá') || errMsg.includes('kho') || errMsg.includes('lệch')) {
+        // Lưu thông báo cảnh báo vào sessionStorage để hiển thị lại sau khi nạp lại trang
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('petmatch_checkout_price_warning', errMsg);
+        }
         toast.warning(errMsg, { duration: 6000 });
-        // Reload checkout data after 2s to display updated prices/stocks
+        // Tải lại trang sau 1.5 giây để cập nhật toàn bộ giá sản phẩm mới nhất
         setTimeout(() => {
           window.location.reload();
-        }, 2000);
+        }, 1500);
       } else {
         toast.error(errMsg);
       }

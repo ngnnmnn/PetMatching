@@ -794,10 +794,9 @@ export class UsersService {
           if (item.price !== undefined && item.price !== null) {
             const clientPrice = Number(item.price);
             if (Math.abs(clientPrice - expectedPrice) > 1) {
-              const formattedClient = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(clientPrice);
               const formattedExpected = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(expectedPrice);
               throw new BadRequestException(
-                `Sản phẩm "${itemName}" đã bị thay đổi giá (từ ${formattedClient} thành ${formattedExpected}). Vui lòng kiểm tra lại đơn hàng!`,
+                `Sản phẩm "${itemName}" đã bị thay đổi giá thành ${formattedExpected}. Vui lòng kiểm tra lại đơn hàng!`,
               );
             }
           }
@@ -848,10 +847,9 @@ export class UsersService {
           if (item.price !== undefined && item.price !== null) {
             const clientPrice = Number(item.price);
             if (Math.abs(clientPrice - expectedPrice) > 1) {
-              const formattedClient = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(clientPrice);
               const formattedExpected = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(expectedPrice);
               throw new BadRequestException(
-                `Sản phẩm "${product.name}" đã bị thay đổi giá (từ ${formattedClient} thành ${formattedExpected}). Vui lòng kiểm tra lại đơn hàng!`,
+                `Sản phẩm "${product.name}" đã bị thay đổi giá thành ${formattedExpected}. Vui lòng kiểm tra lại đơn hàng!`,
               );
             }
           }
