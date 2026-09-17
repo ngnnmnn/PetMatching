@@ -167,54 +167,74 @@ export function isValidProductForRecommendation(product: any, pet?: any): boolea
 }
 
 /**
- * Tự động tìm kiếm phân loại (Variant) phù hợp nhất của sản phẩm dựa trên cân nặng và thể trạng của thú cưng được chọn
+ * Lấy danh sách tất cả các phân loại (Variants) phù hợp với thể trạng thú cưng.
+ * - Nếu sản phẩm chia kích thước/trọng lượng cụ thể (Size S/M/L, kg, gram), lọc các phân loại khớp với thể trạng pet.
+ * - Nếu các phân loại chỉ khác nhau về màu sắc/mẫu mã (không ảnh hưởng kích thước), tất cả phân loại đều phù hợp tốt.
  */
-export function findRecommendedVariantForPet(product: any, pet: any): any | null {
+export function getSuitableVariantsForPet(product: any, pet: any): any[] {
   if (!product || !product.variants || !Array.isArray(product.variants) || product.variants.length === 0) {
-    return null;
+    return [];
   }
   const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
-  if (activeVariants.length === 0) return null;
-
-  if (!pet || pet.weight === undefined || pet.weight === null) {
-    return activeVariants[0];
-  }
+  if (activeVariants.length === 0) return [];
+  if (!pet || pet.weight === undefined || pet.weight === null) return activeVariants;
 
   const w = Number(pet.weight);
 
-  const matched = activeVariants.find((v: any) => {
-    const nameLower = (v.name || '').toLowerCase();
+  // Kiểm tra xem sản phẩm có chứa từ khóa phân chia kích thước cụ thể không
+  const hasSizeKeywords = activeVariants.some((v: any) => {
+    const n = (v.name || '').toLowerCase();
+    return /\b(size|s|m|l|xl|xxl|kg|gram|g|nhỏ|vừa|lớn)\b/i.test(n);
+  });
+
+  // Nếu sản phẩm không phân chia kích thước (chỉ khác màu sắc, vị...), tất cả variant đều phù hợp
+  if (!hasSizeKeywords) {
+    return activeVariants;
+  }
+
+  // Lọc các variant có thông số kích thước phù hợp với thể trạng pet
+  const matches = activeVariants.filter((v: any) => {
+    const n = (v.name || '').toLowerCase();
     if (w < 5) {
       return (
-        nameLower.includes('size s') ||
-        nameLower.includes('500g') ||
-        nameLower.includes('200g') ||
-        nameLower.includes('1kg') ||
-        nameLower.includes('nhỏ') ||
-        (!nameLower.includes('size m') && !nameLower.includes('size l') && !nameLower.includes('3kg') && !nameLower.includes('5kg'))
+        n.includes('size s') ||
+        n.includes('500g') ||
+        n.includes('200g') ||
+        n.includes('1kg') ||
+        n.includes('nhỏ') ||
+        (!n.includes('size m') && !n.includes('size l') && !n.includes('3kg') && !n.includes('5kg'))
       );
     } else if (w >= 5 && w <= 12) {
       return (
-        nameLower.includes('size m') ||
-        nameLower.includes('1.5kg') ||
-        nameLower.includes('2kg') ||
-        nameLower.includes('vừa') ||
-        (!nameLower.includes('size s') && !nameLower.includes('size l'))
+        n.includes('size m') ||
+        n.includes('1.5kg') ||
+        n.includes('2kg') ||
+        n.includes('vừa') ||
+        (!n.includes('size s') && !n.includes('size l'))
       );
     } else {
       return (
-        nameLower.includes('size l') ||
-        nameLower.includes('3kg') ||
-        nameLower.includes('4kg') ||
-        nameLower.includes('5kg') ||
-        nameLower.includes('10kg') ||
-        nameLower.includes('lớn') ||
-        (!nameLower.includes('size s') && !nameLower.includes('size m') && !nameLower.includes('500g'))
+        n.includes('size l') ||
+        n.includes('3kg') ||
+        n.includes('4kg') ||
+        n.includes('5kg') ||
+        n.includes('10kg') ||
+        n.includes('lớn') ||
+        (!n.includes('size s') && !n.includes('size m') && !n.includes('500g'))
       );
     }
   });
 
-  return matched || activeVariants[0];
+  return matches.length > 0 ? matches : activeVariants;
+}
+
+/**
+ * Tự động tìm kiếm phân loại (Variant) chính phù hợp nhất của sản phẩm dựa trên cân nặng và thể trạng của thú cưng được chọn.
+ */
+export function findRecommendedVariantForPet(product: any, pet: any): any | null {
+  const suitable = getSuitableVariantsForPet(product, pet);
+  if (!suitable || suitable.length === 0) return null;
+  return suitable[0];
 }
 
 /**
@@ -364,10 +384,11 @@ export default function ProductCard({
         </div>
 
         <div className="p-4 pt-0">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
+            {/* Hiển thị trực tiếp nhãn tên Phân loại được đề xuất cùng giá bán tương ứng */}
             {selectedPet && recommendedVariant && (
-              <span className="text-[10px] font-extrabold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/70 w-fit">
-                Giá phân loại đề xuất ({recommendedVariant.name})
+              <span className="text-[11px] font-bold text-amber-950 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-300/80 w-fit inline-flex items-center gap-1 shadow-2xs">
+                <span className="text-xs">🐾</span> <strong className="font-black text-rose-900">{recommendedVariant.name}</strong>
               </span>
             )}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

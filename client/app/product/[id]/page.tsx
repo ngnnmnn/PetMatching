@@ -28,7 +28,7 @@ import { productsApi } from '@/lib/api/products';
 import { usersApi } from '@/lib/api/users';
 import { uploadImages } from '@/lib/api/uploads';
 import { Product, ProductVariant, ProductCategory, ProductReview } from '@/types';
-import ProductCard, { findRecommendedVariantForPet } from '@/components/home/ProductCard';
+import ProductCard, { findRecommendedVariantForPet, getSuitableVariantsForPet } from '@/components/home/ProductCard';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useCart } from '@/context/CartContext';
 
@@ -648,80 +648,125 @@ export default function ProductDetailPage() {
                 </span>
               </div>
 
-              {/* Khung thông báo tư vấn đề xuất phân loại cho Thú cưng - Thiết kế Nổi bật Premium */}
-              {recommendationPet && selectedVariant && (
-                <div className="mt-5 relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-0.5 shadow-[0_10px_30px_rgba(245,158,11,0.22)] animate-fadeIn">
-                  <div className="rounded-[15px] bg-gradient-to-r from-amber-50/95 via-orange-50/95 to-rose-50/95 backdrop-blur-md p-4 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
-                    <div className="flex items-start gap-3.5">
-                      <div className="relative shrink-0">
-                        <div className="size-11 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 text-white flex items-center justify-center font-black text-lg shadow-md border-2 border-white">
-                          🐾
-                        </div>
-                        <span className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] text-white font-bold ring-2 ring-white">
-                          ✓
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1 font-black text-xs uppercase tracking-wider text-amber-950 bg-amber-200/80 px-2.5 py-0.5 rounded-lg border border-amber-300">
-                            ✨ Đề xuất cho {recommendationPet.name}
+              {/* Khung thông báo tư vấn đề xuất phân loại cho Thú cưng - Giao diện tinh chỉnh mới theo yêu cầu */}
+              {(() => {
+                const defaultRecommended = product?.variants?.find((v: any) => v.id === recommendedVariantId) ||
+                  (recommendationPet && product ? findRecommendedVariantForPet(product, recommendationPet) : null);
+
+                if (!recommendationPet || !defaultRecommended) return null;
+
+                const suitableVariants = getSuitableVariantsForPet(product, recommendationPet);
+                const isSelectedRecommended = selectedVariant && suitableVariants.some((sv: any) => sv.id === selectedVariant.id);
+                const petAvatar = recommendationPet.avatarUrl || recommendationPet.avatar || (Array.isArray(recommendationPet.gallery) ? recommendationPet.gallery[0] : null);
+
+                return (
+                  <div className="mt-6 relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-0.5 shadow-[0_12px_35px_rgba(245,158,11,0.22)] animate-fadeIn">
+                    <div className="rounded-[15px] bg-gradient-to-r from-amber-50/95 via-orange-50/95 to-rose-50/95 backdrop-blur-md p-5 flex items-center justify-between gap-5 flex-wrap sm:flex-nowrap">
+                      <div className="flex items-start gap-4">
+                        {/* Avatar của Thú cưng */}
+                        <div className="relative shrink-0">
+                          <div className="size-13 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 text-white flex items-center justify-center font-black text-xl shadow-md border-2 border-white overflow-hidden">
+                            {petAvatar ? (
+                              <img
+                                src={petAvatar}
+                                alt={recommendationPet.name}
+                                className="size-full object-cover rounded-xl"
+                              />
+                            ) : (
+                              <span>🐾</span>
+                            )}
+                          </div>
+                          <span className="absolute -bottom-1 -right-1 flex size-4.5 items-center justify-center rounded-full bg-emerald-500 text-[10px] text-white font-bold ring-2 ring-white">
+                            ✓
                           </span>
-                          <span className="text-[11px] font-black text-rose-900 bg-white/90 px-2.5 py-0.5 rounded-lg border border-rose-200 shadow-2xs">
-                            {recommendationPet.breed} · {recommendationPet.weight}kg
-                          </span>
                         </div>
-                        <p className="text-xs text-stone-800 font-semibold leading-relaxed">
-                          Phân loại <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded-md border border-rose-300 shadow-2xs text-xs">{selectedVariant.name}</span> được hệ thống chọn sẵn tự động vì phù hợp nhất với thể trạng của {recommendationPet.name}.
-                        </p>
+                        <div className="space-y-3.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 font-black text-xs uppercase tracking-wider text-amber-950 bg-amber-200/90 px-3.5 py-1 rounded-xl border border-amber-300 shadow-2xs">
+                              ✨ Gợi ý cho bé <strong className="font-black text-rose-950 ml-0.5">{recommendationPet.name}</strong>
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-stone-800 font-semibold leading-relaxed flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {isSelectedRecommended && selectedVariant ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100/90 px-2.5 py-0.5 rounded-lg border border-rose-300 shadow-2xs text-xs">{selectedVariant.name}</span> phù hợp với bé <strong className="font-bold text-stone-900">{recommendationPet.name}</strong> 😊
+                              </>
+                            ) : (
+                              <>
+                                <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100/90 px-2.5 py-0.5 rounded-lg border border-rose-300 shadow-2xs text-xs">{defaultRecommended.name}</span> được hệ thống đề xuất phù hợp với bé <strong className="font-bold text-stone-900">{recommendationPet.name}</strong> 😊
+                              </>
+                            )}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="shrink-0 hidden sm:block">
-                      <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white font-black text-xs shadow-md">
-                        🔥 Chuẩn Match
-                      </span>
+                      <div className="shrink-0 hidden sm:block">
+                        {isSelectedRecommended ? (
+                          <span
+                            className="inline-flex items-center justify-center size-12 rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 text-white font-black text-2xl shadow-lg ring-2 ring-amber-300/60 animate-pulse"
+                            title="Đề xuất chuẩn match"
+                          >
+                            💡
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVariant(defaultRecommended);
+                              if (defaultRecommended.imageUrl) setActiveImage(defaultRecommended.imageUrl);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
+                          >
+                            🐾 Chọn lại {defaultRecommended.name}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Product Variants Selector (Only show if 2 or more variants) */}
               {product.variants && product.variants.length > 1 && (
                 <div className="mt-5 space-y-3 animate-fadeIn bg-gray-50/50 p-4.5 rounded-2xl border border-[var(--border-color)]">
                   <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-wider">Phân loại sản phẩm:</p>
                   <div className="flex flex-wrap gap-2.5">
-                    {product.variants.map((v) => {
-                      const isSelected = selectedVariant?.id === v.id;
-                      const bestRec = recommendationPet ? findRecommendedVariantForPet(product, recommendationPet) : null;
-                      const isRecommended = (recommendedVariantId === v.id) || (bestRec && bestRec.id === v.id);
+                    {(() => {
+                      const suitableVariants = recommendationPet && product ? getSuitableVariantsForPet(product, recommendationPet) : [];
 
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedVariant(v);
-                            if (v.imageUrl) {
-                              setActiveImage(v.imageUrl);
-                            }
-                          }}
-                          className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 active:scale-95 flex items-center gap-2 cursor-pointer ${isSelected && isRecommended
-                              ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
-                              : isSelected
-                                ? 'border-[#0F766E] bg-[#EEF8F5] text-[#0F766E] shadow-sm'
-                                : isRecommended
-                                  ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
-                                  : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
+                      return product.variants.map((v) => {
+                        const isSelected = selectedVariant?.id === v.id;
+                        const isRecommended = suitableVariants.some((sv: any) => sv.id === v.id);
+
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedVariant(v);
+                              if (v.imageUrl) {
+                                setActiveImage(v.imageUrl);
+                              }
+                            }}
+                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 active:scale-95 flex items-center gap-2 cursor-pointer ${
+                              isSelected && isRecommended
+                                ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
+                                : isSelected
+                                  ? 'border-[#0F766E] bg-[#EEF8F5] text-[#0F766E] shadow-sm'
+                                  : isRecommended
+                                    ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
+                                    : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
                             }`}
-                        >
-                          <span>{v.name}</span>
-                          {isRecommended && (
-                            <span className="inline-flex items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white text-[9px] font-black px-2 py-0.5 shadow-xs animate-pulse">
-                              🐾 Đề xuất
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
+                          >
+                            <span>{v.name}</span>
+                            {isRecommended && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white text-[9px] font-black px-2 py-0.5 shadow-xs animate-pulse">
+                                🐾 Đề xuất
+                              </span>
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               )}
