@@ -778,6 +778,19 @@ export class UsersService {
           }
 
           const expectedPrice = variant.salePrice ?? variant.sellingPrice;
+          itemName = `${product.name} (${variant.name})`;
+
+          // Kiểm tra lệch giá: Nếu Manager vừa đổi giá trong DB làm lệch so với giá giao diện Client -> Chặn tạo đơn & báo lỗi
+          if (item.price !== undefined && item.price !== null) {
+            const clientPrice = Number(item.price);
+            if (Math.abs(clientPrice - expectedPrice) > 1) {
+              const formattedClient = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(clientPrice);
+              const formattedExpected = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(expectedPrice);
+              throw new BadRequestException(
+                `Sản phẩm "${itemName}" đã bị thay đổi giá (từ ${formattedClient} thành ${formattedExpected}). Vui lòng kiểm tra lại đơn hàng!`,
+              );
+            }
+          }
 
           // Trừ kho có điều kiện để hai yêu cầu đồng thời không thể bán vượt tồn kho.
           const variantStockUpdate = await tx.productVariant.updateMany({
@@ -800,7 +813,6 @@ export class UsersService {
           }
           await this.syncProductStockTx(tx, item.productId);
 
-          itemName = `${product.name} (${variant.name})`;
           itemsSubtotal += expectedPrice * item.quantity;
           resolvedOrderItems.push({
             productId: product.id,
@@ -821,6 +833,18 @@ export class UsersService {
           }
 
           const expectedPrice = product.salePrice ?? product.sellingPrice;
+
+          // Kiểm tra lệch giá: Nếu Manager vừa đổi giá sản phẩm trong DB làm lệch so với giá giao diện Client -> Chặn tạo đơn & báo lỗi
+          if (item.price !== undefined && item.price !== null) {
+            const clientPrice = Number(item.price);
+            if (Math.abs(clientPrice - expectedPrice) > 1) {
+              const formattedClient = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(clientPrice);
+              const formattedExpected = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(expectedPrice);
+              throw new BadRequestException(
+                `Sản phẩm "${product.name}" đã bị thay đổi giá (từ ${formattedClient} thành ${formattedExpected}). Vui lòng kiểm tra lại đơn hàng!`,
+              );
+            }
+          }
 
           if (product.stock !== null && product.stock !== undefined) {
             // Trừ kho có điều kiện để bảo toàn tồn kho khi đặt hàng đồng thời.

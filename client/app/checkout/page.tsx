@@ -578,11 +578,12 @@ function CheckoutPageContent() {
         finalAddress += ` (Ghi chú: ${userNote.trim()})`;
       }
 
-      // Prepare order items
+      // Chuẩn bị danh sách sản phẩm đặt hàng (bao gồm giá đang hiển thị trên UI để Server đối chiếu kiểm tra lệch giá)
       const orderItems = checkoutItems.map((item) => ({
         productId: item.productId,
         variantId: item.variantId || null,
         quantity: Number(item.quantity),
+        price: Number(item.salePrice ?? item.price ?? 0),
       }));
 
       // Toast feedback if QR selected

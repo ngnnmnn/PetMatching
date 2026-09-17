@@ -28,6 +28,7 @@ import { PetProfileDialog } from "@/components/pets/PetProfileDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { isValidProductForRecommendation } from "@/components/home/ProductCard";
 import { toast } from "sonner";
 import type { Product, ProductVariant } from "@/types";
 import {
@@ -198,6 +199,7 @@ export default function MyPetsPage() {
 
       const matched = allProducts.filter((p) => {
         if (!p.isActive) return false;
+        if (!isValidProductForRecommendation(p, pet)) return false;
         const target = p.targetSpecies;
         return target === "ALL" || target === pet.species;
       });
