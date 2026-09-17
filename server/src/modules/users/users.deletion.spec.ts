@@ -35,6 +35,15 @@ describe('UsersService account deletion policy', () => {
       },
       match: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       complaint: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      petReport: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            evidenceUrls: [
+              'https://res.cloudinary.com/demo/image/upload/report.jpg',
+            ],
+          },
+        ]),
+      },
       matchingRequest: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
@@ -64,7 +73,7 @@ describe('UsersService account deletion policy', () => {
       petsService as unknown as PetsService,
       {} as ShippingService,
     );
-    return { service, tx, petsService };
+    return { service, tx, petsService, cloudinary };
   }
 
   it('blocks account deletion while a Store order is unfinished', async () => {
@@ -84,7 +93,7 @@ describe('UsersService account deletion policy', () => {
   });
 
   it('detaches completed histories and hard deletes the account', async () => {
-    const { service, tx, petsService } = setup();
+    const { service, tx, petsService, cloudinary } = setup();
 
     await expect(service.deleteAccount('user-1')).resolves.toMatchObject({
       success: true,
@@ -115,5 +124,8 @@ describe('UsersService account deletion policy', () => {
     );
     expect(petsService.deleteOwnedPetsInTransaction).toHaveBeenCalled();
     expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: 'user-1' } });
+    expect(cloudinary.destroyByUrl).toHaveBeenCalledWith(
+      'https://res.cloudinary.com/demo/image/upload/report.jpg',
+    );
   });
 });

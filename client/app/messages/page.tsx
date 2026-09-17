@@ -24,6 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import AppHeader from '@/components/layout/AppHeader';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import {
@@ -88,6 +89,20 @@ const reportReasons: Record<
     { value: 'OTHER', label: 'Lý do khác' },
   ],
 };
+
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_REPORT_IMAGES = 3;
+
+function getImageValidationError(file: File) {
+  if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    return 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.';
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    return 'Mỗi ảnh không được vượt quá 5 MB.';
+  }
+  return null;
+}
 
 type Match = {
   id: string;
@@ -192,6 +207,16 @@ export default function MessagesPage() {
   const [reportTargetType, setReportTargetType] = useState<ReportTargetType>('USER');
   const [reportReason, setReportReason] = useState<ReportReason>('INAPPROPRIATE_MESSAGE');
   const [reportDetail, setReportDetail] = useState('');
+  const [reportImages, setReportImages] = useState<File[]>([]);
+  const reportImagePreviews = useMemo(
+    () => reportImages.map((file) => URL.createObjectURL(file)),
+    [reportImages],
+  );
+
+  useEffect(
+    () => () => reportImagePreviews.forEach((url) => URL.revokeObjectURL(url)),
+    [reportImagePreviews],
+  );
 
   const loadData = () => {
     setLoading(true);
@@ -316,12 +341,9 @@ export default function MessagesPage() {
 
   const handleImageSelect = (file?: File) => {
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      toast.error('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Ảnh không được vượt quá 5 MB.');
+    const validationError = getImageValidationError(file);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
     if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
@@ -432,10 +454,13 @@ export default function MessagesPage() {
     if (!selectedMatch || matchAction) return;
     setMatchAction('REPORT');
     try {
-      await api.post(`/matching/matches/${selectedMatch.id}/report`, {
-        targetType: reportTargetType,
-        reason: reportReason,
-        detail: reportDetail.trim() || undefined,
+      const formData = new FormData();
+      formData.append('targetType', reportTargetType);
+      formData.append('reason', reportReason);
+      if (reportDetail.trim()) formData.append('detail', reportDetail.trim());
+      reportImages.forEach((file) => formData.append('images', file));
+      await api.post(`/matching/matches/${selectedMatch.id}/report`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       setMatches((current) => current.map((match) => (
         match.id === selectedMatch.id
@@ -459,11 +484,49 @@ export default function MessagesPage() {
         : current);
       setReportDialogOpen(false);
       setReportDetail('');
+      setReportImages([]);
       toast.success('Báo cáo đã được gửi tới quản trị viên.');
     } catch (error: unknown) {
       toast.error(getApiErrorMessage(error, 'Không thể gửi báo cáo.'));
     } finally {
       setMatchAction(null);
+    }
+  };
+
+  const handleReportImagesChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!selectedFiles.length) return;
+
+    const validFiles = selectedFiles.filter((file) => {
+      const validationError = getImageValidationError(file);
+      if (validationError) toast.error(`${file.name}: ${validationError}`);
+      return !validationError;
+    });
+
+    setReportImages((current) => {
+      const existingKeys = new Set(
+        current.map((file) => `${file.name}-${file.size}-${file.lastModified}`),
+      );
+      const uniqueFiles = validFiles.filter(
+        (file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`),
+      );
+      const availableSlots = MAX_REPORT_IMAGES - current.length;
+      if (uniqueFiles.length > availableSlots) {
+        toast.error(`Chỉ được đính kèm tối đa ${MAX_REPORT_IMAGES} ảnh.`);
+      }
+      return [...current, ...uniqueFiles.slice(0, availableSlots)];
+    });
+  };
+
+  const handleReportDialogChange = (open: boolean) => {
+    if (!open && matchAction === 'REPORT') return;
+    setReportDialogOpen(open);
+    if (!open) {
+      setReportDetail('');
+      setReportImages([]);
     }
   };
 
@@ -475,6 +538,8 @@ export default function MessagesPage() {
       : 'USER';
     setReportTargetType(targetType);
     setReportReason(reportReasons[targetType][0].value);
+    setReportDetail('');
+    setReportImages([]);
     setReportDialogOpen(true);
   };
 
@@ -1162,8 +1227,8 @@ export default function MessagesPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={reportDialogOpen} onOpenChange={handleReportDialogChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gửi báo cáo</DialogTitle>
             <DialogDescription>
@@ -1214,9 +1279,60 @@ export default function MessagesPage() {
                 placeholder="Mô tả vấn đề để quản trị viên dễ kiểm tra..."
               />
             </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-bold">Ảnh minh chứng (không bắt buộc)</label>
+                <span className="text-xs text-muted-foreground">{reportImages.length}/{MAX_REPORT_IMAGES}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                JPEG, PNG hoặc WebP; tối đa 5 MB mỗi ảnh.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {reportImagePreviews.map((previewUrl, index) => (
+                  <div key={previewUrl} className="relative aspect-square overflow-hidden rounded-lg border bg-muted">
+                    <button
+                      type="button"
+                      className="h-full w-full"
+                      onClick={() => setViewingImageUrl(previewUrl)}
+                      aria-label={`Xem ảnh minh chứng ${index + 1}`}
+                    >
+                      <Image
+                        src={previewUrl}
+                        alt={`Ảnh minh chứng ${index + 1}`}
+                        fill
+                        sizes="128px"
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-full bg-black/65 text-white transition hover:bg-black"
+                      onClick={() => setReportImages((current) => current.filter((_, imageIndex) => imageIndex !== index))}
+                      aria-label={`Xóa ảnh minh chứng ${index + 1}`}
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                {reportImages.length < MAX_REPORT_IMAGES && (
+                  <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:text-primary">
+                    <ImageIcon className="size-5" />
+                    Thêm ảnh
+                    <input
+                      type="file"
+                      accept={ACCEPTED_IMAGE_TYPES.join(',')}
+                      multiple
+                      className="sr-only"
+                      onChange={handleReportImagesChange}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setReportDialogOpen(false)} disabled={matchAction === 'REPORT'}>Hủy</Button>
+            <Button type="button" variant="outline" onClick={() => handleReportDialogChange(false)} disabled={matchAction === 'REPORT'}>Hủy</Button>
             <Button type="button" variant="destructive" onClick={handleReportMatch} disabled={matchAction === 'REPORT'}>
               {matchAction === 'REPORT' ? 'Đang gửi...' : 'Gửi báo cáo'}
             </Button>

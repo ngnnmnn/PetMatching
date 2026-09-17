@@ -239,6 +239,11 @@ export class PetsService {
       },
     });
 
+    const reportsWithEvidence = await tx.petReport.findMany({
+      where: { petId: { in: petIds } },
+      select: { evidenceUrls: true },
+    });
+
     const mediaUrls = pets.flatMap((pet) => [
       pet.avatarUrl,
       ...pet.gallery,
@@ -250,7 +255,10 @@ export class PetsService {
       petNames: pets.map((pet) => pet.name),
       cancelledMatchingRequests: cancelledRequests.count,
       endedMatches: endedMatches.count,
-      mediaUrls: mediaUrls.filter((url): url is string => Boolean(url)),
+      mediaUrls: [
+        ...mediaUrls.filter((url): url is string => Boolean(url)),
+        ...reportsWithEvidence.flatMap((report) => report.evidenceUrls),
+      ],
     };
   }
 

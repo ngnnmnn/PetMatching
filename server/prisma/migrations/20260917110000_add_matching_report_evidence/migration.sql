@@ -1,0 +1,2 @@
+ALTER TABLE "pet_reports"
+ADD COLUMN "evidenceUrls" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

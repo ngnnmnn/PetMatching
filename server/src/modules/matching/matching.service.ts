@@ -18,6 +18,7 @@ import {
   Species,
   VerificationBadge,
 } from '@prisma/client';
+import type { UploadApiOptions } from 'cloudinary';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { CreateMatchingRequestDto } from './dto/create-matching-request.dto';
@@ -79,6 +80,12 @@ type MatchWithParticipants = Prisma.MatchGetPayload<{
 const MIN_AGE_MONTHS = { DOG: 12, CAT: 8 } as const;
 
 const CHAT_ENABLED_MATCH_STATUSES: MatchStatus[] = [MatchStatus.ACTIVE];
+
+const MATCH_IMAGE_UPLOAD_OPTIONS: UploadApiOptions = {
+  quality: 'auto:good',
+  fetch_format: 'auto',
+  transformation: [{ width: 1600, height: 1600, crop: 'limit' }],
+};
 
 function calculateHaversineDistance(
   lat1: number,
@@ -737,7 +744,12 @@ export class MatchingService {
     });
   }
 
-  async reportMatch(userId: string, matchId: string, dto: ReportMatchDto) {
+  async reportMatch(
+    userId: string,
+    matchId: string,
+    dto: ReportMatchDto,
+    files: Array<{ buffer: Buffer }> = [],
+  ) {
     const allowedReasons = MATCH_REPORT_REASONS_BY_TARGET[dto.targetType];
     if (!(allowedReasons as readonly string[]).includes(dto.reason)) {
       throw new BadRequestException(
@@ -745,7 +757,24 @@ export class MatchingService {
       );
     }
 
+    const sourceMatch = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: matchParticipantInclude,
+    });
+    if (!sourceMatch) throw new NotFoundException('Không tìm thấy match.');
+    this.getParticipantContext(sourceMatch, userId);
+
+    const evidenceUrls: string[] = [];
     try {
+      for (const file of files) {
+        const uploaded = await this.cloudinary.uploadBuffer(
+          file.buffer,
+          `petmatching/users/${userId}/matching-reports/${matchId}`,
+          MATCH_IMAGE_UPLOAD_OPTIONS,
+        );
+        evidenceUrls.push(uploaded.url);
+      }
+
       return await this.prisma.$transaction(async (tx) => {
         const match = await this.getLockedMatch(tx, matchId);
         const participant = this.getParticipantContext(match, userId);
@@ -777,12 +806,14 @@ export class MatchingService {
             targetType: dto.targetType,
             reason: dto.reason,
             detail,
+            evidenceUrls,
           },
           select: {
             id: true,
             targetType: true,
             reason: true,
             detail: true,
+            evidenceUrls: true,
             createdAt: true,
           },
         });
@@ -797,6 +828,7 @@ export class MatchingService {
               targetType: dto.targetType,
               reportedUserId: participant.otherOwner.id,
               reportedPetId,
+              evidenceCount: evidenceUrls.length,
             },
           },
         });
@@ -819,6 +851,9 @@ export class MatchingService {
         return { success: true, report };
       });
     } catch (error) {
+      await Promise.all(
+        evidenceUrls.map((url) => this.cloudinary.destroyByUrl(url)),
+      );
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
@@ -1086,11 +1121,7 @@ export class MatchingService {
     const uploaded = await this.cloudinary.uploadBuffer(
       file.buffer,
       `petmatching/users/${userId}/chat/${matchId}`,
-      {
-        quality: 'auto:good',
-        fetch_format: 'auto',
-        transformation: [{ width: 1600, height: 1600, crop: 'limit' }],
-      },
+      MATCH_IMAGE_UPLOAD_OPTIONS,
     );
 
     try {
