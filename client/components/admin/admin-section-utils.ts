@@ -149,6 +149,16 @@ export const formatCategory = (category?: string) => labelFor(category, CATEGORY
 export const formatDocumentType = (type?: string) => labelFor(type, DOCUMENT_TYPE_LABELS);
 export const formatPetModerationReason = (reason?: string) => labelFor(reason, PET_MODERATION_REASON_LABELS);
 
+export function matchesAdminStatusFilter(
+  value: string | null | undefined,
+  filter: string,
+  options: ReadonlyArray<{ value: string; statuses?: readonly string[] }>,
+) {
+  if (filter === "ALL") return true;
+  const statuses = options.find((option) => option.value === filter)?.statuses;
+  return (statuses ?? [filter]).includes(value ?? "");
+}
+
 export function formatComplaintAction(action?: ComplaintAction) {
   return action ? (COMPLAINT_ACTION_LABELS[action] ?? action) : "-";
 }

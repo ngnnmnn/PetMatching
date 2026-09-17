@@ -255,7 +255,7 @@ export default function AdminDashboardPage() {
           context={data.analytics?.range?.label ?? ""}
         />
         <MetricCard
-          label="Cửa hàng"
+          label="Tổng số đơn hàng"
           value={data.stats.store.totalOrders.toLocaleString("vi-VN")}
           detail={`${data.stats.store.activeProducts.toLocaleString("vi-VN")} sản phẩm đang bán · ${data.stats.store.pendingOrders.toLocaleString("vi-VN")} đơn chờ xử lý`}
           icon={ShoppingBag}
@@ -264,7 +264,7 @@ export default function AdminDashboardPage() {
           href="/admin/store-overview"
         />
         <MetricCard
-          label="Spa"
+          label="Tổng số lịch đặt Spa"
           value={data.stats.spa.totalBookings.toLocaleString("vi-VN")}
           detail={`${data.stats.spa.totalServices.toLocaleString("vi-VN")} dịch vụ · ${(data.stats.spa.pendingBookings ?? 0).toLocaleString("vi-VN")} lịch chờ xác nhận`}
           icon={Stethoscope}
@@ -273,7 +273,7 @@ export default function AdminDashboardPage() {
           href="/admin/spa-overview"
         />
         <MetricCard
-          label="Ghép đôi"
+          label="Tổng số ghép đôi"
           value={data.stats.matching.totalMatches.toLocaleString("vi-VN")}
           detail={`${data.stats.pets.total.toLocaleString("vi-VN")} thú cưng · ${data.stats.matching.pendingReports.toLocaleString("vi-VN")} báo cáo đang mở`}
           icon={HeartHandshake}

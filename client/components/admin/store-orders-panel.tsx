@@ -37,6 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { matchesAdminStatusFilter } from "@/components/admin/admin-section-utils";
 
 type OrderItem = {
   id?: string;
@@ -105,14 +106,50 @@ type StoreOrderRow = {
 type DateFilter = "ALL" | "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "CUSTOM";
 
 const PAGE_SIZE = 10;
-const FULFILLMENT_STATUSES = ["PROCESSING", "PACKED", "SHIPPED"];
 const ORDER_STEPS = ["PENDING", "PROCESSING", "PACKED", "SHIPPED", "DELIVERED"];
+
+const ORDER_STATUS_FILTER_OPTIONS = [
+  { value: "ALL", label: "Tất cả đơn" },
+  { value: "PENDING", label: "Chờ xử lý", statuses: ["PENDING"] },
+  {
+    value: "PREPARING",
+    label: "Đang chuẩn bị hàng",
+    statuses: ["CONFIRMED", "PROCESSING", "PACKED"],
+  },
+  { value: "SHIPPING", label: "Đang giao", statuses: ["SHIPPED"] },
+  { value: "COMPLETED", label: "Hoàn thành", statuses: ["DELIVERED"] },
+  {
+    value: "FAILED",
+    label: "Đã hủy / Thất bại",
+    statuses: ["CANCELLED", "EXPIRED", "PAYMENT_ERROR"],
+  },
+];
+
+const STORE_PAYMENT_FILTER_OPTIONS = [
+  { value: "ALL", label: "Tất cả thanh toán" },
+  {
+    value: "PENDING",
+    label: "Chờ thanh toán",
+    statuses: ["PENDING", "UNPAID"],
+  },
+  { value: "PAID", label: "Đã thanh toán", statuses: ["PAID"] },
+  { value: "REFUNDED", label: "Đã hoàn tiền", statuses: ["REFUNDED"] },
+  {
+    value: "FAILED",
+    label: "Thanh toán không thành công",
+    statuses: ["CANCELLED", "EXPIRED", "PAYMENT_ERROR"],
+  },
+];
 
 const ORDER_STATUS_META: Record<string, { label: string; className: string }> =
   {
     PENDING: {
       label: "Chờ xác nhận",
       className: "border-amber-200 bg-amber-50 text-amber-700",
+    },
+    CONFIRMED: {
+      label: "Đã xác nhận",
+      className: "border-sky-200 bg-sky-50 text-sky-700",
     },
     PROCESSING: {
       label: "Đang xử lý",
@@ -170,8 +207,12 @@ export function StoreOrdersPanel({
         isSameLocalDay(order.createdAt, new Date()),
       ).length,
       pending: orders.filter((order) => order.status === "PENDING").length,
-      fulfillment: orders.filter((order) =>
-        FULFILLMENT_STATUSES.includes(order.status ?? ""),
+      preparing: orders.filter((order) =>
+        matchesAdminStatusFilter(
+          order.status,
+          "PREPARING",
+          ORDER_STATUS_FILTER_OPTIONS,
+        ),
       ).length,
       delivered: orders.filter((order) => order.status === "DELIVERED").length,
       attention: orders.filter(
@@ -186,18 +227,15 @@ export function StoreOrdersPanel({
     return orders.filter((order) => {
       if (normalizedSearch && !orderMatchesSearch(order, normalizedSearch))
         return false;
-      if (
-        status === "FULFILLMENT" &&
-        !FULFILLMENT_STATUSES.includes(order.status ?? "")
-      )
+      if (!matchesAdminStatusFilter(order.status, status, ORDER_STATUS_FILTER_OPTIONS))
         return false;
       if (
-        status !== "ALL" &&
-        status !== "FULFILLMENT" &&
-        order.status !== status
+        !matchesAdminStatusFilter(
+          getPaymentStatus(order),
+          paymentStatus,
+          STORE_PAYMENT_FILTER_OPTIONS,
+        )
       )
-        return false;
-      if (paymentStatus !== "ALL" && getPaymentStatus(order) !== paymentStatus)
         return false;
       if (!matchesDateFilter(order.createdAt, dateFilter, dateFrom, dateTo))
         return false;
@@ -278,25 +316,25 @@ export function StoreOrdersPanel({
             onClick={() => updateFilter(() => setDateFilter("TODAY"))}
           />
           <SummaryCard
-            label="Chờ xác nhận"
+            label="Chờ xử lý"
             value={stats.pending}
             icon={Clock3}
             tone="amber"
             onClick={() => updateFilter(() => setStatus("PENDING"))}
           />
           <SummaryCard
-            label="Đang xử lý"
-            value={stats.fulfillment}
-            icon={Truck}
+            label="Đang chuẩn bị hàng"
+            value={stats.preparing}
+            icon={PackageCheck}
             tone="blue"
-            onClick={() => updateFilter(() => setStatus("FULFILLMENT"))}
+            onClick={() => updateFilter(() => setStatus("PREPARING"))}
           />
           <SummaryCard
-            label="Đã giao"
+            label="Hoàn thành"
             value={stats.delivered}
             icon={CheckCircle2}
             tone="green"
-            onClick={() => updateFilter(() => setStatus("DELIVERED"))}
+            onClick={() => updateFilter(() => setStatus("COMPLETED"))}
           />
           <SummaryCard
             label="Cần chú ý"
@@ -307,8 +345,8 @@ export function StoreOrdersPanel({
           />
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="relative xl:col-span-2">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr]">
+          <label className="relative">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={search}
@@ -323,27 +361,13 @@ export function StoreOrdersPanel({
             value={status}
             onChange={(value) => updateFilter(() => setStatus(value))}
             ariaLabel="Lọc theo trạng thái đơn"
-            options={[
-              { value: "ALL", label: "Tất cả trạng thái" },
-              { value: "FULFILLMENT", label: "Đang xử lý và giao" },
-              ...Object.entries(ORDER_STATUS_META).map(([value, meta]) => ({
-                value,
-                label: meta.label,
-              })),
-            ]}
+            options={ORDER_STATUS_FILTER_OPTIONS}
           />
           <FilterSelect
             value={paymentStatus}
             onChange={(value) => updateFilter(() => setPaymentStatus(value))}
             ariaLabel="Lọc theo thanh toán"
-            options={[
-              { value: "ALL", label: "Tất cả thanh toán" },
-              { value: "PAID", label: "Đã thanh toán" },
-              { value: "PENDING", label: "Chờ thanh toán" },
-              { value: "REFUNDED", label: "Đã hoàn tiền" },
-              { value: "CANCELLED", label: "Đã hủy thanh toán" },
-              { value: "UNPAID", label: "Chưa có thanh toán" },
-            ]}
+            options={STORE_PAYMENT_FILTER_OPTIONS}
           />
           <FilterSelect
             value={dateFilter}
@@ -360,7 +384,7 @@ export function StoreOrdersPanel({
             ]}
           />
           {dateFilter === "CUSTOM" && (
-            <>
+            <div className="grid gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4">
               <Input
                 type="date"
                 value={dateFrom}
@@ -377,19 +401,8 @@ export function StoreOrdersPanel({
                   updateFilter(() => setDateTo(event.target.value))
                 }
               />
-            </>
+            </div>
           )}
-          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-bold text-foreground/75">
-            <input
-              type="checkbox"
-              checked={attentionOnly}
-              onChange={(event) =>
-                updateFilter(() => setAttentionOnly(event.target.checked))
-              }
-              className="size-4 accent-primary"
-            />
-            Chỉ đơn cần chú ý
-          </label>
           {hasFilters && (
             <Button
               type="button"
@@ -517,7 +530,7 @@ export function StoreOrdersPanel({
                       </div>
                     ) : (
                       <span className="text-xs font-semibold text-muted-foreground/70">
-                        Ổn định
+                        Hoàn tất
                       </span>
                     )}
                   </td>
@@ -601,7 +614,9 @@ function StoreOrderDetailDialog({
     (sum, item) => sum + (item.price ?? 0) * (item.quantity ?? 0),
     0,
   );
-  const currentStep = ORDER_STEPS.indexOf(order.status ?? "");
+  const currentStep = ORDER_STEPS.indexOf(
+    order.status === "CONFIRMED" ? "PROCESSING" : (order.status ?? ""),
+  );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
