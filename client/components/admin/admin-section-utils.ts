@@ -249,6 +249,9 @@ export function petMatchesVerificationFilter(pet: AdminRow, filter: PetVerificat
   return !pet.documents?.length;
 }
 
+/**
+ * Chuẩn hóa tên dịch vụ để các bản ghi cùng dịch vụ nhưng khác cấu hình cân nặng được gom chung.
+ */
 function getSpaServiceBaseName(service: AdminRow) {
   const name = String(service.name ?? "Dịch vụ Spa").trim();
   if (service.petWeightMin == null && service.petWeightMax == null) return name;
@@ -258,6 +261,9 @@ function getSpaServiceBaseName(service: AdminRow) {
     .trim();
 }
 
+/**
+ * Gom dịch vụ Spa theo danh mục, loại chính/lẻ và tên; cấu hình Chó/Mèo thuộc cùng dịch vụ sẽ ở chung một nhóm.
+ */
 export function groupSpaServiceVariants(services: AdminRow[]): SpaServiceVariantGroup[] {
   const groups = new Map<string, SpaServiceVariantGroup>();
   services.forEach((service) => {
@@ -265,62 +271,20 @@ export function groupSpaServiceVariants(services: AdminRow[]): SpaServiceVariant
     const key = [
       service.categoryId ?? service.category?.name ?? "",
       service.isMain === false ? "SUB" : "MAIN",
-      service.species ?? "ALL",
       name.toLocaleLowerCase("vi"),
     ].join("::");
     const existing = groups.get(key);
-    if (existing) existing.variants.push(service);
-    else groups.set(key, { key, name, species: service.species, variants: [service] });
+    const species = service.species === "DOG" || service.species === "CAT"
+      ? service.species
+      : "ALL";
+    if (existing) {
+      existing.variants.push(service);
+      if (existing.species !== species) existing.species = "ALL";
+    } else {
+      groups.set(key, { key, name, species, variants: [service] });
+    }
   });
   return Array.from(groups.values()).sort(
     (left, right) => left.name.localeCompare(right.name, "vi") || String(left.species).localeCompare(String(right.species)),
   );
-}
-
-export function formatSpaSpeciesLabel(species?: string | null) {
-  return species === "DOG" ? "Chó" : species === "CAT" ? "Mèo" : "Dùng chung";
-}
-
-export function getSpaWeightKey(row: AdminRow) {
-  const min = row.petWeightMin == null ? "" : Number(row.petWeightMin);
-  const max = row.petWeightMax == null ? "" : Number(row.petWeightMax);
-  return `${min}:${max}`;
-}
-
-export function getSpaWeightRepresentative(rangeKey: string) {
-  const [rawMin, rawMax] = rangeKey.split(":");
-  const min = rawMin === "" ? 0 : Number(rawMin);
-  const max = rawMax === "" ? null : Number(rawMax);
-  return max == null || max === 100 ? min + 0.5 : (min + max) / 2;
-}
-
-export function matchesSpaServiceWeight(service: AdminRow, weight: number) {
-  if (service.petWeightMin == null && service.petWeightMax == null) return true;
-  const min = service.petWeightMin == null ? 0 : Number(service.petWeightMin);
-  const max = service.petWeightMax == null ? null : Number(service.petWeightMax);
-  if (weight < min) return false;
-  if (max == null || max === 100) return true;
-  return service.isMain === false ? weight <= max : weight < max;
-}
-
-export function getSpaWeightDistance(service: AdminRow, weight: number) {
-  if (service.petWeightMin == null && service.petWeightMax == null) return 0;
-  const min = service.petWeightMin == null ? 0 : Number(service.petWeightMin);
-  const max =
-    service.petWeightMax == null || Number(service.petWeightMax) === 100
-      ? Number.POSITIVE_INFINITY
-      : Number(service.petWeightMax);
-  if (weight < min) return min - weight;
-  return weight > max ? weight - max : 0;
-}
-
-export function formatSpaWeightOption(min: number | null, max: number | null) {
-  if (min == null && max == null) return "Mọi cân nặng";
-  const normalizedMin = min ?? 0;
-  if (max == null || max === 100) return `${formatSpaWeightNumber(normalizedMin)}kg trở lên`;
-  return `${formatSpaWeightNumber(normalizedMin)}–${formatSpaWeightNumber(max)}kg`;
-}
-
-function formatSpaWeightNumber(value: number) {
-  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
 }

@@ -1330,28 +1330,6 @@ export class AdminService {
       orderBy: [{ species: 'asc' }, { name: 'asc' }],
     });
 
-    // Detect user-submitted custom breeds not yet in official catalog
-    const userPets = await this.prisma.pet.findMany({
-      where: query.species ? { species: query.species } : {},
-      select: { species: true, breed: true },
-      distinct: ['species', 'breed'],
-    });
-
-    const officialBreedSet = new Set(
-      officialBreeds.map((b) => `${b.species}_${b.name.trim().toLowerCase()}`),
-    );
-
-    const customBreeds = userPets
-      .filter(
-        (p) =>
-          !officialBreedSet.has(`${p.species}_${p.breed.trim().toLowerCase()}`),
-      )
-      .map((p) => ({
-        species: p.species,
-        name: p.breed.trim(),
-        isCustom: true,
-      }));
-
     return {
       official: officialBreeds,
       custom: [],
@@ -1720,6 +1698,7 @@ export class AdminService {
           ...storeFilter,
           status: {
             in: [
+              OrderStatus.CONFIRMED,
               OrderStatus.PACKED,
               OrderStatus.PROCESSING,
               OrderStatus.SHIPPED,
@@ -2103,14 +2082,39 @@ export class AdminService {
     };
   }
 
-  getSpaServices() {
-    return this.prisma.spaService.findMany({
-      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
-      include: {
-        category: { select: { name: true } },
-        _count: { select: { bookings: true } },
-      },
+  async getSpaServices() {
+    const [services, bookings] = await Promise.all([
+      this.prisma.spaService.findMany({
+        orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
+        include: {
+          category: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.spaBooking.findMany({
+        select: { serviceId: true, subServiceIds: true },
+      }),
+    ]);
+
+    const bookingCountByService = new Map<string, number>();
+    bookings.forEach((booking) => {
+      if (booking.serviceId) {
+        bookingCountByService.set(
+          booking.serviceId,
+          (bookingCountByService.get(booking.serviceId) ?? 0) + 1,
+        );
+      }
+      booking.subServiceIds.forEach((serviceId) => {
+        bookingCountByService.set(
+          serviceId,
+          (bookingCountByService.get(serviceId) ?? 0) + 1,
+        );
+      });
     });
+
+    return services.map((service) => ({
+      ...service,
+      _count: { bookings: bookingCountByService.get(service.id) ?? 0 },
+    }));
   }
 
   async getSpaBookings() {

@@ -77,6 +77,12 @@ export const shippingApi = {
    */
   syncActiveAhamoveOrders: () =>
     api.post<{ success: boolean; count: number; updated: number }>('/shipping/ahamove/sync-active'),
+
+  /**
+   * Chỉ đồng bộ các đơn AhaMove đang hoạt động của người dùng hiện tại.
+   */
+  syncMyActiveAhamoveOrders: () =>
+    api.post<{ success: boolean; count: number; updated: number }>('/shipping/ahamove/sync-my-active'),
 };
 
 

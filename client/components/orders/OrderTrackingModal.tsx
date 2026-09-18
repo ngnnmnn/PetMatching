@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { isAxiosError } from 'axios';
 import { X, Truck, CheckCircle2, Clock, MapPin, Phone, Copy, Check, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { shippingApi, TrackingDetailResponse } from '@/lib/api/shipping';
@@ -25,36 +26,56 @@ export default function OrderTrackingModal({
   const [data, setData] = useState<TrackingDetailResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const activeCodeRef = useRef<string | null>(null);
+  const fetchingCodeRef = useRef<string | null>(null);
 
-  const fetchTracking = async () => {
-    if (!code) return;
+  const fetchTracking = useCallback(async () => {
+    if (!code || fetchingCodeRef.current === code) return;
+
+    fetchingCodeRef.current = code;
     setLoading(true);
     try {
       const res = await shippingApi.getAhamoveTrackingDetail(code);
-      setData(res.data);
-    } catch (err: any) {
+      if (activeCodeRef.current === code) setData(res.data);
+    } catch (err: unknown) {
       console.error('Failed to fetch tracking detail', err);
       toast.error(
-        err.response?.data?.message ||
+        (isAxiosError<{ message?: string }>(err) && err.response?.data?.message) ||
           'Không thể lấy thông tin hành trình AhaMove',
       );
     } finally {
-      setLoading(false);
+      if (activeCodeRef.current === code) setLoading(false);
+      if (fetchingCodeRef.current === code) fetchingCodeRef.current = null;
     }
-  };
+  }, [code]);
 
   // Tự động ngầm làm mới và đồng bộ timeline 4s/lần khi đang mở xem modal tracking
   useEffect(() => {
-    if (isOpen && code) {
-      fetchTracking();
-      const interval = setInterval(() => {
-        fetchTracking();
-      }, 4000);
-      return () => clearInterval(interval);
-    } else {
-      setData(null);
+    activeCodeRef.current = isOpen ? code : null;
+
+    if (!isOpen || !code) {
+      const resetTimer = window.setTimeout(() => {
+        setData(null);
+        setLoading(false);
+      }, 0);
+      return () => window.clearTimeout(resetTimer);
     }
-  }, [isOpen, code]);
+
+    const initialTimer = window.setTimeout(() => void fetchTracking(), 0);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void fetchTracking();
+    }, 4000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void fetchTracking();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [code, fetchTracking, isOpen]);
 
   if (!isOpen || !code) return null;
 

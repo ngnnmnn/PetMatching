@@ -150,6 +150,11 @@ const chartTooltipStyle = {
 
 const storeStatusMeta: Record<string, StatusMeta> = {
   PENDING: { label: "Chờ xử lý", color: "bg-amber-500", chartColor: chartColors.amber },
+  CONFIRMED: {
+    label: "Đã xác nhận",
+    color: "bg-blue-500",
+    chartColor: chartColors.blue,
+  },
   PACKED: { label: "Đang xử lý", color: "bg-blue-500", chartColor: chartColors.blue },
   PROCESSING: {
     label: "Đang xử lý",
@@ -288,7 +293,7 @@ export function StoreOverviewPanel({
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.75fr)]">
         <RevenueChart
-          title={`Doanh thu Store · ${data?.analytics?.range?.label ?? "Khoảng đã chọn"}`}
+          title={`Doanh thu cửa hàng · ${data?.analytics?.range?.label ?? "Khoảng đã chọn"}`}
           data={data?.revenueSeries ?? []}
         />
         <BusinessHealthCard
@@ -331,7 +336,7 @@ export function StoreOverviewPanel({
 
       <RecentList
         title="Đơn hàng gần đây"
-        description="Năm đơn hàng mới nhất phát sinh trên Store."
+        description="Năm đơn hàng mới nhất phát sinh trên cửa hàng."
         href="/admin/store-orders"
         empty="Chưa có đơn hàng nào."
         rows={(data?.recentOrders ?? []).map((order) => {

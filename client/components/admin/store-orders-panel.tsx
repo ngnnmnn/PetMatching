@@ -1131,13 +1131,29 @@ function formatRefundStatus(status?: string | null) {
 }
 function formatShippingStatus(status?: string | null) {
   const labels: Record<string, string> = {
+    CREATED: "Đã tạo đơn giao hàng",
     PENDING: "Chờ vận chuyển",
+    READY_TO_PICK: "Chờ lấy hàng",
+    ASSIGNING: "Đang tìm tài xế",
+    ACCEPTED: "Tài xế đã nhận đơn",
+    CONFIRMED: "Tài xế đã xác nhận",
     PICKED_UP: "Đã lấy hàng",
+    PICKED: "Đã lấy hàng",
+    IN_PROCESS: "Đang giao hàng",
     DELIVERING: "Đang giao",
+    ON_TRIP: "Đang giao hàng",
+    TRIP_START: "Bắt đầu giao hàng",
     DELIVERED: "Đã giao",
+    COMPLETED: "Giao hàng thành công",
+    SUCCESSFUL: "Giao hàng thành công",
+    FINISHED: "Giao hàng thành công",
+    CANCELLED: "Đã hủy giao hàng",
     FAILED: "Giao hàng thất bại",
+    REJECTED: "Tài xế từ chối đơn",
   };
-  return status ? (labels[status] ?? status) : "-";
+  if (!status) return "-";
+  const normalizedStatus = status.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  return labels[normalizedStatus] ?? "Trạng thái vận chuyển chưa xác định";
 }
 function formatMoney(value: number) {
   return `${new Intl.NumberFormat("vi-VN").format(value)}đ`;

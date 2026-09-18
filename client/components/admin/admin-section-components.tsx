@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CheckCircle2, Eye, Loader2, UserCheck } from "lucide-react";
+import { Eye, Loader2, UserCheck, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Pagination,
@@ -201,13 +201,14 @@ export function ActionGroup({
   );
 }
 
-export function IconButton({
+/** Hiển thị nút biểu tượng nhỏ dùng nội bộ trong nhóm thao tác của bảng Admin. */
+function IconButton({
   label,
   icon: Icon,
   onClick,
 }: {
   label: string;
-  icon: typeof CheckCircle2;
+  icon: LucideIcon;
   onClick: () => void;
 }) {
   return (

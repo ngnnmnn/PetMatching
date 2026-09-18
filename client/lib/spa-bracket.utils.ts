@@ -209,8 +209,8 @@ export function formatWeightRange(min: number | null | undefined, max: number | 
 
   if (minVal === null && maxVal === null) return 'Mọi cân nặng';
   if (minVal === 0 && maxVal === null) return 'Mọi cân nặng';
-  if (minVal !== null && maxVal === null) return `> ${minVal} kg`;
-  if (minVal === null && maxVal !== null) return `≤ ${maxVal} kg`;
+  if (minVal !== null && maxVal === null) return `Từ ${minVal} kg`;
+  if (minVal === null && maxVal !== null) return `Đến ${maxVal} kg`;
   if (minVal !== null && maxVal !== null) {
     if (minVal === maxVal) return `${minVal} kg`;
     return `${minVal} – ${maxVal} kg`;
