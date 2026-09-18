@@ -153,14 +153,6 @@ const ORDER_STATUS_MAP: Record<string, string> = {
   CANCELLED: 'Đã hủy',
 };
 
-// Thứ tự ưu tiên sắp xếp của các trạng thái đơn hàng (PENDING -> CONFIRMED -> SHIPPED -> DELIVERED -> CANCELLED)
-const STATUS_ORDER_RANK: Record<string, number> = {
-  PENDING: 1,
-  CONFIRMED: 2,
-  SHIPPED: 3,
-  DELIVERED: 4,
-  CANCELLED: 5,
-};
 
 /**
  * Định dạng ẩn 6 số đầu của số điện thoại và giữ lại 4 chữ số cuối: ******1234
@@ -899,12 +891,11 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       return matchesSearch && matchesStatus;
     });
 
-    // Tự động sắp xếp đơn hàng theo thứ tự ưu tiên: PENDING -> CONFIRMED -> SHIPPED -> DELIVERED -> CANCELLED
+    // Sắp xếp danh sách đơn hàng hiển thị theo các đơn mới nhất (createdAt giảm dần)
     return list.sort((a, b) => {
-      const rankA = STATUS_ORDER_RANK[a.status] ?? 99;
-      const rankB = STATUS_ORDER_RANK[b.status] ?? 99;
-      if (rankA !== rankB) return rankA - rankB;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      const timeA = new Date(a.createdAt).getTime() || 0;
+      const timeB = new Date(b.createdAt).getTime() || 0;
+      return timeB - timeA;
     });
   }, [orders, searchQuery, filterStatus]);
 
@@ -4619,7 +4610,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-[#8A8980]">
-                            {new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            <div className="font-semibold text-xs text-[var(--text-main)]">
+                              {new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </div>
+                            <div className="text-[11px] text-gray-400 font-medium mt-0.5">
+                              {new Date(o.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-right font-black text-[var(--primary-color)]">{currency.format(o.totalAmount)}</td>
                           <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -5517,7 +5513,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
                       {selectedCustomer.orders && selectedCustomer.orders.length > 0 ? (
                         <div className="space-y-4">
-                          {selectedCustomer.orders.map((order: any) => (
+                          {[...(selectedCustomer.orders || [])]
+                            .sort((a: any, b: any) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0))
+                            .map((order: any) => (
                             <div key={order.id} className="rounded-xl border border-[#EFEAE2] p-4 bg-white shadow-sm space-y-3">
                               <div className="flex items-center justify-between border-b border-[#F4EFE6] pb-2">
                                 <div>
