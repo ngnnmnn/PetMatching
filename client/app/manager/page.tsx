@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { downloadExcelFile } from '@/lib/download-file';
@@ -19,22 +19,15 @@ import {
   Trash2,
   X,
   Loader2,
-  Eye,
   Calendar,
-  Clock,
   Check,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
-  Award,
   MessageSquare,
   ChevronsRight,
   ChevronRight,
   ChevronDown,
   RefreshCw,
-  DollarSign,
-  Percent,
-  Layers,
   FolderKanban,
   Camera,
   ImageIcon,
@@ -116,7 +109,6 @@ import { uploadImages } from '@/lib/api/uploads';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 // Modal xem chi tiết hành trình vận đơn GHN tự động
 import OrderTrackingModal from '@/components/orders/OrderTrackingModal';
-import AppPagination from '@/components/ui/app-pagination';
 import {
   Pagination,
   PaginationContent,
@@ -125,12 +117,6 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-
-function isPersistedVariant(
-  variant: ManagerProductVariant | ManagerProductVariantInput,
-): variant is ManagerProductVariant {
-  return 'id' in variant && typeof variant.id === 'string';
-}
 
 // Currency Formatter
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
@@ -268,11 +254,9 @@ const DONUT_STATUS_CONFIG = [
 function OrderStatusDonutChart({
   distribution,
   totalOrders,
-  onNavigateToOrders,
 }: {
   distribution?: Record<string, number>;
   totalOrders: number;
-  onNavigateToOrders?: (statusKey: string) => void;
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const dist = distribution || {};
@@ -535,7 +519,7 @@ export default function ManagerDashboard() {
           return;
         }
         setRole(u.role || '');
-      } catch (e) {
+      } catch {
         setRole('');
       }
     }
@@ -565,11 +549,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
-  const showBatchCheckboxes =
-    filterStatus !== 'ALL' &&
-    filterStatus !== 'DELIVERED' &&
-    filterStatus !== 'SHIPPED' &&
-    filterStatus !== 'CANCELLED';
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterActiveStatus, setFilterActiveStatus] = useState('ALL');
   const [sortBy, setSortBy] = useState('DEFAULT');
@@ -583,10 +562,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const [isCategorySidebarOpen, setIsCategorySidebarOpen] = useState(false);
   const [isCategorySidebarClosing, setIsCategorySidebarClosing] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [submittingCategory, setSubmittingCategory] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
-  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
   const [productSpecs, setProductSpecs] = useState<Record<string, string>>({
     origin: '',
     ingredients: '',
@@ -653,7 +630,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     isActive: true,
   });
 
-  const [showVariantsEditor, setShowVariantsEditor] = useState(false);
   const [localVariants, setLocalVariants] = useState<ManagerProductVariantInput[]>([]);
   const [editingLocalVariantIndex, setEditingLocalVariantIndex] = useState<number | null>(null);
   const [uploadingVariantImage, setUploadingVariantImage] = useState(false);
@@ -713,40 +689,81 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   // Realtime Polling Refs
   const previousOrderIdsRef = React.useRef<Set<string> | null>(null);
   const warnedProductIdsRef = React.useRef<Set<string>>(new Set());
+  const isPollingRef = React.useRef(false);
+  const banksRequestedRef = React.useRef(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const applyLatestOrders = useCallback((latestOrders: ManagerOrder[], notifyNewOrders = false) => {
+    if (notifyNewOrders && previousOrderIdsRef.current !== null) {
+      const newOrders = latestOrders.filter((order) => !previousOrderIdsRef.current!.has(order.id));
+      if (newOrders.length > 0) {
+        playStoreNotificationChime('order');
+        toast.success(`Có ${newOrders.length} đơn hàng mới vừa được đặt!`, {
+          description: `Mã đơn: #${newOrders[0].id.slice(-6).toUpperCase()}`,
+        });
+      }
+    }
+
+    previousOrderIdsRef.current = new Set(latestOrders.map((order) => order.id));
+    setOrders(latestOrders);
+    setSelectedOrderDetails((current) => {
+      if (!current) return current;
+      return latestOrders.find((order) => order.id === current.id) ?? current;
+    });
+  }, []);
+
+  const fetchTabData = useCallback(async (tab: string, showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
-      const [statsRes, productsRes, ordersRes, customersRes, categoriesRes] =
-        await Promise.allSettled([
-          managerApi.getDashboardStats(),
+      if (tab === 'products') {
+        const [productsRes, categoriesRes, ordersRes] = await Promise.allSettled([
           managerApi.getProducts(),
-          managerApi.getOrders(),
-          managerApi.getCustomers(),
           productsApi.getCategories(),
+          managerApi.getOrders(),
         ]);
+        if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
+        if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
+        if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
+        return;
+      }
+
+      if (tab === 'orders') {
+        const ordersRes = await managerApi.getOrders();
+        applyLatestOrders(ordersRes.data);
+        return;
+      }
+
+      if (tab === 'customers') {
+        const [customersRes, ordersRes] = await Promise.allSettled([
+          managerApi.getCustomers(),
+          managerApi.getOrders(),
+        ]);
+        if (customersRes.status === 'fulfilled') setCustomers(customersRes.value.data);
+        if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
+        return;
+      }
+
+      const [statsRes, productsRes, ordersRes, categoriesRes] = await Promise.allSettled([
+        managerApi.getDashboardStats(),
+        managerApi.getProducts(),
+        managerApi.getOrders(),
+        productsApi.getCategories(),
+      ]);
 
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
       if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
-      if (ordersRes.status === 'fulfilled') {
-        setOrders(ordersRes.value.data);
-        if (previousOrderIdsRef.current === null) {
-          previousOrderIdsRef.current = new Set(ordersRes.value.data.map((o) => o.id));
-        }
-      }
-      if (customersRes.status === 'fulfilled') setCustomers(customersRes.value.data);
+      if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
       if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
     } catch (error) {
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  };
+  }, [applyLatestOrders]);
 
   const refreshOrders = async () => {
     const response = await managerApi.getOrders();
-    setOrders(response.data);
+    applyLatestOrders(response.data);
     return response.data;
   };
 
@@ -757,46 +774,45 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   };
 
   useEffect(() => {
-    fetchData();
-    if (banks.length === 0) {
-      fetch('https://api.vietqr.io/v2/banks')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.code === '00') {
-            setBanks(data.data || []);
-          }
-        })
-        .catch((err) => console.error('Failed to fetch banks', err));
-    }
-  }, [currentTab, banks.length]);
+    const loadTimer = window.setTimeout(() => void fetchTabData(currentTab), 0);
+    return () => window.clearTimeout(loadTimer);
+  }, [currentTab, fetchTabData]);
 
-  // Realtime polling mỗi 5 giây cho Store Manager: tự động cập nhật đơn hàng & thống kê & cảnh báo chuông
+  // Chỉ tải danh sách ngân hàng khi Manager mở tab đơn hàng.
   useEffect(() => {
-    const interval = setInterval(async () => {
+    if (currentTab !== 'orders' || banksRequestedRef.current) return;
+
+    banksRequestedRef.current = true;
+    fetch('https://api.vietqr.io/v2/banks')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.code === '00') setBanks(data.data || []);
+      })
+      .catch((error) => {
+        banksRequestedRef.current = false;
+        console.error('Failed to fetch banks', error);
+      });
+  }, [currentTab]);
+
+  // Một vòng polling duy nhất cho dữ liệu realtime của Store Manager.
+  useEffect(() => {
+    const pollManagerData = async () => {
+      if (document.visibilityState !== 'visible' || isPollingRef.current) return;
+
+      isPollingRef.current = true;
       try {
-        const [ordersRes, statsRes, productsRes] = await Promise.allSettled([
+        if (currentTab === 'orders') {
+          await shippingApi.syncActiveAhamoveOrders().catch(() => undefined);
+        }
+
+        const [ordersRes, productsRes, statsRes] = await Promise.allSettled([
           managerApi.getOrders(),
-          managerApi.getDashboardStats(),
           managerApi.getProducts(),
+          ...(currentTab === 'dashboard' ? [managerApi.getDashboardStats()] : []),
         ]);
 
         if (ordersRes.status === 'fulfilled') {
-          const latestOrders = ordersRes.value.data;
-          if (previousOrderIdsRef.current !== null) {
-            const newOrders = latestOrders.filter((o) => !previousOrderIdsRef.current!.has(o.id));
-            if (newOrders.length > 0) {
-              playStoreNotificationChime('order');
-              toast.success(`Có ${newOrders.length} đơn hàng mới vừa được đặt!`, {
-                description: `Mã đơn: #${newOrders[0].id.slice(-6).toUpperCase()}`,
-              });
-            }
-          }
-          previousOrderIdsRef.current = new Set(latestOrders.map((o) => o.id));
-          setOrders(latestOrders);
-        }
-
-        if (statsRes.status === 'fulfilled') {
-          setStats(statsRes.value.data);
+          applyLatestOrders(ordersRes.value.data, true);
         }
 
         if (productsRes.status === 'fulfilled') {
@@ -812,13 +828,24 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             }
           });
         }
+
+        if (statsRes?.status === 'fulfilled') {
+          setStats(statsRes.value.data);
+        }
       } catch {
         // silent polling
+      } finally {
+        isPollingRef.current = false;
       }
-    }, 5000);
+    };
 
-    return () => clearInterval(interval);
-  }, []);
+    const interval = window.setInterval(
+      () => void pollManagerData(),
+      currentTab === 'orders' ? 4000 : 5000,
+    );
+
+    return () => window.clearInterval(interval);
+  }, [applyLatestOrders, currentTab]);
 
   // Filtered lists based on search and status filters
   const filteredProducts = useMemo(() => {
@@ -1026,12 +1053,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.updateOrderStatus(orderId, newStatus);
       toast.success('Cập nhật trạng thái đơn hàng thành công!');
-      const refreshedOrders = await refreshOrders();
-      if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(
-          refreshedOrders.find((order) => order.id === orderId) || null,
-        );
-      }
+      await refreshOrders();
     } catch (error: any) {
       console.error('Failed to update order status', error);
       toast.error(error.response?.data?.message || 'Lỗi khi cập nhật trạng thái đơn hàng.');
@@ -1092,12 +1114,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const res = await shippingApi.createAhamoveShippingOrder(orderId);
       if (res.data?.success) {
         toast.success(`Đã tạo đơn giao hỏa tốc AhaMove thành công! Mã: ${res.data.ahamoveOrderCode}`);
-        const refreshedOrders = await refreshOrders();
-        if (selectedOrderDetails?.id === orderId) {
-          setSelectedOrderDetails(
-            refreshedOrders.find((order) => order.id === orderId) || null,
-          );
-        }
+        await refreshOrders();
       }
     } catch (err: any) {
       console.error('Failed to create AhaMove order', err);
@@ -1110,41 +1127,19 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   /**
    * Đồng bộ trực tiếp trạng thái thực tế từ AhaMove Staging Portal cho toàn bộ đơn hàng đang giao
-   * @param showToast Hiển thị thông báo toast khi Manager chủ động ấn nút
    */
-  const handleSyncAhamoveOrders = async (showToast = true) => {
-    if (showToast) setSyncingAhamove(true);
+  const handleSyncAhamoveOrders = async () => {
+    setSyncingAhamove(true);
     try {
       await shippingApi.syncActiveAhamoveOrders();
-      const refreshedOrders = await refreshOrders();
-      if (selectedOrderDetails) {
-        const updated = refreshedOrders.find(
-          (order) => order.id === selectedOrderDetails.id,
-        );
-        if (updated) setSelectedOrderDetails(updated);
-      }
-      if (showToast) {
-        toast.success('Đã đồng bộ trạng thái mới nhất từ AhaMove!');
-      }
+      await refreshOrders();
+      toast.success('Đã đồng bộ trạng thái mới nhất từ AhaMove!');
     } catch (err: any) {
       console.error('Failed to sync AhaMove orders', err);
     } finally {
-      if (showToast) setSyncingAhamove(false);
+      setSyncingAhamove(false);
     }
   };
-
-  // Tự động polling ngầm 4 giây/lần khi đang mở tab quản lý đơn hàng (tự động cập nhật tiến trình không cần F5/load lại trang)
-  useEffect(() => {
-    if (currentTab !== 'orders') return;
-
-    const interval = setInterval(() => {
-      handleSyncAhamoveOrders(false);
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [currentTab, selectedOrderDetails?.id]);
-
-
 
   const [uploadingRefundProof, setUploadingRefundProof] = useState<boolean>(false);
   const [pendingRefundProofUrl, setPendingRefundProofUrl] = useState<string>('');
@@ -1204,12 +1199,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       await managerApi.approveRefund(orderId, finalProofUrl);
       toast.success('Đã duyệt yêu cầu hoàn tiền thành công!');
       setPendingRefundProofUrl('');
-      const refreshedOrders = await refreshOrders();
-      if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(
-          refreshedOrders.find((order) => order.id === orderId) || null,
-        );
-      }
+      await refreshOrders();
     } catch (error: any) {
       console.error('Failed to approve refund', error);
       toast.error(error.response?.data?.message || 'Lỗi khi phê duyệt hoàn tiền.');
@@ -1223,12 +1213,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     try {
       await managerApi.rejectRefund(orderId);
       toast.info('Đã từ chối hoàn tiền cho đơn hàng này.');
-      const refreshedOrders = await refreshOrders();
-      if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(
-          refreshedOrders.find((order) => order.id === orderId) || null,
-        );
-      }
+      await refreshOrders();
     } catch (error: any) {
       console.error('Failed to reject refund', error);
       toast.error('Lỗi khi từ chối yêu cầu hoàn tiền.');
@@ -1256,7 +1241,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const handleCloseProductModal = () => {
     setIsProductModalOpen(false);
     setEditingProduct(null);
-    setShowVariantsEditor(false);
     resetVariantState();
   };
 
@@ -1278,7 +1262,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       targetAge: 'Mọi lứa tuổi',
       shelfLifeAndStorage: '',
     });
-    setShowVariantsEditor(false);
     setLocalVariants([]);
     resetVariantState();
     setProductForm({
@@ -1305,7 +1288,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
    */
   const handleEditClick = (product: ManagerProduct) => {
     setEditingProduct(product);
-    setShowVariantsEditor(false);
     resetVariantState();
 
     // Lấy lại đầy đủ danh sách ảnh cũ của sản phẩm (hỗ trợ cả mảng images và trường imageUrl cũ)
@@ -1416,19 +1398,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     } catch (err) {
       console.error('Failed to toggle variant active status', err);
       toast.error('Không thể cập nhật trạng thái phân loại.');
-    }
-  };
-
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa sản phẩm này khỏi cơ sở dữ liệu?')) return;
-    try {
-      await managerApi.deleteProduct(id);
-      toast.success('Xóa sản phẩm thành công!');
-      await refreshProducts();
-    } catch (error: any) {
-      console.error('Failed to delete product', error);
-      const msg = error.response?.data?.message || 'Lỗi khi xóa sản phẩm. Sản phẩm có thể đã được gắn vào đơn hàng.';
-      toast.error(msg);
     }
   };
 
@@ -1839,7 +1808,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       setImportResult(result);
       if (result.success) {
         toast.success(`Nhập hàng thành công! Đã cập nhật ${result.updatedCount} sản phẩm, tạo mới ${result.createdCount} sản phẩm.`);
-        fetchData();
+        void fetchTabData('products', false);
         if (result.errors.length === 0) {
           setIsImportModalOpen(false);
           setImportFile(null);
@@ -4470,7 +4439,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <button
                 type="button"
                 disabled={syncingAhamove}
-                onClick={() => handleSyncAhamoveOrders(true)}
+                onClick={() => void handleSyncAhamoveOrders()}
                 className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
                 title="Đồng bộ ngay lập tức các trạng thái mới nhất từ AhaMove Portal"
               >
@@ -5670,10 +5639,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <OrderStatusDonutChart
                 distribution={stats?.statusDistribution}
                 totalOrders={stats?.totalOrders ?? 0}
-                onNavigateToOrders={(statusKey) => {
-                  setFilterStatus(statusKey);
-                  router.push('/manager?tab=orders');
-                }}
               />
             </div>
           </section>

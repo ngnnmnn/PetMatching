@@ -322,12 +322,20 @@ export interface SpaBookingType {
     name: string;
     description: string | null;
     price?: number;
+    durationMin?: number;
+    durationMax?: number | null;
+  } | null;
+  mainServiceResolved?: {
+    name?: string;
+    price?: number;
   } | null;
   subServices?: Array<{
     id: string;
     name: string;
     price: number;
     description?: string | null;
+    durationMin?: number;
+    durationMax?: number | null;
   }>;
   user?: User | null;
   pet?: {

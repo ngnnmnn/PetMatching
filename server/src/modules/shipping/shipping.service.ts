@@ -835,9 +835,10 @@ export class ShippingService {
    * Tự động đồng bộ tất cả các đơn hàng AhaMove đang giao từ AhaMove Staging Portal
    * Quét toàn bộ đơn có mã ahamoveOrderCode chưa hoàn thành để cập nhật trạng thái mới nhất từ AhaMove API
    */
-  async syncActiveAhamoveOrders() {
+  async syncActiveAhamoveOrders(userId?: string) {
     const activeOrders = await this.prisma.order.findMany({
       where: {
+        ...(userId ? { userId } : {}),
         ahamoveOrderCode: { not: null },
         status: { notIn: ['DELIVERED', 'CANCELLED'] },
       },

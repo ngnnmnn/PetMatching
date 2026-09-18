@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -21,17 +21,19 @@ import {
   Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isAxiosError } from 'axios';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import AppHeader from '@/components/layout/AppHeader';
 import { usersApi } from '@/lib/api/users';
 // Import API vận chuyển AhaMove để đồng bộ trạng thái tự động ngầm
 import { shippingApi } from '@/lib/api/shipping';
-import AddressFormModal from '@/components/checkout/AddressFormModal';
+import AddressFormModal, { type AddressFormData } from '@/components/checkout/AddressFormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 // Modal xem chi tiết hành trình vận đơn GHN tự động
 import OrderTrackingModal from '@/components/orders/OrderTrackingModal';
+import type { Address } from '@/types';
 
 interface OrderItem {
   id: string;
@@ -89,6 +91,13 @@ function formatDate(dateStr: string) {
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return '-';
   return `${date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ${date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+}
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  if (isAxiosError<{ message?: string }>(error)) {
+    return error.response?.data?.message || fallback;
+  }
+  return fallback;
 }
 
 // Parses stored address string back to fields with fallback support
@@ -197,7 +206,15 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
+  const isOrdersPollingRef = useRef(false);
   const router = useRouter();
+
+  const hasActiveAhamoveOrder = orders.some(
+    (order) =>
+      Boolean(order.ahamoveOrderCode) &&
+      order.status !== 'DELIVERED' &&
+      order.status !== 'CANCELLED',
+  );
 
   const filteredOrders = orders.filter((order) => {
     if (activeTab === 'ALL') return true;
@@ -211,7 +228,7 @@ export default function OrdersPage() {
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
 
   const [editOrder, setEditOrder] = useState<Order | null>(null);
-  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   // PayOS QR Modal State
   const [payOSQRData, setPayOSQRData] = useState<PayOSQRData | null>(null);
@@ -233,6 +250,7 @@ export default function OrdersPage() {
   const [refundReason, setRefundReason] = useState('');
   const [submittingRefund, setSubmittingRefund] = useState(false);
   const [banks, setBanks] = useState<{ bin: string; name: string; shortName: string; logo: string }[]>([]);
+  const banksRequestedRef = useRef(false);
 
   // State mã AhaMove đang bật modal xem chi tiết tracking
   const [trackingAhamoveCode, setTrackingAhamoveCode] = useState<string | null>(null);
@@ -261,10 +279,9 @@ export default function OrdersPage() {
       } else {
         toast.error('Không thể tạo mã QR thanh toán vào lúc này. Vui lòng thử lại sau.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to retry payment', err);
-      const errMsg = err.response?.data?.message || 'Lỗi khi kết nối đến cổng thanh toán PayOS.';
-      toast.error(errMsg);
+      toast.error(getApiErrorMessage(err, 'Lỗi khi kết nối đến cổng thanh toán PayOS.'));
     } finally {
       setRetryLoadingId(null);
     }
@@ -286,7 +303,7 @@ export default function OrdersPage() {
     loadOrders();
   };
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
       const res = await usersApi.getOrders();
       setOrders(res.data || []);
@@ -295,20 +312,22 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (refundOrderId && banks.length === 0) {
-      fetch('https://api.vietqr.io/v2/banks')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.code === '00') {
-            setBanks(data.data || []);
-          }
-        })
-        .catch((err) => console.error('Failed to fetch banks', err));
-    }
-  }, [refundOrderId, banks.length]);
+    if (!refundOrderId || banksRequestedRef.current) return;
+
+    banksRequestedRef.current = true;
+    fetch('https://api.vietqr.io/v2/banks')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.code === '00') setBanks(data.data || []);
+      })
+      .catch((error) => {
+        banksRequestedRef.current = false;
+        console.error('Failed to fetch banks', error);
+      });
+  }, [refundOrderId]);
 
   const handleRefundSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -332,19 +351,19 @@ export default function OrdersPage() {
       setRefundAccountName('');
       setRefundReason('');
       await loadOrders();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to submit refund request', err);
-      toast.error(err.response?.data?.message || 'Lỗi gửi yêu cầu hoàn tiền.');
+      toast.error(getApiErrorMessage(err, 'Lỗi gửi yêu cầu hoàn tiền.'));
     } finally {
       setSubmittingRefund(false);
     }
   };
 
   useEffect(() => {
-    setIsMounted(true);
-    loadOrders();
+    const initializationTimer = window.setTimeout(() => {
+      setIsMounted(true);
+      void loadOrders();
 
-    if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const status = params.get('status');
       if (status === 'success') {
@@ -354,25 +373,43 @@ export default function OrdersPage() {
         toast.error('Thanh toán đã bị hủy.');
         window.history.replaceState({}, '', '/orders');
       }
-    }
-  }, []);
+    }, 0);
 
-  // Auto-polling tự động ngầm 4 giây/lần cập nhật tiến trình đơn hàng mà không cần load/refresh lại trang
+    return () => window.clearTimeout(initializationTimer);
+  }, [loadOrders]);
+
+  // Poll danh sách đơn; chỉ gọi đồng bộ AhaMove khi người dùng có đơn đang giao.
   useEffect(() => {
-    // Gọi đồng bộ ngay lập tức khi mở trang đơn hàng
-    shippingApi.syncActiveAhamoveOrders().then(() => loadOrders()).catch(() => {});
+    if (trackingAhamoveCode) return;
 
-    const interval = setInterval(async () => {
+    const pollOrders = async () => {
+      if (document.visibilityState !== 'visible' || isOrdersPollingRef.current) return;
+
+      isOrdersPollingRef.current = true;
       try {
-        await shippingApi.syncActiveAhamoveOrders();
+        if (hasActiveAhamoveOrder) {
+          await shippingApi.syncMyActiveAhamoveOrders().catch(() => undefined);
+        }
         await loadOrders();
-      } catch (e) {
-        // ignore
+      } finally {
+        isOrdersPollingRef.current = false;
       }
-    }, 4000);
+    };
 
-    return () => clearInterval(interval);
-  }, []);
+    if (hasActiveAhamoveOrder) void pollOrders();
+
+    const interval = window.setInterval(() => void pollOrders(), 4000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void pollOrders();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [hasActiveAhamoveOrder, loadOrders, trackingAhamoveCode]);
 
   if (!isMounted) {
     return (
@@ -401,9 +438,9 @@ export default function OrdersPage() {
       }
       setCancelOrderId(null);
       await loadOrders();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to cancel order', err);
-      toast.error(err.response?.data?.message || 'Lỗi khi hủy đơn hàng.');
+      toast.error(getApiErrorMessage(err, 'Lỗi khi hủy đơn hàng.'));
     } finally {
       setCancelling(false);
     }
@@ -435,7 +472,7 @@ export default function OrdersPage() {
     }
   };
 
-  const handleAddressFormSubmit = async (data: any) => {
+  const handleAddressFormSubmit = async (data: AddressFormData) => {
     if (!editOrder) return;
     setIsAddressModalOpen(false);
 
@@ -455,9 +492,9 @@ export default function OrdersPage() {
       toast.success('Đã cập nhật địa chỉ giao hàng và tính lại phí ship mới thành công!');
       setEditOrder(null);
       await loadOrders();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to update address', err);
-      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật địa chỉ giao hàng.');
+      toast.error(getApiErrorMessage(err, 'Lỗi khi cập nhật địa chỉ giao hàng.'));
     }
   };
 
@@ -1267,7 +1304,10 @@ export default function OrdersPage() {
         isOpen={!!trackingAhamoveCode}
         code={trackingAhamoveCode}
         carrier="AHAMOVE"
-        onClose={() => setTrackingAhamoveCode(null)}
+        onClose={() => {
+          setTrackingAhamoveCode(null);
+          void loadOrders();
+        }}
       />
     </main>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, Suspense } from 'react';
+import React, { useCallback, useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Calendar,
@@ -18,23 +18,11 @@ import {
   Edit2,
   Check,
   Loader2,
-  DollarSign,
   TrendingUp,
-  Award,
-  MessageSquare,
-  HelpCircle,
-  Folder,
-  FolderKanban,
-  CheckCircle,
   X,
   ChevronRight,
   ChevronDown,
-  ChevronLeft,
   Sparkles,
-  User,
-  Phone,
-  MapPin,
-  ShieldCheck,
   Star,
   Camera,
   Upload,
@@ -85,6 +73,7 @@ function SpaManagerConsoleContent() {
   // Ref lưu map trạng thái đơn [bookingId -> status] để phát hiện đơn mới và đơn bị hủy trong thời gian thực
   const knownBookingStatusesRef = React.useRef<Map<string, string>>(new Map());
   const initialLoadDoneRef = React.useRef<boolean>(false);
+  const pollingBranchRef = React.useRef<string | null>(null);
 
   /**
    * Phát âm thanh chuông nhẹ nhàng khi có khách hàng vừa đặt lịch hoặc hủy lịch Spa
@@ -112,16 +101,20 @@ function SpaManagerConsoleContent() {
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
-    } catch (e) {
+    } catch {
       // Bỏ qua nếu trình duyệt chưa cấp quyền audio
     }
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      try { setManagerUser(JSON.parse(stored)); } catch (e) { }
-    }
+    const userTimer = window.setTimeout(() => {
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        try { setManagerUser(JSON.parse(stored)); } catch { }
+      }
+    }, 0);
+
+    return () => window.clearTimeout(userTimer);
   }, []);
   // states
   const [branches, setBranches] = useState<any[]>([]);
@@ -140,7 +133,6 @@ function SpaManagerConsoleContent() {
 
   // Assignment & Detail states
   const [selectedBookingDetail, setSelectedBookingDetail] = useState<any | null>(null);
-  const [managerStaffs, setManagerStaffs] = useState<any[]>([]);
   const [availableStaffsMap, setAvailableStaffsMap] = useState<Record<string, any[]>>({});
   const [selectedAssignStaffMap, setSelectedAssignStaffMap] = useState<Record<string, string>>({});
   const [confirmBookingTarget, setConfirmBookingTarget] = useState<any | null>(null);
@@ -157,7 +149,7 @@ function SpaManagerConsoleContent() {
   const [cancelLoading, setCancelLoading] = useState<boolean>(false);
 
   // Helper to resolve subServices for any booking in Manager view
-  const getManagerBookingSubServices = (b: any) => {
+  const getManagerBookingSubServices = useCallback((b: any) => {
     if (!b) return [];
     if (b.subServices && b.subServices.length > 0) {
       return b.subServices;
@@ -169,23 +161,7 @@ function SpaManagerConsoleContent() {
       if (resolved.length > 0) return resolved;
     }
     return [];
-  };
-
-  // Helper to compute sub-services total revenue (even when IDs can't be resolved from DB)
-  const getSubServicesTotal = (b: any) => {
-    if (!b) return 0;
-    const subList = getManagerBookingSubServices(b);
-    if (subList.length > 0) {
-      return subList.reduce((sum: number, s: any) => sum + (s?.price || 0), 0);
-    }
-    // Fallback: if subServiceIds exist but can't resolve, compute from total - main
-    if (b.subServiceIds && b.subServiceIds.length > 0) {
-      const mainPrice = b.priceSnapshot || b.service?.price || 0;
-      const total = b.totalPrice ?? b.priceSnapshot ?? 0;
-      return Math.max(0, total - mainPrice);
-    }
-    return 0;
-  };
+  }, [services]);
 
   // Helper to translate status to Vietnamese (matching user order history)
   const getSpaStatusText = (status: string) => {
@@ -249,7 +225,6 @@ function SpaManagerConsoleContent() {
 
   // Split-view Edit Modal states
   const [editModalOpen, setEditModalOpen] = useState<boolean>(false);
-  const [editingServiceTarget, setEditingServiceTarget] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({
     id: '',
     brandId: '',
@@ -272,27 +247,6 @@ function SpaManagerConsoleContent() {
   const [submittingEdit, setSubmittingEdit] = useState<boolean>(false);
   const [editIsDirty, setEditIsDirty] = useState<boolean>(false);
   const [showExitConfirmDialog, setShowExitConfirmDialog] = useState<boolean>(false);
-
-  // Fallback state cho compatibility nếu có code khác tham chiếu
-  const [serviceModalOpen, setServiceModalOpen] = useState<boolean>(false);
-  const [editingService, setEditingService] = useState<any | null>(null);
-  const [serviceForm, setServiceForm] = useState({
-    brandId: '',
-    name: '',
-    description: '',
-    imageUrl: '',
-    price: '',
-    durationMin: '60',
-    durationMax: '',
-    isMain: true,
-    species: 'ALL' as 'ALL' | 'DOG' | 'CAT',
-    petWeightMin: '',
-    petWeightMax: '',
-    isActive: true
-  });
-  const [serviceImageFile, setServiceImageFile] = useState<File | null>(null);
-  const [serviceImagePreview, setServiceImagePreview] = useState<string | null>(null);
-  const [submittingService, setSubmittingService] = useState<boolean>(false);
 
   const handleAddImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -390,23 +344,6 @@ function SpaManagerConsoleContent() {
   const STAFF_PAGE_SIZE = 9;
   const [feedbackPage, setFeedbackPage] = useState<number>(1);
   const FEEDBACK_PAGE_SIZE = 8;
-
-  // Reset pagination on search & filter change
-  useEffect(() => {
-    setBookingPage(1);
-  }, [bookingSearch, bookingStatusFilter, bookingDateFilterType, bookingCustomDate, bookingStartDate, bookingEndDate, bookingTimeSlotFilter]);
-
-  useEffect(() => {
-    setServicePage(1);
-  }, [serviceTypeFilter, serviceBrandFilter]);
-
-  useEffect(() => {
-    setCategoryPage(1);
-  }, [categoryTypeFilter]);
-
-  useEffect(() => {
-    setFeedbackPage(1);
-  }, [feedbackSearch, feedbackStarFilter]);
 
   const toggleServiceGroup = (groupKey: string) => {
     setExpandedServiceGroups((prev) => ({
@@ -553,15 +490,12 @@ function SpaManagerConsoleContent() {
   // Filter SpaBrand options in form based on selected classification (isMain)
   const filteredBrandsForForm = useMemo(() => {
     return managerBrands.filter((b: any) => {
-      if (addModalOpen) {
-        return addForm.isMain ? b.isMain !== false : b.isMain === false;
-      }
       if (editModalOpen) {
         return editForm.isMain ? b.isMain !== false : b.isMain === false;
       }
-      return serviceForm.isMain ? b.isMain !== false : b.isMain === false;
+      return addForm.isMain ? b.isMain !== false : b.isMain === false;
     });
-  }, [managerBrands, addModalOpen, addForm.isMain, editModalOpen, editForm.isMain, serviceForm.isMain]);
+  }, [managerBrands, addForm.isMain, editModalOpen, editForm.isMain]);
 
   const filteredFeedbacks = useMemo(() => {
     return feedbacks.filter((f: any) => {
@@ -576,22 +510,6 @@ function SpaManagerConsoleContent() {
       return true;
     });
   }, [feedbacks, feedbackSearch, feedbackStarFilter]);
-
-  const handleClassificationChange = (isMainSelected: boolean) => {
-    const matchingBrands = managerBrands.filter((b: any) =>
-      isMainSelected ? b.isMain !== false : b.isMain === false
-    );
-
-    const currentBrandValid = matchingBrands.some((b: any) => b.id === serviceForm.brandId);
-    const newBrandId = currentBrandValid ? serviceForm.brandId : (matchingBrands[0]?.id || '');
-
-    setServiceForm((prev) => ({
-      ...prev,
-      isMain: isMainSelected,
-      brandId: newBrandId,
-    }));
-  };
-
 
   // Fetch branches and categories managed by this manager
   useEffect(() => {
@@ -609,7 +527,7 @@ function SpaManagerConsoleContent() {
         } else {
           setLoading(false);
         }
-      } catch (err) {
+      } catch {
         toast.error('Lỗi khi tải thông tin quản lý.');
         setLoading(false);
       }
@@ -618,7 +536,7 @@ function SpaManagerConsoleContent() {
   }, []);
 
   /** Tải dữ liệu thống kê dashboard của chi nhánh với bộ lọc thời gian */
-  const loadDashboardStats = async (showRefreshingState = false) => {
+  const loadDashboardStats = useCallback(async (showRefreshingState = false) => {
     if (!selectedBranchId) return;
     if (showRefreshingState) {
       setRefreshingStats(true);
@@ -628,36 +546,33 @@ function SpaManagerConsoleContent() {
     try {
       const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId, dashboardTimeRange);
       setStats(statsRes.data);
-    } catch (err) {
+    } catch {
       toast.error('Không thể tải dữ liệu thống kê Spa.');
     } finally {
       setLoading(false);
       setRefreshingStats(false);
     }
-  };
+  }, [dashboardTimeRange, selectedBranchId]);
 
   // Fetch data based on active tab and selected branch
-  const refreshData = async () => {
+  const refreshData = useCallback(async (includeBookingMetadata = false) => {
     // For tabs that don't need a branch (categories, services), don't block on selectedBranchId
-    const needsBranch = ['dashboard', 'bookings', 'staffs', 'feedbacks'].includes(currentTab);
+    const needsBranch = ['bookings', 'staffs', 'feedbacks'].includes(currentTab);
     if (needsBranch && !selectedBranchId) return;
     setLoading(true);
     try {
-      if (currentTab === 'dashboard') {
-        const statsRes = await spaApi.getManagerDashboardStats(selectedBranchId, dashboardTimeRange);
-        setStats(statsRes.data);
-      } else if (currentTab === 'bookings') {
-        const [bookingsRes, staffsRes, servicesRes] = await Promise.all([
+      if (currentTab === 'bookings') {
+        const [bookingsRes, servicesRes] = await Promise.all([
           spaApi.getManagerBookings(selectedBranchId),
-          spaApi.getManagerStaffs(selectedBranchId).catch(() => ({ data: [] })),
-          spaApi.getServices().catch(() => ({ data: [] })),
+          includeBookingMetadata
+            ? spaApi.getServices().catch(() => ({ data: [] }))
+            : Promise.resolve(null),
         ]);
         const bList = bookingsRes.data || [];
         setBookings(bList);
         bList.forEach((b: any) => knownBookingStatusesRef.current.set(b.id, b.status));
         initialLoadDoneRef.current = true;
-        setManagerStaffs(staffsRes.data || []);
-        if (servicesRes.data) setServices(servicesRes.data);
+        if (servicesRes?.data) setServices(servicesRes.data);
       } else if (currentTab === 'services') {
         const servicesRes = await spaApi.getManagerServices();
         setServices(servicesRes.data || []);
@@ -671,41 +586,56 @@ function SpaManagerConsoleContent() {
         const feedbacksRes = await spaApi.getManagerFeedbacks(selectedBranchId);
         setFeedbacks(feedbacksRes.data || []);
       }
-    } catch (err) {
+    } catch {
       toast.error('Không thể tải dữ liệu.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentTab, selectedBranchId]);
 
   useEffect(() => {
-    if (currentTab === 'dashboard') {
-      loadDashboardStats();
-    } else {
-      refreshData();
-    }
-  }, [selectedBranchId, currentTab, dashboardTimeRange]);
+    const loadTimer = window.setTimeout(() => {
+      if (currentTab === 'dashboard') {
+        void loadDashboardStats();
+      } else {
+        void refreshData(currentTab === 'bookings');
+      }
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, [currentTab, loadDashboardStats, refreshData]);
 
   // Tự động mở chi tiết lịch hẹn nếu có bookingId trên URL (khi click từ thông báo / bell)
   useEffect(() => {
     if (bookingIdParam && bookings.length > 0) {
       const target = bookings.find((b) => b.id === bookingIdParam);
       if (target) {
-        setSelectedBookingDetail(target);
+        const detailTimer = window.setTimeout(() => setSelectedBookingDetail(target), 0);
+        return () => window.clearTimeout(detailTimer);
       }
     }
   }, [bookingIdParam, bookings]);
+
+  useEffect(() => {
+    knownBookingStatusesRef.current.clear();
+    initialLoadDoneRef.current = false;
+  }, [selectedBranchId]);
 
   // Live polling theo thời gian thực: Lắng nghe lịch mới và lịch bị hủy, hiển thị pop-up góc trên cùng bên phải clickable
   useEffect(() => {
     if (!selectedBranchId) return;
 
-    const intervalId = setInterval(async () => {
-      // Chỉ kiểm tra khi tab trình duyệt đang hiển thị để tối ưu hiệu năng
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    let cancelled = false;
+    const pollBookings = async () => {
+      if (
+        document.visibilityState !== 'visible' ||
+        pollingBranchRef.current === selectedBranchId
+      ) return;
 
+      pollingBranchRef.current = selectedBranchId;
       try {
         const res = await spaApi.getManagerBookings(selectedBranchId);
+        if (cancelled) return;
         const latestBookings = res.data || [];
 
         if (initialLoadDoneRef.current && knownBookingStatusesRef.current.size > 0) {
@@ -826,14 +756,15 @@ function SpaManagerConsoleContent() {
               const prevMap = new Map(prev.map((b) => [b.id, b]));
               const updatedList = latestBookings.map((b: any) => {
                 const isNew = !knownBookingStatusesRef.current.has(b.id);
-                return isNew ? { ...b, isNewLive: true } : (prevMap.get(b.id) || b);
+                const previous = prevMap.get(b.id);
+                return isNew ? { ...b, isNewLive: true } : { ...previous, ...b };
               });
               return updatedList;
             });
 
             // Cập nhật số liệu thống kê nếu ở dashboard
             if (currentTab === 'dashboard') {
-              spaApi.getManagerDashboardStats(selectedBranchId).then((sRes) => {
+              spaApi.getManagerDashboardStats(selectedBranchId, dashboardTimeRange).then((sRes) => {
                 if (sRes.data) setStats(sRes.data);
               }).catch(() => { });
             }
@@ -843,28 +774,28 @@ function SpaManagerConsoleContent() {
         // Cập nhật map trạng thái đã biết
         latestBookings.forEach((b: any) => knownBookingStatusesRef.current.set(b.id, b.status));
         initialLoadDoneRef.current = true;
-      } catch (err) {
+      } catch {
         // Bỏ qua lỗi polling ngầm
+      } finally {
+        if (pollingBranchRef.current === selectedBranchId) {
+          pollingBranchRef.current = null;
+        }
       }
-    }, 5000);
+    };
 
-    return () => clearInterval(intervalId);
-  }, [selectedBranchId, currentTab, playNotificationSound]);
+    const intervalId = window.setInterval(() => void pollBookings(), 15000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void pollBookings();
+    };
 
-  // Fetch slots for reschedule when date changes
-  useEffect(() => {
-    if (selectedBookingDetail?.id) {
-      spaApi
-        .getAvailableStaffForBooking(selectedBookingDetail.id)
-        .then((stRes) => {
-          setAvailableStaffsMap((prev) => ({
-            ...prev,
-            [selectedBookingDetail.id]: stRes.data || [],
-          }));
-        })
-        .catch(console.error);
-    }
-  }, [selectedBookingDetail?.id]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [dashboardTimeRange, selectedBranchId, currentTab, playNotificationSound]);
 
   const getLocalDateString = (d = new Date()) => {
     const year = d.getFullYear();
@@ -880,7 +811,7 @@ function SpaManagerConsoleContent() {
     const subList = getManagerBookingSubServices(rescheduleBooking);
     const subDur = subList.reduce((sum: number, s: any) => sum + (s?.durationMin || 15), 0);
     return Math.max(15, mainDur + subDur);
-  }, [rescheduleBooking, services]);
+  }, [getManagerBookingSubServices, rescheduleBooking]);
 
   // Lọc các khung giờ khả dụng cho modal đổi lịch của Manager (ẩn các khung giờ quá giờ / trong quá khứ)
   const filteredRescheduleSlots = useMemo(() => {
@@ -939,7 +870,8 @@ function SpaManagerConsoleContent() {
     if (selectedRescheduleSlot) {
       const isValid = filteredRescheduleSlots.some((s) => s.time === selectedRescheduleSlot && !s.isDisabled);
       if (!isValid) {
-        setSelectedRescheduleSlot('');
+        const resetTimer = window.setTimeout(() => setSelectedRescheduleSlot(''), 0);
+        return () => window.clearTimeout(resetTimer);
       }
     }
   }, [filteredRescheduleSlots, selectedRescheduleSlot]);
@@ -951,7 +883,7 @@ function SpaManagerConsoleContent() {
       try {
         const res = await spaApi.getAvailability(selectedBranchId, rescheduleDate, rescheduleDurationMinutes);
         setRescheduleSlots(res.data || []);
-      } catch (err) {
+      } catch {
         toast.error('Lỗi khi tải khung giờ khả dụng.');
       } finally {
         setLoadingRescheduleSlots(false);
@@ -985,7 +917,7 @@ function SpaManagerConsoleContent() {
       if (staffList.length > 0) {
         setConfirmSelectedStaffId(staffList[0].id);
       }
-    } catch (err: any) {
+    } catch {
       toast.error('Lỗi khi tải danh sách nhân viên rảnh.');
       setConfirmAvailableStaffs([]);
     } finally {
@@ -1528,7 +1460,6 @@ function SpaManagerConsoleContent() {
     targetSpecies?: 'DOG' | 'CAT'
   ) => {
     if (!service) return;
-    setEditingServiceTarget(service);
 
     const normSpecies: 'ALL' | 'DOG' | 'CAT' =
       service.species === 'DOG' ? 'DOG' : service.species === 'CAT' ? 'CAT' : 'ALL';
@@ -1739,11 +1670,6 @@ function SpaManagerConsoleContent() {
     }
   };
 
-  // Fallback edit click cũ
-  const handleEditServiceClick = (service: any) => {
-    handleOpenSplitEditModal(service, 0);
-  };
-
   // Category Handlers
   const handleAddCategoryClick = () => {
     setEditingCategory(null);
@@ -1820,9 +1746,11 @@ function SpaManagerConsoleContent() {
 
   const navigateToBookingsTab = (targetBooking?: any, filterStatus?: string, filterDate?: string) => {
     if (filterStatus) {
+      setBookingPage(1);
       setBookingStatusFilter(filterStatus);
     }
     if (filterDate) {
+      setBookingPage(1);
       setBookingDateFilterType('SPECIFIC_DATE');
       setBookingCustomDate(filterDate);
     }
@@ -1936,16 +1864,6 @@ function SpaManagerConsoleContent() {
     if (timePart) return `${timePart} (Tất cả ngày)`;
     return '';
   }, [bookingDateFilterType, bookingCustomDate, bookingStartDate, bookingEndDate, bookingTimeSlotFilter]);
-
-  const bookingCountsSummary = useMemo(() => {
-    const total = filteredBookings.length;
-    const pending = filteredBookings.filter((b) => b.status === 'PENDING').length;
-    const needStaff = filteredBookings.filter((b) => (b.status === 'CONFIRMED' || b.status === 'CHECK_IN') && !b.staffId).length;
-    const inProgress = filteredBookings.filter((b) => b.status === 'IN_PROGRESS').length;
-    const completed = filteredBookings.filter((b) => b.status === 'COMPLETED').length;
-    const cancelled = filteredBookings.filter((b) => b.status === 'CANCELLED' || b.status === 'NO_SHOW').length;
-    return { total, pending, needStaff, inProgress, completed, cancelled };
-  }, [filteredBookings]);
 
   if (branches.length === 0 && !loading) {
     return (
@@ -2239,7 +2157,6 @@ function SpaManagerConsoleContent() {
                             <div className="flex-1 w-full space-y-1.5 max-h-56 overflow-y-auto pr-1">
                               {stats.statusDistribution.map((item: any, idx: number) => {
                                 const meta = SPA_STATUS_META[item.status] || { label: item.status, color: '#9ca3af', bgClass: 'bg-gray-400' };
-                                const percent = totalStatusCount > 0 ? ((item.value / totalStatusCount) * 100).toFixed(1) : '0';
                                 return (
                                   <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-xl bg-gray-50/80 hover:bg-gray-100 transition-colors border border-gray-100">
                                     <div className="flex items-center gap-2 min-w-0">
@@ -2379,7 +2296,10 @@ function SpaManagerConsoleContent() {
                     <span className="text-xs font-bold text-gray-500">Phân loại dịch vụ:</span>
                     <select
                       value={serviceTypeFilter}
-                      onChange={(e) => setServiceTypeFilter(e.target.value)}
+                      onChange={(e) => {
+                        setServicePage(1);
+                        setServiceTypeFilter(e.target.value);
+                      }}
                       className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                     >
                       <option value="ALL">🌐 Tất cả dịch vụ ({services.length})</option>
@@ -2393,7 +2313,10 @@ function SpaManagerConsoleContent() {
                       <span className="text-xs font-bold text-gray-500">Thương hiệu Spa:</span>
                       <select
                         value={serviceBrandFilter}
-                        onChange={(e) => setServiceBrandFilter(e.target.value)}
+                        onChange={(e) => {
+                          setServicePage(1);
+                          setServiceBrandFilter(e.target.value);
+                        }}
                         className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                       >
                         <option value="ALL">Tất cả thương hiệu</option>
@@ -2428,14 +2351,6 @@ function SpaManagerConsoleContent() {
                           .map((group) => {
                             const isExpanded = !!expandedServiceGroups[group.groupKey];
                             const activeCount = group.items.filter((i) => i.isActive).length;
-
-                            const priceStr = group.minPrice === group.maxPrice
-                              ? `${group.minPrice.toLocaleString('vi-VN')}đ`
-                              : `${group.minPrice.toLocaleString('vi-VN')}đ – ${group.maxPrice.toLocaleString('vi-VN')}đ`;
-
-                            const durationStr = group.minDuration === group.maxDuration
-                              ? `${group.minDuration} phút`
-                              : `${group.minDuration} – ${group.maxDuration} phút`;
 
                             return (
                               <React.Fragment key={group.groupKey}>
@@ -2642,7 +2557,10 @@ function SpaManagerConsoleContent() {
                   <span className="text-xs font-bold text-gray-500">Phân loại danh mục:</span>
                   <select
                     value={categoryTypeFilter}
-                    onChange={(e) => setCategoryTypeFilter(e.target.value)}
+                    onChange={(e) => {
+                      setCategoryPage(1);
+                      setCategoryTypeFilter(e.target.value);
+                    }}
                     className="rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                   >
                     <option value="ALL">🌐 Tất cả danh mục ({managerBrands.length})</option>
@@ -2770,13 +2688,19 @@ function SpaManagerConsoleContent() {
                       type="text"
                       placeholder="Tìm theo tên khách, pet, dịch vụ, mã #..."
                       value={bookingSearch}
-                      onChange={(e) => setBookingSearch(e.target.value)}
+                      onChange={(e) => {
+                        setBookingPage(1);
+                        setBookingSearch(e.target.value);
+                      }}
                       className="w-full rounded-xl border border-gray-150 bg-gray-50/50 py-2 pl-10 pr-10 text-sm focus:border-primary focus:bg-white focus:outline-none font-medium"
                     />
                     {bookingSearch && (
                       <button
                         type="button"
-                        onClick={() => setBookingSearch('')}
+                        onClick={() => {
+                          setBookingPage(1);
+                          setBookingSearch('');
+                        }}
                         className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 hover:text-gray-600 transition cursor-pointer"
                       >
                         <X className="size-4" />
@@ -2790,7 +2714,10 @@ function SpaManagerConsoleContent() {
                       <Filter className="size-4 text-gray-400 shrink-0" />
                       <select
                         value={bookingStatusFilter}
-                        onChange={(e) => setBookingStatusFilter(e.target.value)}
+                        onChange={(e) => {
+                          setBookingPage(1);
+                          setBookingStatusFilter(e.target.value);
+                        }}
                         className="w-full rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none cursor-pointer"
                       >
                         <option value="ALL">🌐 Tất cả trạng thái</option>
@@ -2812,6 +2739,7 @@ function SpaManagerConsoleContent() {
                       <select
                         value={bookingDateFilterType}
                         onChange={(e) => {
+                          setBookingPage(1);
                           setBookingDateFilterType(e.target.value);
                           if (e.target.value === 'SPECIFIC_DATE' && !bookingCustomDate) {
                             const now = new Date();
@@ -2836,7 +2764,10 @@ function SpaManagerConsoleContent() {
                       <Clock className="size-4 text-gray-400 shrink-0" />
                       <select
                         value={bookingTimeSlotFilter}
-                        onChange={(e) => setBookingTimeSlotFilter(e.target.value)}
+                        onChange={(e) => {
+                          setBookingPage(1);
+                          setBookingTimeSlotFilter(e.target.value);
+                        }}
                         className="w-full rounded-xl border border-gray-150 bg-white px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none cursor-pointer"
                       >
                         <option value="ALL">⏰ Tất cả giờ</option>
@@ -2865,7 +2796,10 @@ function SpaManagerConsoleContent() {
                         <input
                           type="date"
                           value={bookingCustomDate}
-                          onChange={(e) => setBookingCustomDate(e.target.value)}
+                          onChange={(e) => {
+                            setBookingPage(1);
+                            setBookingCustomDate(e.target.value);
+                          }}
                           className="rounded-xl border border-gray-200 bg-white px-3 py-1 text-xs font-bold text-gray-800 focus:border-primary focus:outline-none shadow-2xs"
                         />
                       </div>
@@ -2877,14 +2811,20 @@ function SpaManagerConsoleContent() {
                         <input
                           type="date"
                           value={bookingStartDate}
-                          onChange={(e) => setBookingStartDate(e.target.value)}
+                          onChange={(e) => {
+                            setBookingPage(1);
+                            setBookingStartDate(e.target.value);
+                          }}
                           className="rounded-xl border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-800 focus:border-primary focus:outline-none shadow-2xs"
                         />
                         <span className="text-xs font-bold text-gray-600">Đến:</span>
                         <input
                           type="date"
                           value={bookingEndDate}
-                          onChange={(e) => setBookingEndDate(e.target.value)}
+                          onChange={(e) => {
+                            setBookingPage(1);
+                            setBookingEndDate(e.target.value);
+                          }}
                           className="rounded-xl border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-800 focus:border-primary focus:outline-none shadow-2xs"
                         />
                       </div>
@@ -2902,6 +2842,7 @@ function SpaManagerConsoleContent() {
                       <button
                         type="button"
                         onClick={() => {
+                          setBookingPage(1);
                           setBookingSearch('');
                           setBookingStatusFilter('ALL');
                           setBookingDateFilterType('ALL');
@@ -3266,7 +3207,10 @@ function SpaManagerConsoleContent() {
                       type="text"
                       placeholder="Tìm theo tên khách hoặc bé..."
                       value={feedbackSearch}
-                      onChange={(e) => setFeedbackSearch(e.target.value)}
+                      onChange={(e) => {
+                        setFeedbackPage(1);
+                        setFeedbackSearch(e.target.value);
+                      }}
                       className="h-9 w-64 rounded-xl border border-gray-200 pl-9 pr-3 text-xs font-semibold focus:border-primary focus:outline-none"
                     />
                   </div>
@@ -3276,7 +3220,10 @@ function SpaManagerConsoleContent() {
                     <span className="text-xs font-bold text-gray-500">Bộ lọc số sao:</span>
                     <select
                       value={feedbackStarFilter}
-                      onChange={(e) => setFeedbackStarFilter(e.target.value)}
+                      onChange={(e) => {
+                        setFeedbackPage(1);
+                        setFeedbackStarFilter(e.target.value);
+                      }}
                       className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-semibold focus:border-primary focus:outline-none"
                     >
                       <option value="ALL">Tất cả số sao</option>

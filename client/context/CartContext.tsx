@@ -1,10 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { isAxiosError } from 'axios';
 import { Product, ProductVariant } from '@/types';
 import { toast } from 'sonner';
-import { cartApi } from '@/lib/api/cart';
+import { cartApi, type CartItemResponse } from '@/lib/api/cart';
 import { productsApi } from '@/lib/api/products';
 
 export interface CartItem {
@@ -62,9 +62,24 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function toCartItem(item: CartItemResponse): CartItem {
+  return {
+    id: item.id,
+    productId: item.productId,
+    variantId: item.variantId ?? null,
+    product: item.product,
+    variant: item.variant ?? null,
+    quantity: item.quantity,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isCartEnabled, setIsCartEnabled] = useState(false);
+  const [isAuthenticatedCart, setIsAuthenticatedCart] = useState(false);
+  const isCartPollingRef = useRef(false);
 
   /**
    * Tải lại giỏ hàng từ server hoặc cập nhật trạng thái tồn kho / mở bán mới nhất của sản phẩm
@@ -79,17 +94,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (token) {
       try {
         const res = await cartApi.getCart();
-        const items = res.data.map((item) => ({
-          id: item.id,
-          productId: item.productId,
-          variantId: item.variantId || null,
-          product: item.product,
-          variant: item.variant || null,
-          quantity: item.quantity,
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
-        }));
-        setCartItems(items);
+        setCartItems(res.data.map(toCartItem));
         localStorage.removeItem('petmatch_cart');
       } catch (e: unknown) {
         if (isAxiosError(e) && e.response?.status === 401) {
@@ -176,17 +181,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               variantId: item.variantId || null,
             }));
             const res = await cartApi.mergeCart(mergePayload);
-            const items = res.data.map((item) => ({
-              id: item.id,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              product: item.product,
-              variant: item.variant || null,
-              quantity: item.quantity,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-            }));
-            setCartItems(items);
+            setCartItems(res.data.map(toCartItem));
             localStorage.removeItem('petmatch_cart');
             return;
           }
@@ -194,17 +189,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           console.error('Failed to merge local cart', e);
         }
       }
-      await loadCart();
-    } else {
-      await loadCart();
     }
+    await loadCart();
   }, [loadCart]);
 
   // Khởi tạo và lắng nghe thay đổi đăng nhập
   useEffect(() => {
     const syncCartAvailability = () => {
       const enabled = canCurrentUserUseCart();
+      const authenticated = Boolean(localStorage.getItem('accessToken'));
       setIsCartEnabled(enabled);
+      setIsAuthenticatedCart(enabled && authenticated);
 
       if (enabled) {
         void syncCart();
@@ -214,34 +209,55 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     };
 
     const initializationTimer = window.setTimeout(syncCartAvailability, 0);
+    const handleAuthStorage = (event: StorageEvent) => {
+      if (event.key === 'accessToken' || event.key === 'user') {
+        syncCartAvailability();
+      }
+    };
+
     window.addEventListener('auth-change', syncCartAvailability);
+    window.addEventListener('storage', handleAuthStorage);
     return () => {
       window.clearTimeout(initializationTimer);
       window.removeEventListener('auth-change', syncCartAvailability);
+      window.removeEventListener('storage', handleAuthStorage);
     };
   }, [syncCart]);
 
-  // Cơ chế Polling tự động cập nhật giỏ hàng theo thời gian thực (mỗi 4 giây & khi quay lại tab)
+  // Poll giỏ server cho USER đã đăng nhập; guest chỉ làm mới khi focus hoặc localStorage thay đổi.
   useEffect(() => {
     if (!isCartEnabled) return;
 
-    const interval = setInterval(() => {
-      loadCart();
-    }, 4000);
+    const interval = isAuthenticatedCart
+      ? window.setInterval(() => {
+          if (document.visibilityState !== 'visible' || isCartPollingRef.current) return;
+
+          isCartPollingRef.current = true;
+          void loadCart().finally(() => {
+            isCartPollingRef.current = false;
+          });
+        }, 4000)
+      : null;
 
     const handleFocus = () => {
-      loadCart();
+      void loadCart();
+    };
+
+    const handleCartStorage = (event: StorageEvent) => {
+      if (event.key === 'petmatch_cart') {
+        void loadCart();
+      }
     };
 
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('storage', handleFocus);
+    window.addEventListener('storage', handleCartStorage);
 
     return () => {
-      clearInterval(interval);
+      if (interval !== null) window.clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('storage', handleFocus);
+      window.removeEventListener('storage', handleCartStorage);
     };
-  }, [isCartEnabled, loadCart]);
+  }, [isAuthenticatedCart, isCartEnabled, loadCart]);
 
 
   // Save guest cart to localStorage
@@ -381,7 +397,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const removeMultipleFromCart = async (cartItemIds: string[]) => {
     if (!canCurrentUserUseCart()) return;
 
-    if (!cartItemIds || cartItemIds.length === 0) return;
+    if (cartItemIds.length === 0) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     const itemsToDelete = cartItems.filter((i) => cartItemIds.includes(i.id));
 
@@ -444,7 +460,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
     </CartContext.Provider>
-
   );
 }
 

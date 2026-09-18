@@ -1,5 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ShippingService } from './shipping.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+type AuthenticatedRequest = {
+  user: {
+    id: string;
+  };
+};
 
 /**
  * Controller tiếp nhận yêu cầu liên quan đến vận chuyển và vận đơn hỏa tốc AhaMove
@@ -66,6 +73,15 @@ export class ShippingController {
   @Post('ahamove/sync-active')
   syncActiveAhamoveOrders() {
     return this.shippingService.syncActiveAhamoveOrders();
+  }
+
+  /**
+   * Chỉ đồng bộ các đơn AhaMove đang hoạt động của người dùng hiện tại.
+   */
+  @Post('ahamove/sync-my-active')
+  @UseGuards(JwtAuthGuard)
+  syncMyActiveAhamoveOrders(@Req() req: AuthenticatedRequest) {
+    return this.shippingService.syncActiveAhamoveOrders(req.user.id);
   }
 }
 
