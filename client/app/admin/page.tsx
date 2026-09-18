@@ -184,15 +184,7 @@ export default function AdminDashboardPage() {
           <h1 className="shrink-0 text-2xl font-extrabold tracking-tight text-primary">
             Tổng quan hệ thống
           </h1>
-          <span
-            className="h-5 w-px shrink-0 bg-primary/35"
-            aria-hidden="true"
-          />
-          <p className="truncate text-sm font-medium text-foreground/65">
-            Theo dõi vận hành Ghép đôi, Cửa hàng và Spa tại một nơi
-          </p>
         </div>
-
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
@@ -291,7 +283,7 @@ export default function AdminDashboardPage() {
                 Doanh thu theo thời gian
               </p>
               <h2 className="mt-1 text-xl font-bold tracking-tight">
-                Store và Spa
+                Cửa hàng và Spa
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Doanh thu được ghi nhận trong{" "}

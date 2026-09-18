@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { isAxiosError } from 'axios';
 import { Product, ProductVariant } from '@/types';
 import { toast } from 'sonner';
 import { cartApi } from '@/lib/api/cart';
@@ -31,14 +32,49 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+const CART_DISABLED_ROLES = new Set([
+  'ADMIN',
+  'STORE_MANAGER',
+  'SPA_MANAGER',
+  'SPA_STAFF',
+]);
+
+function canCurrentUserUseCart() {
+  if (typeof window === 'undefined') return false;
+
+  const token = localStorage.getItem('accessToken');
+  if (!token) return true;
+
+  try {
+    const storedUser = localStorage.getItem('user');
+    const role = storedUser ? JSON.parse(storedUser)?.role : null;
+    return !role || !CART_DISABLED_ROLES.has(role);
+  } catch {
+    // Preserve the existing behavior when persisted user data is malformed.
+    return true;
+  }
+}
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  if (isAxiosError<{ message?: string }>(error)) {
+    return error.response?.data?.message || fallback;
+  }
+  return fallback;
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [isMounted, setIsMounted] = useState(false);
+  const [isCartEnabled, setIsCartEnabled] = useState(false);
 
   /**
    * Tải lại giỏ hàng từ server hoặc cập nhật trạng thái tồn kho / mở bán mới nhất của sản phẩm
    */
   const loadCart = useCallback(async () => {
+    if (!canCurrentUserUseCart()) {
+      setCartItems([]);
+      return;
+    }
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       try {
@@ -55,8 +91,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }));
         setCartItems(items);
         localStorage.removeItem('petmatch_cart');
-      } catch (e: any) {
-        if (e?.response?.status === 401) {
+      } catch (e: unknown) {
+        if (isAxiosError(e) && e.response?.status === 401) {
           localStorage.removeItem('accessToken');
           localStorage.removeItem('user');
           const stored = localStorage.getItem('petmatch_cart');
@@ -69,7 +105,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           // Khi server gặp sự cố mạng hoặc lỗi tạm thời, fallback sang giỏ hàng lưu cục bộ
-          console.warn('Không thể kết nối tải giỏ hàng từ server, sử dụng bộ nhớ tạm:', e?.message || e);
+          console.warn(
+            'Không thể kết nối tải giỏ hàng từ server, sử dụng bộ nhớ tạm:',
+            e instanceof Error ? e.message : e,
+          );
           const stored = localStorage.getItem('petmatch_cart');
           if (stored) {
             try {
@@ -119,6 +158,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
    * Đồng bộ giỏ hàng local lên server khi người dùng đăng nhập
    */
   const syncCart = useCallback(async () => {
+    if (!canCurrentUserUseCart()) {
+      setCartItems([]);
+      return;
+    }
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       const stored = localStorage.getItem('petmatch_cart');
@@ -158,22 +202,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Khởi tạo và lắng nghe thay đổi đăng nhập
   useEffect(() => {
-    setIsMounted(true);
-    syncCart();
+    const syncCartAvailability = () => {
+      const enabled = canCurrentUserUseCart();
+      setIsCartEnabled(enabled);
 
-    const handleAuthChange = () => {
-      syncCart();
+      if (enabled) {
+        void syncCart();
+      } else {
+        setCartItems([]);
+      }
     };
 
-    window.addEventListener('auth-change', handleAuthChange);
+    const initializationTimer = window.setTimeout(syncCartAvailability, 0);
+    window.addEventListener('auth-change', syncCartAvailability);
     return () => {
-      window.removeEventListener('auth-change', handleAuthChange);
+      window.clearTimeout(initializationTimer);
+      window.removeEventListener('auth-change', syncCartAvailability);
     };
   }, [syncCart]);
 
   // Cơ chế Polling tự động cập nhật giỏ hàng theo thời gian thực (mỗi 4 giây & khi quay lại tab)
   useEffect(() => {
-    if (!isMounted) return;
+    if (!isCartEnabled) return;
 
     const interval = setInterval(() => {
       loadCart();
@@ -191,20 +241,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('storage', handleFocus);
     };
-  }, [isMounted, loadCart]);
+  }, [isCartEnabled, loadCart]);
 
 
   // Save guest cart to localStorage
   useEffect(() => {
-    if (isMounted) {
+    if (isCartEnabled) {
       const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
       if (!token) {
         localStorage.setItem('petmatch_cart', JSON.stringify(cartItems));
       }
     }
-  }, [cartItems, isMounted]);
+  }, [cartItems, isCartEnabled]);
 
   const addToCart = async (product: Product, quantity = 1, showToast = true, variantId?: string | null) => {
+    if (!canCurrentUserUseCart()) return;
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     
     // Resolve variant details
@@ -236,8 +288,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}${variant ? ` (${variant.name})` : ''}" vào giỏ hàng!`);
         }
         await loadCart();
-      } catch (e: any) {
-        toast.error(e.response?.data?.message || 'Không thể thêm sản phẩm vào giỏ hàng');
+      } catch (e: unknown) {
+        toast.error(getApiErrorMessage(e, 'Không thể thêm sản phẩm vào giỏ hàng'));
       }
     } else {
       if (showToast) {
@@ -266,6 +318,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeFromCart = async (cartItemId: string) => {
+    if (!canCurrentUserUseCart()) return;
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     const item = cartItems.find((i) => i.id === cartItemId);
 
@@ -274,8 +328,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         await cartApi.removeFromCart(item.productId, item.variantId);
         toast.success(`Đã xóa "${item.product.name}${item.variant ? ` (${item.variant.name})` : ''}" khỏi giỏ hàng`);
         await loadCart();
-      } catch (e: any) {
-        toast.error(e.response?.data?.message || 'Không thể xóa sản phẩm khỏi giỏ hàng');
+      } catch (e: unknown) {
+        toast.error(getApiErrorMessage(e, 'Không thể xóa sản phẩm khỏi giỏ hàng'));
       }
     } else {
       setCartItems((prev) => {
@@ -289,6 +343,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateQuantity = async (cartItemId: string, quantity: number) => {
+    if (!canCurrentUserUseCart()) return;
+
     if (quantity <= 0) {
       await removeFromCart(cartItemId);
       return;
@@ -309,8 +365,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       try {
         await cartApi.updateQuantity(item.productId, quantity, item.variantId);
         await loadCart();
-      } catch (e: any) {
-        toast.error(e.response?.data?.message || 'Không thể cập nhật số lượng');
+      } catch (e: unknown) {
+        toast.error(getApiErrorMessage(e, 'Không thể cập nhật số lượng'));
       }
     } else {
       setCartItems((prev) => {
@@ -323,6 +379,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
    * Xóa nhiều sản phẩm khỏi giỏ hàng cùng lúc (hỗ trợ xóa hàng loạt hàng không khả dụng).
    */
   const removeMultipleFromCart = async (cartItemIds: string[]) => {
+    if (!canCurrentUserUseCart()) return;
+
     if (!cartItemIds || cartItemIds.length === 0) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     const itemsToDelete = cartItems.filter((i) => cartItemIds.includes(i.id));
@@ -336,8 +394,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         );
         toast.success(`Đã xóa ${itemsToDelete.length} sản phẩm khỏi giỏ hàng`);
         await loadCart();
-      } catch (e: any) {
-        toast.error(e?.response?.data?.message || 'Không thể xóa các sản phẩm khỏi giỏ hàng');
+      } catch (e: unknown) {
+        toast.error(getApiErrorMessage(e, 'Không thể xóa các sản phẩm khỏi giỏ hàng'));
       }
     } else {
       setCartItems((prev) => prev.filter((i) => !cartItemIds.includes(i.id)));
@@ -346,6 +404,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const clearCart = async () => {
+    if (!canCurrentUserUseCart()) return;
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       try {

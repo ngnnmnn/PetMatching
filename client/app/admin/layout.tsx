@@ -82,6 +82,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
+    window.dispatchEvent(new Event('auth-change'));
     router.replace('/login');
   };
 
