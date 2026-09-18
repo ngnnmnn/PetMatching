@@ -13,6 +13,7 @@ import { spaApi } from '@/lib/api/spa';
 import { SpaBranchType, SpaServiceType, AddressSpaType } from '@/types';
 import BookingDialog from '@/components/spa/BookingDialog';
 import AppPagination from '@/components/ui/app-pagination';
+import { getServiceBracketsForSpecies, formatWeightRange } from '@/lib/spa-bracket.utils';
 
 // Map images for high aesthetic mockups based on services
 const SERVICE_IMAGES: Record<string, string> = {
@@ -321,40 +322,99 @@ export default function SpaHome() {
             const brandMap = new Map<string, {
               id: string;
               brandId?: string;
+              baseName: string;
               title: string;
               description: string;
               imageUrl?: string | null;
               minPrice: number;
               maxPrice: number;
               categoryLabel: string;
+              weightRangeText: string;
+              services: any[];
             }>();
 
+            // Nhóm thẻ dịch vụ Spa trên trang chủ: Không phân biệt Chó hay Mèo, tính đúng khoảng giá thực tế
             filteredServices.forEach((service) => {
-              let cleanTitle = service.category?.name || service.brand?.name || service.name;
-              cleanTitle = cleanTitle.replace(/\s*\([^)]*\)/g, '').trim();
-              if (!cleanTitle) cleanTitle = service.name;
+              // Làm sạch tên gốc của dịch vụ (loại bỏ phần cân nặng để gom chung Chó và Mèo cùng dịch vụ)
+              const cleanBaseName = (service.name || '')
+                .replace(/\s*\([^)]*\)/g, '')
+                .replace(/\s*-\s*Dành cho\s*(Chó|Mèo).*/gi, '')
+                .trim() || 'Dịch vụ Spa';
 
               const categoryLabel = service.category?.name || service.brand?.name || 'Dịch vụ Spa';
+              const groupKey = `${cleanBaseName}__${service.categoryId || ''}__${service.isMain ? 'MAIN' : 'SUB'}`;
 
-              if (!brandMap.has(cleanTitle)) {
-                brandMap.set(cleanTitle, {
+              if (!brandMap.has(groupKey)) {
+                brandMap.set(groupKey, {
                   id: service.id,
                   brandId: service.brandId,
-                  title: cleanTitle,
+                  baseName: cleanBaseName,
+                  title: cleanBaseName,
                   description: service.description || 'Dịch vụ chăm sóc chuyên sâu dành cho thú cưng theo mốc cân nặng.',
                   imageUrl: service.imageUrl,
-                  minPrice: service.price,
-                  maxPrice: service.price,
+                  minPrice: Infinity,
+                  maxPrice: -Infinity,
                   categoryLabel,
+                  weightRangeText: '',
+                  services: [service],
                 });
               } else {
-                const existing = brandMap.get(cleanTitle)!;
+                const existing = brandMap.get(groupKey)!;
                 if (!existing.imageUrl && service.imageUrl) {
                   existing.imageUrl = service.imageUrl;
                 }
-                existing.minPrice = Math.min(existing.minPrice, service.price);
-                existing.maxPrice = Math.max(existing.maxPrice, service.price);
+                existing.services.push(service);
               }
+            });
+
+            // Tính toán khoảng giá thực tế và dải cân nặng tổng hợp cho từng thẻ hiển thị trên trang chủ
+            brandMap.forEach((card) => {
+              const allPrices: number[] = [];
+              const allMins: number[] = [];
+              const allMaxs: (number | null)[] = [];
+
+              card.services.forEach((s) => {
+                // Thu thập giá
+                if (Array.isArray(s.price)) {
+                  const flatP = (s.price as any[]).flat(Infinity).map(Number).filter((p) => !isNaN(p) && p > 0);
+                  allPrices.push(...flatP);
+                } else if (s.price) {
+                  const p = Number(s.price);
+                  if (!isNaN(p) && p > 0) allPrices.push(p);
+                }
+
+                // Thu thập cân nặng min
+                if (Array.isArray(s.petMinWeight)) {
+                  const flatMin = (s.petMinWeight as any[]).flat(Infinity).map(Number).filter((n) => !isNaN(n));
+                  allMins.push(...flatMin);
+                } else if (s.petMinWeight !== null && s.petMinWeight !== undefined) {
+                  const n = Number(s.petMinWeight);
+                  if (!isNaN(n)) allMins.push(n);
+                }
+
+                // Thu thập cân nặng max
+                if (Array.isArray(s.petMaxWeight)) {
+                  const flatMax = (s.petMaxWeight as any[]).flat(Infinity).map((n) => (n !== null && n !== undefined ? Number(n) : null));
+                  allMaxs.push(...flatMax);
+                } else if (s.petMaxWeight !== null && s.petMaxWeight !== undefined) {
+                  allMaxs.push(Number(s.petMaxWeight));
+                } else {
+                  allMaxs.push(null);
+                }
+              });
+
+              // Xác định khoảng giá thực tế (Min – Max)
+              card.minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+              card.maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
+
+              // Xác định dải cân nặng tổng hợp không phân biệt chó mèo
+              const minW = allMins.length > 0 ? Math.min(...allMins) : 0;
+              const hasNullMax = allMaxs.some((n) => n === null || n >= 100);
+              const validMaxs = allMaxs.filter((n): n is number => n !== null && n < 100);
+              const maxW = validMaxs.length > 0 ? Math.max(...validMaxs) : null;
+
+              // Tên thẻ Spa hiển thị chung không phân biệt chó mèo
+              card.title = `${card.baseName}`;
             });
 
             const uniqueCards = Array.from(brandMap.values());
@@ -398,18 +458,14 @@ export default function SpaHome() {
                           <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-xs px-3 py-1 text-[10px] font-extrabold text-white uppercase tracking-wider">
                             {card.categoryLabel}
                           </span>
-                          {card.minPrice !== card.maxPrice && (
-                            <span className="absolute bottom-3 right-3 rounded-full bg-purple-900/80 backdrop-blur-xs px-2.5 py-0.5 text-[10px] font-bold text-purple-100">
-                              Theo mốc cân nặng
-                            </span>
-                          )}
                         </div>
 
                         <div className="p-5 flex flex-col flex-1 space-y-3 justify-between">
-                          <div className="space-y-1.5">
-                            <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+                          <div className="space-y-2">
+                            <h3 className="text-base font-extrabold text-gray-900 leading-snug line-clamp-2 group-hover:text-primary transition-colors">
                               {card.title}
                             </h3>
+
                             <p className="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
                               {card.description}
                             </p>
@@ -463,69 +519,112 @@ export default function SpaHome() {
 
       {/* Service Detail Popup Modal */}
       {detailCard && (() => {
-        const targetTitle = detailCard.title.trim().toLowerCase();
+        // Tìm bản ghi dịch vụ thực tế trong database theo ID của thẻ được chọn
+        const currentService = safeServices.find((s) => s.id === detailCard.id);
 
-        const matchingVariants = safeServices.filter((s) => {
-          const sCategoryName = (s.category?.name || s.brand?.name || '').trim().toLowerCase();
-          const sBaseName = s.name.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
-          return sCategoryName === targetTitle || sBaseName === targetTitle;
-        });
-
-        const getSpeciesLabel = (s?: any) => {
-          if (s?.species === 'DOG') return 'Chó 🐶';
-          if (s?.species === 'CAT') return 'Mèo 🐱';
-          const nameLower = ((s?.name || '') + ' ' + (s?.description || '') + ' ' + (detailCard.title || '')).toLowerCase();
-          if (nameLower.includes('mèo')) return 'Mèo 🐱';
-          if (nameLower.includes('chó')) return 'Chó 🐶';
+        // Hàm định dạng nhãn loài thú cưng hiển thị
+        const getSpeciesLabel = (spec?: string) => {
+          if (spec === 'DOG') return 'Chó 🐶';
+          if (spec === 'CAT') return 'Mèo 🐱';
           return 'Chó & Mèo 🐶🐱';
         };
 
-        const formatWeightRange = (min?: number | null, max?: number | null): string => {
-          const hasMin = min !== null && min !== undefined && !isNaN(Number(min));
-          const hasMax = max !== null && max !== undefined && !isNaN(Number(max));
+        // Hàm định dạng khoảng cân nặng chuẩn từ min và max
+        const formatWeightText = (min: any, max: any): string => {
+          const minN = min !== null && min !== undefined && !isNaN(Number(min)) ? Number(min) : 0;
+          const maxN = max !== null && max !== undefined && !isNaN(Number(max)) ? Number(max) : null;
 
-          if (!hasMin && !hasMax) return 'Tất cả cân nặng';
-          const minNum = hasMin ? Number(min) : null;
-          const maxNum = hasMax ? Number(max) : null;
-
-          if (minNum !== null && maxNum !== null) {
-            if (minNum === maxNum) return `${minNum}kg`;
-            return `${minNum} - ${maxNum}kg`;
-          }
-          if (minNum === null && maxNum !== null) return `0 - ${maxNum}kg`;
-          if (minNum !== null && maxNum === null) return `>${minNum}kg`;
-          return 'Tất cả cân nặng';
+          if (minN === 0 && (maxN === null || maxN >= 100)) return 'Mọi cân nặng';
+          if (maxN === null || maxN >= 100) return `Trên ${minN}kg (>= ${minN}kg)`;
+          if (minN === maxN) return `${minN}kg`;
+          return `${minN}kg – ${maxN}kg`;
         };
 
-        const weightRows = matchingVariants.length > 0
-          ? matchingVariants.map((s) => {
-            let label = s.name;
-            if (!/\([^)]+\)/.test(label)) {
-              const weightText = (s.petWeightMin !== null || s.petWeightMax !== null)
-                ? formatWeightRange(s.petWeightMin, s.petWeightMax)
-                : (s.description ? s.description : 'Tiêu chuẩn');
-              label = `${s.name} (${weightText})`;
+        // Danh sách mốc cân nặng trích xuất từ dữ liệu thật trong cơ sở dữ liệu
+        const weightRows: Array<{
+          serviceLabel: string;
+          speciesLabel: string;
+          price: number;
+          duration: string;
+        }> = [];
+
+        // Lấy toàn bộ danh sách dịch vụ thuộc nhóm này
+        const groupServices: any[] = (detailCard.services && detailCard.services.length > 0)
+          ? detailCard.services
+          : (currentService ? [currentService] : []);
+
+        if (groupServices.length > 0) {
+          groupServices.forEach((svc: any) => {
+            const spec = svc.species || 'ALL';
+
+            if (spec === 'DOG') {
+              const dogBrackets = getServiceBracketsForSpecies(svc, 'DOG');
+              dogBrackets.forEach((b) => {
+                const finalPrc = b.price > 0 ? b.price : (detailCard.minPrice > 0 ? detailCard.minPrice : 0);
+                weightRows.push({
+                  serviceLabel: `${formatWeightRange(b.minWeight, b.maxWeight)}`,
+                  speciesLabel: 'Chó 🐶',
+                  price: finalPrc,
+                  duration: `${b.duration || 30} phút`,
+                });
+              });
+            } else if (spec === 'CAT') {
+              const catBrackets = getServiceBracketsForSpecies(svc, 'CAT');
+              catBrackets.forEach((b) => {
+                const finalPrc = b.price > 0 ? b.price : (detailCard.minPrice > 0 ? detailCard.minPrice : 0);
+                weightRows.push({
+                  serviceLabel: `${formatWeightRange(b.minWeight, b.maxWeight)}`,
+                  speciesLabel: 'Mèo 🐱',
+                  price: finalPrc,
+                  duration: `${b.duration || 30} phút`,
+                });
+              });
+            } else {
+              // ALL: Lấy đầy đủ cả mốc cho Chó và Mèo
+              const dogBrackets = getServiceBracketsForSpecies(svc, 'DOG');
+              const catBrackets = getServiceBracketsForSpecies(svc, 'CAT');
+
+              dogBrackets.forEach((b) => {
+                const finalPrc = b.price > 0 ? b.price : (detailCard.minPrice > 0 ? detailCard.minPrice : 0);
+                weightRows.push({
+                  serviceLabel: `${formatWeightRange(b.minWeight, b.maxWeight)}`,
+                  speciesLabel: 'Chó 🐶',
+                  price: finalPrc,
+                  duration: `${b.duration || 30} phút`,
+                });
+              });
+
+              catBrackets.forEach((b) => {
+                const finalPrc = b.price > 0 ? b.price : (detailCard.minPrice > 0 ? detailCard.minPrice : 0);
+                weightRows.push({
+                  serviceLabel: `${formatWeightRange(b.minWeight, b.maxWeight)}`,
+                  speciesLabel: 'Mèo 🐱',
+                  price: finalPrc,
+                  duration: `${b.duration || 30} phút`,
+                });
+              });
             }
-            return {
-              serviceLabel: label,
-              speciesLabel: getSpeciesLabel(s),
-              price: s.price,
-              duration: `${s.durationMin || 45} phút`,
-            };
-          })
-          : [
-            { serviceLabel: `${detailCard.title} (< 5 kg)`, speciesLabel: getSpeciesLabel(), price: detailCard.minPrice, duration: '45 phút' },
-            { serviceLabel: `${detailCard.title} (5 – 10 kg)`, speciesLabel: getSpeciesLabel(), price: Math.round((detailCard.minPrice * 1.33) / 1000) * 1000, duration: '60 phút' },
-            { serviceLabel: `${detailCard.title} (10 – 15 kg)`, speciesLabel: getSpeciesLabel(), price: Math.round((detailCard.minPrice * 1.66) / 1000) * 1000, duration: '75 phút' },
-            { serviceLabel: `${detailCard.title} (> 15 kg)`, speciesLabel: getSpeciesLabel(), price: Math.round((detailCard.minPrice * 2.0) / 1000) * 1000, duration: '90 phút' },
-          ];
+          });
+        }
+
+        // Fallback nếu danh sách mốc vẫn trống
+        if (weightRows.length === 0) {
+          const fallbackPrice = detailCard.minPrice > 0 ? detailCard.minPrice : (detailCard.maxPrice > 0 ? detailCard.maxPrice : 0);
+          weightRows.push({
+            serviceLabel: `${detailCard.title} (${detailCard.weightRangeText || 'Mọi cân nặng'})`,
+            speciesLabel: getSpeciesLabel(),
+            price: fallbackPrice,
+            duration: '30 phút',
+          });
+        }
 
         const matchedReviews = publicFeedbacks.filter((f) => {
+          if (detailCard.services?.some((s: any) => s.id === f.booking?.serviceId || s.id === f.booking?.service?.id)) return true;
           if (f.booking?.serviceId === detailCard.id || f.booking?.service?.id === detailCard.id) return true;
           const sName = f.booking?.service?.name || f.booking?.category?.name || '';
           const sBaseName = sName.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
-          const targetCat = (detailCard.categoryLabel || '').trim().toLowerCase();
-          return sBaseName === targetTitle || sBaseName === targetCat || targetTitle.includes(sBaseName) || sBaseName.includes(targetTitle);
+          const targetBase = (detailCard.baseName || detailCard.title || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+          return sBaseName === targetBase || targetBase.includes(sBaseName) || sBaseName.includes(targetBase);
         });
 
         return (
@@ -567,7 +666,7 @@ export default function SpaHome() {
                     <table className="w-full text-xs text-left">
                       <thead className="bg-gray-100/90 text-gray-700 font-extrabold border-b border-gray-200 uppercase text-[11px] tracking-wider">
                         <tr>
-                          <th className="py-3 px-4">Dịch vụ & Mốc cân nặng</th>
+                          <th className="py-3 px-4">Cân nặng</th>
                           <th className="py-3 px-3 text-center">Loại thú cưng</th>
                           <th className="py-3 px-4 text-center">Giá dịch vụ</th>
                           <th className="py-3 px-4 text-right">Thời gian thực hiện</th>
@@ -615,10 +714,10 @@ export default function SpaHome() {
                         // Định dạng ngày đánh giá theo chuẩn dd/MM/yyyy
                         const reviewDate = rev.createdAt
                           ? new Date(rev.createdAt).toLocaleDateString('vi-VN', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                            })
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })
                           : '';
 
                         return (
@@ -663,17 +762,19 @@ export default function SpaHome() {
 
               </div>
 
-              {/* Footer: Góc dưới cùng bên phải có 1 nút đặt lịch */}
-              <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end items-center">
+              {/* Footer: Hiển thị cân nặng áp dụng và nút đặt lịch */}
+              <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/70 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-gray-700">
+                </div>
                 <Button
                   type="button"
                   onClick={() => {
                     handleBookClick(detailCard.id, detailCard.title, detailCard.brandId);
                     setDetailCard(null);
                   }}
-                  className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-6 h-10 shadow-md rounded-xl cursor-pointer"
+                  className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-6 h-10 shadow-md rounded-xl cursor-pointer w-full sm:w-auto"
                 >
-                  Đặt lịch
+                  Đặt lịch ngay
                 </Button>
               </div>
 
@@ -683,19 +784,21 @@ export default function SpaHome() {
       })()}
 
       {/* Booking Dialog Modal */}
-      {selectedService && (
-        <BookingDialog
-          isOpen={bookingDialogOpen}
-          onClose={() => setBookingDialogOpen(false)}
-          branchId={selectedService.branchId}
-          branchName={selectedService.branchName}
-          serviceId={selectedService.id}
-          serviceName={selectedService.name}
-          price={selectedService.price}
-        />
-      )}
+      {
+        selectedService && (
+          <BookingDialog
+            isOpen={bookingDialogOpen}
+            onClose={() => setBookingDialogOpen(false)}
+            branchId={selectedService.branchId}
+            branchName={selectedService.branchName}
+            serviceId={selectedService.id}
+            serviceName={selectedService.name}
+            price={selectedService.price}
+          />
+        )
+      }
 
       <Footer />
-    </main>
+    </main >
   );
 }

@@ -28,7 +28,7 @@ interface BookingDialogProps {
   branchName: string;
   serviceId: string;
   serviceName: string;
-  price: number;
+  price: any;
 }
 
 interface Pet {
@@ -211,21 +211,50 @@ export default function BookingDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
-          {/* Service info summary */}
-          <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Dịch vụ:</span>
-              <span className="font-medium text-foreground">{serviceName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Chi nhánh:</span>
-              <span className="font-medium text-foreground">{branchName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Chi phí dự kiến:</span>
-              <span className="font-bold text-primary">{price.toLocaleString('vi-VN')}đ</span>
-            </div>
-          </div>
+          {/* Tóm tắt thông tin dịch vụ bao gồm tên, cân nặng áp dụng và chi phí dự kiến */}
+          {(() => {
+            // Trích xuất thông tin khoảng cân nặng từ tên dịch vụ nếu có ngoặc
+            const weightMatch = (serviceName || '').match(/\(([^)]+)\)/);
+            const weightText = weightMatch ? weightMatch[1] : null;
+
+            // Xử lý hiển thị giá an toàn dù là số đơn lẻ hay mảng giá
+            let priceText = '0đ';
+            if (Array.isArray(price)) {
+              const flat = (price as any[]).flat(Infinity).map(Number).filter((n) => !isNaN(n) && n > 0);
+              if (flat.length > 0) {
+                const min = Math.min(...flat);
+                const max = Math.max(...flat);
+                priceText = min === max ? `${min.toLocaleString('vi-VN')}đ` : `${min.toLocaleString('vi-VN')}đ – ${max.toLocaleString('vi-VN')}đ`;
+              }
+            } else if (price) {
+              priceText = `${Number(price).toLocaleString('vi-VN')}đ`;
+            }
+
+            return (
+              <div className="rounded-xl bg-purple-50/60 border border-purple-100 p-3.5 text-sm space-y-1.5">
+                <div className="flex justify-between items-start gap-2">
+                  <span className="text-muted-foreground text-xs">Dịch vụ:</span>
+                  <span className="font-extrabold text-foreground text-right text-xs sm:text-sm">{serviceName}</span>
+                </div>
+                {weightText && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground text-xs">Cân nặng áp dụng:</span>
+                    <span className="font-black text-purple-900 bg-white px-2 py-0.5 rounded-md border border-purple-200 text-xs">
+                      ⚖️ {weightText}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground text-xs">Chi nhánh:</span>
+                  <span className="font-medium text-foreground text-xs">{branchName}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-purple-150">
+                  <span className="text-muted-foreground text-xs">Chi phí dự kiến:</span>
+                  <span className="font-black text-primary text-sm">{priceText}</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Pet Selector */}
           <div className="space-y-2">

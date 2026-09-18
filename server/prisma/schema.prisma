@@ -511,12 +511,11 @@ model SpaService {
   name         String
   description  String?
   imageUrl     String?
-  species      Species?
-  petWeightMin Float?
-  petWeightMax Float?
-  price        Float
-  durationMin  Int
-  durationMax  Int?
+  species      String?      @default("ALL")
+  petMinWeight Json?        @map("pet_min_weight")
+  petMaxWeight Json?        @map("pet_max_weight")
+  duration     Json?        @map("duration")
+  price        Json?        @map("price")
   isMain       Boolean      @default(true)
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())

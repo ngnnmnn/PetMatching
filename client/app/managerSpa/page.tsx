@@ -57,6 +57,13 @@ import {
   Cell,
   Tooltip,
 } from 'recharts';
+import {
+  getServiceBracketsForSpecies,
+  formatWeightRange as formatBracketWeightRange,
+  computeServiceDisplayRanges,
+  DOG_WEIGHT_PRESETS,
+  CAT_WEIGHT_PRESETS,
+} from '@/lib/spa-bracket.utils';
 
 /** Cấu hình màu sắc và tên tiếng Việt cho các trạng thái lịch hẹn Spa */
 const SPA_STATUS_META: Record<string, { label: string; color: string; bgClass: string }> = {
@@ -210,7 +217,63 @@ function SpaManagerConsoleContent() {
   const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<string>('');
   const [submittingReschedule, setSubmittingReschedule] = useState<boolean>(false);
 
-  // Service modal states
+  // Service modal states: Add Service Modal & Split-view Edit Modal
+  const [addModalOpen, setAddModalOpen] = useState<boolean>(false);
+  // State quản lý form tạo mới dịch vụ Spa với cơ chế phân mốc cân nặng linh hoạt cho từng loài
+  const [addForm, setAddForm] = useState({
+    brandId: '',
+    name: '',
+    description: '',
+    imageUrl: '',
+    isMain: true,
+    species: 'ALL' as 'ALL' | 'DOG' | 'CAT',
+    // Nút bật/tắt phân mốc cân nặng theo từng khoảng kg cho Chó và Mèo
+    hasDogWeightBrackets: false,
+    hasCatWeightBrackets: false,
+    // Đơn giá và thời lượng khi áp dụng cho mọi cân nặng
+    dogSinglePrice: '',
+    dogSingleDuration: '60',
+    catSinglePrice: '',
+    catSingleDuration: '60',
+    singlePrice: '',
+    singleDuration: '60',
+    // Danh sách mốc cân nặng cho từng loài (mặc định giá và thời gian để trống / null)
+    dogBrackets: [] as Array<{ min: number; max: number | null; duration: any; price: any }>,
+    catBrackets: [] as Array<{ min: number; max: number | null; duration: any; price: any }>,
+    activeTab: 'DOG' as 'DOG' | 'CAT',
+    isActive: true,
+  });
+  const [addImageFile, setAddImageFile] = useState<File | null>(null);
+  const [addImagePreview, setAddImagePreview] = useState<string | null>(null);
+  const [submittingAdd, setSubmittingAdd] = useState<boolean>(false);
+
+  // Split-view Edit Modal states
+  const [editModalOpen, setEditModalOpen] = useState<boolean>(false);
+  const [editingServiceTarget, setEditingServiceTarget] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    brandId: '',
+    name: '',
+    description: '',
+    imageUrl: '',
+    isMain: true,
+    species: 'ALL' as 'ALL' | 'DOG' | 'CAT',
+    hasWeightBrackets: false,
+    singlePrice: '',
+    singleDuration: '60',
+    dogBrackets: [] as Array<{ min: number; max: number | null; duration: number; price: number }>,
+    catBrackets: [] as Array<{ min: number; max: number | null; duration: number; price: number }>,
+    selectedSpeciesTab: 'DOG' as 'DOG' | 'CAT',
+    selectedBracketIndex: 0,
+    isActive: true,
+  });
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [submittingEdit, setSubmittingEdit] = useState<boolean>(false);
+  const [editIsDirty, setEditIsDirty] = useState<boolean>(false);
+  const [showExitConfirmDialog, setShowExitConfirmDialog] = useState<boolean>(false);
+
+  // Fallback state cho compatibility nếu có code khác tham chiếu
   const [serviceModalOpen, setServiceModalOpen] = useState<boolean>(false);
   const [editingService, setEditingService] = useState<any | null>(null);
   const [serviceForm, setServiceForm] = useState({
@@ -231,7 +294,7 @@ function SpaManagerConsoleContent() {
   const [serviceImagePreview, setServiceImagePreview] = useState<string | null>(null);
   const [submittingService, setSubmittingService] = useState<boolean>(false);
 
-  const handleServiceImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAddImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -242,21 +305,51 @@ function SpaManagerConsoleContent() {
       toast.error('Ảnh không được vượt quá 5 MB.');
       return;
     }
-    if (serviceImagePreview) {
-      URL.revokeObjectURL(serviceImagePreview);
+    if (addImagePreview) {
+      URL.revokeObjectURL(addImagePreview);
     }
     const previewUrl = URL.createObjectURL(file);
-    setServiceImageFile(file);
-    setServiceImagePreview(previewUrl);
+    setAddImageFile(file);
+    setAddImagePreview(previewUrl);
   };
 
-  const handleClearServiceImage = () => {
-    if (serviceImagePreview) {
-      URL.revokeObjectURL(serviceImagePreview);
+  const handleClearAddImage = () => {
+    if (addImagePreview) {
+      URL.revokeObjectURL(addImagePreview);
     }
-    setServiceImageFile(null);
-    setServiceImagePreview(null);
-    setServiceForm((prev) => ({ ...prev, imageUrl: '' }));
+    setAddImageFile(null);
+    setAddImagePreview(null);
+    setAddForm((prev) => ({ ...prev, imageUrl: '' }));
+  };
+
+  const handleEditImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Chỉ được chọn tệp hình ảnh. Không được tải tệp định dạng khác.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh không được vượt quá 5 MB.');
+      return;
+    }
+    if (editImagePreview && editImagePreview !== editForm.imageUrl) {
+      URL.revokeObjectURL(editImagePreview);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setEditImageFile(file);
+    setEditImagePreview(previewUrl);
+    setEditIsDirty(true);
+  };
+
+  const handleClearEditImage = () => {
+    if (editImagePreview && editImagePreview !== editForm.imageUrl) {
+      URL.revokeObjectURL(editImagePreview);
+    }
+    setEditImageFile(null);
+    setEditImagePreview(null);
+    setEditForm((prev) => ({ ...prev, imageUrl: '' }));
+    setEditIsDirty(true);
   };
 
   // Booking search and filters
@@ -334,8 +427,8 @@ function SpaManagerConsoleContent() {
       maxPrice: number;
       minDuration: number;
       maxDuration: number;
-      minWeight: number | null;
-      maxWeight: number | null;
+      priceStr: string;
+      durationStr: string;
     }>();
 
     services.forEach((s: any) => {
@@ -354,6 +447,7 @@ function SpaManagerConsoleContent() {
       if (!cleanName) cleanName = categoryName || s.name;
 
       const groupKey = `${cleanName}_${s.isMain ? 'MAIN' : 'SUB'}`;
+      const ranges = computeServiceDisplayRanges(s);
 
       if (!map.has(groupKey)) {
         map.set(groupKey, {
@@ -363,36 +457,31 @@ function SpaManagerConsoleContent() {
           categoryName,
           items: [s],
           totalBookings: s._count?.bookings || 0,
-          minPrice: s.price,
-          maxPrice: s.price,
-          minDuration: s.durationMin || 0,
-          maxDuration: s.durationMin || 0,
-          minWeight: s.petWeightMin,
-          maxWeight: s.petWeightMax,
+          minPrice: ranges.minPrice,
+          maxPrice: ranges.maxPrice,
+          minDuration: ranges.minDuration,
+          maxDuration: ranges.maxDuration,
+          priceStr: ranges.priceStr,
+          durationStr: ranges.durationStr,
         });
       } else {
         const group = map.get(groupKey)!;
         group.items.push(s);
         group.totalBookings += s._count?.bookings || 0;
-        group.minPrice = Math.min(group.minPrice, s.price);
-        group.maxPrice = Math.max(group.maxPrice, s.price);
-        group.minDuration = Math.min(group.minDuration, s.durationMin || 0);
-        group.maxDuration = Math.max(group.maxDuration, s.durationMin || 0);
-        if (s.petWeightMin !== null && (group.minWeight === null || s.petWeightMin < group.minWeight)) {
-          group.minWeight = s.petWeightMin;
-        }
-        if (s.petWeightMax !== null && (group.maxWeight === null || s.petWeightMax > group.maxWeight)) {
-          group.maxWeight = s.petWeightMax;
-        }
+        group.minPrice = Math.min(group.minPrice, ranges.minPrice);
+        group.maxPrice = Math.max(group.maxPrice, ranges.maxPrice);
+        group.minDuration = Math.min(group.minDuration, ranges.minDuration);
+        group.maxDuration = Math.max(group.maxDuration, ranges.maxDuration);
+        group.priceStr = group.minPrice === group.maxPrice
+          ? `${group.minPrice.toLocaleString('vi-VN')}đ`
+          : `${group.minPrice.toLocaleString('vi-VN')}đ – ${group.maxPrice.toLocaleString('vi-VN')}đ`;
+        group.durationStr = group.minDuration === group.maxDuration
+          ? `${group.minDuration} phút`
+          : `${group.minDuration} – ${group.maxDuration} phút`;
       }
     });
 
     const list = Array.from(map.values());
-
-    // Sort items within each group by min weight
-    list.forEach((g) => {
-      g.items.sort((a, b) => (a.petWeightMin ?? 0) - (b.petWeightMin ?? 0));
-    });
 
     // Sort groups ALPHABETICALLY by baseName (A-Z)
     list.sort((a, b) => a.baseName.localeCompare(b.baseName, 'vi', { sensitivity: 'base' }));
@@ -400,16 +489,79 @@ function SpaManagerConsoleContent() {
     return list;
   }, [services, serviceTypeFilter, serviceBrandFilter]);
 
+  /**
+   * Trích xuất danh sách đầy đủ tất cả các mốc cân nặng của nhóm dịch vụ để hiển thị bảng con trong Spa Manager
+   * Đảm bảo hiển thị đầy đủ các mốc cân nặng của dịch vụ dù nhóm chứa 1 bản ghi hay nhiều bản ghi (Chó & Mèo)
+   */
+  const getGroupBrackets = (group: any) => {
+    if (!group || !group.items || group.items.length === 0) return [];
+
+    const results: any[] = [];
+
+    // Duyệt qua tất cả các dịch vụ trong nhóm để lấy đầy đủ các mốc cân nặng
+    group.items.forEach((item: any) => {
+      const normSpecies = item.species || 'ALL';
+      const dogBrackets = getServiceBracketsForSpecies(item, 'DOG');
+      const catBrackets = getServiceBracketsForSpecies(item, 'CAT');
+
+      if (normSpecies === 'DOG') {
+        dogBrackets.forEach((b, idx) => {
+          results.push({
+            ...b,
+            species: 'DOG' as const,
+            speciesLabel: '🐶 Chó',
+            service: item,
+            bracketIndex: idx,
+          });
+        });
+      } else if (normSpecies === 'CAT') {
+        catBrackets.forEach((b, idx) => {
+          results.push({
+            ...b,
+            species: 'CAT' as const,
+            speciesLabel: '🐱 Mèo',
+            service: item,
+            bracketIndex: idx,
+          });
+        });
+      } else {
+        // ALL: Hiển thị đầy đủ cả mốc cho Chó và Mèo
+        dogBrackets.forEach((b, idx) => {
+          results.push({
+            ...b,
+            species: 'DOG' as const,
+            speciesLabel: '🐶 Chó',
+            service: item,
+            bracketIndex: idx,
+          });
+        });
+        catBrackets.forEach((b, idx) => {
+          results.push({
+            ...b,
+            species: 'CAT' as const,
+            speciesLabel: '🐱 Mèo',
+            service: item,
+            bracketIndex: idx,
+          });
+        });
+      }
+    });
+
+    return results;
+  };
+
   // Filter SpaBrand options in form based on selected classification (isMain)
   const filteredBrandsForForm = useMemo(() => {
     return managerBrands.filter((b: any) => {
-      if (serviceForm.isMain) {
-        return b.isMain !== false;
-      } else {
-        return b.isMain === false;
+      if (addModalOpen) {
+        return addForm.isMain ? b.isMain !== false : b.isMain === false;
       }
+      if (editModalOpen) {
+        return editForm.isMain ? b.isMain !== false : b.isMain === false;
+      }
+      return serviceForm.isMain ? b.isMain !== false : b.isMain === false;
     });
-  }, [managerBrands, serviceForm.isMain]);
+  }, [managerBrands, addModalOpen, addForm.isMain, editModalOpen, editForm.isMain, serviceForm.isMain]);
 
   const filteredFeedbacks = useMemo(() => {
     return feedbacks.filter((f: any) => {
@@ -921,243 +1073,675 @@ function SpaManagerConsoleContent() {
     }
   };
 
-  const handleMinWeightChange = (val: string) => {
-    setServiceForm((prev) => ({ ...prev, petWeightMin: val }));
-  };
 
-  const handleMaxWeightChange = (val: string) => {
-    setServiceForm((prev) => ({ ...prev, petWeightMax: val }));
-  };
-
-  // Validate weight inputs immediately when user finishes typing (onBlur)
-  const handleWeightBlur = () => {
-    const minVal = serviceForm.petWeightMin;
-    const maxVal = serviceForm.petWeightMax;
-
-    if (minVal !== '' && minVal !== null && minVal !== undefined) {
-      const minNum = parseFloat(minVal);
-      if (!isNaN(minNum) && minNum < 0) {
-        toast.error('Cân nặng tối thiểu không được nhỏ hơn 0kg!');
-        return;
-      }
-    }
-
-    if (maxVal !== '' && maxVal !== null && maxVal !== undefined) {
-      const maxNum = parseFloat(maxVal);
-      if (!isNaN(maxNum) && maxNum < 0) {
-        toast.error('Cân nặng tối đa không được nhỏ hơn 0kg!');
-        return;
-      }
-    }
-
-    if (
-      minVal !== '' && minVal !== null && minVal !== undefined &&
-      maxVal !== '' && maxVal !== null && maxVal !== undefined
-    ) {
-      const minNum = parseFloat(minVal);
-      const maxNum = parseFloat(maxVal);
-      if (!isNaN(minNum) && !isNaN(maxNum) && minNum > maxNum) {
-        toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn hoặc bằng cân nặng tối đa (max)!');
-      }
-    }
-  };
-
-  // Format weight display range according to business rules:
-  // - null/empty both -> "Tất cả cân nặng"
-  // - min == max -> "minkg" (e.g. 0kg)
-  // - max only -> "0 - maxkg"
-  // - min only -> ">minkg"
-  // - both min & max -> "min - maxkg"
-  const formatWeightRange = (min?: number | null, max?: number | null): string => {
-    const hasMin = min !== null && min !== undefined && min !== ('' as any) && !isNaN(Number(min));
-    const hasMax = max !== null && max !== undefined && max !== ('' as any) && !isNaN(Number(max));
-
-    if (!hasMin && !hasMax) {
-      return 'Tất cả cân nặng';
-    }
-
-    const minNum = hasMin ? Number(min) : null;
-    const maxNum = hasMax ? Number(max) : null;
-
-    if (minNum !== null && maxNum !== null) {
-      if (minNum === maxNum) {
-        return `${minNum}kg`;
-      }
-      return `${minNum} - ${maxNum}kg`;
-    }
-
-    if (minNum === null && maxNum !== null) {
-      return `0 - ${maxNum}kg`;
-    }
-
-    if (minNum !== null && maxNum === null) {
-      return `>${minNum}kg`;
-    }
-
-    return 'Tất cả cân nặng';
-  };
-
-  // Service submit with complete field validation
-  const handleServiceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // 1. Validate Brand
-    if (!serviceForm.brandId) {
-      toast.error('Vui lòng chọn Danh mục dịch vụ!');
-      return;
-    }
-
-    // 2. Validate Service Name
-    if (!serviceForm.name || serviceForm.name.trim().length < 2) {
-      toast.error('Vui lòng nhập Tên dịch vụ (tối thiểu 2 ký tự)!');
-      return;
-    }
-
-    // 3. Validate Price (> 0)
-    const priceNum = parseVNDInput(serviceForm.price);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      toast.error('Vui lòng nhập Giá dịch vụ hợp lệ (lớn hơn 0đ)!');
-      return;
-    }
-
-    // 4. Validate Duration (> 0)
-    const durationNum = Number(String(serviceForm.durationMin || '').replace(/\D/g, ''));
-    if (isNaN(durationNum) || durationNum <= 0) {
-      toast.error('Thời gian thực hiện phải lớn hơn 0 phút!');
-      return;
-    }
-
-    // 5. Validate Weight Range after submission (sau khi nhập xong)
-    const weightMinNum = serviceForm.petWeightMin !== '' && serviceForm.petWeightMin !== null && serviceForm.petWeightMin !== undefined
-      ? Number(serviceForm.petWeightMin)
-      : null;
-    const weightMaxNum = serviceForm.petWeightMax !== '' && serviceForm.petWeightMax !== null && serviceForm.petWeightMax !== undefined
-      ? Number(serviceForm.petWeightMax)
-      : null;
-
-    if (weightMinNum !== null && (isNaN(weightMinNum) || weightMinNum < 0)) {
-      toast.error('Cân nặng tối thiểu không được nhỏ hơn 0kg!');
-      return;
-    }
-
-    if (weightMaxNum !== null && (isNaN(weightMaxNum) || weightMaxNum < 0)) {
-      toast.error('Cân nặng tối đa không được nhỏ hơn 0kg!');
-      return;
-    }
-
-    if (weightMinNum !== null && weightMaxNum !== null && weightMinNum > weightMaxNum) {
-      toast.error('Cân nặng tối thiểu (min) phải nhỏ hơn hoặc bằng cân nặng tối đa (max)!');
-      return;
-    }
-
-    // 6. Validate Image Upload for New Service (Mandatory)
-    if (!editingService && !serviceImageFile && !serviceForm.imageUrl) {
-      toast.error('Vui lòng chọn và tải 1 ảnh dịch vụ lên! (Bắt buộc khi thêm mới dịch vụ)');
-      return;
-    }
-
-    setSubmittingService(true);
-    try {
-      let finalImageUrl: string | undefined = serviceForm.imageUrl || undefined;
-      if (serviceImageFile) {
-        const uploaded = await uploadImages([serviceImageFile], 'spa-result');
-        if (uploaded && uploaded[0]?.url) {
-          finalImageUrl = uploaded[0].url;
-        }
-      }
-
-      const data = {
-        brandId: serviceForm.brandId,
-        name: serviceForm.name.trim(),
-        description: serviceForm.description ? serviceForm.description.trim() : undefined,
-        imageUrl: finalImageUrl,
-        price: priceNum,
-        durationMin: durationNum,
-        durationMax: durationNum,
-        isMain: serviceForm.isMain,
-        species: serviceForm.species === 'ALL' ? undefined : serviceForm.species,
-        petWeightMin: weightMinNum !== null ? weightMinNum : null,
-        petWeightMax: weightMaxNum !== null ? weightMaxNum : null,
-        isActive: serviceForm.isActive
-      };
-
-      if (editingService) {
-        await spaApi.updateManagerService(editingService.id, data);
-        toast.success('Cập nhật dịch vụ và ảnh thành công!');
-      } else {
-        await spaApi.createManagerService(data);
-        toast.success('Thêm dịch vụ mới thành công!');
-      }
-      setServiceModalOpen(false);
-      setEditingService(null);
-      setServiceImageFile(null);
-      setServiceImagePreview(null);
-      refreshData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi lưu dịch vụ.');
-    } finally {
-      setSubmittingService(false);
-    }
-  };
 
   // Format price input live while typing (10000 -> 10.000)
-  const formatVNDInput = (val: string) => {
+  const formatVNDInput = (val: string | number) => {
     const digits = String(val || '').replace(/\D/g, '');
     if (!digits) return '';
     return Number(digits).toLocaleString('vi-VN');
   };
 
-  const parseVNDInput = (val: string) => {
+  const parseVNDInput = (val: string | number) => {
     const digits = String(val || '').replace(/\D/g, '');
     return digits ? Number(digits) : 0;
   };
 
-  // Open edit service modal
-  const handleEditServiceClick = (service: any) => {
-    setEditingService(service);
-    const selectedCatId = service.categoryId || service.category?.id || service.brandId || service.brand?.id || (managerBrands[0]?.id || '');
-    const serviceIsMain = service.isMain ?? (service.category?.isMain ?? true);
-    setServiceForm({
-      brandId: selectedCatId,
-      name: service.name || '',
-      description: service.description || '',
-      imageUrl: service.imageUrl || '',
-      price: service.price ? Number(service.price).toLocaleString('vi-VN') : '',
-      durationMin: String(service.durationMin || 60),
-      durationMax: service.durationMax ? String(service.durationMax) : '',
-      isMain: serviceIsMain,
-      species: service.species || 'ALL',
-      petWeightMin: service.petWeightMin !== null && service.petWeightMin !== undefined ? String(service.petWeightMin) : '',
-      petWeightMax: service.petWeightMax !== null && service.petWeightMax !== undefined ? String(service.petWeightMax) : '',
-      isActive: service.isActive ?? true
-    });
-    setServiceImageFile(null);
-    setServiceImagePreview(service.imageUrl || null);
-    setServiceModalOpen(true);
+  /**
+   * Định dạng khoảng cân nặng hiển thị thân thiện tiếng Việt
+   */
+  const formatWeightRange = (min?: number | null, max?: number | null): string => {
+    return formatBracketWeightRange(min, max);
   };
 
-  // Open add service modal
+  /**
+   * Cập nhật danh sách mốc cân nặng theo quy tắc cascading:
+   * - Khi người dùng thay đổi max của cột trước sau khi nhập xong sẽ thay đổi min của cột sau
+   * - Mốc đầu tiên cố định min = 0
+   * - Nếu max = null thì chỉ cần giá trị cân nặng lớn hơn min sẽ đều đạt điều kiện
+   * - Cho phép giá và thời gian nhận giá trị rỗng/null để người dùng tự nhập
+   */
+  const updateWeightBracketList = (
+    brackets: Array<{ min: number; max: number | null; duration: any; price: any }>,
+    index: number,
+    field: 'max' | 'duration' | 'price',
+    value: any
+  ) => {
+    const nextList = brackets.map((b) => ({ ...b }));
+    if (index < 0 || index >= nextList.length) return nextList;
+
+    if (field === 'duration') {
+      if (value === '' || value === null || value === undefined) {
+        nextList[index].duration = '';
+      } else {
+        const cleanNum = Number(String(value).replace(/\D/g, ''));
+        nextList[index].duration = cleanNum || '';
+      }
+      return nextList;
+    }
+
+    if (field === 'price') {
+      if (value === '' || value === null || value === undefined) {
+        nextList[index].price = '';
+      } else {
+        const cleanNum = parseVNDInput(value);
+        nextList[index].price = cleanNum || '';
+      }
+      return nextList;
+    }
+
+    if (field === 'max') {
+      let newMax: number | null = null;
+      if (value !== '' && value !== null && value !== undefined) {
+        newMax = parseFloat(value);
+        if (isNaN(newMax)) newMax = null;
+      }
+
+      // Kiểm tra validate: nếu max <= min thì thông báo lỗi tức thì
+      if (newMax !== null && newMax <= nextList[index].min) {
+        toast.error(`Cân nặng tối đa (${newMax}kg) phải lớn hơn cân nặng tối thiểu (${nextList[index].min}kg)!`);
+      }
+
+      nextList[index].max = newMax;
+
+      // Quy tắc cascading: Khi thay đổi max của mốc trước -> tự động thay đổi min của mốc kế tiếp
+      if (index + 1 < nextList.length) {
+        nextList[index + 1].min = newMax !== null ? newMax : nextList[index].min;
+      }
+    }
+
+    return nextList;
+  };
+
+  /**
+   * Thêm mốc cân nặng mới vào cuối danh sách:
+   * min của mốc mới lấy từ max của mốc trước đó, giá và thời gian để trống để người dùng nhập
+   */
+  const addWeightBracketToList = (
+    brackets: Array<{ min: number; max: number | null; duration: any; price: any }>
+  ) => {
+    const nextList = brackets.map((b) => ({ ...b }));
+    if (nextList.length === 0) {
+      nextList.push({ min: 0, max: null, duration: '', price: '' });
+      return nextList;
+    }
+
+    const lastIdx = nextList.length - 1;
+    const lastBracket = nextList[lastIdx];
+
+    // Nếu mốc cuối đang có max = null, gán một mốc chặn hợp lý cho nó
+    if (lastBracket.max === null) {
+      const suggestedMax = Math.max(lastBracket.min + 5, 5);
+      lastBracket.max = suggestedMax;
+      nextList.push({
+        min: suggestedMax,
+        max: null,
+        duration: '',
+        price: '',
+      });
+    } else {
+      nextList.push({
+        min: lastBracket.max,
+        max: null,
+        duration: '',
+        price: '',
+      });
+    }
+
+    return nextList;
+  };
+
+  /**
+   * Xóa một mốc cân nặng và cập nhật lại chuỗi nối tiếp min/max
+   */
+  const removeWeightBracketFromList = (
+    brackets: Array<{ min: number; max: number | null; duration: any; price: any }>,
+    index: number
+  ) => {
+    if (brackets.length <= 1) {
+      toast.error('Dịch vụ cần có ít nhất 1 mốc cân nặng!');
+      return brackets;
+    }
+
+    const nextList = brackets.filter((_, i) => i !== index);
+    nextList[0].min = 0;
+    for (let i = 1; i < nextList.length; i++) {
+      nextList[i].min = nextList[i - 1].max ?? nextList[i - 1].min;
+    }
+    return nextList;
+  };
+
+  /**
+   * Lấy danh sách preset mốc chuẩn cho Chó với GIÁ VÀ THỜI GIAN ĐỂ TRỐNG (null / rỗng)
+   * Các khoảng kg chuẩn: 0-3, 3-5, 5-10, 10-20, 20-30, 30-50, >50
+   */
+  const getBlankDogPresetBrackets = () => {
+    return DOG_WEIGHT_PRESETS.map((p) => ({
+      min: p.min,
+      max: p.max,
+      duration: '',
+      price: '',
+    }));
+  };
+
+  /**
+   * Lấy danh sách preset mốc chuẩn cho Mèo với GIÁ VÀ THỜI GIAN ĐỂ TRỐNG (null / rỗng)
+   * Các khoảng kg chuẩn: 0-3, 3-5, 5-15, 15-30, >30
+   */
+  const getBlankCatPresetBrackets = () => {
+    return CAT_WEIGHT_PRESETS.map((p) => ({
+      min: p.min,
+      max: p.max,
+      duration: '',
+      price: '',
+    }));
+  };
+
+  /**
+   * Lấy danh sách preset mốc chuẩn cho Chó (kèm giá mẫu)
+   */
+  const getDogPresetBrackets = () => {
+    return DOG_WEIGHT_PRESETS.map((p, idx) => ({
+      min: p.min,
+      max: p.max,
+      duration: 30 + idx * 10,
+      price: 150000 + idx * 40000,
+    }));
+  };
+
+  /**
+   * Lấy danh sách preset mốc chuẩn cho Mèo (kèm giá mẫu)
+   */
+  const getCatPresetBrackets = () => {
+    return CAT_WEIGHT_PRESETS.map((p, idx) => ({
+      min: p.min,
+      max: p.max,
+      duration: 30 + idx * 10,
+      price: 120000 + idx * 40000,
+    }));
+  };
+
+  /**
+   * Đổi trạng thái kích hoạt (isActive: Bật / Tắt) của dịch vụ trực tiếp khi click
+   */
+  const handleToggleServiceActive = async (targetService: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextActive = !targetService.isActive;
+    try {
+      await spaApi.updateManagerService(targetService.id, { isActive: nextActive });
+      setServices((prev) =>
+        prev.map((s) => (s.id === targetService.id ? { ...s, isActive: nextActive } : s))
+      );
+      toast.success(nextActive ? 'Đã kích hoạt dịch vụ thành công!' : 'Đã tạm tắt dịch vụ!');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể đổi trạng thái dịch vụ.');
+    }
+  };
+
+  /**
+   * Mở modal Thêm Dịch Vụ Mới
+   * Khởi tạo mốc cân nặng với giá và thời gian để trống / null để người dùng tự nhập
+   */
   const handleAddServiceClick = () => {
-    setEditingService(null);
     const defaultMainBrand = managerBrands.find((b: any) => b.isMain !== false);
     const brandId = defaultMainBrand ? defaultMainBrand.id : (managerBrands[0]?.id || '');
-    setServiceForm({
+    setAddForm({
       brandId,
       name: '',
       description: '',
       imageUrl: '',
-      price: '',
-      durationMin: '60',
-      durationMax: '60',
       isMain: true,
       species: 'ALL',
-      petWeightMin: '',
-      petWeightMax: '',
-      isActive: true
+      hasDogWeightBrackets: false,
+      hasCatWeightBrackets: false,
+      dogSinglePrice: '',
+      dogSingleDuration: '60',
+      catSinglePrice: '',
+      catSingleDuration: '60',
+      singlePrice: '',
+      singleDuration: '60',
+      dogBrackets: getBlankDogPresetBrackets(),
+      catBrackets: getBlankCatPresetBrackets(),
+      activeTab: 'DOG',
+      isActive: true,
     });
-    setServiceImageFile(null);
-    setServiceImagePreview(null);
-    setServiceModalOpen(true);
+    setAddImageFile(null);
+    setAddImagePreview(null);
+    setAddModalOpen(true);
+  };
+
+  /**
+   * Lưu Form Thêm Dịch Vụ Mới
+   * Hỗ trợ độc lập từng loài: có mốc cân nặng hoặc áp dụng cho mọi cân nặng
+   */
+  const handleSaveAddService = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!addForm.brandId) {
+      toast.error('Vui lòng chọn Danh mục dịch vụ!');
+      return;
+    }
+    if (!addForm.name || addForm.name.trim().length < 2) {
+      toast.error('Vui lòng nhập Tên dịch vụ (tối thiểu 2 ký tự)!');
+      return;
+    }
+
+    // Bắt buộc tải lên 1 ảnh dịch vụ khi thêm mới
+    if (!addImageFile && !addForm.imageUrl) {
+      toast.error('Vui lòng chọn và tải 1 ảnh dịch vụ lên! (Bắt buộc khi thêm mới dịch vụ)');
+      return;
+    }
+
+    // Hàm kiểm tra tính hợp lệ của danh sách mốc cân nặng
+    const validateBracketList = (list: any[], label: string) => {
+      if (list.length === 0) {
+        toast.error(`Vui lòng cấu hình ít nhất 1 mốc cân nặng cho ${label}!`);
+        return false;
+      }
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i];
+        const prc = parseVNDInput(b.price);
+        const dur = Number(String(b.duration || '').replace(/\D/g, ''));
+        if (!b.price || isNaN(prc) || prc <= 0) {
+          toast.error(`Vui lòng nhập Đơn giá ở mốc #${i + 1} (${label}) lớn hơn 0đ!`);
+          return false;
+        }
+        if (!b.duration || isNaN(dur) || dur <= 0) {
+          toast.error(`Vui lòng nhập Thời gian ở mốc #${i + 1} (${label}) lớn hơn 0 phút!`);
+          return false;
+        }
+        if (b.max !== null && b.max !== '' && Number(b.max) <= Number(b.min)) {
+          toast.error(`Cân nặng tối đa (${b.max}kg) phải lớn hơn tối thiểu (${b.min}kg) ở mốc #${i + 1} (${label})!`);
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // Validate và đóng gói dữ liệu theo cấu trúc mốc cân nặng
+    let petMinWeight: any;
+    let petMaxWeight: any;
+    let duration: any;
+    let price: any;
+
+    if (addForm.species === 'DOG') {
+      if (!addForm.hasDogWeightBrackets) {
+        // Chó: Mọi cân nặng (không phân mốc theo kg)
+        const prc = parseVNDInput(addForm.dogSinglePrice || addForm.singlePrice);
+        const dur = Number(String(addForm.dogSingleDuration || addForm.singleDuration || '').replace(/\D/g, ''));
+        if (prc <= 0) {
+          toast.error('Vui lòng nhập Đơn giá dịch vụ cho Chó (lớn hơn 0đ)!');
+          return;
+        }
+        if (dur <= 0) {
+          toast.error('Thời gian thực hiện cho Chó phải lớn hơn 0 phút!');
+          return;
+        }
+        petMinWeight = [0];
+        petMaxWeight = [null];
+        duration = [dur];
+        price = [prc];
+      } else {
+        // Chó: Phân mốc cân nặng
+        if (!validateBracketList(addForm.dogBrackets, 'Chó')) return;
+        petMinWeight = addForm.dogBrackets.map((b) => Number(b.min));
+        petMaxWeight = addForm.dogBrackets.map((b) => (b.max !== null && !isNaN(Number(b.max)) ? Number(b.max) : null));
+        duration = addForm.dogBrackets.map((b) => Number(String(b.duration).replace(/\D/g, '')));
+        price = addForm.dogBrackets.map((b) => parseVNDInput(b.price));
+      }
+    } else if (addForm.species === 'CAT') {
+      if (!addForm.hasCatWeightBrackets) {
+        // Mèo: Mọi cân nặng (không phân mốc theo kg)
+        const prc = parseVNDInput(addForm.catSinglePrice || addForm.singlePrice);
+        const dur = Number(String(addForm.catSingleDuration || addForm.singleDuration || '').replace(/\D/g, ''));
+        if (prc <= 0) {
+          toast.error('Vui lòng nhập Đơn giá dịch vụ cho Mèo (lớn hơn 0đ)!');
+          return;
+        }
+        if (dur <= 0) {
+          toast.error('Thời gian thực hiện cho Mèo phải lớn hơn 0 phút!');
+          return;
+        }
+        petMinWeight = [0];
+        petMaxWeight = [null];
+        duration = [dur];
+        price = [prc];
+      } else {
+        // Mèo: Phân mốc cân nặng
+        if (!validateBracketList(addForm.catBrackets, 'Mèo')) return;
+        petMinWeight = addForm.catBrackets.map((b) => Number(b.min));
+        petMaxWeight = addForm.catBrackets.map((b) => (b.max !== null && !isNaN(Number(b.max)) ? Number(b.max) : null));
+        duration = addForm.catBrackets.map((b) => Number(String(b.duration).replace(/\D/g, '')));
+        price = addForm.catBrackets.map((b) => parseVNDInput(b.price));
+      }
+    } else {
+      // Cả hai loài (ALL)
+      let dogMins: number[] = [];
+      let dogMaxs: (number | null)[] = [];
+      let dogDurs: number[] = [];
+      let dogPrices: number[] = [];
+
+      let catMins: number[] = [];
+      let catMaxs: (number | null)[] = [];
+      let catDurs: number[] = [];
+      let catPrices: number[] = [];
+
+      // Xử lý dữ liệu Chó
+      if (!addForm.hasDogWeightBrackets) {
+        const prc = parseVNDInput(addForm.dogSinglePrice || addForm.singlePrice);
+        const dur = Number(String(addForm.dogSingleDuration || addForm.singleDuration || '').replace(/\D/g, ''));
+        if (prc <= 0) {
+          toast.error('Vui lòng nhập Đơn giá dịch vụ cho Chó (lớn hơn 0đ)!');
+          return;
+        }
+        if (dur <= 0) {
+          toast.error('Thời gian thực hiện cho Chó phải lớn hơn 0 phút!');
+          return;
+        }
+        dogMins = [0];
+        dogMaxs = [null];
+        dogDurs = [dur];
+        dogPrices = [prc];
+      } else {
+        if (!validateBracketList(addForm.dogBrackets, 'Chó')) return;
+        dogMins = addForm.dogBrackets.map((b) => Number(b.min));
+        dogMaxs = addForm.dogBrackets.map((b) => (b.max !== null && !isNaN(Number(b.max)) ? Number(b.max) : null));
+        dogDurs = addForm.dogBrackets.map((b) => Number(String(b.duration).replace(/\D/g, '')));
+        dogPrices = addForm.dogBrackets.map((b) => parseVNDInput(b.price));
+      }
+
+      // Xử lý dữ liệu Mèo
+      if (!addForm.hasCatWeightBrackets) {
+        const prc = parseVNDInput(addForm.catSinglePrice || addForm.singlePrice);
+        const dur = Number(String(addForm.catSingleDuration || addForm.singleDuration || '').replace(/\D/g, ''));
+        if (prc <= 0) {
+          toast.error('Vui lòng nhập Đơn giá dịch vụ cho Mèo (lớn hơn 0đ)!');
+          return;
+        }
+        if (dur <= 0) {
+          toast.error('Thời gian thực hiện cho Mèo phải lớn hơn 0 phút!');
+          return;
+        }
+        catMins = [0];
+        catMaxs = [null];
+        catDurs = [dur];
+        catPrices = [prc];
+      } else {
+        if (!validateBracketList(addForm.catBrackets, 'Mèo')) return;
+        catMins = addForm.catBrackets.map((b) => Number(b.min));
+        catMaxs = addForm.catBrackets.map((b) => (b.max !== null && !isNaN(Number(b.max)) ? Number(b.max) : null));
+        catDurs = addForm.catBrackets.map((b) => Number(String(b.duration).replace(/\D/g, '')));
+        catPrices = addForm.catBrackets.map((b) => parseVNDInput(b.price));
+      }
+
+      // Đóng gói mảng 2 chiều [Chó, Mèo]
+      petMinWeight = [dogMins, catMins];
+      petMaxWeight = [dogMaxs, catMaxs];
+      duration = [dogDurs, catDurs];
+      price = [dogPrices, catPrices];
+    }
+
+    setSubmittingAdd(true);
+    try {
+      let finalImageUrl: string | undefined = addForm.imageUrl || undefined;
+      if (addImageFile) {
+        const uploaded = await uploadImages([addImageFile], 'spa-result');
+        if (uploaded && uploaded[0]?.url) {
+          finalImageUrl = uploaded[0].url;
+        }
+      }
+
+      const payload = {
+        brandId: addForm.brandId,
+        name: addForm.name.trim(),
+        description: addForm.description ? addForm.description.trim() : undefined,
+        imageUrl: finalImageUrl,
+        isMain: addForm.isMain,
+        species: addForm.species === 'ALL' ? undefined : addForm.species,
+        petMinWeight,
+        petMaxWeight,
+        duration,
+        price,
+        isActive: addForm.isActive,
+      };
+
+      await spaApi.createManagerService(payload);
+      toast.success('Thêm dịch vụ mới thành công!');
+      setAddModalOpen(false);
+      setAddImageFile(null);
+      setAddImagePreview(null);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi lưu dịch vụ mới.');
+    } finally {
+      setSubmittingAdd(false);
+    }
+  };
+
+  /**
+   * Mở Popup Chỉnh Sửa Dịch Vụ Chia Đôi (Split-view Edit Modal)
+   * Không cho sửa đối tượng (species disabled)
+   */
+  const handleOpenSplitEditModal = (
+    service: any,
+    initialBracketIdx: number = 0,
+    targetSpecies?: 'DOG' | 'CAT'
+  ) => {
+    if (!service) return;
+    setEditingServiceTarget(service);
+
+    const normSpecies: 'ALL' | 'DOG' | 'CAT' =
+      service.species === 'DOG' ? 'DOG' : service.species === 'CAT' ? 'CAT' : 'ALL';
+
+    const dogRaw = getServiceBracketsForSpecies(service, 'DOG');
+    const catRaw = getServiceBracketsForSpecies(service, 'CAT');
+
+    const dogBrackets = dogRaw.length > 0
+      ? dogRaw.map((b) => ({ min: b.minWeight, max: b.maxWeight, duration: b.duration, price: b.price }))
+      : getDogPresetBrackets();
+
+    const catBrackets = catRaw.length > 0
+      ? catRaw.map((b) => ({ min: b.minWeight, max: b.maxWeight, duration: b.duration, price: b.price }))
+      : getCatPresetBrackets();
+
+    // Xác định xem dịch vụ có mốc cân nặng hay là cho mọi cân nặng
+    const activeRawList = normSpecies === 'CAT' ? catRaw : dogRaw;
+    const isSingleBracket =
+      activeRawList.length === 1 &&
+      (activeRawList[0].minWeight === 0 || activeRawList[0].minWeight === null) &&
+      activeRawList[0].maxWeight === null;
+
+    const hasWeightBrackets = !isSingleBracket;
+    const singlePrice = activeRawList[0]?.price ? formatVNDInput(activeRawList[0].price) : '';
+    const singleDuration = activeRawList[0]?.duration ? String(activeRawList[0].duration) : '60';
+
+    const selectedSpeciesTab: 'DOG' | 'CAT' =
+      targetSpecies || (normSpecies === 'CAT' ? 'CAT' : 'DOG');
+
+    const listForIdx = selectedSpeciesTab === 'CAT' ? catBrackets : dogBrackets;
+    const validBracketIdx = initialBracketIdx >= 0 && initialBracketIdx < listForIdx.length
+      ? initialBracketIdx
+      : 0;
+
+    const selectedCatId = service.categoryId || service.category?.id || service.brandId || service.brand?.id || (managerBrands[0]?.id || '');
+    const serviceIsMain = service.isMain ?? (service.category?.isMain ?? true);
+
+    setEditForm({
+      id: service.id,
+      brandId: selectedCatId,
+      name: service.name || '',
+      description: service.description || '',
+      imageUrl: service.imageUrl || '',
+      isMain: serviceIsMain,
+      species: normSpecies,
+      hasWeightBrackets,
+      singlePrice,
+      singleDuration,
+      dogBrackets,
+      catBrackets,
+      selectedSpeciesTab,
+      selectedBracketIndex: validBracketIdx,
+      isActive: service.isActive ?? true,
+    });
+
+    setEditImageFile(null);
+    setEditImagePreview(service.imageUrl || null);
+    setEditIsDirty(false);
+    setShowExitConfirmDialog(false);
+    setEditModalOpen(true);
+  };
+
+  /**
+   * Xử lý khi nhấn nút Thoát trong Edit Modal:
+   * Nếu có thay đổi (editIsDirty) -> cảnh báo xác nhận. Nếu không -> đóng ngay.
+   */
+  const handleAttemptCloseEditModal = () => {
+    if (editIsDirty) {
+      setShowExitConfirmDialog(true);
+    } else {
+      setEditModalOpen(false);
+    }
+  };
+
+  /**
+   * Lưu thay đổi trong Split-view Edit Modal:
+   * Chỉ sáng khi isDirty, bấm lưu KHÔNG tự động đóng popup để tiếp tục thao tác
+   */
+  const handleSaveEditService = async () => {
+    if (!editIsDirty) return;
+
+    if (!editForm.brandId) {
+      toast.error('Vui lòng chọn Danh mục dịch vụ!');
+      return;
+    }
+    if (!editForm.name || editForm.name.trim().length < 2) {
+      toast.error('Vui lòng nhập Tên dịch vụ (tối thiểu 2 ký tự)!');
+      return;
+    }
+
+    let petMinWeight: any;
+    let petMaxWeight: any;
+    let duration: any;
+    let price: any;
+
+    if (!editForm.hasWeightBrackets) {
+      const singlePriceNum = parseVNDInput(editForm.singlePrice);
+      if (isNaN(singlePriceNum) || singlePriceNum <= 0) {
+        toast.error('Vui lòng nhập Giá dịch vụ hợp lệ (lớn hơn 0đ)!');
+        return;
+      }
+      const singleDurationNum = Number(String(editForm.singleDuration || '').replace(/\D/g, ''));
+      if (isNaN(singleDurationNum) || singleDurationNum <= 0) {
+        toast.error('Thời gian thực hiện phải lớn hơn 0 phút!');
+        return;
+      }
+      petMinWeight = [0];
+      petMaxWeight = [null];
+      duration = [singleDurationNum];
+      price = [singlePriceNum];
+    } else {
+      const validateBracketList = (list: typeof editForm.dogBrackets, label: string) => {
+        if (list.length === 0) {
+          toast.error(`Vui lòng cấu hình ít nhất 1 mốc cân nặng cho ${label}!`);
+          return false;
+        }
+        for (let i = 0; i < list.length; i++) {
+          const b = list[i];
+          if (b.price <= 0) {
+            toast.error(`Đơn giá ở mốc #${i + 1} (${label}) phải lớn hơn 0đ!`);
+            return false;
+          }
+          if (b.duration <= 0) {
+            toast.error(`Thời gian ở mốc #${i + 1} (${label}) phải lớn hơn 0 phút!`);
+            return false;
+          }
+          if (b.max !== null && b.max <= b.min) {
+            toast.error(`Cân nặng tối đa (${b.max}kg) phải lớn hơn tối thiểu (${b.min}kg) ở mốc #${i + 1} (${label})!`);
+            return false;
+          }
+        }
+        return true;
+      };
+
+      if (editForm.species === 'DOG') {
+        if (!validateBracketList(editForm.dogBrackets, 'Chó')) return;
+        petMinWeight = editForm.dogBrackets.map((b) => b.min);
+        petMaxWeight = editForm.dogBrackets.map((b) => b.max);
+        duration = editForm.dogBrackets.map((b) => b.duration);
+        price = editForm.dogBrackets.map((b) => b.price);
+      } else if (editForm.species === 'CAT') {
+        if (!validateBracketList(editForm.catBrackets, 'Mèo')) return;
+        petMinWeight = editForm.catBrackets.map((b) => b.min);
+        petMaxWeight = editForm.catBrackets.map((b) => b.max);
+        duration = editForm.catBrackets.map((b) => b.duration);
+        price = editForm.catBrackets.map((b) => b.price);
+      } else {
+        if (!validateBracketList(editForm.dogBrackets, 'Chó')) return;
+        if (!validateBracketList(editForm.catBrackets, 'Mèo')) return;
+        petMinWeight = [
+          editForm.dogBrackets.map((b) => b.min),
+          editForm.catBrackets.map((b) => b.min),
+        ];
+        petMaxWeight = [
+          editForm.dogBrackets.map((b) => b.max),
+          editForm.catBrackets.map((b) => b.max),
+        ];
+        duration = [
+          editForm.dogBrackets.map((b) => b.duration),
+          editForm.catBrackets.map((b) => b.duration),
+        ];
+        price = [
+          editForm.dogBrackets.map((b) => b.price),
+          editForm.catBrackets.map((b) => b.price),
+        ];
+      }
+    }
+
+    setSubmittingEdit(true);
+    try {
+      let finalImageUrl: string | undefined = editForm.imageUrl || undefined;
+      if (editImageFile) {
+        const uploaded = await uploadImages([editImageFile], 'spa-result');
+        if (uploaded && uploaded[0]?.url) {
+          finalImageUrl = uploaded[0].url;
+        }
+      }
+
+      // Lưu ý: Tuyệt đối không cho sửa species khi update
+      const payload = {
+        brandId: editForm.brandId,
+        name: editForm.name.trim(),
+        description: editForm.description ? editForm.description.trim() : undefined,
+        imageUrl: finalImageUrl,
+        isMain: editForm.isMain,
+        petMinWeight,
+        petMaxWeight,
+        duration,
+        price,
+        isActive: editForm.isActive,
+      };
+
+      await spaApi.updateManagerService(editForm.id, payload);
+      toast.success('Cập nhật dịch vụ thành công!');
+
+      // Cập nhật state dịch vụ cục bộ và giữ modal mở
+      setServices((prev) =>
+        prev.map((s) => (s.id === editForm.id ? { ...s, ...payload, imageUrl: finalImageUrl } : s))
+      );
+      setEditForm((prev) => ({ ...prev, imageUrl: finalImageUrl || '' }));
+      setEditImageFile(null);
+      setEditIsDirty(false);
+      refreshData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Lỗi khi cập nhật dịch vụ.');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
+  // Fallback edit click cũ
+  const handleEditServiceClick = (service: any) => {
+    handleOpenSplitEditModal(service, 0);
   };
 
   // Category Handlers
@@ -1877,26 +2461,57 @@ function SpaManagerConsoleContent() {
                                     </span>
                                   </td>
 
-                                  <td className="px-4 py-3 text-center font-medium text-gray-600 text-xs">{durationStr}</td>
-                                  <td className="px-4 py-3 text-right font-black text-primary text-xs">{priceStr}</td>
+                                  <td className="px-4 py-3 text-center font-medium text-gray-600 text-xs">{group.durationStr}</td>
+                                  <td className="px-4 py-3 text-right font-black text-primary text-xs">{group.priceStr}</td>
                                   <td className="px-4 py-3 text-center font-bold text-purple-700 text-xs">{group.totalBookings} lượt</td>
-                                  <td className="px-4 py-3 text-center">
-                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${activeCount > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                      }`}>
-                                      {activeCount > 0 ? `Đang bật (${activeCount}/${group.items.length})` : 'Tắt'}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       type="button"
                                       onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleServiceGroup(group.groupKey);
+                                        if (group.items.length === 1) {
+                                          handleToggleServiceActive(group.items[0], e);
+                                        } else {
+                                          const nextStatus = activeCount === 0;
+                                          Promise.all(group.items.map((it: any) => spaApi.updateManagerService(it.id, { isActive: nextStatus })))
+                                            .then(() => {
+                                              setServices((prev) =>
+                                                prev.map((s) => group.items.some((it: any) => it.id === s.id) ? { ...s, isActive: nextStatus } : s)
+                                              );
+                                              toast.success(nextStatus ? 'Đã kích hoạt dịch vụ thành công!' : 'Đã tạm tắt dịch vụ!');
+                                            })
+                                            .catch(() => toast.error('Không thể đổi trạng thái dịch vụ.'));
+                                        }
                                       }}
-                                      className="px-2.5 py-1 rounded-lg border border-primary/25 text-primary font-bold text-[11px] hover:bg-orange-50 transition inline-flex items-center gap-1 cursor-pointer"
+                                      className={cn(
+                                        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition shadow-2xs cursor-pointer",
+                                        activeCount > 0
+                                          ? "bg-green-100 text-green-800 hover:bg-red-100 hover:text-red-700"
+                                          : "bg-red-100 text-red-800 hover:bg-green-100 hover:text-green-700"
+                                      )}
+                                      title="Click để đổi trạng thái Bật/Tắt của dịch vụ này"
                                     >
-                                      {isExpanded ? 'Thu gọn' : 'Xem các mốc kg'}
+                                      <span className={cn("size-2 rounded-full", activeCount > 0 ? "bg-green-600" : "bg-red-600")} />
+                                      {activeCount > 0 ? `Đang bật (${activeCount}/${group.items.length})` : 'Tắt'}
                                     </button>
+                                  </td>
+                                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleServiceGroup(group.groupKey)}
+                                        className="px-2.5 py-1 rounded-lg border border-primary/25 text-primary font-bold text-[11px] hover:bg-orange-50 transition inline-flex items-center gap-1 cursor-pointer"
+                                      >
+                                        {isExpanded ? 'Thu gọn' : 'Xem mốc kg'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenSplitEditModal(group.items[0], 0, group.items[0]?.species === 'CAT' ? 'CAT' : 'DOG')}
+                                        className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
+                                        title="Chỉnh sửa dịch vụ"
+                                      >
+                                        <Edit2 className="size-3.5" />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
 
@@ -1905,66 +2520,78 @@ function SpaManagerConsoleContent() {
                                   <tr>
                                     <td colSpan={7} className="bg-slate-50/70 px-4 py-2 border-y border-slate-200/80">
                                       <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
-                                        <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                                          <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
-                                            ⚖️ Danh sách mốc cân nặng: <span className="text-primary">{group.baseName}</span>
-                                          </h4>
-                                          <span className="text-[10px] text-gray-400 font-medium">
-                                            ({group.items.length} biến thể cân nặng)
-                                          </span>
-                                        </div>
-                                        <div className="overflow-x-auto">
-                                          <table className="w-full text-left text-xs">
-                                            <thead>
-                                              <tr className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[10px] border-b border-gray-150">
-                                                <th className="py-2 px-3">Tên mốc dịch vụ</th>
-                                                <th className="py-2 px-3">Đối tượng</th>
-                                                <th className="py-2 px-3">Khoảng cân nặng</th>
-                                                <th className="py-2 px-3 text-center">Thời gian</th>
-                                                <th className="py-2 px-3 text-right">Đơn giá</th>
-                                                <th className="py-2 px-3 text-center">Lượt đặt</th>
-                                                <th className="py-2 px-3 text-center">Trạng thái</th>
-                                                <th className="py-2 px-3 text-center">Chỉnh sửa</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                              {group.items.map((s: any) => {
-                                                const speciesBadge = s.species === 'DOG' ? '🐕 Chó' : s.species === 'CAT' ? '🐈 Mèo' : '🐾 Tất cả';
-                                                const weightText = formatWeightRange(s.petWeightMin, s.petWeightMax);
+                                        {(() => {
+                                          const groupBrackets = getGroupBrackets(group);
+                                          return (
+                                            <>
+                                              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                                <div className="flex items-center gap-2">
+                                                  <h4 className="text-[11px] font-extrabold uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                                                    ⚖️ Danh sách mốc cân nặng: <span className="text-primary">{group.baseName}</span>
+                                                  </h4>
+                                                  <span className="text-[10px] text-gray-400 font-medium">
+                                                    ({groupBrackets.length} mốc cấu hình)
+                                                  </span>
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenSplitEditModal(group.items[0], 0, group.items[0]?.species === 'CAT' ? 'CAT' : 'DOG')}
+                                                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary text-white text-[11px] font-bold rounded-lg shadow-xs hover:bg-[#cf5017] transition cursor-pointer"
+                                                >
+                                                  <Edit2 className="size-3" />
+                                                  Chỉnh sửa dịch vụ
+                                                </button>
+                                              </div>
 
-                                                return (
-                                                  <tr key={s.id} className="hover:bg-purple-50/30 transition">
-                                                    <td className="py-2 px-3 font-bold text-gray-900 text-xs">{s.name}</td>
-                                                    <td className="py-2 px-3 font-semibold text-gray-700">{speciesBadge}</td>
-                                                    <td className="py-2 px-3 font-medium text-gray-600">{weightText}</td>
-                                                    <td className="py-2 px-3 text-center font-medium text-gray-700">{s.durationMin} phút</td>
-                                                    <td className="py-2 px-3 text-right font-black text-primary">{s.price.toLocaleString('vi-VN')}đ</td>
-                                                    <td className="py-2 px-3 text-center font-bold text-purple-700">{s._count?.bookings || 0} lượt</td>
-                                                    <td className="py-2 px-3 text-center">
-                                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${s.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                                                        }`}>
-                                                        {s.isActive ? 'Bật' : 'Tắt'}
-                                                      </span>
-                                                    </td>
-                                                    <td className="py-2 px-3 text-center">
-                                                      <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleEditServiceClick(s);
-                                                        }}
-                                                        className="p-1 rounded-md border border-gray-200 text-gray-500 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
-                                                        title="Chỉnh sửa mốc này"
-                                                      >
-                                                        <Edit2 className="size-3.5" />
-                                                      </button>
-                                                    </td>
-                                                  </tr>
-                                                );
-                                              })}
-                                            </tbody>
-                                          </table>
-                                        </div>
+                                              <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-xs">
+                                                  <thead>
+                                                    <tr className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[10px] border-b border-gray-150">
+                                                      <th className="py-2 px-3">Đối tượng</th>
+                                                      <th className="py-2 px-3">Khoảng cân nặng</th>
+                                                      <th className="py-2 px-3 text-center">Thời gian thực hiện</th>
+                                                      <th className="py-2 px-3 text-right">Đơn giá</th>
+                                                      <th className="py-2 px-3 text-center">Chỉnh sửa mốc</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody className="divide-y divide-gray-100">
+                                                    {groupBrackets.length > 0 ? (
+                                                      groupBrackets.map((b: any, bIdx: number) => {
+                                                        const weightText = formatWeightRange(b.minWeight, b.maxWeight);
+
+                                                        return (
+                                                          <tr key={`${b.service?.id || group.groupKey}_${b.species}_${bIdx}`} className="hover:bg-purple-50/30 transition">
+                                                            <td className="py-2 px-3 font-semibold text-gray-700">{b.speciesLabel}</td>
+                                                            <td className="py-2 px-3 font-medium text-gray-600">{weightText}</td>
+                                                            <td className="py-2 px-3 text-center font-medium text-gray-700">{b.duration} phút</td>
+                                                            <td className="py-2 px-3 text-right font-black text-primary">{b.price.toLocaleString('vi-VN')}đ</td>
+                                                            <td className="py-2 px-3 text-center">
+                                                              <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                  e.stopPropagation();
+                                                                  handleOpenSplitEditModal(b.service, b.bracketIndex, b.species);
+                                                                }}
+                                                                className="p-1 rounded-md border border-gray-200 text-gray-500 hover:text-primary hover:bg-orange-50 transition cursor-pointer"
+                                                                title="Mở popup chỉnh sửa mốc này"
+                                                              >
+                                                                <Edit2 className="size-3.5" />
+                                                              </button>
+                                                            </td>
+                                                          </tr>
+                                                        );
+                                                      })
+                                                    ) : (
+                                                      <tr>
+                                                        <td colSpan={5} className="py-4 text-center text-gray-400">Chưa có mốc cân nặng nào.</td>
+                                                      </tr>
+                                                    )}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
                                       </div>
                                     </td>
                                   </tr>
@@ -2985,32 +3612,37 @@ function SpaManagerConsoleContent() {
         </div>
       )}
 
-      {/* SERVICE MODAL (ADD / EDIT) */}
-      {serviceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-lg bg-white rounded-2xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative animate-in zoom-in-95 duration-150">
+      {/* ADD SERVICE MODAL */}
+      {addModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="w-full max-w-2xl bg-white rounded-3xl border border-gray-150 p-6 shadow-2xl space-y-4 my-8 relative max-h-[90vh] overflow-y-auto">
             <button
-              onClick={() => setServiceModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              type="button"
+              onClick={() => setAddModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition cursor-pointer"
             >
               <X className="size-5" />
             </button>
 
             <div>
-              <h3 className="text-base font-black text-gray-900">{editingService ? 'Chỉnh sửa dịch vụ Spa' : 'Thêm dịch vụ Spa mới'}</h3>
-              <p className="text-xs text-gray-450 mt-1 font-semibold">Tạo hoặc cập nhật mốc cân nặng, giá và nhóm thương hiệu dịch vụ.</p>
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" />
+                Thêm dịch vụ Spa mới
+              </h3>
+              <p className="text-xs text-gray-500 mt-1 font-semibold">
+                Tạo dịch vụ spa mới, thiết lập đối tượng áp dụng và cấu hình các mốc cân nặng theo từng khoảng kg.
+              </p>
             </div>
 
-            <form onSubmit={handleServiceSubmit} className="space-y-4">
-
-              {/* Category & Main/Sub Classification */}
+            <form onSubmit={handleSaveAddService} className="space-y-4">
+              {/* Category & Classification */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[11px] text-gray-500 font-extrabold uppercase">Danh mục dịch vụ *</label>
                   <select
                     required
-                    value={serviceForm.brandId}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, brandId: e.target.value }))}
+                    value={addForm.brandId}
+                    onChange={(e) => setAddForm((prev) => ({ ...prev, brandId: e.target.value }))}
                     className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
                   >
                     <option value="">-- Chọn danh mục dịch vụ --</option>
@@ -3025,181 +3657,1685 @@ function SpaManagerConsoleContent() {
                 <div className="space-y-1">
                   <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại dịch vụ *</label>
                   <select
-                    value={serviceForm.isMain ? 'MAIN' : 'SUB'}
-                    onChange={(e) => handleClassificationChange(e.target.value === 'MAIN')}
+                    value={addForm.isMain ? 'MAIN' : 'SUB'}
+                    onChange={(e) => setAddForm((prev) => ({ ...prev, isMain: e.target.value === 'MAIN' }))}
                     className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
                   >
-                    <option value="MAIN">Dịch vụ chính</option>
-                    <option value="SUB">Dịch vụ lẻ</option>
+                    <option value="MAIN">★ Dịch vụ chính</option>
+                    <option value="SUB">✦ Dịch vụ lẻ</option>
                   </select>
                 </div>
               </div>
 
-              {/* Name */}
+              {/* Service Name */}
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-500 font-extrabold uppercase">Tên dịch vụ *</label>
                 <input
                   type="text"
                   required
-                  value={serviceForm.name}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold"
-                  placeholder="Ví dụ: SPA Cắt tỉa lông (Chó 3-6kg)"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold focus:ring-1 focus:ring-primary"
+                  placeholder="Ví dụ: Tắm vệ sinh toàn diện"
                 />
               </div>
 
-              {/* Species & Weight Bracket */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Loài áp dụng</label>
-                  <select
-                    value={serviceForm.species}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, species: e.target.value as any }))}
-                    className="w-full h-10 border rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-800 bg-white"
+              {/* Species Selection */}
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Đối tượng áp dụng *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddForm((prev) => ({ ...prev, species: 'ALL' }))}
+                    className={cn(
+                      "py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer",
+                      addForm.species === 'ALL'
+                        ? "border-primary bg-orange-50 text-primary shadow-xs"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    )}
                   >
-                    <option value="ALL">🐾 Tất cả loài</option>
-                    <option value="DOG">🐕 Chó</option>
-                    <option value="CAT">🐈 Mèo</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Cân nặng từ (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    value={serviceForm.petWeightMin}
-                    onChange={(e) => handleMinWeightChange(e.target.value)}
-                    onBlur={handleWeightBlur}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    placeholder="Ví dụ: 1.5"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Cân nặng đến (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    value={serviceForm.petWeightMax}
-                    onChange={(e) => handleMaxWeightChange(e.target.value)}
-                    onBlur={handleWeightBlur}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    placeholder="Ví dụ: 3.0"
-                  />
+                    🐾 Cả hai loài
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddForm((prev) => ({ ...prev, species: 'DOG' }))}
+                    className={cn(
+                      "py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer",
+                      addForm.species === 'DOG'
+                        ? "border-primary bg-orange-50 text-primary shadow-xs"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    🐶 Chỉ cho Chó
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddForm((prev) => ({ ...prev, species: 'CAT' }))}
+                    className={cn(
+                      "py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer",
+                      addForm.species === 'CAT'
+                        ? "border-primary bg-orange-50 text-primary shadow-xs"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    🐱 Chỉ cho Mèo
+                  </button>
                 </div>
               </div>
 
               {/* Description */}
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả chi tiết</label>
+                <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả dịch vụ</label>
                 <textarea
-                  value={serviceForm.description}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full min-h-[60px] border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white"
-                  placeholder="Mô tả công việc và ưu đãi dịch vụ..."
+                  rows={2}
+                  value={addForm.description}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full border rounded-xl p-2.5 text-xs text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                  placeholder="Mô tả công việc, quy trình dịch vụ và ưu đãi..."
                 />
               </div>
 
-              {/* Service Image Upload (Only 1 image, non-image files blocked) */}
+              {/* Service Image Upload (Mandatory on creation) */}
               <div className="space-y-1.5">
                 <label className="text-[11px] text-gray-500 font-extrabold uppercase flex items-center gap-1">
-                  <Camera className="size-3.5 text-primary" /> Ảnh dịch vụ (Hiển thị trang chủ {!editingService ? '* Bắt buộc' : ''})
+                  <Camera className="size-3.5 text-primary" /> Ảnh dịch vụ * (Bắt buộc khi tạo mới)
                 </label>
-                {serviceImagePreview ? (
+                {addImagePreview ? (
                   <div className="relative inline-block group rounded-xl overflow-hidden border border-gray-200 shadow-xs max-w-[220px] bg-white">
                     <img
-                      src={serviceImagePreview}
+                      src={addImagePreview}
                       alt="Ảnh dịch vụ"
                       className="w-full h-32 object-cover rounded-xl"
                     />
                     <button
                       type="button"
-                      onClick={handleClearServiceImage}
+                      onClick={handleClearAddImage}
                       className="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full shadow-md hover:bg-red-700 transition cursor-pointer"
                       title="Xóa ảnh dịch vụ"
                     >
                       <X className="size-3.5" />
                     </button>
-                    <div className="p-1.5 bg-gray-900/70 text-[9px] text-white font-semibold text-center backdrop-blur-xs truncate">
-                      {serviceImageFile?.name || 'Ảnh dịch vụ đã chọn'}
-                    </div>
                   </div>
                 ) : (
                   <div>
-                    <label className="flex items-center justify-center gap-2 w-full p-3.5 border-2 border-dashed border-purple-200 hover:border-purple-400 rounded-xl bg-purple-50/40 hover:bg-purple-50 cursor-pointer transition text-xs text-purple-700 font-bold">
-                      <Upload className="size-4 text-purple-600" />
-                      <span>Tải 1 ảnh dịch vụ từ thiết bị (Chỉ chọn tệp ảnh)</span>
+                    <label className="flex items-center justify-center gap-2 w-full p-3.5 border-2 border-dashed border-orange-200 hover:border-orange-400 rounded-xl bg-orange-50/40 hover:bg-orange-50 cursor-pointer transition text-xs text-primary font-bold">
+                      <Upload className="size-4 text-primary" />
+                      <span>Tải 1 ảnh dịch vụ từ thiết bị (Chỉ chọn tệp hình ảnh)</span>
                       <input
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={handleServiceImageChange}
+                        onChange={handleAddImageChange}
                       />
                     </label>
                   </div>
                 )}
               </div>
 
-              {/* Price & Duration */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Giá dịch vụ (đ) *</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    value={serviceForm.price}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, price: formatVNDInput(e.target.value) }))}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs font-black text-primary bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    placeholder="150.000"
-                  />
+              {/* Weight Brackets Section - Cấu hình mốc cân nặng & Đơn giá linh hoạt */}
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-gray-200/80 pb-2">
+                  <div className="space-y-0.5">
+                    <h4 className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                      ⚖️ Thiết lập cân nặng & Giá dịch vụ
+                    </h4>
+                    <p className="text-[11px] text-gray-500 font-medium">
+                      Bấm nút để phân mốc theo kg cho loài đó (giá và thời gian để trống để tự điền). Loài nào không bấm sẽ là mọi cân nặng.
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    value={serviceForm.durationMin}
-                    onChange={(e) => {
-                      const cleanVal = e.target.value.replace(/\D/g, '');
-                      setServiceForm(prev => ({ ...prev, durationMin: cleanVal, durationMax: cleanVal }));
-                    }}
-                    className="w-full h-10 border rounded-xl px-3 py-1.5 text-xs text-gray-800 bg-white font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    placeholder="60"
-                  />
-                </div>
+
+                {/* TH 1: ÁP DỤNG CHỈ CHO CHÓ (DOG) */}
+                {addForm.species === 'DOG' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 shadow-2xs">
+                      <div>
+                        <div className="text-xs font-black text-gray-800 flex items-center gap-1.5">
+                          🐶 Phân mốc cân nặng cho Chó
+                        </div>
+                        <p className="text-[11px] text-gray-500 font-medium">
+                          {addForm.hasDogWeightBrackets
+                            ? 'Đang bật phân mốc theo từng khoảng kg cho Chó'
+                            : 'Chưa phân mốc: Áp dụng đồng giá cho MỌI CÂN NẶNG của Chó'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddForm((prev) => {
+                            const nextState = !prev.hasDogWeightBrackets;
+                            return {
+                              ...prev,
+                              hasDogWeightBrackets: nextState,
+                              dogBrackets: nextState && (prev.dogBrackets.length === 0 || prev.dogBrackets.every(b => b.price === ''))
+                                ? getBlankDogPresetBrackets()
+                                : prev.dogBrackets,
+                            };
+                          });
+                        }}
+                        className={cn(
+                          "px-3.5 py-1.5 rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs",
+                          addForm.hasDogWeightBrackets
+                            ? "bg-primary text-white hover:bg-[#cf5017]"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                        )}
+                      >
+                        {addForm.hasDogWeightBrackets ? '✓ Đang phân mốc' : '+ Bấm để phân mốc'}
+                      </button>
+                    </div>
+
+                    {!addForm.hasDogWeightBrackets ? (
+                      /* Chó: Mọi cân nặng */
+                      <div className="bg-white rounded-xl border border-gray-200 p-3.5 space-y-3">
+                        <p className="text-[11px] text-gray-500 font-semibold">
+                          💡 Dịch vụ này áp dụng cho <strong>mọi cân nặng của Chó</strong> (0 – không giới hạn kg). Vui lòng nhập đơn giá và thời gian thực hiện:
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-extrabold uppercase">Đơn giá cho Chó (đ) *</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={addForm.dogSinglePrice || addForm.singlePrice}
+                              onChange={(e) => {
+                                const formatted = formatVNDInput(e.target.value);
+                                setAddForm((prev) => ({ ...prev, dogSinglePrice: formatted, singlePrice: formatted }));
+                              }}
+                              className="w-full h-9 border rounded-xl px-3 text-xs font-black text-primary bg-white focus:ring-1 focus:ring-primary"
+                              placeholder="Ví dụ: 150.000"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={addForm.dogSingleDuration || addForm.singleDuration}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '');
+                                setAddForm((prev) => ({ ...prev, dogSingleDuration: val, singleDuration: val }));
+                              }}
+                              className="w-full h-9 border rounded-xl px-3 text-xs text-gray-800 bg-white font-bold focus:ring-1 focus:ring-primary"
+                              placeholder="60"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Chó: Bảng mốc cân nặng (giá và thời gian để trống để tự điền) */
+                      <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-gray-800 flex items-center gap-1">
+                            🐶 Các mốc cân nặng cho Chó (Vui lòng điền giá & thời gian)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddForm((prev) => ({ ...prev, dogBrackets: getBlankDogPresetBrackets() }));
+                              toast.success('Đã nạp lại các khoảng cân nặng chuẩn cho Chó (giá và thời gian để trống)!');
+                            }}
+                            className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            ⚡ Nạp lại khoảng chuẩn
+                          </button>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b bg-gray-50 text-[10px] uppercase font-bold text-gray-500">
+                                <th className="py-1.5 px-2">STT</th>
+                                <th className="py-1.5 px-2">Từ (kg)</th>
+                                <th className="py-1.5 px-2">Đến (kg)</th>
+                                <th className="py-1.5 px-2">Thời gian (phút) *</th>
+                                <th className="py-1.5 px-2 text-right">Đơn giá (đ) *</th>
+                                <th className="py-1.5 px-2 text-center">Xóa</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {addForm.dogBrackets.map((b, idx) => (
+                                <tr key={idx} className="hover:bg-gray-50/50">
+                                  <td className="py-1.5 px-2 font-bold text-gray-600">#{idx + 1}</td>
+                                  <td className="py-1.5 px-2">
+                                    <input
+                                      type="number"
+                                      readOnly
+                                      disabled
+                                      value={b.min}
+                                      className="w-16 h-7 bg-gray-100 border rounded-lg px-2 text-xs font-semibold text-gray-600"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min={b.min}
+                                      placeholder="Không GH"
+                                      value={b.max !== null && b.max !== undefined ? b.max : ''}
+                                      onChange={(e) => {
+                                        const next = updateWeightBracketList(addForm.dogBrackets, idx, 'max', e.target.value);
+                                        setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                      }}
+                                      className="w-20 h-7 border rounded-lg px-2 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    <input
+                                      type="text"
+                                      placeholder="-- phút"
+                                      value={b.duration !== undefined ? b.duration : ''}
+                                      onChange={(e) => {
+                                        const next = updateWeightBracketList(addForm.dogBrackets, idx, 'duration', e.target.value);
+                                        setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                      }}
+                                      className="w-20 h-7 border rounded-lg px-2 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2 text-right">
+                                    <input
+                                      type="text"
+                                      placeholder="-- VNĐ"
+                                      value={b.price ? formatVNDInput(b.price) : ''}
+                                      onChange={(e) => {
+                                        const next = updateWeightBracketList(addForm.dogBrackets, idx, 'price', e.target.value);
+                                        setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                      }}
+                                      className="w-24 h-7 border rounded-lg px-2 text-xs font-black text-primary bg-white text-right focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2 text-center">
+                                    {addForm.dogBrackets.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = removeWeightBracketFromList(addForm.dogBrackets, idx);
+                                          setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                        }}
+                                        className="p-1 text-gray-400 hover:text-red-600 transition cursor-pointer"
+                                        title="Xóa mốc này"
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = addWeightBracketToList(addForm.dogBrackets);
+                            setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                          }}
+                          className="w-full py-1.5 border border-dashed border-primary/40 hover:border-primary text-primary rounded-xl text-xs font-bold hover:bg-orange-50/50 transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="size-3.5" /> Thêm mốc cân nặng kế tiếp cho Chó
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TH 2: ÁP DỤNG CHỈ CHO MÈO (CAT) */}
+                {addForm.species === 'CAT' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 shadow-2xs">
+                      <div>
+                        <div className="text-xs font-black text-gray-800 flex items-center gap-1.5">
+                          🐱 Phân mốc cân nặng cho Mèo
+                        </div>
+                        <p className="text-[11px] text-gray-500 font-medium">
+                          {addForm.hasCatWeightBrackets
+                            ? 'Đang bật phân mốc theo từng khoảng kg cho Mèo'
+                            : 'Chưa phân mốc: Áp dụng đồng giá cho MỌI CÂN NẶNG của Mèo'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddForm((prev) => {
+                            const nextState = !prev.hasCatWeightBrackets;
+                            return {
+                              ...prev,
+                              hasCatWeightBrackets: nextState,
+                              catBrackets: nextState && (prev.catBrackets.length === 0 || prev.catBrackets.every(b => b.price === ''))
+                                ? getBlankCatPresetBrackets()
+                                : prev.catBrackets,
+                            };
+                          });
+                        }}
+                        className={cn(
+                          "px-3.5 py-1.5 rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs",
+                          addForm.hasCatWeightBrackets
+                            ? "bg-primary text-white hover:bg-[#cf5017]"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                        )}
+                      >
+                        {addForm.hasCatWeightBrackets ? '✓ Đang phân mốc' : '+ Bấm để phân mốc'}
+                      </button>
+                    </div>
+
+                    {!addForm.hasCatWeightBrackets ? (
+                      /* Mèo: Mọi cân nặng */
+                      <div className="bg-white rounded-xl border border-gray-200 p-3.5 space-y-3">
+                        <p className="text-[11px] text-gray-500 font-semibold">
+                          💡 Dịch vụ này áp dụng cho <strong>mọi cân nặng của Mèo</strong> (0 – không giới hạn kg). Vui lòng nhập đơn giá và thời gian thực hiện:
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-extrabold uppercase">Đơn giá cho Mèo (đ) *</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={addForm.catSinglePrice || addForm.singlePrice}
+                              onChange={(e) => {
+                                const formatted = formatVNDInput(e.target.value);
+                                setAddForm((prev) => ({ ...prev, catSinglePrice: formatted, singlePrice: formatted }));
+                              }}
+                              className="w-full h-9 border rounded-xl px-3 text-xs font-black text-primary bg-white focus:ring-1 focus:ring-primary"
+                              placeholder="Ví dụ: 120.000"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={addForm.catSingleDuration || addForm.singleDuration}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '');
+                                setAddForm((prev) => ({ ...prev, catSingleDuration: val, singleDuration: val }));
+                              }}
+                              className="w-full h-9 border rounded-xl px-3 text-xs text-gray-800 bg-white font-bold focus:ring-1 focus:ring-primary"
+                              placeholder="60"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Mèo: Bảng mốc cân nặng (giá và thời gian để trống để tự điền) */
+                      <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-gray-800 flex items-center gap-1">
+                            🐱 Các mốc cân nặng cho Mèo
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddForm((prev) => ({ ...prev, catBrackets: getBlankCatPresetBrackets() }));
+                              toast.success('Đã nạp lại các khoảng cân nặng chuẩn cho Mèo (giá và thời gian để trống)!');
+                            }}
+                            className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            ⚡ Nạp lại khoảng chuẩn
+                          </button>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b bg-gray-50 text-[10px] uppercase font-bold text-gray-500">
+                                <th className="py-1.5 px-2">STT</th>
+                                <th className="py-1.5 px-2">Từ (kg)</th>
+                                <th className="py-1.5 px-2">Đến (kg)</th>
+                                <th className="py-1.5 px-2">Thời gian (phút) *</th>
+                                <th className="py-1.5 px-2 text-right">Đơn giá (đ) *</th>
+                                <th className="py-1.5 px-2 text-center">Xóa</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {addForm.catBrackets.map((b, idx) => (
+                                <tr key={idx} className="hover:bg-gray-50/50">
+                                  <td className="py-1.5 px-2 font-bold text-gray-600">#{idx + 1}</td>
+                                  <td className="py-1.5 px-2">
+                                    <input
+                                      type="number"
+                                      readOnly
+                                      disabled
+                                      value={b.min}
+                                      className="w-16 h-7 bg-gray-100 border rounded-lg px-2 text-xs font-semibold text-gray-600"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min={b.min}
+                                      placeholder="Không GH"
+                                      value={b.max !== null && b.max !== undefined ? b.max : ''}
+                                      onChange={(e) => {
+                                        const next = updateWeightBracketList(addForm.catBrackets, idx, 'max', e.target.value);
+                                        setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                      }}
+                                      className="w-20 h-7 border rounded-lg px-2 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    <input
+                                      type="text"
+                                      placeholder="-- phút"
+                                      value={b.duration !== undefined ? b.duration : ''}
+                                      onChange={(e) => {
+                                        const next = updateWeightBracketList(addForm.catBrackets, idx, 'duration', e.target.value);
+                                        setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                      }}
+                                      className="w-20 h-7 border rounded-lg px-2 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2 text-right">
+                                    <input
+                                      type="text"
+                                      placeholder="-- VNĐ"
+                                      value={b.price ? formatVNDInput(b.price) : ''}
+                                      onChange={(e) => {
+                                        const next = updateWeightBracketList(addForm.catBrackets, idx, 'price', e.target.value);
+                                        setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                      }}
+                                      className="w-24 h-7 border rounded-lg px-2 text-xs font-black text-primary bg-white text-right focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
+                                  <td className="py-1.5 px-2 text-center">
+                                    {addForm.catBrackets.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = removeWeightBracketFromList(addForm.catBrackets, idx);
+                                          setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                        }}
+                                        className="p-1 text-gray-400 hover:text-red-600 transition cursor-pointer"
+                                        title="Xóa mốc này"
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = addWeightBracketToList(addForm.catBrackets);
+                            setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                          }}
+                          className="w-full py-1.5 border border-dashed border-primary/40 hover:border-primary text-primary rounded-xl text-xs font-bold hover:bg-orange-50/50 transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="size-3.5" /> Thêm mốc cân nặng kế tiếp cho Mèo
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TH 3: ÁP DỤNG CHO CẢ HAI LOÀI (ALL) */}
+                {addForm.species === 'ALL' && (
+                  <div className="space-y-3">
+                    {/* 2 nút bấm phân mốc cho từng loài */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {/* Nút Chó */}
+                      <div className="p-3 bg-white rounded-xl border border-gray-200 shadow-2xs flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-gray-800 flex items-center gap-1">
+                            🐶 Phân mốc cho Chó
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-medium block">
+                            {addForm.hasDogWeightBrackets ? 'Đang bật phân mốc theo kg' : 'Mọi cân nặng của Chó'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddForm((prev) => {
+                              const next = !prev.hasDogWeightBrackets;
+                              return {
+                                ...prev,
+                                hasDogWeightBrackets: next,
+                                dogBrackets: next && (prev.dogBrackets.length === 0 || prev.dogBrackets.every(b => b.price === ''))
+                                  ? getBlankDogPresetBrackets()
+                                  : prev.dogBrackets,
+                                activeTab: 'DOG',
+                              };
+                            });
+                          }}
+                          className={cn(
+                            "px-2.5 py-1.5 rounded-lg text-[11px] font-black transition cursor-pointer flex items-center gap-1",
+                            addForm.hasDogWeightBrackets
+                              ? "bg-primary text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                          )}
+                        >
+                          {addForm.hasDogWeightBrackets ? '✓ Đang bật' : '+ Bật mốc'}
+                        </button>
+                      </div>
+
+                      {/* Nút Mèo */}
+                      <div className="p-3 bg-white rounded-xl border border-gray-200 shadow-2xs flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-gray-800 flex items-center gap-1">
+                            🐱 Phân mốc cho Mèo
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-medium block">
+                            {addForm.hasCatWeightBrackets ? 'Đang bật phân mốc theo kg' : 'Mọi cân nặng của Mèo'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddForm((prev) => {
+                              const next = !prev.hasCatWeightBrackets;
+                              return {
+                                ...prev,
+                                hasCatWeightBrackets: next,
+                                catBrackets: next && (prev.catBrackets.length === 0 || prev.catBrackets.every(b => b.price === ''))
+                                  ? getBlankCatPresetBrackets()
+                                  : prev.catBrackets,
+                                activeTab: 'CAT',
+                              };
+                            });
+                          }}
+                          className={cn(
+                            "px-2.5 py-1.5 rounded-lg text-[11px] font-black transition cursor-pointer flex items-center gap-1",
+                            addForm.hasCatWeightBrackets
+                              ? "bg-primary text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                          )}
+                        >
+                          {addForm.hasCatWeightBrackets ? '✓ Đang bật' : '+ Bật mốc'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Trường hợp 3.1: Cả hai đều KHÔNG phân mốc -> Mọi cân nặng cho cả hai */}
+                    {!addForm.hasDogWeightBrackets && !addForm.hasCatWeightBrackets && (
+                      <div className="bg-white rounded-xl border border-gray-200 p-3.5 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-primary font-bold text-sm">💡</span>
+                          <p className="text-[11px] text-gray-600 font-semibold">
+                            Dịch vụ áp dụng cho <strong>MỌI CÂN NẶNG cho cả Chó và Mèo (Đồng giá)</strong>. Vui lòng nhập giá & thời gian chung:
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-extrabold uppercase">Đơn giá dịch vụ (đ) *</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={addForm.singlePrice}
+                              onChange={(e) => {
+                                const formatted = formatVNDInput(e.target.value);
+                                setAddForm((prev) => ({
+                                  ...prev,
+                                  singlePrice: formatted,
+                                  dogSinglePrice: formatted,
+                                  catSinglePrice: formatted,
+                                }));
+                              }}
+                              className="w-full h-9 border rounded-xl px-3 text-xs font-black text-primary bg-white focus:ring-1 focus:ring-primary"
+                              placeholder="Ví dụ: 150.000"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={addForm.singleDuration}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '');
+                                setAddForm((prev) => ({
+                                  ...prev,
+                                  singleDuration: val,
+                                  dogSingleDuration: val,
+                                  catSingleDuration: val,
+                                }));
+                              }}
+                              className="w-full h-9 border rounded-xl px-3 text-xs text-gray-800 bg-white font-bold focus:ring-1 focus:ring-primary"
+                              placeholder="60"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Trường hợp 3.2: Chỉ bật Chó, còn Mèo là mọi cân nặng */}
+                    {addForm.hasDogWeightBrackets && !addForm.hasCatWeightBrackets && (
+                      <div className="space-y-3">
+                        {/* Khối đơn giá cho Mèo (mọi cân nặng) */}
+                        <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-2">
+                          <span className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                            🐱 Mèo: Mọi cân nặng
+                          </span>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-amber-800 font-extrabold uppercase">Đơn giá cho Mèo (đ) *</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                required
+                                value={addForm.catSinglePrice}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, catSinglePrice: formatVNDInput(e.target.value) }))}
+                                className="w-full h-8.5 border border-amber-200 rounded-xl px-3 text-xs font-black text-primary bg-white focus:ring-1 focus:ring-primary"
+                                placeholder="Ví dụ: 120.000"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-amber-800 font-extrabold uppercase">Thời gian cho Mèo (phút) *</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                required
+                                value={addForm.catSingleDuration}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, catSingleDuration: e.target.value.replace(/\D/g, '') }))}
+                                className="w-full h-8.5 border border-amber-200 rounded-xl px-3 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                placeholder="45"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Khối bảng mốc cho Chó */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-gray-800 flex items-center gap-1">
+                              🐶 Bảng mốc cân nặng cho Chó (Điền giá & thời gian từng mốc)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddForm((prev) => ({ ...prev, dogBrackets: getBlankDogPresetBrackets() }));
+                                toast.success('Đã nạp lại khoảng cân nặng chuẩn cho Chó!');
+                              }}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              ⚡ Nạp lại khoảng chuẩn
+                            </button>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr className="border-b bg-gray-50 text-[10px] uppercase font-bold text-gray-500">
+                                  <th className="py-1.5 px-2">STT</th>
+                                  <th className="py-1.5 px-2">Từ (kg)</th>
+                                  <th className="py-1.5 px-2">Đến (kg)</th>
+                                  <th className="py-1.5 px-2">Thời gian (phút) *</th>
+                                  <th className="py-1.5 px-2 text-right">Đơn giá (đ) *</th>
+                                  <th className="py-1.5 px-2 text-center">Xóa</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {addForm.dogBrackets.map((b, idx) => (
+                                  <tr key={idx} className="hover:bg-gray-50/50">
+                                    <td className="py-1.5 px-2 font-bold text-gray-600">#{idx + 1}</td>
+                                    <td className="py-1.5 px-2">
+                                      <input
+                                        type="number"
+                                        readOnly
+                                        disabled
+                                        value={b.min}
+                                        className="w-16 h-7 bg-gray-100 border rounded-lg px-2 text-xs font-semibold text-gray-600"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min={b.min}
+                                        placeholder="Không GH"
+                                        value={b.max !== null && b.max !== undefined ? b.max : ''}
+                                        onChange={(e) => {
+                                          const next = updateWeightBracketList(addForm.dogBrackets, idx, 'max', e.target.value);
+                                          setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                        }}
+                                        className="w-20 h-7 border rounded-lg px-2 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input
+                                        type="text"
+                                        placeholder="-- phút"
+                                        value={b.duration !== undefined ? b.duration : ''}
+                                        onChange={(e) => {
+                                          const next = updateWeightBracketList(addForm.dogBrackets, idx, 'duration', e.target.value);
+                                          setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                        }}
+                                        className="w-20 h-7 border rounded-lg px-2 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2 text-right">
+                                      <input
+                                        type="text"
+                                        placeholder="-- VNĐ"
+                                        value={b.price ? formatVNDInput(b.price) : ''}
+                                        onChange={(e) => {
+                                          const next = updateWeightBracketList(addForm.dogBrackets, idx, 'price', e.target.value);
+                                          setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                        }}
+                                        className="w-24 h-7 border rounded-lg px-2 text-xs font-black text-primary bg-white text-right focus:ring-1 focus:ring-primary"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2 text-center">
+                                      {addForm.dogBrackets.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const next = removeWeightBracketFromList(addForm.dogBrackets, idx);
+                                            setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                          }}
+                                          className="p-1 text-gray-400 hover:text-red-600 transition cursor-pointer"
+                                          title="Xóa mốc này"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = addWeightBracketToList(addForm.dogBrackets);
+                              setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                            }}
+                            className="w-full py-1.5 border border-dashed border-primary/40 hover:border-primary text-primary rounded-xl text-xs font-bold hover:bg-orange-50/50 transition flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="size-3.5" /> Thêm mốc cân nặng kế tiếp cho Chó
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Trường hợp 3.3: Chỉ bật Mèo, còn Chó là mọi cân nặng */}
+                    {!addForm.hasDogWeightBrackets && addForm.hasCatWeightBrackets && (
+                      <div className="space-y-3">
+                        {/* Khối đơn giá cho Chó (mọi cân nặng) */}
+                        <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-2">
+                          <span className="text-xs font-black text-blue-900 flex items-center gap-1.5">
+                            🐶 Chó: Mọi cân nặng
+                          </span>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-blue-800 font-extrabold uppercase">Đơn giá cho Chó (đ) *</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                required
+                                value={addForm.dogSinglePrice}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, dogSinglePrice: formatVNDInput(e.target.value) }))}
+                                className="w-full h-8.5 border border-blue-200 rounded-xl px-3 text-xs font-black text-primary bg-white focus:ring-1 focus:ring-primary"
+                                placeholder="Ví dụ: 150.000"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-blue-800 font-extrabold uppercase">Thời gian cho Chó (phút) *</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                required
+                                value={addForm.dogSingleDuration}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, dogSingleDuration: e.target.value.replace(/\D/g, '') }))}
+                                className="w-full h-8.5 border border-blue-200 rounded-xl px-3 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                placeholder="60"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Khối bảng mốc cho Mèo */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-gray-800 flex items-center gap-1">
+                              🐱 Bảng mốc cân nặng cho Mèo
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddForm((prev) => ({ ...prev, catBrackets: getBlankCatPresetBrackets() }));
+                                toast.success('Đã nạp lại khoảng cân nặng chuẩn cho Mèo!');
+                              }}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              ⚡ Nạp lại khoảng chuẩn
+                            </button>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr className="border-b bg-gray-50 text-[10px] uppercase font-bold text-gray-500">
+                                  <th className="py-1.5 px-2">STT</th>
+                                  <th className="py-1.5 px-2">Từ (kg)</th>
+                                  <th className="py-1.5 px-2">Đến (kg)</th>
+                                  <th className="py-1.5 px-2">Thời gian (phút) *</th>
+                                  <th className="py-1.5 px-2 text-right">Đơn giá (đ) *</th>
+                                  <th className="py-1.5 px-2 text-center">Xóa</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {addForm.catBrackets.map((b, idx) => (
+                                  <tr key={idx} className="hover:bg-gray-50/50">
+                                    <td className="py-1.5 px-2 font-bold text-gray-600">#{idx + 1}</td>
+                                    <td className="py-1.5 px-2">
+                                      <input
+                                        type="number"
+                                        readOnly
+                                        disabled
+                                        value={b.min}
+                                        className="w-16 h-7 bg-gray-100 border rounded-lg px-2 text-xs font-semibold text-gray-600"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min={b.min}
+                                        placeholder="Không GH"
+                                        value={b.max !== null && b.max !== undefined ? b.max : ''}
+                                        onChange={(e) => {
+                                          const next = updateWeightBracketList(addForm.catBrackets, idx, 'max', e.target.value);
+                                          setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                        }}
+                                        className="w-20 h-7 border rounded-lg px-2 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input
+                                        type="text"
+                                        placeholder="-- phút"
+                                        value={b.duration !== undefined ? b.duration : ''}
+                                        onChange={(e) => {
+                                          const next = updateWeightBracketList(addForm.catBrackets, idx, 'duration', e.target.value);
+                                          setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                        }}
+                                        className="w-20 h-7 border rounded-lg px-2 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2 text-right">
+                                      <input
+                                        type="text"
+                                        placeholder="-- VNĐ"
+                                        value={b.price ? formatVNDInput(b.price) : ''}
+                                        onChange={(e) => {
+                                          const next = updateWeightBracketList(addForm.catBrackets, idx, 'price', e.target.value);
+                                          setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                        }}
+                                        className="w-24 h-7 border rounded-lg px-2 text-xs font-black text-primary bg-white text-right focus:ring-1 focus:ring-primary"
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-2 text-center">
+                                      {addForm.catBrackets.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const next = removeWeightBracketFromList(addForm.catBrackets, idx);
+                                            setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                          }}
+                                          className="p-1 text-gray-400 hover:text-red-600 transition cursor-pointer"
+                                          title="Xóa mốc này"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = addWeightBracketToList(addForm.catBrackets);
+                              setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                            }}
+                            className="w-full py-1.5 border border-dashed border-primary/40 hover:border-primary text-primary rounded-xl text-xs font-bold hover:bg-orange-50/50 transition flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="size-3.5" /> Thêm mốc cân nặng kế tiếp cho Mèo
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Trường hợp 3.4: Bật phân mốc cho CẢ HAI LOÀI -> Thanh tab chuyển đổi */}
+                    {addForm.hasDogWeightBrackets && addForm.hasCatWeightBrackets && (
+                      <div className="space-y-3">
+                        <div className="flex border-b border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => setAddForm((prev) => ({ ...prev, activeTab: 'DOG' }))}
+                            className={cn(
+                              "py-1.5 px-4 font-bold text-xs border-b-2 transition cursor-pointer flex items-center gap-1",
+                              addForm.activeTab === 'DOG'
+                                ? "border-primary text-primary"
+                                : "border-transparent text-gray-500 hover:text-gray-700"
+                            )}
+                          >
+                            🐶 Mốc cân nặng cho Chó ({addForm.dogBrackets.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAddForm((prev) => ({ ...prev, activeTab: 'CAT' }))}
+                            className={cn(
+                              "py-1.5 px-4 font-bold text-xs border-b-2 transition cursor-pointer flex items-center gap-1",
+                              addForm.activeTab === 'CAT'
+                                ? "border-primary text-primary"
+                                : "border-transparent text-gray-500 hover:text-gray-700"
+                            )}
+                          >
+                            🐱 Mốc cân nặng cho Mèo ({addForm.catBrackets.length})
+                          </button>
+                        </div>
+
+                        {(() => {
+                          const isCat = addForm.activeTab === 'CAT';
+                          const brackets = isCat ? addForm.catBrackets : addForm.dogBrackets;
+
+                          return (
+                            <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-gray-800">
+                                  {isCat ? '🐱 Mốc cân nặng cho Mèo' : '🐶 Mốc cân nặng cho Chó'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isCat) {
+                                      setAddForm((prev) => ({ ...prev, catBrackets: getBlankCatPresetBrackets() }));
+                                    } else {
+                                      setAddForm((prev) => ({ ...prev, dogBrackets: getBlankDogPresetBrackets() }));
+                                    }
+                                    toast.success(`Đã nạp lại các khoảng cân nặng chuẩn cho ${isCat ? 'Mèo' : 'Chó'}!`);
+                                  }}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  ⚡ Nạp lại khoảng chuẩn
+                                </button>
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                  <thead>
+                                    <tr className="border-b bg-gray-50 text-[10px] uppercase font-bold text-gray-500">
+                                      <th className="py-1.5 px-2">STT</th>
+                                      <th className="py-1.5 px-2">Từ (kg)</th>
+                                      <th className="py-1.5 px-2">Đến (kg)</th>
+                                      <th className="py-1.5 px-2">Thời gian (phút) *</th>
+                                      <th className="py-1.5 px-2 text-right">Đơn giá (đ) *</th>
+                                      <th className="py-1.5 px-2 text-center">Xóa</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {brackets.map((b, idx) => (
+                                      <tr key={idx} className="hover:bg-gray-50/50">
+                                        <td className="py-1.5 px-2 font-bold text-gray-600">#{idx + 1}</td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="number"
+                                            readOnly
+                                            disabled
+                                            value={b.min}
+                                            className="w-16 h-7 bg-gray-100 border rounded-lg px-2 text-xs font-semibold text-gray-600"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="number"
+                                            step="0.1"
+                                            min={b.min}
+                                            placeholder="Không GH"
+                                            value={b.max !== null && b.max !== undefined ? b.max : ''}
+                                            onChange={(e) => {
+                                              const next = updateWeightBracketList(brackets, idx, 'max', e.target.value);
+                                              if (isCat) {
+                                                setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                              } else {
+                                                setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                              }
+                                            }}
+                                            className="w-20 h-7 border rounded-lg px-2 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="text"
+                                            placeholder="-- phút"
+                                            value={b.duration !== undefined ? b.duration : ''}
+                                            onChange={(e) => {
+                                              const next = updateWeightBracketList(brackets, idx, 'duration', e.target.value);
+                                              if (isCat) {
+                                                setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                              } else {
+                                                setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                              }
+                                            }}
+                                            className="w-20 h-7 border rounded-lg px-2 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2 text-right">
+                                          <input
+                                            type="text"
+                                            placeholder="-- VNĐ"
+                                            value={b.price ? formatVNDInput(b.price) : ''}
+                                            onChange={(e) => {
+                                              const next = updateWeightBracketList(brackets, idx, 'price', e.target.value);
+                                              if (isCat) {
+                                                setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                              } else {
+                                                setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                              }
+                                            }}
+                                            className="w-24 h-7 border rounded-lg px-2 text-xs font-black text-primary bg-white text-right focus:ring-1 focus:ring-primary"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2 text-center">
+                                          {brackets.length > 1 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const next = removeWeightBracketFromList(brackets, idx);
+                                                if (isCat) {
+                                                  setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                                } else {
+                                                  setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                                }
+                                              }}
+                                              className="p-1 text-gray-400 hover:text-red-600 transition cursor-pointer"
+                                              title="Xóa mốc này"
+                                            >
+                                              <Trash2 className="size-3.5" />
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = addWeightBracketToList(brackets);
+                                  if (isCat) {
+                                    setAddForm((prev) => ({ ...prev, catBrackets: next }));
+                                  } else {
+                                    setAddForm((prev) => ({ ...prev, dogBrackets: next }));
+                                  }
+                                }}
+                                className="w-full py-1.5 border border-dashed border-primary/40 hover:border-primary text-primary rounded-xl text-xs font-bold hover:bg-orange-50/50 transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="size-3.5" /> Thêm mốc cân nặng kế tiếp cho {isCat ? 'Mèo' : 'Chó'}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-2 pt-1.5">
+              {/* Status */}
+              <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
-                  id="service-active"
-                  checked={serviceForm.isActive}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, isActive: e.target.checked }))}
-                  className="accent-primary size-4"
+                  id="add-service-active"
+                  checked={addForm.isActive}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+                  className="accent-primary size-4 cursor-pointer"
                 />
-                <label htmlFor="service-active" className="text-xs font-bold text-gray-700">Dịch vụ đang hoạt động khả dụng</label>
+                <label htmlFor="add-service-active" className="text-xs font-bold text-gray-700 cursor-pointer">
+                  Dịch vụ đang hoạt động khả dụng ngay sau khi tạo
+                </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              {/* Footer Buttons */}
+              <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
                   type="button"
-                  onClick={() => setServiceModalOpen(false)}
+                  onClick={() => setAddModalOpen(false)}
                   className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-gray-50 cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingService}
-                  className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer"
+                  disabled={submittingAdd}
+                  className="px-6 py-2 bg-primary text-white rounded-xl font-bold text-xs hover:bg-[#cf5017] cursor-pointer shadow-sm"
                 >
-                  {submittingService ? 'Đang lưu...' : 'Lưu dịch vụ'}
+                  {submittingAdd ? 'Đang tạo...' : 'Tạo dịch vụ'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SPLIT-VIEW EDIT SERVICE MODAL (2 CỘT) */}
+      {editModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="w-full max-w-5xl bg-white rounded-3xl border border-gray-150 shadow-2xl overflow-hidden my-6 flex flex-col max-h-[90vh]">
+            {/* MODAL HEADER */}
+            <div className="px-6 py-4 border-b border-gray-150 flex items-center justify-between bg-gray-50/80">
+              <div>
+                <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                  <Edit2 className="size-4 text-primary" />
+                  Chỉnh sửa dịch vụ Spa & Mốc cân nặng
+                </h3>
+                <p className="text-xs text-gray-500 font-semibold mt-0.5">
+                  Cập nhật thông tin dịch vụ và cấu hình chi tiết mốc cân nặng theo thiết kế chia đôi 2 cột.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleAttemptCloseEditModal}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* MODAL BODY (SPLIT-VIEW 2 COLUMNS) */}
+            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* CỘT TRÁI (7 cols): FORM THÔNG TIN DỊCH VỤ & FORM SỬA MỐC ĐANG CHỌN */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
+                    📋 Thông tin chung dịch vụ
+                  </h4>
+
+                  {/* Category & Classification */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-gray-500 font-extrabold uppercase">Danh mục *</label>
+                      <select
+                        value={editForm.brandId}
+                        onChange={(e) => {
+                          setEditForm((prev) => ({ ...prev, brandId: e.target.value }));
+                          setEditIsDirty(true);
+                        }}
+                        className="w-full h-9 border rounded-xl px-3 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
+                      >
+                        {filteredBrandsForForm.map((b: any) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-gray-500 font-extrabold uppercase">Phân loại *</label>
+                      <select
+                        value={editForm.isMain ? 'MAIN' : 'SUB'}
+                        onChange={(e) => {
+                          setEditForm((prev) => ({ ...prev, isMain: e.target.value === 'MAIN' }));
+                          setEditIsDirty(true);
+                        }}
+                        className="w-full h-9 border rounded-xl px-3 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary cursor-pointer"
+                      >
+                        <option value="MAIN">★ Dịch vụ chính</option>
+                        <option value="SUB">✦ Dịch vụ lẻ</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Name */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-500 font-extrabold uppercase">Tên dịch vụ *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.name}
+                      onChange={(e) => {
+                        setEditForm((prev) => ({ ...prev, name: e.target.value }));
+                        setEditIsDirty(true);
+                      }}
+                      className="w-full h-9 border rounded-xl px-3 text-xs text-gray-800 bg-white font-bold focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  {/* Species: DISABLED / READ-ONLY */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-500 font-extrabold uppercase flex items-center justify-between">
+                      <span>Đối tượng áp dụng (Cố định)</span>
+                      <span className="text-[10px] text-amber-600 font-semibold">🔒 Không thể sửa đối tượng</span>
+                    </label>
+                    <div className="w-full h-9 rounded-xl border border-gray-200 bg-gray-100 px-3 flex items-center text-xs font-bold text-gray-700 cursor-not-allowed">
+                      {editForm.species === 'DOG' && '🐶 Chỉ áp dụng cho Chó'}
+                      {editForm.species === 'CAT' && '🐱 Chỉ áp dụng cho Mèo'}
+                      {editForm.species === 'ALL' && '🐾 Cả hai loài (Chó & Mèo)'}
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-500 font-extrabold uppercase">Mô tả dịch vụ</label>
+                    <textarea
+                      rows={2}
+                      value={editForm.description}
+                      onChange={(e) => {
+                        setEditForm((prev) => ({ ...prev, description: e.target.value }));
+                        setEditIsDirty(true);
+                      }}
+                      className="w-full border rounded-xl p-2 text-xs text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  {/* Image Edit */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-500 font-extrabold uppercase flex items-center gap-1">
+                      <Camera className="size-3.5 text-primary" /> Ảnh dịch vụ
+                    </label>
+                    <div className="flex items-center gap-3">
+                      {editImagePreview ? (
+                        <div className="relative size-14 rounded-xl overflow-hidden border border-gray-200 shrink-0">
+                          <img src={editImagePreview} alt="Preview" className="size-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={handleClearEditImage}
+                            className="absolute top-0.5 right-0.5 p-0.5 bg-red-600 text-white rounded-full shadow-xs"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="size-14 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-300 shrink-0">
+                          <ImageIcon className="size-5" />
+                        </div>
+                      )}
+                      <label className="px-3 py-1.5 border border-gray-200 hover:border-gray-300 rounded-xl bg-white hover:bg-gray-50 cursor-pointer text-xs font-bold text-gray-700 flex items-center gap-1.5 transition">
+                        <Upload className="size-3.5 text-gray-500" />
+                        <span>Thay đổi ảnh mới</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleEditImageChange} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* FORM CHỈNH SỬA MỐC ĐANG CHỌN */}
+                <div className="border-t border-dashed border-gray-200 pt-4 space-y-3">
+                  {!editForm.hasWeightBrackets ? (
+                    /* Cấu hình mọi cân nặng */
+                    <div className="bg-orange-50/50 border border-orange-200 rounded-2xl p-4 space-y-3">
+                      <h4 className="text-xs font-black text-primary flex items-center gap-1.5">
+                        ⚖️ Cấu hình dịch vụ cho mọi cân nặng
+                      </h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-500 font-extrabold uppercase">Đơn giá (đ) *</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={editForm.singlePrice}
+                            onChange={(e) => {
+                              setEditForm((prev) => ({ ...prev, singlePrice: formatVNDInput(e.target.value) }));
+                              setEditIsDirty(true);
+                            }}
+                            className="w-full h-9 border rounded-xl px-3 text-xs font-black text-primary bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-500 font-extrabold uppercase">Thời gian (phút) *</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={editForm.singleDuration}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setEditForm((prev) => ({ ...prev, singleDuration: val }));
+                              setEditIsDirty(true);
+                            }}
+                            className="w-full h-9 border rounded-xl px-3 text-xs font-bold text-gray-800 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Cấu hình mốc cân nặng đang chọn */
+                    (() => {
+                      const isCatTab = editForm.selectedSpeciesTab === 'CAT';
+                      const currentBrackets = isCatTab ? editForm.catBrackets : editForm.dogBrackets;
+                      const activeIdx = Math.min(editForm.selectedBracketIndex, Math.max(0, currentBrackets.length - 1));
+                      const curB = currentBrackets[activeIdx] || { min: 0, max: null, duration: 60, price: 150000 };
+
+                      return (
+                        <div className="bg-orange-50/50 border border-orange-200 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-black text-primary flex items-center gap-1.5">
+                              ⚖️ Đang sửa: Mốc #{activeIdx + 1} ({formatWeightRange(curB.min, curB.max)}) – {isCatTab ? '🐱 Mèo' : '🐶 Chó'}
+                            </h4>
+                            {currentBrackets.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = removeWeightBracketFromList(currentBrackets, activeIdx);
+                                  if (isCatTab) {
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      catBrackets: next,
+                                      selectedBracketIndex: Math.max(0, activeIdx - 1),
+                                    }));
+                                  } else {
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      dogBrackets: next,
+                                      selectedBracketIndex: Math.max(0, activeIdx - 1),
+                                    }));
+                                  }
+                                  setEditIsDirty(true);
+                                }}
+                                className="text-[11px] text-red-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="size-3" /> Xóa mốc này
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500 font-extrabold uppercase">Cân nặng từ (kg)</label>
+                              <input
+                                type="number"
+                                readOnly
+                                disabled
+                                value={curB.min}
+                                className="w-full h-9 bg-gray-100 border rounded-xl px-3 text-xs font-bold text-gray-600 cursor-not-allowed"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500 font-extrabold uppercase">
+                                Cân nặng đến (kg) {curB.max === null && '(Không GH)'}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min={curB.min}
+                                placeholder="Để trống nếu không giới hạn"
+                                value={curB.max !== null ? curB.max : ''}
+                                onChange={(e) => {
+                                  const next = updateWeightBracketList(currentBrackets, activeIdx, 'max', e.target.value);
+                                  if (isCatTab) {
+                                    setEditForm((prev) => ({ ...prev, catBrackets: next }));
+                                  } else {
+                                    setEditForm((prev) => ({ ...prev, dogBrackets: next }));
+                                  }
+                                  setEditIsDirty(true);
+                                }}
+                                className="w-full h-9 border rounded-xl px-3 text-xs font-bold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500 font-extrabold uppercase">Thời gian thực hiện (phút) *</label>
+                              <input
+                                type="text"
+                                value={curB.duration}
+                                onChange={(e) => {
+                                  const next = updateWeightBracketList(currentBrackets, activeIdx, 'duration', e.target.value);
+                                  if (isCatTab) {
+                                    setEditForm((prev) => ({ ...prev, catBrackets: next }));
+                                  } else {
+                                    setEditForm((prev) => ({ ...prev, dogBrackets: next }));
+                                  }
+                                  setEditIsDirty(true);
+                                }}
+                                className="w-full h-9 border rounded-xl px-3 text-xs font-semibold text-gray-800 bg-white focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500 font-extrabold uppercase">Đơn giá (đ) *</label>
+                              <input
+                                type="text"
+                                value={formatVNDInput(curB.price)}
+                                onChange={(e) => {
+                                  const next = updateWeightBracketList(currentBrackets, activeIdx, 'price', e.target.value);
+                                  if (isCatTab) {
+                                    setEditForm((prev) => ({ ...prev, catBrackets: next }));
+                                  } else {
+                                    setEditForm((prev) => ({ ...prev, dogBrackets: next }));
+                                  }
+                                  setEditIsDirty(true);
+                                }}
+                                className="w-full h-9 border rounded-xl px-3 text-xs font-black text-primary bg-white focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              </div>
+
+              {/* CỘT PHẢI (5 cols): DANH SÁCH CÁC MỐC CÂN NẶNG (BRACKET SELECTOR) */}
+              <div className="lg:col-span-5 bg-slate-50/80 border border-slate-200 rounded-2xl p-4 flex flex-col space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-gray-700 tracking-wider flex items-center gap-1.5">
+                    ⚖️ Danh sách mốc cân nặng
+                  </h4>
+                </div>
+
+                {/* Tab Chó / Mèo nếu loài là ALL */}
+                {editForm.species === 'ALL' && (
+                  <div className="grid grid-cols-2 gap-2 bg-slate-200/60 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setEditForm((prev) => ({ ...prev, selectedSpeciesTab: 'DOG', selectedBracketIndex: 0 }))}
+                      className={cn(
+                        "py-1.5 text-xs font-bold rounded-lg transition cursor-pointer text-center",
+                        editForm.selectedSpeciesTab === 'DOG'
+                          ? "bg-white text-primary shadow-xs"
+                          : "text-gray-600 hover:text-gray-900"
+                      )}
+                    >
+                      🐶 Mốc cho Chó ({editForm.dogBrackets.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm((prev) => ({ ...prev, selectedSpeciesTab: 'CAT', selectedBracketIndex: 0 }))}
+                      className={cn(
+                        "py-1.5 text-xs font-bold rounded-lg transition cursor-pointer text-center",
+                        editForm.selectedSpeciesTab === 'CAT'
+                          ? "bg-white text-primary shadow-xs"
+                          : "text-gray-600 hover:text-gray-900"
+                      )}
+                    >
+                      🐱 Mốc cho Mèo ({editForm.catBrackets.length})
+                    </button>
+                  </div>
+                )}
+
+                {/* Danh sách thẻ mốc cân nặng */}
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[380px]">
+                  {(() => {
+                    const isCatTab = editForm.selectedSpeciesTab === 'CAT';
+                    const list = isCatTab ? editForm.catBrackets : editForm.dogBrackets;
+
+                    if (!editForm.hasWeightBrackets) {
+                      return (
+                        <div className="p-4 bg-white rounded-xl border border-gray-200 text-center space-y-1">
+                          <p className="text-xs font-bold text-gray-700">Dịch vụ cho mọi cân nặng</p>
+                          <p className="text-[11px] text-gray-500">
+                            {editForm.singleDuration} phút • {editForm.singlePrice || '0'}đ
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return list.map((b, idx) => {
+                      const isSelected = idx === editForm.selectedBracketIndex;
+                      const weightStr = formatWeightRange(b.min, b.max);
+
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => setEditForm((prev) => ({ ...prev, selectedBracketIndex: idx }))}
+                          className={cn(
+                            "p-3 rounded-xl border transition cursor-pointer flex items-center justify-between",
+                            isSelected
+                              ? "border-2 border-primary bg-orange-50/80 shadow-xs"
+                              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/60"
+                          )}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-gray-500">Mốc #{idx + 1}:</span>
+                              <span className="text-xs font-extrabold text-gray-900">{weightStr}</span>
+                            </div>
+                            <div className="text-[11px] font-semibold text-gray-500">
+                              ⏱️ {b.duration} phút • <span className="font-black text-primary">{b.price.toLocaleString('vi-VN')}đ</span>
+                            </div>
+                          </div>
+
+                          {isSelected ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-white shrink-0">
+                              Đang sửa
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 hover:text-gray-500 text-xs shrink-0">
+                              ➔
+                            </span>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                {/* Nút Thêm mốc cân nặng ở chân cột phải */}
+                {editForm.hasWeightBrackets && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isCatTab = editForm.selectedSpeciesTab === 'CAT';
+                      const list = isCatTab ? editForm.catBrackets : editForm.dogBrackets;
+                      const next = addWeightBracketToList(list);
+                      if (isCatTab) {
+                        setEditForm((prev) => ({
+                          ...prev,
+                          catBrackets: next,
+                          selectedBracketIndex: next.length - 1,
+                        }));
+                      } else {
+                        setEditForm((prev) => ({
+                          ...prev,
+                          dogBrackets: next,
+                          selectedBracketIndex: next.length - 1,
+                        }));
+                      }
+                      setEditIsDirty(true);
+                    }}
+                    className="w-full py-2 border border-dashed border-primary text-primary rounded-xl text-xs font-bold hover:bg-orange-50 transition flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="size-3.5" /> Thêm mốc cân nặng mới
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* MODAL FOOTER */}
+            <div className="px-6 py-4 border-t border-gray-150 bg-gray-50/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {editIsDirty ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 animate-pulse">
+                    <AlertCircle className="size-3.5" /> Có thay đổi chưa lưu
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-gray-500">
+                    <CheckCircle2 className="size-3.5 text-green-600" /> Dữ liệu đã đồng bộ
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleAttemptCloseEditModal}
+                  className="px-5 py-2.5 rounded-xl border border-gray-300 bg-white font-bold text-xs text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+                >
+                  Thoát
+                </button>
+                <button
+                  type="button"
+                  disabled={!editIsDirty || submittingEdit}
+                  onClick={handleSaveEditService}
+                  className={cn(
+                    "px-6 py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-2 shadow-sm",
+                    editIsDirty && !submittingEdit
+                      ? "bg-primary text-white hover:bg-[#cf5017] cursor-pointer"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  )}
+                >
+                  {submittingEdit ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Đang lưu...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="size-4" /> Lưu thay đổi
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXIT CONFIRM DIALOG */}
+      {showExitConfirmDialog && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-sm bg-white rounded-2xl p-6 shadow-2xl space-y-4 border border-red-150">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="p-2.5 bg-red-100 rounded-full">
+                <AlertCircle className="size-6 text-red-600" />
+              </div>
+              <h4 className="font-extrabold text-gray-900 text-base">Cảnh báo thoát</h4>
+            </div>
+            <p className="text-xs text-gray-600 font-semibold leading-relaxed">
+              Nếu bạn thoát sẽ mất hết dữ liệu bạn có muốn thoát không?
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowExitConfirmDialog(false)}
+                className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                Ở lại chỉnh sửa
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitConfirmDialog(false);
+                  setEditModalOpen(false);
+                  setEditIsDirty(false);
+                  setEditImageFile(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 cursor-pointer"
+              >
+                Đồng ý thoát
+              </button>
+            </div>
           </div>
         </div>
       )}

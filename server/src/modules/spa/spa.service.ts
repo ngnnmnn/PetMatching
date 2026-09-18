@@ -16,6 +16,12 @@ import {
   calculateRevenueGrowth,
   serializeDashboardRange,
 } from '../admin/dashboard-range.utils';
+import {
+  parseArrayField,
+  getServiceBracketsForSpecies,
+  resolveServicePriceAndDuration,
+  computeServiceDisplayRanges,
+} from './spa-bracket.utils';
 
 @Injectable()
 export class SpaService implements OnModuleInit, OnModuleDestroy {
@@ -132,8 +138,23 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Trích xuất thời lượng (phút) của dịch vụ Spa từ mảng duration hoặc fallback
+   */
+  getServiceDuration(service: any): number {
+    if (!service) return 45;
+    if (typeof service.durationMin === 'number') return service.durationMin;
+    const dur = parseArrayField(service.duration);
+    const flat = dur.flat(Infinity).filter((n: any) => typeof n === 'number' && !isNaN(n));
+    return flat.length > 0 ? flat[0] : 45;
+  }
+
+  /**
+   * Lấy danh sách dịch vụ Spa đang hoạt động kèm tính toán mốc giá và thời lượng
+   * Nếu có truyền species và weight, tự động resolve mốc giá và thời lượng phù hợp
+   */
   async getServices(species?: Species, weight?: number) {
-    let services = await this.prisma.spaService.findMany({
+    const services = await this.prisma.spaService.findMany({
       where: {
         isActive: true,
       },
@@ -146,29 +167,48 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           },
         },
       },
+      orderBy: {
+        createdAt: 'asc',
+      },
     });
 
-    if (species && weight !== undefined) {
-      const numWeight = Number(weight);
-      services = services.filter((s) => {
-        if (!s.isMain) {
-          if (!s.species) return true;
-          if (s.species !== species) return false;
-          if (s.petWeightMin !== null && s.petWeightMax !== null) {
-            return numWeight >= s.petWeightMin && numWeight <= s.petWeightMax;
-          }
-          return true;
-        }
+    const numWeight = weight !== undefined ? Number(weight) : undefined;
 
-        const matchSpecies = !s.species || s.species === species;
-        const minW = s.petWeightMin ?? 0;
-        const maxW = s.petWeightMax ?? 999;
-        const matchWeight = numWeight >= minW && (numWeight < maxW || maxW === 100);
-        return matchSpecies && matchWeight;
+    const mapped = services.map((s) => {
+      const ranges = computeServiceDisplayRanges(s);
+      if (species && numWeight !== undefined) {
+        const resolved = resolveServicePriceAndDuration(s, species, numWeight);
+        return {
+          ...s,
+          price: resolved.price,
+          durationMin: resolved.duration,
+          durationMax: resolved.duration,
+          matchedBracketIndex: resolved.matchedBracketIndex,
+          minPrice: ranges.minPrice,
+          maxPrice: ranges.maxPrice,
+          minDuration: ranges.minDuration,
+          maxDuration: ranges.maxDuration,
+        };
+      }
+      return {
+        ...s,
+        price: s.price,
+        duration: s.duration,
+        minPrice: ranges.minPrice,
+        maxPrice: ranges.maxPrice,
+        durationMin: ranges.minDuration,
+        durationMax: ranges.maxDuration,
+      };
+    });
+
+    if (species) {
+      return mapped.filter((s) => {
+        if (!s.species || s.species === 'ALL') return true;
+        return s.species === species;
       });
     }
 
-    return services;
+    return mapped;
   }
 
   async createBooking(userId: string, dto: CreateBookingDto) {
@@ -184,13 +224,17 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     let validPetId: string | null = null;
+    let petSpeciesFromDb: 'DOG' | 'CAT' | null = null;
+    let petWeightFromDb: number | null = null;
     if (dto.petId) {
       const petExists = await this.prisma.pet.findUnique({
         where: { id: dto.petId },
-        select: { id: true },
+        select: { id: true, species: true, weight: true },
       });
       if (petExists) {
         validPetId = petExists.id;
+        petSpeciesFromDb = petExists.species === 'CAT' ? 'CAT' : 'DOG';
+        petWeightFromDb = petExists.weight !== null && petExists.weight !== undefined ? Number(petExists.weight) : null;
       }
     }
 
@@ -256,14 +300,24 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Thời gian đặt lịch phải ở trong tương lai.');
     }
 
-    // Calculate total price & expected duration
-    const mainPrice = mainService ? mainService.price : 0;
-    const subPriceTotal = subServices.reduce((sum, s) => sum + s.price, 0);
-    const totalPrice = mainPrice + subPriceTotal;
+    // Trích xuất loài và cân nặng áp dụng cho đặt lịch
+    const effectiveSpecies: 'DOG' | 'CAT' = (dto.petSpecies === 'CAT' || petSpeciesFromDb === 'CAT') ? 'CAT' : 'DOG';
+    const effectiveWeight = (dto.petWeight !== undefined && dto.petWeight !== null) ? Number(dto.petWeight) : (petWeightFromDb || 0);
 
-    const mainDuration = mainService ? (mainService.durationMax || mainService.durationMin || 30) : 0;
-    const subDurationTotal = subServices.reduce((sum, s) => sum + (s.durationMax || s.durationMin || 15), 0);
-    const totalDurationMinutes = mainDuration + subDurationTotal;
+    // Calculate total price & expected duration từ mảng mốc cân nặng
+    const resolvedMain = mainService ? resolveServicePriceAndDuration(mainService, effectiveSpecies, effectiveWeight) : null;
+    const mainPrice = resolvedMain ? resolvedMain.price : 0;
+    const mainDuration = resolvedMain ? resolvedMain.duration : 0;
+
+    let subPriceTotal = 0;
+    let subDurationTotal = 0;
+    for (const sub of subServices) {
+      const resolvedSub = resolveServicePriceAndDuration(sub, effectiveSpecies, effectiveWeight);
+      subPriceTotal += resolvedSub.price;
+      subDurationTotal += resolvedSub.duration;
+    }
+    const totalPrice = mainPrice + subPriceTotal;
+    const totalDurationMinutes = Math.max(15, mainDuration + subDurationTotal);
 
     const timeStartExpected = bookingTime;
     const timeEndExpected = new Date(bookingTime.getTime() + totalDurationMinutes * 60 * 1000);
@@ -299,13 +353,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           },
         },
         include: {
-          service: { select: { durationMin: true, durationMax: true } },
+          service: { select: { duration: true, price: true } },
         },
       });
 
       const isPetBusy = petOverlappingBookings.some((b) => {
         const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const dur = this.getServiceDuration(b.service);
         const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
         return bStart < timeEndExpected && bEnd > timeStartExpected;
       });
@@ -342,13 +396,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           },
         },
         include: {
-          service: { select: { durationMin: true, durationMax: true } },
+          service: { select: { duration: true, price: true } },
         },
       });
 
       const activeOverlapping = overlappingBookings.filter((b) => {
         const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const dur = this.getServiceDuration(b.service);
         const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
         return bStart < timeEndExpected && bEnd > timeStartExpected;
       });
@@ -388,7 +442,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         petWeight: dto.petWeight ? Number(dto.petWeight) : null,
         scheduledAt: bookingTime,
         status: bookingStatus,
-        priceSnapshot: mainService ? mainService.price : totalPrice,
+        priceSnapshot: mainPrice || totalPrice,
         totalPrice,
         timeStartExpected,
         timeEndExpected,
@@ -475,8 +529,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             name: true,
             description: true,
             price: true,
-            durationMin: true,
-            durationMax: true,
+            duration: true,
+            petMinWeight: true,
+            petMaxWeight: true,
           },
         },
         pet: true,
@@ -501,7 +556,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       allSubServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
           where: { id: { in: allSubServiceIds } },
-          select: { id: true, name: true, price: true, description: true, durationMin: true, durationMax: true },
+          select: { id: true, name: true, price: true, description: true, duration: true, petMinWeight: true, petMaxWeight: true },
         })
         : [];
 
@@ -510,16 +565,24 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     return bookings.map((b) => {
       const subServices = (b.subServiceIds || [])
         .map((id) => subServicesMap.get(id))
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((s: any) => ({
+          ...s,
+          durationMin: this.getServiceDuration(s),
+        }));
 
       // Use actual totalPrice from DB (saved at booking creation time = mainPrice + subTotal - discount)
       // Only fallback to recompute if totalPrice is missing
-      const mainPrice = b.priceSnapshot || b.service?.price || 0;
+      const mainPrice = b.priceSnapshot || 0;
       const subServicesTotal = subServices.reduce((sum, s) => sum + (s?.price || 0), 0);
       const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + subServicesTotal);
 
       return {
         ...b,
+        service: b.service ? {
+          ...b.service,
+          durationMin: this.getServiceDuration(b.service),
+        } : null,
         rescheduleCount: Number((b as any).rescheduleCount) || 0,
         priceSnapshot: mainPrice,
         totalPrice,
@@ -641,8 +704,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             name: true,
             description: true,
             price: true,
-            durationMin: true,
-            durationMax: true,
+            duration: true,
           },
         },
         user: {
@@ -785,8 +847,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: newSubIds } },
     });
 
-    const mainPrice = mainService ? mainService.price : (booking.priceSnapshot || 0);
-    const subPriceTotal = subServices.reduce((sum, s) => sum + s.price, 0);
+    const targetSpecies = booking.petSpecies || 'DOG';
+    const targetWeight = booking.petWeight || 0;
+    const resolvedMain = mainService ? resolveServicePriceAndDuration(mainService, targetSpecies, targetWeight) : null;
+    const mainPrice = resolvedMain ? resolvedMain.price : (booking.priceSnapshot || 0);
+    let subPriceTotal = 0;
+    for (const s of subServices) {
+      const resolvedSub = resolveServicePriceAndDuration(s, targetSpecies, targetWeight);
+      subPriceTotal += resolvedSub.price;
+    }
     const totalPrice = Math.max(0, mainPrice + subPriceTotal);
 
     return this.prisma.$transaction(async (tx) => {
@@ -872,7 +941,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
       updatedData.petWeight = weightNum;
 
-      // 1. Tự động tìm lại gói dịch vụ chính tương ứng với khung cân nặng mới
+      // 1. Tự động tính lại giá dịch vụ chính theo mốc cân nặng mới
       const currentMainServiceId = booking.mainServiceId || booking.serviceId;
       let newMainPrice = booking.priceSnapshot || 0;
 
@@ -882,48 +951,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (currentMainService) {
-          // Lấy tên gói gốc (loại bỏ phần nhãn cân nặng ví dụ "Chỉ Tắm (1.5-3kg)" -> "Chỉ Tắm")
-          const baseName = currentMainService.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
           const targetSpecies = booking.petSpecies || booking.pet?.species || currentMainService.species;
-
-          let candidateMainServices = await this.prisma.spaService.findMany({
-            where: {
-              categoryId: currentMainService.categoryId,
-              isMain: true,
-              isActive: true,
-              ...(targetSpecies ? { species: targetSpecies } : {}),
-            },
-          });
-
-          if (candidateMainServices.length === 0) {
-            candidateMainServices = await this.prisma.spaService.findMany({
-              where: {
-                isMain: true,
-                isActive: true,
-                ...(targetSpecies ? { species: targetSpecies } : {}),
-              },
-            });
-          }
-
-          const matchedMain = candidateMainServices.find((s) => {
-            const sBaseName = s.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
-            if (sBaseName.toLowerCase() !== baseName.toLowerCase()) return false;
-            const minW = s.petWeightMin ?? 0;
-            const maxW = s.petWeightMax ?? 999;
-            return weightNum >= minW && (weightNum < maxW || maxW === 100);
-          });
-
-          if (matchedMain) {
-            newMainPrice = matchedMain.price;
-            updatedData.serviceId = matchedMain.id;
-            updatedData.mainServiceId = matchedMain.id;
-          } else {
-            newMainPrice = currentMainService.price;
-          }
+          const resolvedMain = resolveServicePriceAndDuration(currentMainService, targetSpecies, weightNum);
+          newMainPrice = resolvedMain.price;
         }
       }
 
-      // 2. Tự động cập nhật lại các dịch vụ lẻ nếu có phân khúc theo cân nặng
+      // 2. Tự động cập nhật lại các dịch vụ lẻ theo mốc cân nặng mới
       let newSubTotalPrice = 0;
       const currentSubServiceIds = booking.subServiceIds || [];
 
@@ -932,53 +966,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           where: { id: { in: currentSubServiceIds } },
         });
 
-        const updatedSubIds: string[] = [];
         for (const sub of currentSubServices) {
-          if (sub.petWeightMin !== null || sub.petWeightMax !== null) {
-            const subBaseName = sub.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
-            const targetSubSpecies = booking.petSpecies || booking.pet?.species || sub.species;
-
-            let candidateSubs = await this.prisma.spaService.findMany({
-              where: {
-                categoryId: sub.categoryId,
-                isMain: false,
-                isActive: true,
-                ...(targetSubSpecies ? { species: targetSubSpecies } : {}),
-              },
-            });
-
-            if (candidateSubs.length === 0) {
-              candidateSubs = await this.prisma.spaService.findMany({
-                where: {
-                  isMain: false,
-                  isActive: true,
-                  ...(targetSubSpecies ? { species: targetSubSpecies } : {}),
-                },
-              });
-            }
-
-            const matchedSub = candidateSubs.find((s) => {
-              const sBase = s.name.replace(/\s*([<>]\d+(\.\d+)?|\d+(\.\d+)?-\d+(\.\d+)?kg|\([^)]*\)).*/gi, '').trim();
-              if (sBase.toLowerCase() !== subBaseName.toLowerCase()) return false;
-              const minW = s.petWeightMin ?? 0;
-              const maxW = s.petWeightMax ?? 999;
-              return weightNum >= minW && (weightNum < maxW || maxW === 100);
-            });
-
-            if (matchedSub) {
-              updatedSubIds.push(matchedSub.id);
-              newSubTotalPrice += matchedSub.price;
-            } else {
-              updatedSubIds.push(sub.id);
-              newSubTotalPrice += sub.price;
-            }
-          } else {
-            updatedSubIds.push(sub.id);
-            newSubTotalPrice += sub.price;
-          }
+          const targetSubSpecies = booking.petSpecies || booking.pet?.species || sub.species;
+          const resolvedSub = resolveServicePriceAndDuration(sub, targetSubSpecies, weightNum);
+          newSubTotalPrice += resolvedSub.price;
         }
-
-        updatedData.subServiceIds = updatedSubIds;
       }
 
       // 3. Tính toán lại tổng tiền và cập nhật snapshot giá
@@ -1010,8 +1002,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
               name: true,
               description: true,
               price: true,
-              durationMin: true,
-              durationMax: true,
+              duration: true,
             },
           },
           user: {
@@ -1881,6 +1872,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Tạo dịch vụ Spa mới cho Manager với các mảng mốc cân nặng, thời gian và giá
+   */
   async createManagerService(
     managerId: string,
     dto: {
@@ -1889,13 +1883,14 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       name: string;
       description?: string;
       imageUrl?: string;
-      price: number;
-      durationMin: number;
-      durationMax?: number;
-      species?: Species;
-      petWeightMin?: number;
-      petWeightMax?: number;
+      species?: 'ALL' | 'DOG' | 'CAT' | string;
+      petMinWeight?: any;
+      petMaxWeight?: any;
+      duration?: any;
+      price?: any;
+      durationMin?: number;
       isMain?: boolean;
+      isActive?: boolean;
     },
   ) {
     const catId = dto.categoryId || dto.brandId;
@@ -1915,7 +1910,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     let targetImageUrl: string | null = dto.imageUrl || null;
     const serviceName = dto.name.trim();
 
-    // If imageUrl is not provided, look for an existing image from services with the same name
+    // Nếu không tải ảnh lên, tìm kiếm xem có dịch vụ trùng tên đã có ảnh chưa
     if (!targetImageUrl) {
       const existingSameName = await this.prisma.spaService.findFirst({
         where: { name: { equals: serviceName, mode: 'insensitive' }, imageUrl: { not: null } },
@@ -1926,24 +1921,34 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    let petMinWeight = dto.petMinWeight;
+    let petMaxWeight = dto.petMaxWeight;
+    let duration = dto.duration;
+    let price = dto.price;
+
+    if (price === undefined && (dto as any).price !== undefined) {
+      price = [Number((dto as any).price)];
+    }
+    if (duration === undefined && dto.durationMin !== undefined) {
+      duration = [Number(dto.durationMin)];
+    }
+
     const createdService = await this.prisma.spaService.create({
       data: {
         categoryId: catId!,
         name: serviceName,
         description: dto.description || null,
         imageUrl: targetImageUrl,
-        price: Number(dto.price),
-        durationMin: Number(dto.durationMin),
-        durationMax: dto.durationMax ? Number(dto.durationMax) : null,
-        species: dto.species || null,
-        petWeightMin: (dto.petWeightMin !== undefined && dto.petWeightMin !== null && dto.petWeightMin !== ('' as any)) ? Number(dto.petWeightMin) : null,
-        petWeightMax: (dto.petWeightMax !== undefined && dto.petWeightMax !== null && dto.petWeightMax !== ('' as any)) ? Number(dto.petWeightMax) : null,
+        species: dto.species || 'ALL',
+        petMinWeight: petMinWeight !== undefined ? petMinWeight : [0],
+        petMaxWeight: petMaxWeight !== undefined ? petMaxWeight : [null],
+        duration: duration !== undefined ? duration : [60],
+        price: price !== undefined ? price : [0],
         isMain: dto.isMain ?? true,
-        isActive: true,
+        isActive: dto.isActive ?? true,
       },
     });
 
-    // If targetImageUrl is set, propagate to all services with the same name
     if (targetImageUrl) {
       await this.prisma.spaService.updateMany({
         where: { name: { equals: serviceName, mode: 'insensitive' } },
@@ -1954,6 +1959,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     return createdService;
   }
 
+  /**
+   * Cập nhật dịch vụ Spa (không cho phép sửa trường đối tượng species theo yêu cầu)
+   */
   async updateManagerService(
     managerId: string,
     serviceId: string,
@@ -1963,12 +1971,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       name?: string;
       description?: string;
       imageUrl?: string;
-      price?: number;
-      durationMin?: number;
-      durationMax?: number;
-      species?: Species;
-      petWeightMin?: number;
-      petWeightMax?: number;
+      petMinWeight?: any;
+      petMaxWeight?: any;
+      duration?: any;
+      price?: any;
       isMain?: boolean;
       isActive?: boolean;
     },
@@ -1992,21 +1998,20 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     if (dto.name !== undefined) data.name = dto.name.trim();
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl || null;
-    if (dto.price !== undefined) data.price = Number(dto.price);
-    if (dto.durationMin !== undefined) data.durationMin = Number(dto.durationMin);
-    if (dto.durationMax !== undefined) data.durationMax = dto.durationMax ? Number(dto.durationMax) : null;
-    if (dto.species !== undefined) data.species = dto.species || null;
-    if (dto.petWeightMin !== undefined) data.petWeightMin = (dto.petWeightMin !== null && dto.petWeightMin !== ('' as any)) ? Number(dto.petWeightMin) : null;
-    if (dto.petWeightMax !== undefined) data.petWeightMax = (dto.petWeightMax !== null && dto.petWeightMax !== ('' as any)) ? Number(dto.petWeightMax) : null;
+    if (dto.petMinWeight !== undefined) data.petMinWeight = dto.petMinWeight;
+    if (dto.petMaxWeight !== undefined) data.petMaxWeight = dto.petMaxWeight;
+    if (dto.duration !== undefined) data.duration = dto.duration;
+    if (dto.price !== undefined) data.price = dto.price;
     if (dto.isMain !== undefined) data.isMain = dto.isMain;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
+
+    // Không cho phép sửa species (đối tượng dịch vụ) khi chỉnh sửa
 
     const updated = await this.prisma.spaService.update({
       where: { id: serviceId },
       data,
     });
 
-    // If imageUrl or name was updated, synchronize image to all services sharing the same name
     const finalName = data.name || service.name;
     const finalImageUrl = dto.imageUrl !== undefined ? (dto.imageUrl || null) : service.imageUrl;
     if (finalImageUrl !== undefined) {
@@ -2029,7 +2034,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       include: {
         payment: true,
         service: {
-          select: { id: true, name: true, price: true, durationMin: true, description: true },
+          select: { id: true, name: true, price: true, duration: true, description: true },
         },
         user: {
           select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
@@ -2270,13 +2275,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           },
         },
         include: {
-          service: { select: { durationMin: true, durationMax: true } },
+          service: { select: { duration: true, price: true } },
         },
       });
 
       const activeOverlapping = overlappingBookings.filter((b) => {
         const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const dur = this.getServiceDuration(b.service);
         const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
         return bStart < newEnd && bEnd > newStart;
       });
@@ -2456,13 +2461,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           },
         },
         include: {
-          service: { select: { durationMin: true, durationMax: true } },
+          service: { select: { duration: true, price: true } },
         },
       });
 
       const activeOverlapping = overlappingBookings.filter((b) => {
         const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const dur = this.getServiceDuration(b.service);
         const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
         return bStart < newEnd && bEnd > newStart;
       });
@@ -2554,6 +2559,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   async managerUpdateBookingServices(managerId: string, bookingId: string, mainServiceId: string, subServiceIds: string[] = []) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
+      include: { pet: true },
     });
     if (!booking) {
       throw new NotFoundException('Lịch hẹn không tồn tại.');
@@ -2568,13 +2574,22 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: subServiceIds } },
     });
 
-    const mainPrice = mainService.price;
-    const subPriceTotal = subServices.reduce((sum, s) => sum + s.price, 0);
-    const totalPrice = Math.max(0, mainPrice + subPriceTotal);
+    const effectiveSpecies = booking.petSpecies || booking.pet?.species || 'DOG';
+    const effectiveWeight = booking.petWeight || booking.pet?.weight || 0;
 
-    const mainDuration = mainService.durationMax || mainService.durationMin || 30;
-    const subDurationTotal = subServices.reduce((sum, s) => sum + (s.durationMax || s.durationMin || 15), 0);
-    const totalDurationMinutes = mainDuration + subDurationTotal;
+    const resolvedMain = resolveServicePriceAndDuration(mainService, effectiveSpecies, effectiveWeight);
+    const mainPrice = resolvedMain.price;
+    const mainDuration = resolvedMain.duration;
+
+    let subPriceTotal = 0;
+    let subDurationTotal = 0;
+    for (const sub of subServices) {
+      const resolvedSub = resolveServicePriceAndDuration(sub, effectiveSpecies, effectiveWeight);
+      subPriceTotal += resolvedSub.price;
+      subDurationTotal += resolvedSub.duration;
+    }
+    const totalPrice = Math.max(0, mainPrice + subPriceTotal);
+    const totalDurationMinutes = Math.max(15, mainDuration + subDurationTotal);
 
     const start = booking.timeStartExpected || booking.scheduledAt;
     const newEnd = new Date(start.getTime() + totalDurationMinutes * 60 * 1000);
@@ -2699,7 +2714,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         },
       },
       include: {
-        service: { select: { durationMin: true, durationMax: true } },
+        service: { select: { duration: true, price: true } },
       },
     });
 
@@ -2858,7 +2873,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         },
       },
       include: {
-        service: { select: { durationMin: true, durationMax: true } },
+        service: { select: { duration: true, price: true } },
       },
     });
 
@@ -3174,7 +3189,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
       include: {
         service: {
-          select: { durationMin: true, durationMax: true },
+          select: { duration: true, price: true },
         },
       },
     });
@@ -3209,7 +3224,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         },
         include: {
           service: {
-            select: { durationMin: true, durationMax: true },
+            select: { duration: true, price: true },
           },
         },
       });
@@ -3242,7 +3257,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       // Bookings overlapping with this time slot
       const overlappingBookings = activeBookings.filter((b) => {
         const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const dur = this.getServiceDuration(b.service);
         const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
         return bStart < slotEnd && bEnd > slotStart;
       });
@@ -3266,7 +3281,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       // Check if pet is busy during this slot
       const isPetBusy = petBookings.some((b) => {
         const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-        const dur = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+        const dur = this.getServiceDuration(b.service);
         const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
         return bStart < slotEnd && bEnd > slotStart;
       });
@@ -3337,7 +3352,16 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
     }
 
     const start = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
-    const duration = b.service ? (b.service.durationMax || b.service.durationMin || 45) : 45;
+    let duration = 45;
+    if (b.service) {
+      if (typeof b.service.durationMin === 'number') {
+        duration = b.service.durationMin;
+      } else if (b.service.duration) {
+        const parsed = parseArrayField(b.service.duration);
+        const flat = parsed.flat(Infinity).filter((n: any) => typeof n === 'number');
+        if (flat.length > 0) duration = flat[0];
+      }
+    }
     const end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
 
     if (start < candidateEnd && end > candidateStart) {

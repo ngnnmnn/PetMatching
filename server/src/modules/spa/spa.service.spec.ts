@@ -431,31 +431,17 @@ describe('SpaService updateStaffBooking', () => {
     const currentMainService = {
       id: 'srv-tam-nho',
       categoryId: 'cat-tam',
-      name: 'Chỉ Tắm (1.5-3kg)',
+      name: 'Chỉ Tắm',
       species: 'DOG',
-      petWeightMin: 1.5,
-      petWeightMax: 3.0,
-      price: 70_000,
+      petMinWeight: [1.5, 3.0],
+      petMaxWeight: [3.0, 6.0],
+      duration: [30, 45],
+      price: [70_000, 110_000],
     };
-
-    const candidateMainServices = [
-      currentMainService,
-      {
-        id: 'srv-tam-vua',
-        categoryId: 'cat-tam',
-        name: 'Chỉ Tắm (3-6kg)',
-        species: 'DOG',
-        petWeightMin: 3.0,
-        petWeightMax: 6.0,
-        price: 110_000,
-      },
-    ];
 
     const updateMock = jest.fn().mockResolvedValue({
       ...existingBooking,
       petWeight: 4.5,
-      serviceId: 'srv-tam-vua',
-      mainServiceId: 'srv-tam-vua',
       priceSnapshot: 110_000,
       totalPrice: 110_000,
     });
@@ -469,7 +455,7 @@ describe('SpaService updateStaffBooking', () => {
       },
       spaService: {
         findUnique: jest.fn().mockResolvedValue(currentMainService),
-        findMany: jest.fn().mockResolvedValue(candidateMainServices),
+        findMany: jest.fn().mockResolvedValue([currentMainService]),
       },
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback({
@@ -494,8 +480,6 @@ describe('SpaService updateStaffBooking', () => {
         where: { id: 'booking-123' },
         data: expect.objectContaining({
           petWeight: 4.5,
-          serviceId: 'srv-tam-vua',
-          mainServiceId: 'srv-tam-vua',
           priceSnapshot: 110_000,
           totalPrice: 110_000,
         }),

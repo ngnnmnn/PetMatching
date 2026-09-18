@@ -2147,8 +2147,7 @@ export class AdminService {
             name: true,
             description: true,
             price: true,
-            durationMin: true,
-            durationMax: true,
+            duration: true,
           },
         },
         payment: {
@@ -2189,8 +2188,7 @@ export class AdminService {
             name: true,
             description: true,
             price: true,
-            durationMin: true,
-            durationMax: true,
+            duration: true,
           },
         })
       : [];
