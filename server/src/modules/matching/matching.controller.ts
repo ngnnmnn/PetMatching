@@ -9,10 +9,12 @@ import {
   Query,
   Req,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -23,6 +25,21 @@ import { PassPetDto } from './dto/pass-pet.dto';
 import { ReportMatchDto } from './dto/report-match.dto';
 import { SendMatchMessageDto } from './dto/send-match-message.dto';
 import { MatchingService } from './matching.service';
+
+const matchingImageUploadOptions: MulterOptions = {
+  storage: memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_request, file, callback) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      callback(
+        new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.'),
+        false,
+      );
+      return;
+    }
+    callback(null, true);
+  },
+};
 
 @UseGuards(JwtAuthGuard)
 @Controller('api/matching')
@@ -76,12 +93,14 @@ export class MatchingController {
   }
 
   @Post('matches/:id/report')
+  @UseInterceptors(FilesInterceptor('images', 3, matchingImageUploadOptions))
   reportMatch(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() dto: ReportMatchDto,
+    @UploadedFiles() files: Array<{ buffer: Buffer; mimetype: string }> = [],
   ) {
-    return this.matchingService.reportMatch(request.user.id, id, dto);
+    return this.matchingService.reportMatch(request.user.id, id, dto, files);
   }
 
   @Post('matches/:id/block')
@@ -129,24 +148,7 @@ export class MatchingController {
   }
 
   @Post('matches/:id/messages/image')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (_request, file, callback) => {
-        if (
-          !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)
-        ) {
-          callback(
-            new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.'),
-            false,
-          );
-          return;
-        }
-        callback(null, true);
-      },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', matchingImageUploadOptions))
   sendImageMessage(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,

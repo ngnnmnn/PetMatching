@@ -9,7 +9,9 @@ import {
   BarChart3,
   CircleDollarSign,
   ClipboardCheck,
+  FileSpreadsheet,
   HeartHandshake,
+  Loader2,
   RefreshCw,
   ShoppingBag,
   Stethoscope,
@@ -29,6 +31,9 @@ import {
   RevenueGrowthBadge,
 } from "@/components/admin/dashboard-time-controls";
 import { useAdminDashboardRange } from "@/components/admin/admin-dashboard-range-context";
+import { Button } from "@/components/ui/button";
+import { downloadExcelFile } from "@/lib/download-file";
+import { toast } from "sonner";
 
 type RevenuePoint = {
   label: string;
@@ -88,6 +93,7 @@ export default function AdminDashboardPage() {
     useAdminDashboardRange();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 
   const loadDashboard = useCallback(
@@ -111,6 +117,25 @@ export default function AdminDashboardPage() {
     const timer = window.setTimeout(() => void loadDashboard(), 0);
     return () => window.clearTimeout(timer);
   }, [loadDashboard]);
+
+  const exportReport = async () => {
+    if (!data) return;
+    setExporting(true);
+    try {
+      const response = await adminApi.exportReport(params);
+      const from = formatFilenameDate(data.analytics.range.from);
+      const to = formatFilenameDate(data.analytics.range.to);
+      downloadExcelFile(
+        response.data,
+        `PetMatching_BaoCaoAdmin_${from}_den_${to}.xlsx`,
+      );
+      toast.success("Đã xuất báo cáo Excel thành công.");
+    } catch {
+      toast.error("Không thể xuất báo cáo Excel. Vui lòng thử lại.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const pendingCount = data
     ? data.stats.pets.pendingVerification + data.stats.matching.pendingReports
@@ -168,7 +193,21 @@ export default function AdminDashboardPage() {
           </p>
         </div>
 
-        <div className="shrink-0">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void exportReport()}
+            disabled={exporting}
+            className="h-10 rounded-xl font-black"
+          >
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="size-4" />
+            )}
+            {exporting ? "Đang xuất..." : "Xuất Excel"}
+          </Button>
           <DashboardTimeControls
             value={params}
             onChange={setParams}
@@ -216,7 +255,7 @@ export default function AdminDashboardPage() {
           context={data.analytics?.range?.label ?? ""}
         />
         <MetricCard
-          label="Cửa hàng"
+          label="Tổng số đơn hàng"
           value={data.stats.store.totalOrders.toLocaleString("vi-VN")}
           detail={`${data.stats.store.activeProducts.toLocaleString("vi-VN")} sản phẩm đang bán · ${data.stats.store.pendingOrders.toLocaleString("vi-VN")} đơn chờ xử lý`}
           icon={ShoppingBag}
@@ -225,7 +264,7 @@ export default function AdminDashboardPage() {
           href="/admin/store-overview"
         />
         <MetricCard
-          label="Spa"
+          label="Tổng số lịch đặt Spa"
           value={data.stats.spa.totalBookings.toLocaleString("vi-VN")}
           detail={`${data.stats.spa.totalServices.toLocaleString("vi-VN")} dịch vụ · ${(data.stats.spa.pendingBookings ?? 0).toLocaleString("vi-VN")} lịch chờ xác nhận`}
           icon={Stethoscope}
@@ -234,7 +273,7 @@ export default function AdminDashboardPage() {
           href="/admin/spa-overview"
         />
         <MetricCard
-          label="Ghép đôi"
+          label="Tổng số ghép đôi"
           value={data.stats.matching.totalMatches.toLocaleString("vi-VN")}
           detail={`${data.stats.pets.total.toLocaleString("vi-VN")} thú cưng · ${data.stats.matching.pendingReports.toLocaleString("vi-VN")} báo cáo đang mở`}
           icon={HeartHandshake}
@@ -367,6 +406,18 @@ export default function AdminDashboardPage() {
       </section>
     </div>
   );
+}
+
+function formatFilenameDate(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
 }
 
 function MetricCard({

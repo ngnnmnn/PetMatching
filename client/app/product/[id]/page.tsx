@@ -28,7 +28,7 @@ import { productsApi } from '@/lib/api/products';
 import { usersApi } from '@/lib/api/users';
 import { uploadImages } from '@/lib/api/uploads';
 import { Product, ProductVariant, ProductCategory, ProductReview } from '@/types';
-import ProductCard from '@/components/home/ProductCard';
+import ProductCard, { findRecommendedVariantForPet, getSuitableVariantsForPet } from '@/components/home/ProductCard';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useCart } from '@/context/CartContext';
 
@@ -57,6 +57,8 @@ export default function ProductDetailPage() {
 
   const [product, setProduct] = useState<Product | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [recommendationPet, setRecommendationPet] = useState<any | null>(null);
+  const [recommendedVariantId, setRecommendedVariantId] = useState<string | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [relatedLoading, setRelatedLoading] = useState(false);
@@ -129,9 +131,34 @@ export default function ProductDetailPage() {
         const data = response.data;
         setProduct(data);
         setActiveImage(data.imageUrl || '/placeholder.svg');
+        // Nạp thông tin Pet đã chọn từ localStorage để phục vụ hiển thị Banner tư vấn gợi ý
+        let currentPet: any = null;
+        if (typeof window !== 'undefined') {
+          const stored = localStorage.getItem('petmatch_shop_selected_pet');
+          if (stored) {
+            try {
+              currentPet = JSON.parse(stored);
+              setRecommendationPet(currentPet);
+            } catch (e) {}
+          }
+        }
+
         if (data.variants && data.variants.length > 0) {
           const targetVariantId = searchParams.get('variantId');
-          const matched = targetVariantId ? data.variants.find((v: any) => v.id === targetVariantId) : null;
+          let matched = targetVariantId ? data.variants.find((v: any) => v.id === targetVariantId) : null;
+
+          // Nếu không có variantId truyền từ URL nhưng người dùng đang chọn lọc theo Pet, tự động tìm phân loại gợi ý phù hợp nhất
+          if (!matched && currentPet) {
+            matched = findRecommendedVariantForPet(data, currentPet);
+          }
+
+          if (matched) {
+            setRecommendedVariantId(matched.id);
+          } else if (currentPet) {
+            const bestRec = findRecommendedVariantForPet(data, currentPet);
+            if (bestRec) setRecommendedVariantId(bestRec.id);
+          }
+
           const initial = matched || data.variants[0];
           setSelectedVariant(initial);
           if (initial.imageUrl) {
@@ -621,32 +648,125 @@ export default function ProductDetailPage() {
                 </span>
               </div>
 
+              {/* Khung thông báo tư vấn đề xuất phân loại cho Thú cưng - Giao diện tinh chỉnh mới theo yêu cầu */}
+              {(() => {
+                const defaultRecommended = product?.variants?.find((v: any) => v.id === recommendedVariantId) ||
+                  (recommendationPet && product ? findRecommendedVariantForPet(product, recommendationPet) : null);
+
+                if (!recommendationPet || !defaultRecommended) return null;
+
+                const suitableVariants = getSuitableVariantsForPet(product, recommendationPet);
+                const isSelectedRecommended = selectedVariant && suitableVariants.some((sv: any) => sv.id === selectedVariant.id);
+                const petAvatar = recommendationPet.avatarUrl || recommendationPet.avatar || (Array.isArray(recommendationPet.gallery) ? recommendationPet.gallery[0] : null);
+
+                return (
+                  <div className="mt-6 relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-0.5 shadow-[0_12px_35px_rgba(245,158,11,0.22)] animate-fadeIn">
+                    <div className="rounded-[15px] bg-gradient-to-r from-amber-50/95 via-orange-50/95 to-rose-50/95 backdrop-blur-md p-5 flex items-center justify-between gap-5 flex-wrap sm:flex-nowrap">
+                      <div className="flex items-start gap-4">
+                        {/* Avatar của Thú cưng */}
+                        <div className="relative shrink-0">
+                          <div className="size-13 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 text-white flex items-center justify-center font-black text-xl shadow-md border-2 border-white overflow-hidden">
+                            {petAvatar ? (
+                              <img
+                                src={petAvatar}
+                                alt={recommendationPet.name}
+                                className="size-full object-cover rounded-xl"
+                              />
+                            ) : (
+                              <span>🐾</span>
+                            )}
+                          </div>
+                          <span className="absolute -bottom-1 -right-1 flex size-4.5 items-center justify-center rounded-full bg-emerald-500 text-[10px] text-white font-bold ring-2 ring-white">
+                            ✓
+                          </span>
+                        </div>
+                        <div className="space-y-3.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 font-black text-xs uppercase tracking-wider text-amber-950 bg-amber-200/90 px-3.5 py-1 rounded-xl border border-amber-300 shadow-2xs">
+                              ✨ Gợi ý cho bé <strong className="font-black text-rose-950 ml-0.5">{recommendationPet.name}</strong>
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-stone-800 font-semibold leading-relaxed flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {isSelectedRecommended && selectedVariant ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100/90 px-2.5 py-0.5 rounded-lg border border-rose-300 shadow-2xs text-xs">{selectedVariant.name}</span> phù hợp với bé <strong className="font-bold text-stone-900">{recommendationPet.name}</strong> 😊
+                              </>
+                            ) : (
+                              <>
+                                <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100/90 px-2.5 py-0.5 rounded-lg border border-rose-300 shadow-2xs text-xs">{defaultRecommended.name}</span> được hệ thống đề xuất phù hợp với bé <strong className="font-bold text-stone-900">{recommendationPet.name}</strong> 😊
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="shrink-0 hidden sm:block">
+                        {isSelectedRecommended ? (
+                          <span
+                            className="inline-flex items-center justify-center size-12 rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 text-white font-black text-2xl shadow-lg ring-2 ring-amber-300/60 animate-pulse"
+                            title="Đề xuất chuẩn match"
+                          >
+                            💡
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVariant(defaultRecommended);
+                              if (defaultRecommended.imageUrl) setActiveImage(defaultRecommended.imageUrl);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
+                          >
+                            🐾 Chọn lại {defaultRecommended.name}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Product Variants Selector (Only show if 2 or more variants) */}
               {product.variants && product.variants.length > 1 && (
                 <div className="mt-5 space-y-3 animate-fadeIn bg-gray-50/50 p-4.5 rounded-2xl border border-[var(--border-color)]">
                   <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-wider">Phân loại sản phẩm:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {product.variants.map((v) => {
-                      const isSelected = selectedVariant?.id === v.id;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedVariant(v);
-                            if (v.imageUrl) {
-                              setActiveImage(v.imageUrl);
-                            }
-                          }}
-                          className={`rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 active:scale-95 ${isSelected
-                            ? 'border-[#0F766E] bg-[#EEF8F5] text-[#0F766E] shadow-sm'
-                            : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
+                  <div className="flex flex-wrap gap-2.5">
+                    {(() => {
+                      const suitableVariants = recommendationPet && product ? getSuitableVariantsForPet(product, recommendationPet) : [];
+
+                      return product.variants.map((v) => {
+                        const isSelected = selectedVariant?.id === v.id;
+                        const isRecommended = suitableVariants.some((sv: any) => sv.id === v.id);
+
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedVariant(v);
+                              if (v.imageUrl) {
+                                setActiveImage(v.imageUrl);
+                              }
+                            }}
+                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 active:scale-95 flex items-center gap-2 cursor-pointer ${
+                              isSelected && isRecommended
+                                ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
+                                : isSelected
+                                  ? 'border-[#0F766E] bg-[#EEF8F5] text-[#0F766E] shadow-sm'
+                                  : isRecommended
+                                    ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
+                                    : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
                             }`}
-                        >
-                          {v.name}
-                        </button>
-                      );
-                    })}
+                          >
+                            <span>{v.name}</span>
+                            {isRecommended && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white text-[9px] font-black px-2 py-0.5 shadow-xs animate-pulse">
+                                🐾 Đề xuất
+                              </span>
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               )}

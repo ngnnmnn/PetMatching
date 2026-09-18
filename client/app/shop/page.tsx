@@ -8,7 +8,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import { useProducts } from '@/hooks/useProducts';
 import ProductFilterSidebar from '@/components/home/ProductFilterSidebar';
 import ProductGrid from '@/components/home/ProductGrid';
-import { getProductLowestPrice } from '@/components/home/ProductCard';
+import { getProductLowestPrice, findRecommendedVariantForPet, isValidProductForRecommendation } from '@/components/home/ProductCard';
 import SearchFilterBar from '@/components/home/SearchFilterBar';
 import Footer from '@/components/layout/Footer';
 import api from '@/lib/axios';
@@ -392,8 +392,13 @@ function ShopPageContent() {
         }
       }
 
-      // 1. Pet Customization Filter (species, weight, size)
+      // 1. Pet Customization Filter (species, weight, size, relevancy score)
       if (selectedPet) {
+        // Kiểm tra độ tương thích tính điểm của sản phẩm với Thú cưng (Loại bỏ 100% sản phẩm rác như 'net', '1', '123', không có mô tả/thông số)
+        if (!isValidProductForRecommendation(product, selectedPet)) {
+          return false;
+        }
+
         // Check target species (double check client-side)
         if (product.targetSpecies !== 'ALL' && product.targetSpecies !== selectedPet.species) {
           return false;
@@ -412,12 +417,22 @@ function ShopPageContent() {
 
       if (!matchesCategory) return false;
 
-      // 3. Price filter: Lọc theo giá thấp nhất của sản phẩm theo yêu cầu
-      const lowestPrice = getProductLowestPrice(product);
+      // 3. Price filter: Lọc theo giá thực tế hiển thị trên thẻ (nếu có selectedPet thì lọc theo giá phân loại được gợi ý cho pet đó)
+      const getActivePrice = (p: any) => {
+        if (selectedPet) {
+          const rec = findRecommendedVariantForPet(p, selectedPet);
+          if (rec) {
+            return rec.salePrice ?? rec.sellingPrice;
+          }
+        }
+        return getProductLowestPrice(p);
+      };
 
-      // Custom Min-Max Price filter (Kiểm tra nếu người dùng tự nhập khoảng giá)
-      if (customMinPrice !== undefined && lowestPrice < customMinPrice) return false;
-      if (customMaxPrice !== undefined && lowestPrice > customMaxPrice) return false;
+      const activePrice = getActivePrice(product);
+
+      // Custom Min-Max Price filter (Kiểm tra xem giá phân loại hiển thị có nằm trong khoảng min-max người dùng chọn không)
+      if (customMinPrice !== undefined && activePrice < customMinPrice) return false;
+      if (customMaxPrice !== undefined && activePrice > customMaxPrice) return false;
 
       // 4. Rating filter: Lọc theo đánh giá tối thiểu của sản phẩm theo yêu cầu
       if (selectedRating !== null && selectedRating !== undefined) {
@@ -433,10 +448,20 @@ function ShopPageContent() {
       const availB = getProductAvailability(b);
       if (availB !== availA) return availB - availA;
 
-      // 2. Nếu người dùng chọn tiêu chí sắp xếp cụ thể (tính theo giá thấp nhất của sản phẩm)
+      // 2. Nếu người dùng chọn tiêu chí sắp xếp cụ thể (tính theo giá thực tế hiển thị của sản phẩm)
+      const getActivePrice = (p: any) => {
+        if (selectedPet) {
+          const rec = findRecommendedVariantForPet(p, selectedPet);
+          if (rec) {
+            return rec.salePrice ?? rec.sellingPrice;
+          }
+        }
+        return getProductLowestPrice(p);
+      };
+
       if (filters.sortBy === 'price_asc') {
-        const pA = getProductLowestPrice(a);
-        const pB = getProductLowestPrice(b);
+        const pA = getActivePrice(a);
+        const pB = getActivePrice(b);
         if (pA !== pB) return pA - pB;
       } else if (filters.sortBy === 'price_desc') {
         const pA = getProductLowestPrice(a);

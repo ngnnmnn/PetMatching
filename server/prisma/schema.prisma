@@ -318,6 +318,7 @@ model PetReport {
   targetType        String           @default("USER")
   reason            String
   detail            String?
+  evidenceUrls      String[]         @default([])
   status            ComplaintStatus  @default(PENDING)
   actionTaken       ComplaintAction?
   adminNote         String?

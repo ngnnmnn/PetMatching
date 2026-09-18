@@ -5,6 +5,7 @@ import Image from "next/image";
 import { AlertTriangle, CheckCircle2, Loader2, Search } from "lucide-react";
 import { AdminFilterSelect } from "@/components/admin/admin-ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Input } from "@/components/ui/input";
 import type { ComplaintAction, ModerateReportAbusePayload, ResolveMatchingReportPayload } from "@/lib/api/admin";
 import {
@@ -60,7 +61,9 @@ export function MatchingReportDialog({
   const [documentTypes, setDocumentTypes] = useState<ReuploadDocumentType[]>(
     [],
   );
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const messages = report?.match?.messages ?? [];
+  const evidenceUrls: string[] = report?.evidenceUrls ?? [];
   const reporterActivity = report?.reporterActivity;
   const isTerminal = Boolean(
     report &&
@@ -119,7 +122,13 @@ export function MatchingReportDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setEvidencePreview(null);
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent className="flex h-[min(90vh,820px)] flex-col overflow-hidden sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Xem xét phản ánh</DialogTitle>
@@ -168,6 +177,47 @@ export function MatchingReportDialog({
                   <p className="mt-2 whitespace-pre-wrap break-words font-semibold text-foreground/85">
                     {report.detail || "Không cung cấp mô tả."}
                   </p>
+                </div>
+                <div className="mt-4 rounded-lg border border-border bg-background p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                      Ảnh minh chứng
+                    </p>
+                    <span className="text-xs font-bold text-muted-foreground">
+                      {evidenceUrls.length} ảnh
+                    </span>
+                  </div>
+                  {evidenceUrls.length ? (
+                    <>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {evidenceUrls.map((url, index) => (
+                          <button
+                            key={url}
+                            type="button"
+                            onClick={() => setEvidencePreview(url)}
+                            className="relative aspect-square overflow-hidden rounded-lg border bg-muted transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            aria-label={`Xem ảnh minh chứng ${index + 1}`}
+                          >
+                            <Image
+                              src={url}
+                              alt={`Ảnh minh chứng ${index + 1}`}
+                              fill
+                              sizes="(max-width: 640px) 30vw, 200px"
+                              unoptimized
+                              className="object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs font-medium text-muted-foreground">
+                        Ảnh do người phản ánh cung cấp, chưa được PetMatch xác thực.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm font-semibold text-muted-foreground">
+                      Người phản ánh không cung cấp ảnh minh chứng.
+                    </p>
+                  )}
                 </div>
                 {isTerminal && (
                   <div className="mt-4 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900 sm:grid-cols-2">
@@ -452,6 +502,11 @@ export function MatchingReportDialog({
             )}
           </div>
         )}
+        <ImageLightbox
+          imageUrl={evidencePreview}
+          alt="Ảnh minh chứng báo cáo"
+          onClose={() => setEvidencePreview(null)}
+        />
       </DialogContent>
     </Dialog>
   );

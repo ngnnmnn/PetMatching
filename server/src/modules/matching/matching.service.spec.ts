@@ -607,6 +607,7 @@ describe('MatchingService moderation', () => {
   let prisma: any;
   let service: MatchingService;
   let notifications: { create: jest.Mock };
+  let cloudinary: { uploadBuffer: jest.Mock; destroyByUrl: jest.Mock };
 
   beforeEach(() => {
     const match = {
@@ -662,9 +663,15 @@ describe('MatchingService moderation', () => {
     notifications = {
       create: jest.fn().mockResolvedValue({ id: 'notification-1' }),
     };
+    cloudinary = {
+      uploadBuffer: jest
+        .fn()
+        .mockResolvedValue({ url: 'https://res.cloudinary.com/demo/evidence.jpg' }),
+      destroyByUrl: jest.fn().mockResolvedValue(undefined),
+    };
     service = new MatchingService(
       prisma as PrismaService,
-      {} as CloudinaryService,
+      cloudinary as unknown as CloudinaryService,
       notifications as any,
     );
   });
@@ -685,6 +692,7 @@ describe('MatchingService moderation', () => {
           petId: 'pet-2',
           targetType: 'USER',
           detail: 'detail',
+          evidenceUrls: [],
         }),
       }),
     );
@@ -703,6 +711,57 @@ describe('MatchingService moderation', () => {
         entityId: 'report-1',
       }),
       tx,
+    );
+  });
+
+  it('uploads and stores report evidence images', async () => {
+    const files = [
+      { buffer: Buffer.from('first') },
+      { buffer: Buffer.from('second') },
+    ];
+    cloudinary.uploadBuffer
+      .mockResolvedValueOnce({
+        url: 'https://res.cloudinary.com/demo/evidence-1.jpg',
+      })
+      .mockResolvedValueOnce({
+        url: 'https://res.cloudinary.com/demo/evidence-2.png',
+      });
+
+    await service.reportMatch(
+      userId,
+      matchId,
+      { targetType: 'USER', reason: 'HARASSMENT' },
+      files,
+    );
+
+    expect(cloudinary.uploadBuffer).toHaveBeenCalledTimes(2);
+    expect(tx.petReport.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evidenceUrls: [
+            'https://res.cloudinary.com/demo/evidence-1.jpg',
+            'https://res.cloudinary.com/demo/evidence-2.png',
+          ],
+        }),
+      }),
+    );
+    expect(cloudinary.destroyByUrl).not.toHaveBeenCalled();
+  });
+
+  it('removes uploaded evidence when creating the report fails', async () => {
+    tx.petReport.create.mockRejectedValueOnce(new Error('database error'));
+
+    await expect(
+      service.reportMatch(
+        userId,
+        matchId,
+        { targetType: 'USER', reason: 'HARASSMENT' },
+        [{ buffer: Buffer.from('evidence') }],
+      ),
+    ).rejects.toThrow('database error');
+
+    expect(cloudinary.destroyByUrl).toHaveBeenCalledWith(
+      'https://res.cloudinary.com/demo/evidence.jpg',
     );
   });
 
