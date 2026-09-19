@@ -29,11 +29,13 @@ export type RevenueComparison = {
   };
 };
 
+// Danh sách các khoảng thời gian được định nghĩa sẵn
 const rangeOptions: Array<{ value: PresetRange; label: string }> = [
   { value: "7d", label: "7 ngày" },
   { value: "30d", label: "30 ngày" },
   { value: "90d", label: "90 ngày" },
   { value: "12m", label: "12 tháng" },
+  { value: "all", label: "Toàn thời gian" },
 ];
 
 const money = new Intl.NumberFormat("vi-VN", {

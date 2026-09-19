@@ -57,7 +57,9 @@ type StoreOverviewData = {
     processingOrders?: number;
     recognizedOrders?: number;
     revenue?: number;
+    allTimeRevenue?: number;
     itemsSold?: number;
+    allTimeProductsSold?: number;
   };
   analytics?: RevenueComparison;
   revenueSeries?: RevenuePoint[];
@@ -94,8 +96,11 @@ type SpaOverviewData = {
     totalBookings?: number;
     pendingBookings?: number;
     inProgressBookings?: number;
+    completedBookings?: number;
+    allTimeCompletedBookings?: number;
     recognizedBookings?: number;
     revenue?: number;
+    allTimeRevenue?: number;
   };
   analytics?: RevenueComparison;
   revenueSeries?: RevenuePoint[];
@@ -260,7 +265,11 @@ export function StoreOverviewPanel({
         <OverviewMetric
           label="Doanh thu ghi nhận"
           value={money.format(stats.revenue ?? 0)}
-          detail={`${(stats.recognizedOrders ?? 0).toLocaleString("vi-VN")} giao dịch được ghi nhận`}
+          detail={
+            stats.allTimeRevenue !== undefined && stats.allTimeRevenue !== stats.revenue
+              ? `${(stats.recognizedOrders ?? 0).toLocaleString("vi-VN")} đơn trong kỳ · Tổng tích lũy ${money.format(stats.allTimeRevenue)}`
+              : `${(stats.recognizedOrders ?? 0).toLocaleString("vi-VN")} giao dịch được ghi nhận`
+          }
           icon={CircleDollarSign}
           tone="primary"
           badge={<RevenueGrowthBadge comparison={data?.analytics} />}
@@ -276,7 +285,11 @@ export function StoreOverviewPanel({
         <OverviewMetric
           label="Sản phẩm"
           value={(stats.products ?? 0).toLocaleString("vi-VN")}
-          detail={`${stats.activeProducts ?? 0} đang bán · ${(stats.itemsSold ?? 0).toLocaleString("vi-VN")} đã bán trong kỳ`}
+          detail={
+            stats.allTimeProductsSold !== undefined && stats.allTimeProductsSold !== stats.itemsSold
+              ? `${stats.activeProducts ?? 0} đang bán · ${(stats.itemsSold ?? 0).toLocaleString("vi-VN")} đã bán trong kỳ (Tổng ${stats.allTimeProductsSold})`
+              : `${stats.activeProducts ?? 0} đang bán · ${(stats.itemsSold ?? 0).toLocaleString("vi-VN")} đã bán trong kỳ`
+          }
           icon={PackageOpen}
           tone="teal"
           href="/admin/store-products"
@@ -387,7 +400,11 @@ export function SpaOverviewPanel({
         <OverviewMetric
           label="Doanh thu ghi nhận"
           value={money.format(stats.revenue ?? 0)}
-          detail={`${stats.recognizedBookings ?? 0} giao dịch được ghi nhận`}
+          detail={
+            stats.allTimeRevenue !== undefined && stats.allTimeRevenue !== stats.revenue
+              ? `${stats.recognizedBookings ?? 0} lịch trong kỳ · Tổng tích lũy ${money.format(stats.allTimeRevenue)}`
+              : `${stats.recognizedBookings ?? 0} giao dịch được ghi nhận`
+          }
           icon={CircleDollarSign}
           tone="primary"
           badge={<RevenueGrowthBadge comparison={data?.analytics} />}
@@ -433,8 +450,10 @@ export function SpaOverviewPanel({
             { label: "Dịch vụ đang mở", value: stats.services ?? 0 },
             { label: "Dịch vụ tạm ngừng", value: stats.inactiveServices ?? 0 },
             {
-              label: "Lịch đang thực hiện",
-              value: stats.inProgressBookings ?? 0,
+              label: "Lịch đã hoàn thành",
+              value: stats.allTimeCompletedBookings !== undefined
+                ? `${stats.completedBookings ?? 0} trong kỳ (${stats.allTimeCompletedBookings} tổng)`
+                : stats.completedBookings ?? 0,
             },
             { label: "Tổng lịch đặt", value: stats.totalBookings ?? 0 },
           ]}

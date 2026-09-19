@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { isAxiosError } from 'axios';
 import { Product, ProductVariant } from '@/types';
 import { toast } from 'sonner';
@@ -76,6 +77,10 @@ function toCartItem(item: CartItemResponse): CartItem {
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  // Kiểm tra xem người dùng có đang thực sự ở màn hình giỏ hàng (/cart) hay không
+  const isCartPage = pathname === '/cart' || pathname?.startsWith('/cart/');
+
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isCartEnabled, setIsCartEnabled] = useState(false);
   const [isAuthenticatedCart, setIsAuthenticatedCart] = useState(false);
@@ -224,11 +229,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     };
   }, [syncCart]);
 
-  // Poll giỏ server cho USER đã đăng nhập; guest chỉ làm mới khi focus hoặc localStorage thay đổi.
+  // Khi người dùng chuyển vào trang /cart, tải dữ liệu giỏ hàng mới nhất ngay lập tức
+  useEffect(() => {
+    if (isCartEnabled && isCartPage) {
+      void loadCart();
+    }
+  }, [isCartEnabled, isCartPage, loadCart]);
+
+  // Poll giỏ hàng realtime liên tục (4 giây/lần) CHỈ KHI người dùng đang ở màn hình giỏ hàng (/cart).
+  // Khi người dùng chuyển sang các màn hình khác, lập tức dừng polling để tránh lãng phí request mạng và CPU server.
   useEffect(() => {
     if (!isCartEnabled) return;
 
-    const interval = isAuthenticatedCart
+    // Chỉ thực hiện polling liên tục khi người dùng đã đăng nhập VÀ đang ở màn hình giỏ hàng
+    const shouldPoll = isAuthenticatedCart && isCartPage;
+
+    const interval = shouldPoll
       ? window.setInterval(() => {
           if (document.visibilityState !== 'visible' || isCartPollingRef.current) return;
 
@@ -240,7 +256,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       : null;
 
     const handleFocus = () => {
-      void loadCart();
+      // Khi tab được focus lại, nếu đang ở trang giỏ hàng thì nạp lại giỏ
+      if (isCartPage) {
+        void loadCart();
+      }
     };
 
     const handleCartStorage = (event: StorageEvent) => {
@@ -257,7 +276,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('storage', handleCartStorage);
     };
-  }, [isAuthenticatedCart, isCartEnabled, loadCart]);
+  }, [isAuthenticatedCart, isCartEnabled, isCartPage, loadCart]);
 
 
   // Save guest cart to localStorage

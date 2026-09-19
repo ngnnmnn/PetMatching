@@ -38,7 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { PetStatus } from '@/lib/api/pets';
+import { petsApi, type PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { CompatibilityBreakdown } from '@/components/matching/compatibility-breakdown';
@@ -221,8 +221,9 @@ export default function UnifiedMatchingHubPage() {
 
   // Load My Pets & Prefetch initial candidates
   useEffect(() => {
-    api
-      .get<Pet[]>('/pets/my')
+    // Sử dụng petsApi.getMine() để lấy dữ liệu từ cache 5 phút, chuyển trang tức thì
+    petsApi
+      .getMine()
       .then(async (res) => {
         const pets = (res.data || []).filter((pet) => pet.status === 'ACTIVE');
         setMyPets(pets);

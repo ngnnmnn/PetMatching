@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { notFound, useParams, useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Loader2, PackageOpen, ShieldAlert, UsersRound } from "lucide-react";
 import { toast } from "sonner";
-import { MatchingReportDialog, MatchingReportFilters } from "@/components/admin/admin-matching-reports";
-import { UserManagementPanel } from "@/components/admin/admin-user-management";
-import { ProductCatalogPanel } from "@/components/admin/admin-catalog-panels";
-import { SpaServicesPanel } from "@/components/admin/admin-spa-services-panel";
-import { SystemProfileForm } from "@/components/admin/admin-system-profile";
-import { SpaManagerRoleDialog, type SpaManagerRoleFlow } from "@/components/admin/admin-spa-role-dialog";
-import { PetDetailDialog, PetManagementPanel, PetModerationDialog, type PetModerationFlow } from "@/components/admin/admin-pet-management";
+import type { SpaManagerRoleFlow } from "@/components/admin/admin-spa-role-dialog";
+import type { PetModerationFlow } from "@/components/admin/admin-pet-management";
 import { ActionGroup, AdminPagination, MiniStat, RoleBadge, StatusBadge } from "@/components/admin/admin-section-components";
 import { adminSectionConfig as sectionConfig, sectionsWithoutTableActions } from "@/components/admin/admin-section-config";
 import {
@@ -26,9 +22,73 @@ import {
   type AdminRow as Row,
   type PetVerificationFilter,
 } from "@/components/admin/admin-section-utils";
-import { SpaOverviewPanel, StoreOverviewPanel } from "@/components/admin/business-overview-panels";
-import { SpaBookingsPanel } from "@/components/admin/spa-bookings-panel";
-import { StoreOrdersPanel } from "@/components/admin/store-orders-panel";
+
+/**
+ * Hiệu ứng chờ tải lười (Lazy loading skeleton) cho các Panel quản trị
+ */
+const DynamicPanelLoader = () => (
+  <div className="flex min-h-[360px] items-center justify-center">
+    <Loader2 className="size-8 animate-spin text-primary" />
+  </div>
+);
+
+// Áp dụng Code-splitting (Tải lười theo từng section) để giảm dung lượng bundle JS ban đầu
+const MatchingReportDialog = dynamic(
+  () => import("@/components/admin/admin-matching-reports").then((m) => m.MatchingReportDialog),
+  { ssr: false }
+);
+const MatchingReportFilters = dynamic(
+  () => import("@/components/admin/admin-matching-reports").then((m) => m.MatchingReportFilters),
+  { ssr: false }
+);
+const UserManagementPanel = dynamic(
+  () => import("@/components/admin/admin-user-management").then((m) => m.UserManagementPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const ProductCatalogPanel = dynamic(
+  () => import("@/components/admin/admin-catalog-panels").then((m) => m.ProductCatalogPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const SpaServicesPanel = dynamic(
+  () => import("@/components/admin/admin-spa-services-panel").then((m) => m.SpaServicesPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const SystemProfileForm = dynamic(
+  () => import("@/components/admin/admin-system-profile").then((m) => m.SystemProfileForm),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const SpaManagerRoleDialog = dynamic(
+  () => import("@/components/admin/admin-spa-role-dialog").then((m) => m.SpaManagerRoleDialog),
+  { ssr: false }
+);
+const PetDetailDialog = dynamic(
+  () => import("@/components/admin/admin-pet-management").then((m) => m.PetDetailDialog),
+  { ssr: false }
+);
+const PetManagementPanel = dynamic(
+  () => import("@/components/admin/admin-pet-management").then((m) => m.PetManagementPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const PetModerationDialog = dynamic(
+  () => import("@/components/admin/admin-pet-management").then((m) => m.PetModerationDialog),
+  { ssr: false }
+);
+const SpaOverviewPanel = dynamic(
+  () => import("@/components/admin/business-overview-panels").then((m) => m.SpaOverviewPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const StoreOverviewPanel = dynamic(
+  () => import("@/components/admin/business-overview-panels").then((m) => m.StoreOverviewPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const SpaBookingsPanel = dynamic(
+  () => import("@/components/admin/spa-bookings-panel").then((m) => m.SpaBookingsPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
+const StoreOrdersPanel = dynamic(
+  () => import("@/components/admin/store-orders-panel").then((m) => m.StoreOrdersPanel),
+  { loading: DynamicPanelLoader, ssr: false }
+);
 import { useAdminDashboardRange } from "@/components/admin/admin-dashboard-range-context";
 import { AdminRole, adminApi, ModerateReportAbusePayload } from "@/lib/api/admin";
 export default function AdminSectionPage() {

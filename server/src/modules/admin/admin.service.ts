@@ -1676,6 +1676,8 @@ export class AdminService {
       periodRevenueOrders,
       topProductGroups,
       recentOrders,
+      allTimeRevenueOrders,
+      allTimePaidItemsSold,
     ] = await Promise.all([
       this.prisma.product.count({ where: storeFilter }),
       this.prisma.product.count({ where: { ...storeFilter, isActive: true } }),
@@ -1764,7 +1766,18 @@ export class AdminService {
           },
         },
       }),
+      this.prisma.order.aggregate({
+        where: recognizedStoreRevenueWhere(store?.id),
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.orderItem.aggregate({
+        where: { order: { storeId: store?.id, payment: { status: 'PAID' } } },
+        _sum: { quantity: true },
+      }),
     ]);
+
+    const allTimeRevenue = allTimeRevenueOrders._sum.totalAmount ?? 0;
+    const allTimeProductsSold = allTimePaidItemsSold._sum.quantity ?? 0;
 
     const topProductIds = topProductGroups.map((item) => item.productId);
     const topProductNames = topProductIds.length
@@ -1826,7 +1839,9 @@ export class AdminService {
         processingOrders,
         recognizedOrders,
         revenue: recognizedRevenue,
+        allTimeRevenue,
         itemsSold: itemsSold._sum.quantity ?? 0,
+        allTimeProductsSold,
       },
       analytics: {
         range: serializeDashboardRange(period),
@@ -1849,19 +1864,30 @@ export class AdminService {
   }
 
   async getSpaDashboard(
-    query: { range?: string; from?: string; to?: string } = {},
+    query: { range?: string; from?: string; to?: string; branchId?: string } = {},
   ) {
     const period = resolveDashboardRange(query);
-    const spa = await this.prisma.addressSpa.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        status: true,
-        manager: { select: { name: true } },
-      },
-    });
+    const spa = query.branchId && query.branchId !== 'ALL'
+      ? await this.prisma.addressSpa.findUnique({
+          where: { id: query.branchId },
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            status: true,
+            manager: { select: { name: true } },
+          },
+        })
+      : await this.prisma.addressSpa.findFirst({
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            status: true,
+            manager: { select: { name: true } },
+          },
+        });
     const now = new Date();
     const startOfDay = new Date(
       now.getFullYear(),
@@ -1893,10 +1919,12 @@ export class AdminService {
       inProgressBookings,
       completedBookings,
       cancelledBookings,
+      periodCompletedBookings,
       periodRevenueBookings,
       recognizedServiceGroups,
       legacyServiceGroups,
       upcomingBookings,
+      allTimeSpaRevenueBookings,
     ] = await Promise.all([
       this.prisma.spaService.count({ where: { isActive: true } }),
       this.prisma.spaService.count({ where: { isActive: false } }),
@@ -1944,6 +1972,13 @@ export class AdminService {
           },
         },
       }),
+      this.prisma.spaBooking.count({
+        where: {
+          ...addressFilter,
+          status: SpaBookingStatus.COMPLETED,
+          createdAt: { gte: period.from, lt: period.toExclusive },
+        },
+      }),
       this.prisma.spaBooking.findMany({
         where: {
           ...recognizedSpaRevenueWhere(spa?.id),
@@ -1982,6 +2017,10 @@ export class AdminService {
           staff: { select: { name: true } },
           service: { select: { name: true } },
         },
+      }),
+      this.prisma.spaBooking.findMany({
+        where: recognizedSpaRevenueWhere(spa?.id),
+        select: { createdAt: true, totalPrice: true, priceSnapshot: true },
       }),
     ]);
 
@@ -2058,8 +2097,11 @@ export class AdminService {
         totalBookings,
         pendingBookings,
         inProgressBookings,
+        completedBookings: periodCompletedBookings,
+        allTimeCompletedBookings: completedBookings,
         recognizedBookings,
         revenue: recognizedRevenue,
+        allTimeRevenue: sumRevenue(allTimeSpaRevenueBookings),
       },
       analytics: {
         range: serializeDashboardRange(period),

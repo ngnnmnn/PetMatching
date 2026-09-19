@@ -16,15 +16,22 @@ import {
   ShoppingBag,
   Stethoscope,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import dynamic from "next/dynamic";
+
+/**
+ * Tải lười biểu đồ doanh thu Recharts (Code-splitting) giúp giảm kích thước bundle ban đầu
+ */
+const AdminRevenueChart = dynamic(
+  () => import("@/components/admin/admin-revenue-chart"),
+  {
+    loading: () => (
+      <div className="flex h-80 w-full items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
+    ),
+    ssr: false,
+  },
+);
 import { adminApi } from "@/lib/api/admin";
 import {
   DashboardTimeControls,
@@ -300,51 +307,7 @@ export default function AdminDashboardPage() {
             className="relative mt-6 h-80 w-full"
             aria-label="Biểu đồ cột doanh thu Store và Spa"
           >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={data.analytics?.revenueSeries ?? []}
-                margin={{ top: 8, right: 4, left: -16, bottom: 0 }}
-              >
-                <CartesianGrid
-                  vertical={false}
-                  stroke="var(--border)"
-                  strokeDasharray="4 4"
-                />
-                <XAxis
-                  dataKey="label"
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={24}
-                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={formatAxisMoney}
-                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                />
-                <Tooltip
-                  cursor={{ fill: "var(--muted)", opacity: 0.5 }}
-                  content={<RevenueTooltip />}
-                />
-                <Bar
-                  dataKey="storeRevenue"
-                  name="Store"
-                  stackId="revenue"
-                  fill="var(--primary)"
-                  radius={[0, 0, 3, 3]}
-                  maxBarSize={42}
-                />
-                <Bar
-                  dataKey="spaRevenue"
-                  name="Spa"
-                  stackId="revenue"
-                  fill="var(--chart-2)"
-                  radius={[5, 5, 0, 0]}
-                  maxBarSize={42}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+            <AdminRevenueChart data={data.analytics?.revenueSeries ?? []} />
             {!hasRevenue && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div className="rounded-xl border bg-card/95 px-4 py-3 text-center shadow-sm">
@@ -559,64 +522,6 @@ function PendingLink({
       </span>
       <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
     </Link>
-  );
-}
-
-function RevenueTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ payload: RevenuePoint }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  const point = payload[0].payload;
-  return (
-    <div className="min-w-52 rounded-xl border bg-card p-3 shadow-lg">
-      <p className="text-xs font-bold text-foreground">{label}</p>
-      <div className="mt-3 grid gap-2 text-xs">
-        <TooltipRow
-          color="bg-primary"
-          label="Store"
-          value={currency.format(point.storeRevenue)}
-        />
-        <TooltipRow
-          color="bg-chart-2"
-          label="Spa"
-          value={currency.format(point.spaRevenue)}
-        />
-        <div className="mt-1 flex items-center justify-between gap-5 border-t pt-2 font-bold">
-          <span>Tổng doanh thu</span>
-          <span>{currency.format(point.totalRevenue)}</span>
-        </div>
-        <div className="flex items-center justify-between text-muted-foreground">
-          <span>Giao dịch</span>
-          <span>{point.transactions}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TooltipRow({
-  color,
-  label,
-  value,
-}: {
-  color: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-5">
-      <span className="flex items-center gap-2 text-muted-foreground">
-        <span className={`size-2 rounded-sm ${color}`} />
-        {label}
-      </span>
-      <span className="font-semibold text-foreground">{value}</span>
-    </div>
   );
 }
 

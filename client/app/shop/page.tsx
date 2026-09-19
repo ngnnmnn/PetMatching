@@ -13,6 +13,7 @@ import SearchFilterBar from '@/components/home/SearchFilterBar';
 import Footer from '@/components/layout/Footer';
 import api from '@/lib/axios';
 import { productsApi } from '@/lib/api/products';
+import { petsApi } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { removeVietnameseTones } from '@/lib/hanoi-wards';
 import { toast } from 'sonner';
@@ -176,7 +177,8 @@ function ShopPageContent() {
     setIsLoggedIn(!!token);
     if (token) {
       setIsLoadingPets(true);
-      api.get('/pets/my')
+      // Sử dụng petsApi.getMine() có tích hợp bộ nhớ đệm (TTL 5 phút)
+      petsApi.getMine()
         .then((res) => {
           if (res.data) {
             setPets(Array.isArray(res.data) ? res.data : []);

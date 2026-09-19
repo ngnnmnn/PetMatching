@@ -3,9 +3,20 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
+import compression from 'compression';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Kích hoạt nén phản hồi HTTP (Gzip/Deflate) cho mọi API phản hồi từ máy chủ
+  // Ngưỡng 1024 bytes: chỉ nén các response có kích thước từ 1KB trở lên để tối ưu CPU
+  app.use(
+    compression({
+      threshold: 1024,
+      level: 6,
+    }),
+  );
+
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/axios';
 import { spaApi } from '@/lib/api/spa';
+import { petsApi } from '@/lib/api/pets';
 import { SpaServiceType, AddressSpaType } from '@/types';
 
 interface PetType {
@@ -342,7 +343,7 @@ function SpaBookingWizard() {
       try {
         const [addressesRes, petsRes] = await Promise.all([
           spaApi.getSpaAddresses(),
-          api.get('/pets/my').catch(() => ({ data: [] })),
+          petsApi.getMine().catch(() => ({ data: [] })),
         ]);
 
         setAddresses(addressesRes.data || []);
@@ -352,7 +353,7 @@ function SpaBookingWizard() {
         }
 
         const myPets = petsRes.data || [];
-        setPets(myPets);
+        setPets(myPets as unknown as PetType[]);
         if (myPets.length === 1) {
           setSelectedPetId(myPets[0].id);
         } else {

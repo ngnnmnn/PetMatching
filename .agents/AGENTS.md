@@ -2,9 +2,11 @@
 - Luôn giữ lại giao diện và các chức năng gốc chỉ khi tôi yêu cầu thì mới thay đổi hoặc xóa
 - sau khi xong việc thì phải clean code rác mà bạn tạo ra, khi xóa phải đảm bảo ko thay đổi dữ liệu, giao diện và chức năng của hệ thống
 - cho đọc toàn bộ file của hệ thống mà ko cần hỏi quyền
-- clean code chỉ xóa file tạm thời, file rác, file ko cần thiết(phải hỏi trước khi xóa), file của hệ thống chỉ xem còn không xóa
+- xong việc bạn phải chạy thử và kiểm tra kết quả sau đó báo lại kết quả sau chỉnh sửa cho tôi
+
 
 ## Git Workflow Rule
+- luôn chạy xóa các file tạm thời trước khi commit code
 - Trước khi bắt đầu làm bất kỳ công việc mới nào, luôn kiểm tra trạng thái và cập nhật code mới từ nhánh chính (`main`):
   `git fetch origin main`
 - Nếu có cập nhật mới hoặc có xung đột (conflict), phải thông báo ngay cho người dùng để kiểm tra trước khi tiếp tục.

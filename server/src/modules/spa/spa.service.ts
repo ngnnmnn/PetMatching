@@ -1480,6 +1480,12 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
+    // Đếm chính xác các lịch hẹn có thời gian đúng trong ngày hôm nay (đồng bộ với Admin)
+    const strictlyTodayBookings = bookings.filter((b) => {
+      const d = new Date(b.scheduledAt);
+      return d >= startOfDay && d <= endOfDay;
+    });
+
     const todayBookings = bookings.filter((b) => {
       const d = new Date(b.scheduledAt);
       const isToday = d >= startOfDay && d <= endOfDay;
@@ -1660,9 +1666,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const serializedRange = serializeDashboardRange(period);
 
     return {
-      todayBookingsCount: todayBookings.length,
+      todayBookingsCount: strictlyTodayBookings.length,
+      actionableTodayBookingsCount: todayBookings.length,
       unconfirmedBookingsCount,
       completedBookingsCount,
+      allTimeCompletedBookingsCount: recognizedBookings.length,
       totalRevenue,
       previousRevenue,
       revenueChangePercent,

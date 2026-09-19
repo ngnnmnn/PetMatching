@@ -323,13 +323,17 @@ export class AdminController {
     return this.adminService.getSpaBranches({ status });
   }
 
+  /**
+   * Lấy dữ liệu thống kê tổng quan Spa của Admin theo khoảng thời gian và chi nhánh (nếu chọn)
+   */
   @Get('spa-dashboard')
   getSpaDashboard(
     @Query('range') range?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('branchId') branchId?: string,
   ) {
-    return this.adminService.getSpaDashboard({ range, from, to });
+    return this.adminService.getSpaDashboard({ range, from, to, branchId });
   }
 
   @Get('spa-services')

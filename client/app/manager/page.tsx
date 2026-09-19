@@ -106,9 +106,13 @@ function computeSalePrice(
 import { productsApi } from '@/lib/api/products';
 import { Category } from '@/types';
 import { uploadImages } from '@/lib/api/uploads';
-import ConfirmDialog from '@/components/ui/ConfirmDialog';
-// Modal xem chi tiết hành trình vận đơn GHN tự động
-import OrderTrackingModal from '@/components/orders/OrderTrackingModal';
+import dynamic from 'next/dynamic';
+
+/**
+ * Tải lười các Modal chỉ khi người dùng click mở để giảm tải bundle JS ban đầu
+ */
+const ConfirmDialog = dynamic(() => import('@/components/ui/ConfirmDialog'), { ssr: false });
+const OrderTrackingModal = dynamic(() => import('@/components/orders/OrderTrackingModal'), { ssr: false });
 import {
   Pagination,
   PaginationContent,

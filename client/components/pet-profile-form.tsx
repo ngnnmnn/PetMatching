@@ -20,6 +20,7 @@ import {
 } from "@/lib/pet-options"
 import { cn } from "@/lib/utils"
 import { uploadImages, type UploadPurpose } from "@/lib/api/uploads"
+import { invalidateMyPetsCache } from "@/lib/api/pets"
 import { HanoiWardSelect } from "@/components/hanoi-ward-select"
 import { AddressAutocompleteInput, type LocationSearchResult } from "@/components/checkout/AddressAutocompleteInput"
 
@@ -338,6 +339,8 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         breedingOption: gender === "MALE" ? breedingOptionMap[formData.breedingOption] || undefined : undefined,
         breedingFee: gender === "MALE" && formData.breedingPrice ? Number(formData.breedingPrice) : undefined,
       })
+      // Xóa cache danh sách pet để các màn hình khác nhận dữ liệu mới ngay lập tức
+      invalidateMyPetsCache()
       onComplete?.()
     } catch {
       setSubmitError("Không tạo được hồ sơ. Vui lòng kiểm tra backend và đăng nhập lại nếu cần.")

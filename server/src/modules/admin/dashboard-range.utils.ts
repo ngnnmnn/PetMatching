@@ -1,7 +1,7 @@
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type DashboardRangeKey = '7d' | '30d' | '90d' | '12m' | 'custom';
+export type DashboardRangeKey = '7d' | '30d' | '90d' | '12m' | 'all' | 'custom';
 export type DashboardGranularity = 'day' | 'week' | 'month';
 
 export type DashboardRange = {
@@ -75,6 +75,9 @@ function formatMonth(value: Date) {
   }).format(value);
 }
 
+/**
+ * Xử lý và tính toán khoảng thời gian báo cáo Dashboard theo preset (7d, 30d, 90d, 12m, all) hoặc custom range
+ */
 export function resolveDashboardRange(
   input: DashboardRangeInput = {},
   now = new Date(),
@@ -105,6 +108,22 @@ export function resolveDashboardRange(
       previousFrom,
       previousToExclusive: customFrom,
       granularity,
+    };
+  }
+
+  // Hỗ trợ truy vấn toàn bộ dữ liệu từ trước đến nay
+  if (requestedKey === 'all') {
+    const today = startOfVietnamDay(now);
+    const toExclusive = addDays(today, 1);
+    const from = new Date('2020-01-01T00:00:00.000Z');
+    return {
+      key: 'all',
+      label: 'Toàn thời gian',
+      from,
+      toExclusive,
+      previousFrom: from,
+      previousToExclusive: from,
+      granularity: 'month',
     };
   }
 
@@ -153,6 +172,12 @@ export function buildDashboardBuckets(
 
   if (range.granularity === 'month') {
     let cursor = startOfVietnamMonth(range.from);
+    if (range.key === 'all') {
+      const twelveMonthsAgo = addMonths(startOfVietnamMonth(range.toExclusive), -11);
+      if (cursor < twelveMonthsAgo) {
+        cursor = twelveMonthsAgo;
+      }
+    }
     while (cursor < range.toExclusive) {
       const next = addMonths(cursor, 1);
       buckets.push({

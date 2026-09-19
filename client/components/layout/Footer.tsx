@@ -6,17 +6,33 @@ import Link from 'next/link';
 import { spaApi } from '@/lib/api/spa';
 import { AddressSpaType } from '@/types';
 
+/**
+ * Component chân trang Footer
+ * Sử dụng dữ liệu chi nhánh Spa được lưu trong bộ nhớ đệm (TTL 10 phút)
+ * Đảm bảo khi chuyển trang không gọi lại request mạng thừa thãi
+ */
 export default function Footer() {
   const [spaAddresses, setSpaAddresses] = useState<AddressSpaType[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Tải danh sách chi nhánh Spa (lấy từ cache nếu có sẵn trong bộ nhớ đệm)
     spaApi.getSpaAddresses()
       .then((res) => {
-        setSpaAddresses(res.data || []);
+        if (isMounted) {
+          setSpaAddresses(res.data || []);
+        }
       })
       .catch(() => {
-        setSpaAddresses([]);
+        if (isMounted) {
+          setSpaAddresses([]);
+        }
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return (

@@ -11,6 +11,15 @@ export interface ProductFilters {
   limit?: number;
 }
 
+import { fetchWithCache, invalidateCache } from '@/lib/cache/api-cache';
+
+/**
+ * Xóa bộ nhớ đệm danh mục sản phẩm khi có cập nhật từ trang quản lý
+ */
+export function invalidateCategoriesCache() {
+  invalidateCache('products:categories');
+}
+
 export const productsApi = {
   getList: (filters?: ProductFilters) =>
     api.get<PaginatedResponse<Product>>('/products', { params: filters }),
@@ -19,7 +28,17 @@ export const productsApi = {
 
   getById: (id: string) => api.get<Product>(`/products/${id}`),
 
-  getCategories: () => api.get<Category[]>('/products/categories'),
+  /**
+   * Lấy danh sách danh mục sản phẩm có hỗ trợ bộ nhớ đệm (TTL: 10 phút)
+   * Tránh gọi lại API nhiều lần khi chuyển trang giữa Shop và Quản lý
+   */
+  getCategories: (options?: { force?: boolean }) =>
+    fetchWithCache(
+      'products:categories',
+      () => api.get<Category[]>('/products/categories'),
+      10 * 60 * 1000,
+      options?.force,
+    ),
 
   getReviews: (productId: string) => api.get<ProductReview[]>(`/products/${productId}/reviews`),
 

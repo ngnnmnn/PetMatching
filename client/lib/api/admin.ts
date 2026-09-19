@@ -26,8 +26,9 @@ export type RestorePetReason = "INFORMATION_VERIFIED" | "REPORT_RESOLVED" | "DOC
 export type Species = 'DOG' | 'CAT';
 export type BreedType = 'PUREBRED' | 'HYBRID';
 
+// Tham số bộ lọc thời gian cho Dashboard Quản trị và Quản lý
 export type AdminDashboardParams = {
-  range?: "7d" | "30d" | "90d" | "12m" | "custom";
+  range?: "7d" | "30d" | "90d" | "12m" | "all" | "custom";
   from?: string;
   to?: string;
 };

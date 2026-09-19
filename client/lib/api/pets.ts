@@ -78,12 +78,36 @@ export type DeletePetResult = {
   endedMatches: number;
 };
 
+import { fetchWithCache, invalidateCache } from "@/lib/cache/api-cache";
+
+/**
+ * Xóa bộ nhớ đệm danh sách thú cưng của tôi khi có thao tác thêm/sửa/xóa
+ */
+export function invalidateMyPetsCache() {
+  invalidateCache("pets:my");
+}
+
 export const petsApi = {
-  getMine: () => api.get<Pet[]>("/pets/my"),
+  /**
+   * Lấy danh sách thú cưng của người dùng có hỗ trợ bộ nhớ đệm (TTL: 5 phút)
+   * Giúp chuyển đổi mượt mà giữa các trang Shop, Explore, My Pets và Đặt lịch Spa
+   */
+  getMine: (options?: { force?: boolean }) =>
+    fetchWithCache(
+      "pets:my",
+      () => api.get<Pet[]>("/pets/my"),
+      5 * 60 * 1000,
+      options?.force,
+    ),
   getDetail: (petId: string) => api.get<Pet>(`/pets/${petId}`),
-  update: (petId: string, payload: UpdatePetPayload) =>
-    api.patch<Pet>(`/pets/${petId}`, payload),
-  updateAvailability: (
+  /** Cập nhật thông tin thú cưng và tự động làm mới bộ nhớ đệm */
+  update: async (petId: string, payload: UpdatePetPayload) => {
+    const res = await api.patch<Pet>(`/pets/${petId}`, payload);
+    invalidateMyPetsCache();
+    return res;
+  },
+  /** Cập nhật trạng thái ghép đôi và tự động làm mới bộ nhớ đệm */
+  updateAvailability: async (
     petId: string,
     payload: {
       isAvailableForMatching?: boolean;
@@ -93,7 +117,16 @@ export const petsApi = {
       shareLitterCount?: number;
       personality?: string;
     },
-  ) => api.patch<Pet>(`/pets/${petId}/availability`, payload),
-  delete: (petId: string) =>
-    api.delete<DeletePetResult>(`/pets/${petId}`),
+  ) => {
+    const res = await api.patch<Pet>(`/pets/${petId}/availability`, payload);
+    invalidateMyPetsCache();
+    return res;
+  },
+  /** Xóa thú cưng và tự động làm mới bộ nhớ đệm */
+  delete: async (petId: string) => {
+    const res = await api.delete<DeletePetResult>(`/pets/${petId}`);
+    invalidateMyPetsCache();
+    return res;
+  },
 };
+

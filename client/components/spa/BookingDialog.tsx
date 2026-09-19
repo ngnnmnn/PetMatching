@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import api from '@/lib/axios';
 import { spaApi } from '@/lib/api/spa';
+import { petsApi } from '@/lib/api/pets';
 import {
   Dialog,
   DialogContent,
@@ -35,7 +36,7 @@ interface Pet {
   id: string;
   name: string;
   breed: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
 }
 
 const getLocalDateString = (d = new Date()) => {
@@ -69,9 +70,9 @@ export default function BookingDialog({
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch user's pets
+      // Tải danh sách thú cưng của người dùng (tận dụng bộ nhớ đệm 5 phút)
       setFetchingPets(true);
-      api.get('/pets/my')
+      petsApi.getMine()
         .then((res) => {
           const petList = res.data || [];
           setPets(petList);

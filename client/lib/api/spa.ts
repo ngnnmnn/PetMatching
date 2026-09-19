@@ -11,8 +11,33 @@ import {
 export type { CreateBookingData };
 
 
+import { fetchWithCache, invalidateCache } from '@/lib/cache/api-cache';
+
+/**
+ * Xóa bộ nhớ đệm danh mục spa
+ */
+export function invalidateSpaCategoriesCache() {
+  invalidateCache('spa:categories');
+}
+
+/**
+ * Xóa bộ nhớ đệm danh sách chi nhánh địa chỉ spa
+ */
+export function invalidateSpaAddressesCache() {
+  invalidateCache('spa:addresses');
+}
+
 export const spaApi = {
-  getCategories: () => api.get<any[]>('/spa/categories'),
+  /**
+   * Lấy danh mục dịch vụ Spa có hỗ trợ bộ nhớ đệm (TTL: 10 phút)
+   */
+  getCategories: (options?: { force?: boolean }) =>
+    fetchWithCache(
+      'spa:categories',
+      () => api.get<any[]>('/spa/categories'),
+      10 * 60 * 1000,
+      options?.force,
+    ),
   getBranches: () => api.get<SpaBranchType[]>('/spa/branches'),
   getServices: (species?: string, weight?: number) => {
     const params = new URLSearchParams();
@@ -21,7 +46,17 @@ export const spaApi = {
     const query = params.toString();
     return api.get<SpaServiceType[]>(`/spa/services${query ? `?${query}` : ''}`);
   },
-  getSpaAddresses: () => api.get<AddressSpaType[]>('/spa/addresses'),
+  /**
+   * Lấy danh sách chi nhánh địa chỉ Spa có hỗ trợ bộ nhớ đệm và gom request trùng lặp (TTL: 10 phút)
+   * Tránh việc Footer và Trang Spa gọi lặp lại API mỗi lần chuyển trang
+   */
+  getSpaAddresses: (options?: { force?: boolean }) =>
+    fetchWithCache(
+      'spa:addresses',
+      () => api.get<AddressSpaType[]>('/spa/addresses'),
+      10 * 60 * 1000,
+      options?.force,
+    ),
   getStaffList: () => api.get<any[]>('/spa/staff-list'),
   getStaffProfile: () => api.get<SpaStaffProfileType>('/spa/staff/profile'),
   createBooking: (data: CreateBookingData) => api.post<any>('/spa/bookings', data),
