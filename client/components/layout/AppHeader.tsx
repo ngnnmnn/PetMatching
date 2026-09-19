@@ -17,6 +17,7 @@ import { BrandMark } from '@/components/auth/AuthShell';
 import UserDropdown from '@/components/home/UserDropdown';
 import { useCart } from '@/context/CartContext';
 import NotificationBell from '@/components/notifications/NotificationBell';
+import { cn } from '@/lib/utils';
 
 const MATCHING_NAV = [
   { label: 'Khám phá', href: '/explore', icon: Search },
@@ -37,6 +38,8 @@ export default function AppHeader({ sectionLabel = 'Trang chủ' }: AppHeaderPro
   const isMatchingSection = MATCHING_NAV.some(
     ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
   );
+  const isShopSection = pathname === '/shop' || pathname.startsWith('/shop/') || pathname.startsWith('/product/');
+  const isSpaSection = pathname === '/spa' || pathname.startsWith('/spa/');
 
   useEffect(() => {
     const checkUserRole = () => {
@@ -82,24 +85,34 @@ export default function AppHeader({ sectionLabel = 'Trang chủ' }: AppHeaderPro
           </span>
         </Link>
 
-        {/* Điều hướng chính thống nhất trên mọi màn hình dành cho người dùng. */}
-        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-2.5 rounded-2xl border border-[#EFEAE2] bg-[#FAF9F6] p-1.5 shadow-xs md:flex">
+        {/* Điều hướng chính với thiết kế Clean Modern Capsule: chỉ highlight phân hệ đang truy cập */}
+        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1.5 rounded-2xl border border-border/60 bg-muted/40 p-1.5 shadow-xs backdrop-blur-md md:flex">
             <Link
               href="/shop"
               onClick={() => {
                 localStorage.removeItem('petmatch_shop_selected_pet');
                 window.dispatchEvent(new Event('shop-reset'));
               }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black bg-[#0F766E] hover:bg-[#115E59] text-white transition active:scale-95 shadow-xs border border-transparent"
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-[13.5px] font-bold transition-all active:scale-95',
+                isShopSection
+                  ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md shadow-teal-600/25 ring-2 ring-teal-300/40'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-background/80 hover:shadow-xs'
+              )}
             >
-              <Store className="size-4 text-white" />
+              <Store className={cn('size-4', isShopSection ? 'text-white' : 'text-teal-600')} />
               Cửa hàng
             </Link>
             <Link
               href="/spa"
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black bg-[#16A34A] hover:bg-[#15803D] text-white transition active:scale-95 shadow-xs border border-transparent"
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-[13.5px] font-bold transition-all active:scale-95',
+                isSpaSection
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/25 ring-2 ring-emerald-300/40'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-background/80 hover:shadow-xs'
+              )}
             >
-              <Scissors className="size-4 text-white" />
+              <Scissors className={cn('size-4', isSpaSection ? 'text-white' : 'text-emerald-600')} />
               Spa & Làm đẹp
             </Link>
             <div
@@ -119,20 +132,21 @@ export default function AppHeader({ sectionLabel = 'Trang chủ' }: AppHeaderPro
                   aria-expanded={matchingMenuOpen}
                   onClick={() => setMatchingMenuOpen((open) => !open)}
                   onFocus={() => setMatchingMenuOpen(true)}
-                  className={`group flex items-center gap-2 rounded-xl border border-transparent px-5 py-2.5 text-xs font-black text-white shadow-xs transition active:scale-95 ${
+                  className={cn(
+                    'group flex items-center gap-2 rounded-xl px-4 py-2 text-[13.5px] font-bold transition-all active:scale-95',
                     isMatchingSection
-                      ? 'bg-[#BE123C] ring-2 ring-[#FDA4AF]/60'
-                      : 'bg-[#E11D48] hover:bg-[#BE123C]'
-                  }`}
+                      ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-md shadow-rose-500/25 ring-2 ring-rose-300/40'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-background/80 hover:shadow-xs'
+                  )}
                 >
-                  <Heart className="size-4 fill-white text-white" />
+                  <Heart className={cn('size-4 transition-transform group-hover:scale-110', isMatchingSection ? 'fill-white text-white' : 'fill-rose-500 text-rose-500')} />
                   Ghép đôi
-                  <ChevronDown className={`size-3.5 transition-transform ${matchingMenuOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={cn('size-3.5 transition-transform', matchingMenuOpen ? 'rotate-180' : '', isMatchingSection ? 'text-white' : 'text-muted-foreground')} />
                 </button>
 
               {matchingMenuOpen && (
-                <div className="absolute left-1/2 top-full z-50 w-60 -translate-x-1/2 pt-2" role="menu">
-                  <div className="animate-in fade-in-0 zoom-in-95 rounded-xl border border-[#FBCFE8] bg-white p-2 shadow-xl duration-150">
+                <div className="absolute left-1/2 top-full z-50 w-52 -translate-x-1/2 pt-2" role="menu">
+                  <div className="animate-in fade-in-0 zoom-in-95 rounded-2xl border border-rose-100/80 bg-card p-1.5 shadow-2xl duration-150 backdrop-blur-md">
                     {MATCHING_NAV.map(({ label, href, icon: Icon }) => {
                       const active = pathname === href || pathname.startsWith(`${href}/`);
 
@@ -143,16 +157,17 @@ export default function AppHeader({ sectionLabel = 'Trang chủ' }: AppHeaderPro
                         role="menuitem"
                         aria-current={active ? 'page' : undefined}
                         onClick={() => setMatchingMenuOpen(false)}
-                        className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 font-bold outline-none transition-colors ${
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-[13.5px] font-bold outline-none transition-all',
                           active
-                            ? 'bg-[#FFF1F2] text-[#BE123C]'
-                            : 'text-[var(--text-main)] focus:bg-[#FFF1F2] focus:text-[#BE123C]'
-                        }`}
+                            ? 'bg-rose-50 text-rose-700 font-extrabold shadow-xs'
+                            : 'text-foreground hover:bg-muted/60 focus:bg-muted/60'
+                        )}
                       >
-                        <span className={`flex size-8 items-center justify-center rounded-lg ${active ? 'bg-[#E11D48] text-white' : 'bg-[#FFF1F2] text-[#E11D48]'}`}>
+                        <span className={cn('flex size-7.5 items-center justify-center rounded-lg shrink-0', active ? 'bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-xs' : 'bg-rose-50 text-rose-600')}>
                           <Icon className="size-4" />
                         </span>
-                        {label}
+                        <span className="truncate">{label}</span>
                       </Link>
                       );
                     })}
