@@ -9,7 +9,6 @@ import {
   ApprovalStatus,
   ComplaintAction,
   ComplaintStatus,
-  ComplaintType,
   DocumentStatus,
   DocumentType,
   NotificationCategory,
@@ -45,7 +44,6 @@ import {
   ModerateReportAbuseDto,
   RevokeSpaManagerDto,
   RestorePetDto,
-  ResolveComplaintDto,
   ResolveMatchingReportDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
@@ -2238,69 +2236,6 @@ export class AdminService {
     }));
   }
 
-  getComplaints(query: { type?: ComplaintType; status?: ComplaintStatus }) {
-    return this.prisma.complaint.findMany({
-      where: {
-        ...(query.type ? { type: query.type } : {}),
-        ...(query.status ? { status: query.status } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async resolveComplaint(
-    actor: AdminActor,
-    complaintId: string,
-    dto: ResolveComplaintDto,
-  ) {
-    const status = this.mapComplaintStatus(dto.action);
-    return this.prisma.$transaction(async (tx) => {
-      const complaint = await tx.complaint.update({
-        where: { id: complaintId },
-        data: {
-          status,
-          actionTaken: dto.action,
-          adminNote: dto.adminNote,
-          resolvedById: actor.id,
-          resolvedAt: new Date(),
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          actorId: actor.id,
-          action: 'ADMIN_RESOLVE_COMPLAINT',
-          targetType: 'Complaint',
-          targetId: complaintId,
-          metadata: { action: dto.action },
-        },
-      });
-      if (complaint.reporterId) {
-        const reporterExists = await tx.user.findUnique({
-          where: { id: complaint.reporterId },
-          select: { id: true },
-        });
-        if (reporterExists) {
-          await this.notifications.create(
-            {
-              userId: complaint.reporterId,
-              category: NotificationCategory.SYSTEM,
-              eventType: NotificationEventType.COMPLAINT_STATUS_CHANGED,
-              title: 'Khiếu nại của bạn đã được cập nhật',
-              content:
-                status === ComplaintStatus.ESCALATED
-                  ? 'Khiếu nại của bạn đã được chuyển sang bước xử lý tiếp theo.'
-                  : 'Khiếu nại của bạn đã được quản trị viên xem xét và xử lý.',
-              entityType: 'COMPLAINT',
-              entityId: complaintId,
-            },
-            tx,
-          );
-        }
-      }
-      return complaint;
-    });
-  }
-
   private async refreshPetVerification(petId: string) {
     const [
       approvedDocuments,
@@ -2351,12 +2286,6 @@ export class AdminService {
     };
 
     await this.prisma.pet.update({ where: { id: petId }, data });
-  }
-
-  private mapComplaintStatus(action: ComplaintAction) {
-    if (action === ComplaintAction.DISMISS) return ComplaintStatus.DISMISSED;
-    if (action === ComplaintAction.ESCALATE) return ComplaintStatus.ESCALATED;
-    return ComplaintStatus.RESOLVED;
   }
 
   private async getMatchingReportReporterActivity(

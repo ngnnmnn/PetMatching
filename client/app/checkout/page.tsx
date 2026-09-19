@@ -48,6 +48,11 @@ interface ShippingQuote {
   destinationKey: string;
   status: ShippingFeeStatus;
   fee: number | null;
+  baseFee?: number | null;
+  overweightFee?: number | null;
+  totalWeightKg?: number | null;
+  isOverweightLimit?: boolean;
+  limitWarningMessage?: string | null;
 }
 
 /** Đăng ký rỗng để xác định lần render phía client mà không cần cập nhật state trong effect. */
@@ -398,15 +403,30 @@ function CheckoutPageContent() {
     selectedWardName,
   ]);
 
+  const computedTotalWeightKg = useMemo(() => {
+    return Number(
+      checkoutItems
+        .reduce((sum, item) => {
+          const weight = item.variant?.weightKg ?? item.product?.weightKg ?? 0.5;
+          return sum + (item.quantity || 1) * weight;
+        }, 0)
+        .toFixed(2),
+    );
+  }, [checkoutItems]);
+
+  const isOverweightLimit = Boolean(shippingQuote.isOverweightLimit || computedTotalWeightKg > 30);
   const shippingFeeStatus: ShippingFeeStatus = !shippingDestination
     ? 'idle'
     : shippingQuote.destinationKey === shippingDestination.key
       ? shippingQuote.status
       : 'loading';
-  const calculatedShippingFee =
-    shippingFeeStatus === 'success' ? shippingQuote.fee : null;
+  const calculatedShippingFee = isOverweightLimit
+    ? 0
+    : shippingFeeStatus === 'success'
+      ? shippingQuote.fee
+      : null;
   const hasFreeShippingByOrderValue = checkoutTotal > FREE_SHIPPING_THRESHOLD;
-  const baseShippingFee = hasFreeShippingByOrderValue
+  const baseShippingFee = (hasFreeShippingByOrderValue || isOverweightLimit)
     ? 0
     : (calculatedShippingFee ?? 0);
 
@@ -435,7 +455,7 @@ function CheckoutPageContent() {
   const finalTotal = Math.max(0, checkoutTotal - productDiscount + shippingFee);
   const appliedCode = appliedVoucher?.code || '';
   const hasResolvedShippingFee =
-    hasFreeShippingByOrderValue || shippingFeeStatus === 'success';
+    hasFreeShippingByOrderValue || isOverweightLimit || shippingFeeStatus === 'success';
 
   const loadAddresses = useCallback(async () => {
     try {
@@ -465,11 +485,49 @@ function CheckoutPageContent() {
     return () => window.clearTimeout(timer);
   }, [loadAddresses]);
 
-  // Báo giá theo khóa địa chỉ và hủy nhận kết quả khi địa chỉ thay đổi trong lúc API đang xử lý.
-  useEffect(() => {
-    if (!shippingDestination || hasFreeShippingByOrderValue) return;
+  const itemsPayloadStr = useMemo(() => {
+    return JSON.stringify(
+      checkoutItems.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId || null,
+        quantity: item.quantity,
+      }))
+    );
+  }, [checkoutItems]);
 
+  const itemsPayload = useMemo(() => {
+    try {
+      return JSON.parse(itemsPayloadStr);
+    } catch {
+      return [];
+    }
+  }, [itemsPayloadStr]);
+
+  // Ref lưu lại chìa khóa tính phí gần nhất đã gọi API thành công để chống lặp vô tận
+  const lastFetchedShippingKeyRef = useRef<string>('');
+
+  const shippingCalcKey = useMemo(() => {
+    if (!shippingDestination) return '';
+    return `${shippingDestination.key}_${itemsPayloadStr}_${computedTotalWeightKg}`;
+  }, [shippingDestination, itemsPayloadStr, computedTotalWeightKg]);
+
+  // Báo giá theo khóa địa chỉ và hủy nhận kết quả khi địa chỉ hoặc giỏ hàng thay đổi trong lúc API đang xử lý.
+  useEffect(() => {
+    if (hasFreeShippingByOrderValue) {
+      lastFetchedShippingKeyRef.current = 'FREE_SHIPPING';
+      return;
+    }
+
+    if (!shippingDestination || !shippingCalcKey) return;
+
+    // Nếu chìa khóa tính phí không đổi và đã lấy phí thành công trước đó thì không tính lại nữa
+    if (lastFetchedShippingKeyRef.current === shippingCalcKey && shippingQuote.status === 'success') {
+      return;
+    }
+
+    lastFetchedShippingKeyRef.current = shippingCalcKey;
     let isCurrentRequest = true;
+
     const timer = window.setTimeout(async () => {
       setShippingQuote({
         destinationKey: shippingDestination.key,
@@ -482,14 +540,21 @@ function CheckoutPageContent() {
           dropoffLat: shippingDestination.latitude,
           dropoffLng: shippingDestination.longitude,
           addressStr: shippingDestination.addressStr,
+          items: itemsPayload,
         });
         const fee = response.data?.feeVnd;
+        const data = response.data;
 
         if (isCurrentRequest && typeof fee === 'number' && fee >= 0) {
           setShippingQuote({
             destinationKey: shippingDestination.key,
             status: 'success',
             fee,
+            baseFee: data.baseFee,
+            overweightFee: data.overweightFee,
+            totalWeightKg: data.totalWeightKg ?? computedTotalWeightKg,
+            isOverweightLimit: data.isOverweightLimit || (data.totalWeightKg ? data.totalWeightKg > 30 : computedTotalWeightKg > 30),
+            limitWarningMessage: data.limitWarningMessage,
           });
         } else if (isCurrentRequest) {
           setShippingQuote({
@@ -514,7 +579,14 @@ function CheckoutPageContent() {
       isCurrentRequest = false;
       window.clearTimeout(timer);
     };
-  }, [hasFreeShippingByOrderValue, shippingDestination]);
+  }, [
+    computedTotalWeightKg,
+    hasFreeShippingByOrderValue,
+    itemsPayload,
+    shippingCalcKey,
+    shippingDestination,
+    shippingQuote.status,
+  ]);
 
   // Handle QR Payment Cancel redirection from PayOS
   useEffect(() => {
@@ -1090,9 +1162,15 @@ function CheckoutPageContent() {
                     <span className="text-[var(--text-main)]">{formatCurrency(checkoutTotal)}</span>
                   </div>
                   <div className="flex justify-between text-[var(--text-muted)]">
+                    <span>Tổng khối lượng đơn hàng</span>
+                    <span className="text-[var(--text-main)] font-extrabold">{computedTotalWeightKg} kg</span>
+                  </div>
+                  <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Phí vận chuyển</span>
                     <span className="text-[var(--text-main)] font-semibold">
-                      {hasFreeShippingByOrderValue ? (
+                      {isOverweightLimit ? (
+                        <span className="text-xs text-amber-700 font-bold">Không tính phí ship (&gt;30kg)</span>
+                      ) : hasFreeShippingByOrderValue ? (
                         'Miễn phí'
                       ) : shippingFeeStatus === 'idle' ? (
                         <span className="text-xs text-amber-700 font-medium font-sans">Chưa chọn địa chỉ</span>
@@ -1109,6 +1187,12 @@ function CheckoutPageContent() {
                       )}
                     </span>
                   </div>
+                  {shippingQuote.overweightFee && !isOverweightLimit ? (
+                    <div className="flex justify-between text-amber-700 font-bold animate-in fade-in duration-200">
+                      <span>Phụ phí cồng kềnh (&gt;10kg)</span>
+                      <span>+{formatCurrency(shippingQuote.overweightFee)}</span>
+                    </div>
+                  ) : null}
                   {appliedCode && (
                     <div className="flex justify-between text-[#0F766E] font-bold animate-in fade-in duration-200">
                       <span>
@@ -1119,6 +1203,19 @@ function CheckoutPageContent() {
                       <span>-{formatCurrency(totalDiscount)}</span>
                     </div>
                   )}
+
+                  {isOverweightLimit ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-700 space-y-1 my-3 animate-in fade-in duration-200">
+                      <div className="flex items-center gap-1.5 font-bold text-red-800 text-sm">
+                        <AlertCircle className="size-4 text-red-600 shrink-0" />
+                        Vượt quá giới hạn giao xe máy (30kg)
+                      </div>
+                      <p className="leading-relaxed">
+                        {shippingQuote.limitWarningMessage ||
+                          `Đơn hàng nặng ${shippingQuote.totalWeightKg || computedTotalWeightKg}kg, vượt quá tải trọng 30kg giao bằng xe máy. Vui lòng tách làm 2 đơn hàng hoặc liên hệ cửa hàng.`}
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div className="pt-4 border-t border-[var(--border-color)] flex justify-between items-end text-sm">
                     <span className="text-sm font-black text-[var(--text-main)]">Tổng cộng</span>
@@ -1132,10 +1229,10 @@ function CheckoutPageContent() {
                   <button
                     type="button"
                     onClick={handlePlaceOrder}
-                    disabled={submitting || hasInvalidItems}
+                    disabled={submitting || hasInvalidItems || isOverweightLimit}
                     className={cn(
                       "w-full mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-xl px-6 text-sm font-extrabold shadow-sm transition focus-visible:outline-none cursor-pointer",
-                      hasInvalidItems
+                      hasInvalidItems || isOverweightLimit
                         ? "bg-rose-100 text-rose-700 border border-rose-200 cursor-not-allowed"
                         : "bg-[var(--primary-color)] text-white hover:bg-[#cf5017] disabled:bg-gray-200 disabled:text-gray-400"
                     )}
@@ -1144,6 +1241,8 @@ function CheckoutPageContent() {
                       <Loader2 className="size-4 animate-spin text-white" />
                     ) : hasInvalidItems ? (
                       'Không thể đặt hàng (Sản phẩm hết hàng / ngưng bán)'
+                    ) : isOverweightLimit ? (
+                      'Đơn hàng vượt 30kg (Vui lòng tách đơn)'
                     ) : (
                       'Đặt hàng'
                     )}

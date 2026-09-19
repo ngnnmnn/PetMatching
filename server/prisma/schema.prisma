@@ -384,6 +384,8 @@ model Product {
   isActive       Boolean          @default(true)
   isFeatured     Boolean          @default(false)
   storeId        String?
+  /// Trọng lượng đơn vị (kg) dùng để tính phí vận chuyển quá cân (mặc định 0.5kg)
+  weightKg       Float?           @default(0.5) @map("weight_kg")
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   cartItems      CartItem[]
@@ -606,27 +608,6 @@ model SpaFeedback {
   user    User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("spa_feedbacks")
-}
-
-model Complaint {
-  id           String           @id @default(cuid())
-  type         ComplaintType
-  status       ComplaintStatus  @default(PENDING)
-  title        String
-  detail       String?
-  reporterId   String?
-  targetType   String?
-  targetId     String?
-  actionTaken  ComplaintAction?
-  adminNote    String?
-  resolvedById String?
-  resolvedAt   DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  @@index([type, status])
-  @@index([reporterId])
-  @@map("complaints")
 }
 
 model AuditLog {
@@ -853,15 +834,6 @@ enum ApprovalStatus {
   REJECTED
 }
 
-enum ComplaintType {
-  USER
-  PET
-  MATCHING
-  STORE
-  SPA
-  REVIEW
-}
-
 enum ComplaintStatus {
   PENDING
   REVIEWING
@@ -929,6 +901,8 @@ model ProductVariant {
   importPrice  Float?   @map("import_price")
   stock        Int      @default(0)
   imageUrl     String?  @map("image_url")
+  /// Trọng lượng đơn vị (kg) của biến thể sản phẩm
+  weightKg     Float?   @map("weight_kg")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")

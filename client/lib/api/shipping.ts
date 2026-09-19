@@ -56,13 +56,27 @@ export const shippingApi = {
     api.get<TrackingDetailResponse>(`/shipping/track-ahamove/${code}`),
 
   /**
-   * Ước tính phí giao hàng hỏa tốc AhaMove thời gian thực từ Portal API theo tọa độ GPS hoặc chuỗi địa chỉ
+   * Ước tính phí giao hàng hỏa tốc AhaMove thời gian thực từ Portal API theo tọa độ GPS, chuỗi địa chỉ và trọng lượng đơn hàng
    */
-  estimateAhamoveShippingFee: (params: { dropoffLat?: number; dropoffLng?: number; addressStr?: string }) =>
-    api.post<{ success: boolean; distanceKm?: number; feeVnd: number; formattedFee: string; isRealAhamoveFee?: boolean }>(
-      '/shipping/ahamove/estimate-fee',
-      params,
-    ),
+  estimateAhamoveShippingFee: (params: {
+    dropoffLat?: number;
+    dropoffLng?: number;
+    addressStr?: string;
+    items?: Array<{ productId: string; variantId?: string | null; quantity: number }>;
+    totalWeightKg?: number;
+  }) =>
+    api.post<{
+      success: boolean;
+      distanceKm?: number;
+      feeVnd: number;
+      baseFee?: number;
+      overweightFee?: number;
+      totalWeightKg?: number;
+      isOverweightLimit?: boolean;
+      limitWarningMessage?: string | null;
+      formattedFee: string;
+      isRealAhamoveFee?: boolean;
+    }>('/shipping/ahamove/estimate-fee', params),
 
   /**
    * Tìm kiếm gợi ý địa chỉ tự động khu vực Hà Nội từ OpenStreetMap

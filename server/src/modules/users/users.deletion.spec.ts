@@ -34,7 +34,6 @@ describe('UsersService account deletion policy', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       match: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      complaint: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       petReport: {
         findMany: jest.fn().mockResolvedValue([
           {

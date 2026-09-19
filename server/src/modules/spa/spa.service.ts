@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompleteSpaPaymentDto, CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
 import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus, NotificationCategory, NotificationEventType, Prisma } from '@prisma/client';
@@ -25,7 +25,9 @@ import {
 
 @Injectable()
 export class SpaService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(SpaService.name);
   private intervalId?: NodeJS.Timeout;
+  private statusUpdateRunning = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -38,13 +40,30 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
    */
   onModuleInit() {
     this.intervalId = setInterval(() => {
-      this.autoUpdateBookingStatuses().catch(() => {});
+      void this.runScheduledBookingStatusUpdate();
     }, 60000);
   }
 
   onModuleDestroy() {
     if (this.intervalId) {
       clearInterval(this.intervalId);
+    }
+  }
+
+  private async runScheduledBookingStatusUpdate() {
+    if (this.statusUpdateRunning) {
+      this.logger.warn('Bỏ qua vòng quét trạng thái Spa vì vòng trước chưa hoàn tất');
+      return;
+    }
+
+    this.statusUpdateRunning = true;
+    try {
+      await this.autoUpdateBookingStatuses();
+    } catch (error) {
+      const trace = error instanceof Error ? error.stack : String(error);
+      this.logger.error('Không thể tự động cập nhật trạng thái lịch Spa', trace);
+    } finally {
+      this.statusUpdateRunning = false;
     }
   }
 
@@ -513,7 +532,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getMyBookings(userId: string) {
-    await this.autoUpdateBookingStatuses();
     const bookings = await this.prisma.spaBooking.findMany({
       where: {
         userId,
@@ -698,8 +716,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getStaffBookings(staffId: string) {
-    await this.autoUpdateBookingStatuses();
-
     const bookings = await this.prisma.spaBooking.findMany({
       where: {
         staffId: staffId,
@@ -1343,6 +1359,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       include: {
         payment: true,
       },
+      orderBy: { scheduledAt: 'asc' },
+      take: 10,
     });
     if (noShowBookings.length > 0) await this.prisma.$transaction(async (tx) => {
       for (const booking of noShowBookings) {
@@ -1366,13 +1384,14 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       where: {
         scheduledAt: { lt: startOfTodayVN },
         status: {
-          notIn: [
-            SpaBookingStatus.COMPLETED,
-            SpaBookingStatus.CANCELLED,
-            SpaBookingStatus.NO_SHOW,
+          in: [
+            SpaBookingStatus.CHECK_IN,
+            SpaBookingStatus.IN_PROGRESS,
           ],
         },
       },
+      orderBy: { scheduledAt: 'asc' },
+      take: 10,
     });
 
     if (overduePastBookings.length > 0) {
@@ -1472,8 +1491,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
    * Lấy dữ liệu thống kê Dashboard Quản lý Spa theo chi nhánh và khoảng thời gian (hỗ trợ 7d, 30d, 90d, 12m, tùy chọn ngày)
    */
   async getManagerDashboardStats(managerId: string, branchId: string, rangeInput?: { range?: string; from?: string; to?: string }) {
-    await this.autoUpdateBookingStatuses();
-
     const period = resolveDashboardRange(rangeInput || { range: '30d' });
 
     const managerBranches = await this.prisma.store.findMany({
@@ -2110,8 +2127,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getManagerBookings(managerId: string, branchId: string) {
-    await this.autoUpdateBookingStatuses();
-
     const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
 
     const bookings = await this.prisma.spaBooking.findMany({
@@ -3070,8 +3085,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getManagerStaffs(managerId: string, branchId: string) {
-    await this.autoUpdateBookingStatuses();
-
     const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
 
     const staffs = await this.prisma.spaStaff.findMany({
@@ -3241,8 +3254,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAvailability(branchId: string, dateStr: string, durationMin: number = 30, petId?: string) {
-    await this.autoUpdateBookingStatuses();
-
     const staffs = await this.prisma.spaStaff.findMany({
       where: { addressSpaId: branchId, status: 'ACTIVE' },
       include: {

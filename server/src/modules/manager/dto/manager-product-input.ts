@@ -9,6 +9,7 @@ export interface ManagerProductVariantInput {
   importPrice?: NumericInput;
   stock?: NumericInput;
   imageUrl?: string | null;
+  weightKg?: NumericInput;
   isActive?: boolean;
 }
 
@@ -25,6 +26,7 @@ export interface CreateManagerProductInput {
   salePrice?: NumericInput;
   brand?: string | null;
   stock?: NumericInput;
+  weightKg?: NumericInput;
   isActive?: boolean;
   isFeatured?: boolean;
   /** Loại giảm giá dùng để đồng bộ giá khuyến mãi xuống các phân loại. */

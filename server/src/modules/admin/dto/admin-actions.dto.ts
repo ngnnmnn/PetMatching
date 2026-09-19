@@ -104,15 +104,6 @@ export class UpdateApprovalStatusDto {
   status!: ApprovalStatus;
 }
 
-export class ResolveComplaintDto {
-  @IsEnum(ComplaintAction)
-  action!: ComplaintAction;
-
-  @IsOptional()
-  @IsString()
-  adminNote?: string;
-}
-
 const matchingReportResolutionStatuses = [
   ComplaintStatus.RESOLVED,
   ComplaintStatus.DISMISSED,

@@ -434,14 +434,20 @@ export default function ProductDetailPage() {
     ? (!!selectedVariant.salePrice && selectedVariant.salePrice < selectedVariant.sellingPrice)
     : (!!product.salePrice && product.salePrice < product.sellingPrice);
 
-  const effectiveTotalStock =
-    product.variants && product.variants.length > 0
-      ? product.variants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
-      : (product.stock ?? 0);
+  const hasVariants = product.variants && product.variants.length > 0;
+  const activeVariants = hasVariants ? product.variants!.filter((v: any) => v.isActive !== false) : [];
+  const isAllVariantsInactive = hasVariants && activeVariants.length === 0;
+  const isProductEffectivelyActive = product.isActive !== false && !isAllVariantsInactive;
+
+  const effectiveTotalStock = hasVariants
+    ? activeVariants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
+    : (product.stock ?? 0);
 
   const currentStock = selectedVariant !== null
     ? selectedVariant.stock
     : effectiveTotalStock;
+
+  const isSelectedVariantActive = selectedVariant ? selectedVariant.isActive !== false : isProductEffectivelyActive;
 
   const speciesLabel =
     product.targetSpecies === 'DOG'
@@ -584,10 +590,10 @@ export default function ProductDetailPage() {
               </h1>
 
               {/* Inactive alert banner */}
-              {product.isActive === false && (
+              {!isProductEffectivelyActive && (
                 <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-black text-rose-800 flex items-center gap-2.5 shadow-xs animate-fadeIn">
                   <span className="text-base">🚫</span>
-                  <span>Sản phẩm này hiện đang tạm ngưng mở bán. Quý khách tạm thời chưa thể chọn mua sản phẩm này.</span>
+                  <span>Sản phẩm này hiện đang tạm ngưng mở bán (hoặc tất cả các phân loại đều ngưng kinh doanh). Quý khách tạm thời chưa thể chọn mua sản phẩm này.</span>
                 </div>
               )}
 
@@ -630,7 +636,7 @@ export default function ProductDetailPage() {
                 )}
                 <span className="text-gray-300">|</span>
                 <span className="font-bold flex items-center gap-1">
-                  {product.isActive === false ? (
+                  {!isProductEffectivelyActive || !isSelectedVariantActive ? (
                     <span className="text-rose-600 font-extrabold flex items-center gap-1">
                       🚫 Tạm ngưng bán
                     </span>
@@ -725,8 +731,8 @@ export default function ProductDetailPage() {
                 );
               })()}
 
-              {/* Product Variants Selector (Only show if 2 or more variants) */}
-              {product.variants && product.variants.length > 1 && (
+              {/* Hiển thị khung lựa chọn/thông tin phân loại sản phẩm (Hiển thị ngay cả khi chỉ có 1 variant để người dùng luôn biết rõ phân loại đang xem) */}
+              {product.variants && product.variants.length > 0 && (
                 <div className="mt-5 space-y-3 animate-fadeIn bg-gray-50/50 p-4.5 rounded-2xl border border-[var(--border-color)]">
                   <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-wider">Phân loại sản phẩm:</p>
                   <div className="flex flex-wrap gap-2.5">
@@ -736,29 +742,41 @@ export default function ProductDetailPage() {
                       return product.variants.map((v) => {
                         const isSelected = selectedVariant?.id === v.id;
                         const isRecommended = suitableVariants.some((sv: any) => sv.id === v.id);
+                        const isVariantInactive = v.isActive === false;
 
                         return (
                           <button
                             key={v.id}
                             type="button"
                             onClick={() => {
+                              if (isVariantInactive) {
+                                toast.warning(`Phân loại "${v.name}" hiện đang tạm ngưng kinh doanh.`);
+                                return;
+                              }
                               setSelectedVariant(v);
                               if (v.imageUrl) {
                                 setActiveImage(v.imageUrl);
                               }
                             }}
-                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 active:scale-95 flex items-center gap-2 cursor-pointer ${
-                              isSelected && isRecommended
-                                ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
-                                : isSelected
-                                  ? 'border-[#0F766E] bg-[#EEF8F5] text-[#0F766E] shadow-sm'
-                                  : isRecommended
-                                    ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
-                                    : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
+                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                              isVariantInactive
+                                ? 'opacity-60 border-stone-200 bg-stone-100 text-stone-400 line-through cursor-not-allowed'
+                                : isSelected && isRecommended
+                                  ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
+                                  : isSelected
+                                    ? 'border-[#0F766E] bg-[#EEF8F5] text-[#0F766E] shadow-sm'
+                                    : isRecommended
+                                      ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
+                                      : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
                             }`}
                           >
                             <span>{v.name}</span>
-                            {isRecommended && (
+                            {isVariantInactive && (
+                              <span className="text-[10px] font-black text-rose-600">
+                                (Tạm ngưng)
+                              </span>
+                            )}
+                            {isRecommended && !isVariantInactive && (
                               <span className="inline-flex items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white text-[9px] font-black px-2 py-0.5 shadow-xs animate-pulse">
                                 🐾 Đề xuất
                               </span>
@@ -850,22 +868,22 @@ export default function ProductDetailPage() {
                 <button
                   type="button"
                   onClick={handleAddToCart}
-                  disabled={product.isActive === false || currentStock === 0 || isAddingToCart}
+                  disabled={!isProductEffectivelyActive || !isSelectedVariantActive || currentStock === 0 || isAddingToCart}
                   className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl border-2 border-[#0F766E] bg-white px-6 text-sm font-black text-[#0F766E] shadow-sm transition-all duration-200 hover:bg-[#F2FAF8] active:scale-98 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200"
                 >
                   {isAddingToCart ? (
                     <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  ) : (product.isActive === false || currentStock === 0) ? (
+                  ) : (!isProductEffectivelyActive || !isSelectedVariantActive || currentStock === 0) ? (
                     <X className="h-4.5 w-4.5" />
                   ) : (
                     <ShoppingCart className="h-4.5 w-4.5" />
                   )}
-                  {product.isActive === false ? 'Tạm ngưng bán' : currentStock === 0 ? 'Tạm hết hàng' : 'Thêm vào giỏ hàng'}
+                  {(!isProductEffectivelyActive || !isSelectedVariantActive) ? 'Tạm ngưng bán' : currentStock === 0 ? 'Tạm hết hàng' : 'Thêm vào giỏ hàng'}
                 </button>
 
                 <button
                   type="button"
-                  disabled={product.isActive === false || currentStock === 0}
+                  disabled={!isProductEffectivelyActive || !isSelectedVariantActive || currentStock === 0}
                   className="flex-1 inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#E45D1C] to-[#EF6C00] px-6 text-sm font-black text-white shadow-md transition-all duration-200 hover:opacity-95 hover:shadow-lg active:scale-98 disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none cursor-pointer"
                   onClick={() => {
                     if (!product) return;

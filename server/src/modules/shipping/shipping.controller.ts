@@ -50,12 +50,27 @@ export class ShippingController {
   }
 
   /**
-   * API ước tính phí giao hỏa tốc AhaMove dựa trên tọa độ GPS hoặc chuỗi địa chỉ nhận
-   * @param body { dropoffLat?, dropoffLng?, addressStr? }
+   * API ước tính phí giao hỏa tốc AhaMove dựa trên tọa độ GPS, địa chỉ nhận và danh sách sản phẩm/trọng lượng
+   * @param body { dropoffLat?, dropoffLng?, addressStr?, items?, totalWeightKg? }
    */
   @Post('ahamove/estimate-fee')
-  estimateAhamoveShippingFee(@Body() body: { dropoffLat?: number; dropoffLng?: number; addressStr?: string }) {
-    return this.shippingService.estimateAhamoveShippingFee(body.dropoffLat, body.dropoffLng, body.addressStr);
+  estimateAhamoveShippingFee(
+    @Body()
+    body: {
+      dropoffLat?: number;
+      dropoffLng?: number;
+      addressStr?: string;
+      items?: Array<{ productId: string; variantId?: string | null; quantity: number }>;
+      totalWeightKg?: number;
+    },
+  ) {
+    return this.shippingService.estimateAhamoveShippingFee(
+      body.dropoffLat,
+      body.dropoffLng,
+      body.addressStr,
+      body.items,
+      body.totalWeightKg,
+    );
   }
 
   /**

@@ -277,8 +277,12 @@ export default function ProductCard({
   const discount = discountPercent > 0 ? discountPercent : getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
 
+  const activeVariants = hasVariants ? product.variants!.filter((v: any) => v.isActive !== false) : [];
+  const isAllVariantsInactive = hasVariants && activeVariants.length === 0;
+  const isProductInactive = product.isActive === false || isAllVariantsInactive;
+
   const effectiveTotalStock = hasVariants
-    ? product.variants!.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
+    ? activeVariants.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0)
     : (product.stock ?? 0);
   const isOutOfStock = effectiveTotalStock === 0;
 
@@ -300,7 +304,7 @@ export default function ProductCard({
               loading="lazy"
               className={cn(
                 "h-full w-full object-cover transition duration-300 group-hover:scale-105",
-                (isOutOfStock || product.isActive === false) && "grayscale opacity-60"
+                (isOutOfStock || isProductInactive) && "grayscale opacity-60"
               )}
             />
             <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/20 to-transparent opacity-0 transition group-hover:opacity-100" />
@@ -322,7 +326,7 @@ export default function ProductCard({
               )}
 
               {/* Trạng thái kinh doanh hoặc khuyến mãi */}
-              {product.isActive === false ? (
+              {isProductInactive ? (
                 <span className="rounded-lg bg-stone-700 px-2.5 py-1 text-[10px] font-black text-white shadow-sm animate-fadeIn">
                   Tạm ngưng bán
                 </span>

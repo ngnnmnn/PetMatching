@@ -597,45 +597,6 @@ describe('AdminService pet document review', () => {
   });
 });
 
-describe('AdminService complaints', () => {
-  it('notifies only the complaint reporter', async () => {
-    const complaint = {
-      id: 'complaint-1',
-      reporterId: 'reporter-1',
-      targetId: 'reported-1',
-    };
-    const tx = {
-      complaint: { update: jest.fn().mockResolvedValue(complaint) },
-      auditLog: { create: jest.fn().mockResolvedValue({}) },
-      user: { findUnique: jest.fn().mockResolvedValue({ id: 'reporter-1' }) },
-    };
-    const prisma = {
-      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
-    };
-    const notifications = { create: jest.fn().mockResolvedValue({}) };
-    const service = new AdminService(
-      prisma as unknown as PrismaService,
-      notifications as any,
-      { destroyByUrl: jest.fn() } as any,
-    );
-
-    await service.resolveComplaint(
-      { id: 'admin-1' },
-      complaint.id,
-      { action: ComplaintAction.DISMISS },
-    );
-
-    expect(notifications.create).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'reporter-1' }),
-      tx,
-    );
-    expect(notifications.create).not.toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'reported-1' }),
-      expect.anything(),
-    );
-  });
-});
-
 describe('AdminService spa bookings', () => {
   it('loads the configured Spa bookings and resolves main and sub-services', async () => {
     const booking = {

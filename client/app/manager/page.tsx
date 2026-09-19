@@ -64,6 +64,17 @@ function parseRawNumber(val: string): string {
 }
 
 /**
+ * Chuyển đổi và làm sạch giá trị trọng lượng nhập vào (chấp nhận cả dấu phẩy "1,2" và dấu chấm "1.2")
+ */
+function parseWeightKg(val: string | number | undefined | null): number {
+  if (val === undefined || val === null || val === '') return 0.5;
+  const str = String(val).replace(',', '.').trim();
+  const num = parseFloat(str);
+  if (isNaN(num) || num <= 0) return 0.5;
+  return num;
+}
+
+/**
  * Tính toán giá sau giảm giá từ loại giảm (NONE / AMOUNT / PERCENT) và giá trị giảm
  * Trả về giá bán thực tế salePrice hoặc thông báo lỗi nếu nhập không hợp lệ
  */
@@ -163,6 +174,24 @@ function hasLowStockWarning(p: ManagerProduct): boolean {
     return p.variants.some((v) => (v.stock ?? 0) < 5);
   }
   return (p.stock ?? 0) < 5;
+}
+
+/**
+ * Lấy giá bán hiệu lực của sản phẩm (nếu có biến thể thì lấy giá nhỏ nhất trong các biến thể, ngược lại lấy giá bán/khuyến mãi chính)
+ * Phục vụ cho tính năng sắp xếp danh sách sản phẩm theo giá tăng dần hoặc giảm dần
+ */
+function getProductEffectivePrice(p: ManagerProduct): number {
+  if (p.variants && p.variants.length > 0) {
+    const variantPrices = p.variants
+      .map((v) => (v.salePrice !== undefined && v.salePrice !== null && v.salePrice > 0 ? v.salePrice : v.sellingPrice))
+      .filter((price): price is number => price !== undefined && price !== null && !isNaN(price));
+    if (variantPrices.length > 0) {
+      return Math.min(...variantPrices);
+    }
+  }
+  return p.salePrice !== undefined && p.salePrice !== null && p.salePrice > 0
+    ? p.salePrice
+    : (p.sellingPrice || 0);
 }
 
 /**
@@ -630,6 +659,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     discountType: 'NONE' as 'NONE' | 'AMOUNT' | 'PERCENT',
     discountValue: '',
     stock: '',
+    weightKg: '0.5',
     imageUrl: '',
     isActive: true,
   });
@@ -679,6 +709,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     discountType: 'NONE' as 'NONE' | 'AMOUNT' | 'PERCENT',
     discountValue: '',
     stock: '',
+    weightKg: '0.5',
     brand: '',
     imageUrl: '',
     images: [] as string[],
@@ -866,10 +897,14 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const matchesCategory =
         filterCategory === 'ALL' ||
         product.category === filterCategory;
+      const pHasVariants = product.variants && product.variants.length > 0;
+      const pHasActiveVar = pHasVariants ? product.variants!.some((v: any) => v.isActive !== false) : true;
+      const pEffectiveActive = pHasVariants && !pHasActiveVar ? false : (product.isActive !== false);
+
       const matchesActiveStatus =
         filterActiveStatus === 'ALL' ||
-        (filterActiveStatus === 'ACTIVE' && product.isActive !== false) ||
-        (filterActiveStatus === 'INACTIVE' && product.isActive === false);
+        (filterActiveStatus === 'ACTIVE' && pEffectiveActive) ||
+        (filterActiveStatus === 'INACTIVE' && !pEffectiveActive);
       return matchesSearch && matchesStatus && matchesCategory && matchesActiveStatus;
     });
 
@@ -881,6 +916,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         if (!aWarn && bWarn) return 1;
         return (b.sales ?? 0) - (a.sales ?? 0);
       });
+    } else if (sortBy === 'PRICE_ASC') {
+      // Sắp xếp danh sách sản phẩm theo giá bán tăng dần (từ thấp đến cao)
+      result = [...result].sort((a, b) => getProductEffectivePrice(a) - getProductEffectivePrice(b));
+    } else if (sortBy === 'PRICE_DESC') {
+      // Sắp xếp danh sách sản phẩm theo giá bán giảm dần (từ cao đến thấp)
+      result = [...result].sort((a, b) => getProductEffectivePrice(b) - getProductEffectivePrice(a));
     } else {
       // Mặc định: Sản phẩm có cảnh báo tồn kho (< 5 hoặc = 0) đẩy lên đầu danh sách; các sản phẩm còn lại sắp xếp theo thứ tự bảng chữ cái A-Z
       result = [...result].sort((a, b) => {
@@ -1234,6 +1275,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: 'NONE',
       discountValue: '',
       stock: '',
+      weightKg: '0.5',
       imageUrl: '',
       isActive: true,
     });
@@ -1277,6 +1319,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: 'NONE',
       discountValue: '',
       stock: '',
+      weightKg: '0.5',
       brand: '',
       imageUrl: '',
       images: [],
@@ -1355,6 +1398,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: initialDiscountType,
       discountValue: initialDiscountVal,
       stock: product.stock !== undefined && product.stock !== null ? String(product.stock) : '',
+      weightKg: product.weightKg !== undefined && product.weightKg !== null ? String(product.weightKg) : '0.5',
       brand: product.brand || '',
       imageUrl: product.imageUrl || existingImages[0] || '',
       images: existingImages,
@@ -1367,38 +1411,67 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   /**
    * Bật hoặc tắt trạng thái kinh doanh của sản phẩm
+   * Nếu tất cả phân loại (variants) đều bị tắt, không cho phép mở bán sản phẩm và yêu cầu kích hoạt ít nhất 1 phân loại.
    */
   const handleToggleProductActive = async (product: ManagerProduct) => {
     const newActive = product.isActive === false ? true : false;
+
+    // Nếu Store Manager muốn bật mở bán sản phẩm (newActive === true)
+    if (newActive && product.variants && product.variants.length > 0) {
+      const hasActiveVariant = product.variants.some((v: any) => v.isActive !== false);
+      if (!hasActiveVariant) {
+        toast.error('Không thể mở bán sản phẩm! Vui lòng mở bán ít nhất 1 phân loại (variant) của sản phẩm.');
+        return;
+      }
+    }
+
     try {
       await managerApi.updateProduct(product.id, { isActive: newActive });
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, isActive: newActive } : p))
       );
       toast.success(newActive ? `Đã mở bán sản phẩm "${product.name}"` : `Đã tạm ngưng bán "${product.name}"`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to toggle product active status', err);
-      toast.error('Không thể cập nhật trạng thái sản phẩm.');
+      const msg = err.response?.data?.message || 'Không thể cập nhật trạng thái sản phẩm.';
+      toast.error(msg);
     }
   };
 
   /**
-   * Bật hoặc tắt trạng thái của từng biến thể phân loại
+   * Bật hoặc tắt trạng thái của từng biến thể phân loại.
+   * Nếu việc tắt phân loại dẫn đến tất cả phân loại của sản phẩm đều bị tắt, tự động ngưng bán sản phẩm cha.
    */
   const handleToggleVariantActive = async (variant: any, parentProduct: ManagerProduct) => {
     const newActive = variant.isActive === false ? true : false;
     try {
       await managerApi.updateProductVariant(variant.id, { isActive: newActive });
+
+      let allInactiveAfterToggle = false;
+
       setProducts((prev) =>
         prev.map((p) => {
           if (p.id !== parentProduct.id) return p;
           const updatedVariants = (p.variants || []).map((v: any) =>
             v.id === variant.id ? { ...v, isActive: newActive } : v
           );
-          return { ...p, variants: updatedVariants };
+          const hasActive = updatedVariants.some((v: any) => v.isActive !== false);
+          if (!hasActive) allInactiveAfterToggle = true;
+
+          return {
+            ...p,
+            variants: updatedVariants,
+            // Tự động chuyển sản phẩm cha sang ngừng bán nếu tất cả phân loại con đều bị tắt
+            isActive: !hasActive ? false : p.isActive,
+          };
         })
       );
-      toast.success(newActive ? `Đã mở bán phân loại "${variant.name}"` : `Đã tắt phân loại "${variant.name}"`);
+
+      if (allInactiveAfterToggle) {
+        toast.warning(`Tất cả phân loại của "${parentProduct.name}" đều bị tắt. Sản phẩm đã tự động chuyển sang Tạm ngưng bán.`);
+      } else {
+        toast.success(newActive ? `Đã mở bán phân loại "${variant.name}"` : `Đã tắt phân loại "${variant.name}"`);
+      }
     } catch (err) {
       console.error('Failed to toggle variant active status', err);
       toast.error('Không thể cập nhật trạng thái phân loại.');
@@ -1452,6 +1525,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         discountType: vDiscountType,
         discountValue: vDiscountVal,
         stock: variant.stock !== undefined && variant.stock !== null ? String(variant.stock) : '',
+        weightKg: variant.weightKg !== undefined && variant.weightKg !== null ? String(variant.weightKg) : (product.weightKg ? String(product.weightKg) : '0.5'),
         imageUrl: variant.imageUrl || '',
         isActive: variant.isActive !== false,
       });
@@ -1464,6 +1538,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         discountType: 'NONE',
         discountValue: '',
         stock: '',
+        weightKg: product.weightKg ? String(product.weightKg) : '0.5',
         imageUrl: '',
         isActive: true,
       });
@@ -1487,6 +1562,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: vDiscountType,
       discountValue: vDiscountVal,
       stock: String(variant.stock),
+      weightKg: variant.weightKg !== undefined && variant.weightKg !== null ? String(variant.weightKg) : '0.5',
       imageUrl: variant.imageUrl || '',
       isActive: variant.isActive !== false,
     });
@@ -1501,6 +1577,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: 'NONE',
       discountValue: '',
       stock: '',
+      weightKg: '0.5',
       imageUrl: '',
       isActive: true,
     });
@@ -1575,6 +1652,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         salePrice,
         importPrice: ip,
         stock: stockNum,
+        weightKg: parseWeightKg(variantForm.weightKg),
         imageUrl: variantForm.imageUrl.trim(),
         isActive: variantForm.isActive,
       };
@@ -1695,6 +1773,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       salePrice,
       importPrice: ip,
       stock: stockNum,
+      weightKg: parseWeightKg(variantForm.weightKg),
       imageUrl: variantForm.imageUrl.trim(),
       isActive: variantForm.isActive,
     };
@@ -1717,6 +1796,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: 'NONE',
       discountValue: '',
       stock: '',
+      weightKg: '0.5',
       imageUrl: '',
       isActive: true,
     });
@@ -1738,6 +1818,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       discountType: vDiscountType,
       discountValue: vDiscountVal,
       stock: String(v.stock),
+      weightKg: (v as any).weightKg !== undefined && (v as any).weightKg !== null ? String((v as any).weightKg) : '0.5',
       imageUrl: v.imageUrl || '',
       isActive: v.isActive !== false,
     });
@@ -1878,21 +1959,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       errors.targetSpecies = 'Vui lòng điền vào trường này.';
     }
 
-    // Khi thêm mới sản phẩm: bắt buộc phải có giá nhập hàng
-    const enteredImportPrice = Number(productForm.importPrice);
-    if (!editingProduct && (!productForm.importPrice || isNaN(enteredImportPrice) || enteredImportPrice <= 0)) {
-      errors.importPrice = 'Giá nhập hàng là bắt buộc và phải lớn hơn 0.';
-    }
-
-    // Giá bán: nếu để trống thì tự động gán bằng giá nhập
-    let enteredSellingPrice = productForm.sellingPrice ? Number(productForm.sellingPrice) : enteredImportPrice;
-    if (enteredImportPrice > 0 && (!enteredSellingPrice || isNaN(enteredSellingPrice) || enteredSellingPrice <= 0)) {
-      enteredSellingPrice = enteredImportPrice;
-    }
-
-    // Kiểm tra giá bán phải >= giá nhập
-    if (enteredImportPrice > 0 && enteredSellingPrice < enteredImportPrice) {
-      errors.sellingPrice = `Giá bán (${enteredSellingPrice.toLocaleString('vi-VN')}đ) phải lớn hơn hoặc bằng giá nhập (${enteredImportPrice.toLocaleString('vi-VN')}đ).`;
+    if (!editingProduct && localVariants.length === 0) {
+      toast.error('Sản phẩm phải có ít nhất 1 phân loại. Vui lòng thêm biến thể bên dưới để nhập giá, tồn kho và trọng lượng.');
+      return;
     }
 
     const imageList = (productForm.images && productForm.images.length > 0)
@@ -1909,35 +1978,32 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
 
     const allVariants = editingProduct ? variants : localVariants;
-    const effectiveSellingPrice = hasVariants
-      ? (localVariants.length > 0 ? Number(localVariants[0].sellingPrice) : Number(editingProduct?.sellingPrice || enteredSellingPrice || 1))
-      : (enteredSellingPrice || 1);
+
+    // Nếu chọn mở bán sản phẩm (isActive === true) nhưng tất cả phân loại đều đang bị ngưng bán
+    if (productForm.isActive && allVariants.length > 0) {
+      const hasActiveVariant = allVariants.some((v: any) => v.isActive !== false);
+      if (!hasActiveVariant) {
+        toast.error('Không thể mở bán sản phẩm! Vui lòng mở bán ít nhất 1 phân loại (variant) của sản phẩm.');
+        return;
+      }
+    }
+
+    // Lấy giá bán nhỏ nhất và giá nhập nhỏ nhất từ các phân loại con
+    const sellingPrices = allVariants.map((v: any) => Number(v.sellingPrice) || 0).filter((p: number) => p > 0);
+    const effectiveSellingPrice = sellingPrices.length > 0
+      ? Math.min(...sellingPrices)
+      : Number(editingProduct?.sellingPrice || 1);
 
     const importPrices = allVariants.map((v: any) => Number(v.importPrice) || 0).filter((p: number) => p > 0);
     const minImportPrice = importPrices.length > 0
       ? Math.min(...importPrices)
-      : (enteredImportPrice > 0 ? enteredImportPrice : Number(editingProduct?.importPrice || 0));
+      : (editingProduct?.importPrice ? Number(editingProduct.importPrice) : null);
 
-    let calculatedSalePrice: number | null = null;
-    if (productForm.discountType === 'AMOUNT' && productForm.discountValue) {
-      const val = Number(productForm.discountValue);
-      if (isNaN(val) || val <= 0) {
-        toast.error('Số tiền giảm giá phải lớn hơn 0.');
-        return;
-      }
-      if (minImportPrice > 0 && val > minImportPrice) {
-        toast.error(`Số tiền giảm giá tối đa không được vượt quá giá nhập hàng (${minImportPrice.toLocaleString('vi-VN')}đ).`);
-        return;
-      }
-      calculatedSalePrice = Math.max(1, effectiveSellingPrice - val);
-    } else if (productForm.discountType === 'PERCENT' && productForm.discountValue) {
-      const pct = Number(productForm.discountValue);
-      if (isNaN(pct) || pct <= 0 || pct > 100) {
-        toast.error('Phần trăm giảm giá phải từ 0% đến 100%.');
-        return;
-      }
-      calculatedSalePrice = Math.max(1, effectiveSellingPrice - Math.round((effectiveSellingPrice * pct) / 100));
-    }
+    const salePrices = allVariants.map((v: any) => v.salePrice ? Number(v.salePrice) : null).filter((p: number | null): p is number => p !== null && p > 0);
+    const calculatedSalePrice = salePrices.length > 0 ? Math.min(...salePrices) : null;
+
+    const weights = allVariants.map((v: any) => v.weightKg ? Number(v.weightKg) : 0.5);
+    const productWeightKg = weights.length > 0 ? Math.min(...weights) : 0.5;
 
     setSubmittingProduct(true);
     try {
@@ -1955,11 +2021,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         category: productForm.category,
         targetSpecies: productForm.targetSpecies,
         sellingPrice: effectiveSellingPrice,
-        importPrice: minImportPrice > 0 ? minImportPrice : null,
+        importPrice: minImportPrice,
         salePrice: calculatedSalePrice,
-        discountType: productForm.discountType,
-        discountValue: productForm.discountValue ? Number(productForm.discountValue) : undefined,
         stock: totalCalculatedStock,
+        weightKg: productWeightKg,
         imageUrl: imageList[0] || undefined,
         images: imageList,
         description: productForm.description.trim() || undefined,
@@ -2087,6 +2152,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 >
                   <option value="DEFAULT">Mặc định</option>
                   <option value="BEST_SELLER">Bán chạy nhất</option>
+                  <option value="PRICE_ASC">Giá tăng dần</option>
+                  <option value="PRICE_DESC">Giá giảm dần</option>
                 </select>
               </div>
 
@@ -2145,6 +2212,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                         ? p.variants!.reduce((sum: number, v: any) => sum + (v.stock ?? 0), 0)
                         : (p.stock ?? 0);
                       const isLowStock = hasLowStockWarning(p);
+                      const hasActiveVariant = hasVariants
+                        ? p.variants!.some((v: any) => v.isActive !== false)
+                        : true;
+                      const isProductActive = hasVariants && !hasActiveVariant ? false : (p.isActive !== false);
 
                       // Tính khoảng giá min - max từ các biến thể phân loại
                       let priceDisplay = currency.format(p.salePrice ?? p.sellingPrice);
@@ -2217,13 +2288,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 onClick={() => handleToggleProductActive(p)}
                                 className={cn(
                                   'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold border transition cursor-pointer',
-                                  p.isActive !== false
+                                  isProductActive
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
                                     : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
                                 )}
-                                title={p.isActive !== false ? 'Bấm để tạm ngưng bán' : 'Bấm để mở bán lại'}
+                                title={isProductActive ? 'Bấm để tạm ngưng bán' : 'Bấm để mở bán lại'}
                               >
-                                {p.isActive !== false ? '🟢 Đang mở bán' : '🔴 Tạm ngưng'}
+                                {isProductActive ? '🟢 Đang mở bán' : '🔴 Tạm ngưng'}
                               </button>
                             </td>
 
@@ -2576,134 +2647,15 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       </div>
                     </div>
 
-                    {/* Giá nhập & Giá bán lẻ: convert sang tiền Việt (3000 -> 3.000) */}
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Giá nhập */}
-                      <div className="space-y-1 relative">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[11px] text-gray-500 font-extrabold uppercase">
-                            Giá nhập (VND) {!editingProduct && '*'}
-                          </label>
-                        </div>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          disabled={!!editingProduct}
-                          placeholder="Ví dụ: 100.000"
-                          value={formatNumberWithDots(productForm.importPrice)}
-                          onChange={(e) => {
-                            const raw = parseRawNumber(e.target.value);
-                            setProductForm((prev) => {
-                              const shouldAutoFill = !prev.sellingPrice || prev.sellingPrice === prev.importPrice;
-                              return {
-                                ...prev,
-                                importPrice: raw,
-                                sellingPrice: shouldAutoFill ? raw : prev.sellingPrice,
-                              };
-                            });
-                            if (productErrors.importPrice) setProductErrors({ ...productErrors, importPrice: '' });
-                          }}
-                          className={cn(
-                            "w-full h-10 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-2xs",
-                            editingProduct
-                              ? "bg-gray-100 text-gray-500 cursor-not-allowed select-none"
-                              : "bg-white text-gray-800 hover:border-gray-400 focus:ring-1 focus:ring-primary focus:border-primary",
-                            productErrors.importPrice ? "border-rose-400 ring-2 ring-rose-100" : ""
-                          )}
-                        />
-                        <FormErrorTooltip message={productErrors.importPrice} />
+                    {/* Thông báo hướng dẫn: Giá cả, khuyến mãi và khối lượng được quản lý tập trung theo Phân loại (Variant) */}
+                    <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3.5 flex items-start gap-3 text-xs text-orange-900 font-semibold shadow-2xs">
+                      <span className="text-base shrink-0">💡</span>
+                      <div>
+                        <p className="font-bold text-orange-950">Thông tin Giá bán, Khuyến mãi & Trọng lượng</p>
+                        <p className="text-[11px] text-orange-800/90 mt-0.5 leading-relaxed">
+                          Giá nhập, giá bán lẻ, khuyến mãi và khối lượng đóng gói được quản lý riêng theo từng <strong>Phân loại (Variant)</strong> ở mục ⚖️ <em>Cấu hình phân loại sản phẩm</em> bên dưới.
+                        </p>
                       </div>
-
-                      {/* Giá bán lẻ */}
-                      <div className="space-y-1 relative">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[11px] text-gray-500 font-extrabold uppercase">
-                            Giá bán lẻ (VND)
-                          </label>
-                          <span className="text-[10px] text-gray-400 font-semibold">(≥ Giá nhập)</span>
-                        </div>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder={productForm.importPrice ? formatNumberWithDots(productForm.importPrice) : "Ví dụ: 150.000"}
-                          value={formatNumberWithDots(productForm.sellingPrice)}
-                          onChange={(e) => {
-                            const raw = parseRawNumber(e.target.value);
-                            setProductForm({ ...productForm, sellingPrice: raw });
-                            if (productErrors.sellingPrice) setProductErrors({ ...productErrors, sellingPrice: '' });
-                          }}
-                          onBlur={() => {
-                            // Tự động gán giá bán = giá nhập nếu người dùng để trống
-                            if (!productForm.sellingPrice && productForm.importPrice) {
-                              setProductForm((prev) => ({ ...prev, sellingPrice: prev.importPrice }));
-                            }
-                          }}
-                          className={cn(
-                            "w-full h-10 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-bold text-primary bg-white hover:border-gray-400 focus:ring-1 focus:ring-primary focus:border-primary transition shadow-2xs",
-                            productErrors.sellingPrice ? "border-rose-400 ring-2 ring-rose-100" : ""
-                          )}
-                        />
-                        <FormErrorTooltip message={productErrors.sellingPrice} />
-                      </div>
-                    </div>
-
-                    {/* Khuyến mãi */}
-                    <div className="space-y-1">
-                      <label className="text-[11px] text-gray-500 font-extrabold uppercase">Khuyến mãi</label>
-                      <div className="flex gap-2">
-                        <select
-                          value={productForm.discountType}
-                          onChange={(e) => {
-                            const nextType = e.target.value as 'NONE' | 'AMOUNT' | 'PERCENT';
-                            setProductForm({
-                              ...productForm,
-                              discountType: nextType,
-                              discountValue: nextType === 'NONE' ? '' : productForm.discountValue,
-                            });
-                          }}
-                          className="w-1/2 h-10 border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-white focus:outline-none focus:border-primary hover:border-gray-400 cursor-pointer transition shadow-2xs"
-                        >
-                          <option value="NONE">Không giảm</option>
-                          <option value="AMOUNT">Số tiền (VND)</option>
-                          <option value="PERCENT">Phần trăm (%)</option>
-                        </select>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          disabled={productForm.discountType === 'NONE'}
-                          placeholder={productForm.discountType === 'NONE' ? '— Không giảm —' : (productForm.discountType === 'AMOUNT' ? 'Nhập số tiền giảm (Ví dụ: 15.000)' : 'Nhập % giảm (Ví dụ: 15)')}
-                          value={productForm.discountType === 'NONE' ? '' : (productForm.discountType === 'AMOUNT' ? formatNumberWithDots(productForm.discountValue) : productForm.discountValue)}
-                          onChange={(e) => {
-                            const raw = productForm.discountType === 'AMOUNT' ? parseRawNumber(e.target.value) : e.target.value;
-                            setProductForm({ ...productForm, discountValue: raw });
-                          }}
-                          className={cn(
-                            "w-1/2 h-10 border rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-2xs",
-                            productForm.discountType === 'NONE'
-                              ? "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed select-none"
-                              : "border-gray-300 bg-white text-gray-800 hover:border-gray-400 focus:ring-1 focus:ring-primary focus:border-primary"
-                          )}
-                        />
-                      </div>
-                      {(() => {
-                        const sp = Number(productForm.sellingPrice) || Number(editingProduct?.sellingPrice) || (variants.length > 0 ? Number(variants[0]?.sellingPrice) : 0);
-                        const ip = Number(productForm.importPrice) || Number(editingProduct?.importPrice) || 0;
-                        if (sp > 0 && productForm.discountType !== 'NONE' && productForm.discountValue) {
-                          const res = computeSalePrice(sp, productForm.discountType, productForm.discountValue, ip);
-                          if (res.error) {
-                            return <p className="mt-1 text-[11px] font-bold text-red-500">{res.error}</p>;
-                          }
-                          if (res.salePrice !== null) {
-                            const diff = sp - res.salePrice;
-                            return (
-                              <p className="mt-1 text-[11px] font-bold text-emerald-600">
-                                ✓ Giá bán hiển thị: <span className="underline">{res.salePrice.toLocaleString('vi-VN')}đ</span> (Tiết kiệm {diff.toLocaleString('vi-VN')}đ)
-                              </p>
-                            );
-                          }
-                        }
-                        return null;
-                      })()}
                     </div>
 
                     {/* Tải ảnh sản phẩm (CHỈ TẢI TỆP ẢNH TỪ MÁY, KHÔNG NHẬP LINK URL) */}
@@ -3114,6 +3066,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                             </div>
                           </div>
 
+                          <div className="space-y-1 relative">
+                            <label className="text-[11px] text-gray-500 font-extrabold uppercase">Trọng lượng biến thể (kg)</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="Mặc định: 0.5 (kg)"
+                              value={variantForm.weightKg}
+                              onChange={(e) => {
+                                const sanitized = e.target.value.replace(',', '.');
+                                if (sanitized === '' || /^\d*\.?\d*$/.test(sanitized)) {
+                                  setVariantForm({ ...variantForm, weightKg: sanitized });
+                                }
+                              }}
+                              className="w-full h-9 border border-gray-300 rounded-xl bg-white px-3 text-xs font-bold text-gray-800 focus:outline-none hover:border-gray-400 focus:border-primary transition shadow-2xs"
+                            />
+                          </div>
+
                           {/* Tải ảnh biến thể */}
                           <div className="space-y-1.5">
                             <label className="text-[11px] text-gray-500 font-extrabold uppercase flex items-center gap-1">
@@ -3202,6 +3171,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     discountType: 'NONE',
                                     discountValue: '',
                                     stock: '',
+                                    weightKg: '0.5',
                                     imageUrl: '',
                                     isActive: true,
                                   });
@@ -3254,7 +3224,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                         </span>
                                       </div>
                                       <p className="text-gray-500 text-[11px] truncate">
-                                        Giá: <span className="font-bold text-primary">{v.sellingPrice ? Number(v.sellingPrice).toLocaleString('vi-VN') : 'Mặc định'}đ</span> | Kho: <span className="font-bold">{v.stock}</span>
+                                        Giá: <span className="font-bold text-primary">{v.sellingPrice ? Number(v.sellingPrice).toLocaleString('vi-VN') : 'Mặc định'}đ</span> | Kho: <span className="font-bold">{v.stock}</span> | TL: <span className="font-bold text-gray-700">{v.weightKg ?? 0.5}kg</span>
                                       </p>
                                     </div>
                                   </div>
@@ -3917,6 +3887,24 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                       </div>
                     </div>
 
+                    {/* Ô nhập Trọng lượng (khối lượng kg) cho phân loại biến thể */}
+                    <div className="relative">
+                      <label className="block text-[11px] font-bold mb-1">Trọng lượng phân loại (kg)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Mặc định: 0.5 (kg)"
+                        value={variantForm.weightKg}
+                        onChange={(e) => {
+                          const sanitized = e.target.value.replace(',', '.');
+                          if (sanitized === '' || /^\d*\.?\d*$/.test(sanitized)) {
+                            setVariantForm({ ...variantForm, weightKg: sanitized });
+                          }
+                        }}
+                        className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-800 hover:border-gray-400 focus:bg-white focus:border-primary focus:outline-none shadow-2xs transition"
+                      />
+                    </div>
+
                     {/* Tải ảnh phân loại biến thể từ thiết bị (không cho nhập link URL) */}
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold flex items-center gap-1">
@@ -4086,6 +4074,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     Giá nhập: {v.importPrice ? Number(v.importPrice).toLocaleString('vi-VN') + 'đ' : '-'} | Giá bán: <span className="font-bold text-primary">{vSelling.toLocaleString('vi-VN')}đ</span>
                                     {vSale && vSale < vSelling && ` | KM: ${vSale.toLocaleString('vi-VN')}đ`}
                                     {` | Kho: `}<span className={cn("font-bold", v.stock === 0 ? "text-rose-600" : v.stock < 5 ? "text-amber-600" : "text-gray-700")}>{v.stock}</span>
+                                    {` | TL: `}<span className="font-bold text-gray-700">{v.weightKg ?? 0.5}kg</span>
                                   </p>
                                 </div>
                               </div>
@@ -4140,17 +4129,25 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 </div>
 
                 <form onSubmit={handleImportExcel} className="space-y-4">
-                  <div className="rounded-xl bg-orange-50 border border-orange-100 p-4 space-y-2">
-                    <p className="text-xs font-semibold text-orange-800 leading-relaxed">
-                      <strong>Cơ chế nhập hàng:</strong> Hệ thống cộng dồn tồn kho. Tự động tạo sản phẩm mới + tự tạo danh mục và đơn vị nếu chưa có. Để nạp kèm ảnh tự động, chọn tab **Nhập trọn thư mục** và chọn thư mục chứa file Excel + các thư mục con đặt tên theo ID sản phẩm chứa ảnh của sản phẩm đó.
+                  {/* Khối hướng dẫn quy tắc nhập Excel và cấu trúc thư mục */}
+                  <div className="rounded-xl bg-orange-50 border border-orange-200 p-4 space-y-2.5">
+                    <p className="text-xs font-bold text-orange-950 leading-relaxed">
+                      📋 <strong>Cơ chế Nhập hàng & Cập nhật Tồn kho:</strong>
                     </p>
-                    <a
-                      href="/import_template.xlsx"
-                      download="import_products_template.xlsx"
-                      className="inline-flex items-center gap-1.5 text-xs font-black text-[var(--primary-color)] hover:underline"
-                    >
-                      📥 Tải file Excel mẫu (.xlsx) tại đây
-                    </a>
+                    <ul className="text-[11px] text-orange-900 space-y-1 list-disc pl-4 font-medium leading-relaxed">
+                      <li><strong>Cập nhật SP cũ / Nhập thêm tồn kho:</strong> Nhập <em>Mã sản phẩm</em> hoặc <em>Tên sản phẩm</em> sẵn có. Hệ thống sẽ cập nhật thông tin và <strong>cộng dồn</strong> số lượng nhập vào tồn kho hiện tại.</li>
+                      <li><strong>Thêm SP mới:</strong> Để trống <em>Mã sản phẩm</em> và điền thông tin SP mới. Hệ thống sẽ tự động khởi tạo SP & phân loại tương ứng.</li>
+                      <li><strong>Nhập kèm ảnh tự động:</strong> Chọn tab <strong>Nhập trọn thư mục</strong>. Đặt file Excel tại thư mục gốc, kèm theo các thư mục con đặt tên dạng <code>[Mã_SP]</code> (ảnh chính) hoặc <code>[Mã_SP]-[Tên_Phân_Loại]</code> (ảnh phân loại).</li>
+                    </ul>
+                    <div className="pt-1 border-t border-orange-200/60">
+                      <a
+                        href="/import_template.xlsx"
+                        download="import_products_template.xlsx"
+                        className="inline-flex items-center gap-1.5 text-xs font-black text-[#0F766E] hover:underline"
+                      >
+                        📥 Tải file Excel mẫu chuẩn (.xlsx có sẵn dữ liệu mẫu)
+                      </a>
+                    </div>
                   </div>
 
                   <div className="flex border-b border-[#EFEAE2] mb-3 text-xs font-bold">
