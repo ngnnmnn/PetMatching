@@ -39,6 +39,11 @@ export class ManagerController {
     return this.managerService.getDashboardStats();
   }
 
+  @Get('activity-snapshot')
+  getActivitySnapshot() {
+    return this.managerService.getActivitySnapshot();
+  }
+
   @Get('products')
   getProducts() {
     return this.managerService.getProducts();

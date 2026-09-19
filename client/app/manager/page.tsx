@@ -36,6 +36,7 @@ import {
 import { toast } from 'sonner';
 import {
   managerApi,
+  ManagerActivitySnapshot,
   ManagerCustomer,
   ManagerDashboardStats,
   ManagerOrder,
@@ -724,20 +725,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   // Realtime Polling Refs
   const previousOrderIdsRef = React.useRef<Set<string> | null>(null);
   const warnedProductIdsRef = React.useRef<Set<string>>(new Set());
+  const ordersVersionRef = React.useRef<string | null>(null);
+  const inventoryVersionRef = React.useRef<string | null>(null);
   const isPollingRef = React.useRef(false);
   const banksRequestedRef = React.useRef(false);
 
-  const applyLatestOrders = useCallback((latestOrders: ManagerOrder[], notifyNewOrders = false) => {
-    if (notifyNewOrders && previousOrderIdsRef.current !== null) {
-      const newOrders = latestOrders.filter((order) => !previousOrderIdsRef.current!.has(order.id));
-      if (newOrders.length > 0) {
-        playStoreNotificationChime('order');
-        toast.success(`Có ${newOrders.length} đơn hàng mới vừa được đặt!`, {
-          description: `Mã đơn: #${newOrders[0].id.slice(-6).toUpperCase()}`,
-        });
-      }
-    }
-
+  const applyLatestOrders = useCallback((latestOrders: ManagerOrder[]) => {
     previousOrderIdsRef.current = new Set(latestOrders.map((order) => order.id));
     setOrders(latestOrders);
     setSelectedOrderDetails((current) => {
@@ -746,53 +739,81 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     });
   }, []);
 
-  const fetchTabData = useCallback(async (tab: string, showLoading = true) => {
+  const applyActivitySnapshot = useCallback((
+    snapshot: ManagerActivitySnapshot,
+    notifyNewOrders: boolean,
+  ) => {
+    if (notifyNewOrders && previousOrderIdsRef.current !== null) {
+      const newOrderIds = snapshot.orderIds.filter(
+        (orderId) => !previousOrderIdsRef.current!.has(orderId),
+      );
+      if (newOrderIds.length > 0) {
+        playStoreNotificationChime('order');
+        toast.success(`Có ${newOrderIds.length} đơn hàng mới vừa được đặt!`, {
+          description: `Mã đơn: #${newOrderIds[0].slice(-6).toUpperCase()}`,
+        });
+      }
+    }
+
+    previousOrderIdsRef.current = new Set(snapshot.orderIds);
+    snapshot.lowStockProducts.forEach((product) => {
+      if (warnedProductIdsRef.current.has(product.id)) return;
+      warnedProductIdsRef.current.add(product.id);
+      playStoreNotificationChime('warning');
+      toast.warning(`Sản phẩm "${product.name}" có phân loại sắp hết hàng (tồn kho < 5)!`);
+    });
+  }, []);
+
+  const fetchTabData = useCallback(async (
+    tab: string,
+    showLoading = true,
+    signal?: AbortSignal,
+  ) => {
     if (showLoading) setLoading(true);
     try {
       if (tab === 'products') {
-        const [productsRes, categoriesRes, ordersRes] = await Promise.allSettled([
-          managerApi.getProducts(),
+        const [productsRes, categoriesRes] = await Promise.allSettled([
+          managerApi.getProducts(signal),
           productsApi.getCategories(),
-          managerApi.getOrders(),
         ]);
+        if (signal?.aborted) return;
         if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
         if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
-        if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
         return;
       }
 
       if (tab === 'orders') {
-        const ordersRes = await managerApi.getOrders();
+        const ordersRes = await managerApi.getOrders(signal);
+        if (signal?.aborted) return;
         applyLatestOrders(ordersRes.data);
         return;
       }
 
       if (tab === 'customers') {
-        const [customersRes, ordersRes] = await Promise.allSettled([
-          managerApi.getCustomers(),
-          managerApi.getOrders(),
-        ]);
-        if (customersRes.status === 'fulfilled') setCustomers(customersRes.value.data);
-        if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
+        const customersRes = await managerApi.getCustomers(signal);
+        if (signal?.aborted) return;
+        setCustomers(customersRes.data);
         return;
       }
 
       const [statsRes, productsRes, ordersRes, categoriesRes] = await Promise.allSettled([
-        managerApi.getDashboardStats(),
-        managerApi.getProducts(),
-        managerApi.getOrders(),
+        managerApi.getDashboardStats(signal),
+        managerApi.getProducts(signal),
+        managerApi.getOrders(signal),
         productsApi.getCategories(),
       ]);
 
+      if (signal?.aborted) return;
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
       if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
       if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
       if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
     } catch (error) {
+      if (signal?.aborted) return;
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
     } finally {
-      if (showLoading) setLoading(false);
+      if (showLoading && !signal?.aborted) setLoading(false);
     }
   }, [applyLatestOrders]);
 
@@ -809,8 +830,15 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   };
 
   useEffect(() => {
-    const loadTimer = window.setTimeout(() => void fetchTabData(currentTab), 0);
-    return () => window.clearTimeout(loadTimer);
+    const controller = new AbortController();
+    const loadTimer = window.setTimeout(
+      () => void fetchTabData(currentTab, true, controller.signal),
+      0,
+    );
+    return () => {
+      controller.abort();
+      window.clearTimeout(loadTimer);
+    };
   }, [currentTab, fetchTabData]);
 
   // Chỉ tải danh sách ngân hàng khi Manager mở tab đơn hàng.
@@ -829,43 +857,46 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       });
   }, [currentTab]);
 
-  // Một vòng polling duy nhất cho dữ liệu realtime của Store Manager.
+  // Poll snapshot nhẹ, chỉ tải lại payload đầy đủ khi dữ liệu của tab hiện tại thay đổi.
   useEffect(() => {
-    const pollManagerData = async () => {
-      if (document.visibilityState !== 'visible' || isPollingRef.current) return;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const pollManagerData = async (notify = true) => {
+      if (
+        cancelled ||
+        document.visibilityState !== 'visible' ||
+        isPollingRef.current
+      ) return;
 
       isPollingRef.current = true;
       try {
-        if (currentTab === 'orders') {
+        if (notify && currentTab === 'orders') {
           await shippingApi.syncActiveAhamoveOrders().catch(() => undefined);
         }
 
-        const [ordersRes, productsRes, statsRes] = await Promise.allSettled([
-          managerApi.getOrders(),
-          managerApi.getProducts(),
-          ...(currentTab === 'dashboard' ? [managerApi.getDashboardStats()] : []),
-        ]);
+        const snapshotResponse = await managerApi.getActivitySnapshot(
+          controller.signal,
+        );
+        if (cancelled) return;
 
-        if (ordersRes.status === 'fulfilled') {
-          applyLatestOrders(ordersRes.value.data, true);
-        }
+        const snapshot = snapshotResponse.data;
+        const ordersChanged =
+          ordersVersionRef.current !== null &&
+          ordersVersionRef.current !== snapshot.ordersVersion;
+        const inventoryChanged =
+          inventoryVersionRef.current !== null &&
+          inventoryVersionRef.current !== snapshot.inventoryVersion;
 
-        if (productsRes.status === 'fulfilled') {
-          const latestProducts = productsRes.value.data;
-          setProducts(latestProducts);
+        applyActivitySnapshot(snapshot, notify);
+        ordersVersionRef.current = snapshot.ordersVersion;
+        inventoryVersionRef.current = snapshot.inventoryVersion;
 
-          // Cảnh báo âm thanh nếu có sản phẩm có biến thể sắp hết hoặc hết hàng
-          latestProducts.forEach((p) => {
-            if (hasLowStockWarning(p) && !warnedProductIdsRef.current.has(p.id)) {
-              warnedProductIdsRef.current.add(p.id);
-              playStoreNotificationChime('warning');
-              toast.warning(`Sản phẩm "${p.name}" có phân loại sắp hết hàng (tồn kho < 5)!`);
-            }
-          });
-        }
-
-        if (statsRes?.status === 'fulfilled') {
-          setStats(statsRes.value.data);
+        const shouldRefresh = currentTab === 'orders' || currentTab === 'customers'
+          ? ordersChanged
+          : ordersChanged || inventoryChanged;
+        if (notify && shouldRefresh) {
+          await fetchTabData(currentTab, false, controller.signal);
         }
       } catch {
         // silent polling
@@ -879,8 +910,22 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       currentTab === 'orders' ? 4000 : 5000,
     );
 
-    return () => window.clearInterval(interval);
-  }, [applyLatestOrders, currentTab]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void pollManagerData();
+      }
+    };
+
+    void pollManagerData(false);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [applyActivitySnapshot, currentTab, fetchTabData]);
 
   // Filtered lists based on search and status filters
   const filteredProducts = useMemo(() => {
@@ -1942,10 +1987,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       toast.error('Vui lòng thêm ít nhất 1 phân loại cho sản phẩm.');
       return;
     }
-
-    const hasVariants = editingProduct
-      ? (variants && variants.length > 0)
-      : (localVariants && localVariants.length > 0);
 
     if (!productForm.name.trim()) {
       errors.name = 'Vui lòng điền vào trường này.';
@@ -3394,7 +3435,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                                 await managerApi.updateCategory(cat.id, { name: editingCategoryName });
                                                 toast.success('Cập nhật danh mục thành công!');
                                                 setEditingCategoryId(null);
-                                                const catRes = await productsApi.getCategories();
+                                                const catRes = await productsApi.getCategories({ force: true });
                                                 setCategories(catRes.data);
                                               } catch (err: any) {
                                                 console.error(err);
@@ -3447,7 +3488,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                               try {
                                                 await managerApi.deleteCategory(cat.id);
                                                 toast.success('Xóa danh mục thành công!');
-                                                const catRes = await productsApi.getCategories();
+                                                const catRes = await productsApi.getCategories({ force: true });
                                                 setCategories(catRes.data);
                                               } catch (err: any) {
                                                 console.error(err);
@@ -3494,7 +3535,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 await managerApi.createCategory({ name: newCategoryName });
                                 toast.success('Thêm danh mục mới thành công!');
                                 setNewCategoryName('');
-                                const catRes = await productsApi.getCategories();
+                                const catRes = await productsApi.getCategories({ force: true });
                                 setCategories(catRes.data);
                               } catch (error: any) {
                                 console.error(error);

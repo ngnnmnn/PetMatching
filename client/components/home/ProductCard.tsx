@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { PackageCheck, Star } from 'lucide-react';
 import { Product } from '@/types';
 import { cn } from '@/lib/utils';
@@ -246,11 +247,9 @@ export function findRecommendedVariantForPet(product: any, pet: any): any | null
 export default function ProductCard({
   product,
   selectedPet,
-  selectedPrices,
 }: {
   product: Product;
   selectedPet?: any;
-  selectedPrices?: string[];
 }) {
   const hasVariants = Boolean(product.variants && product.variants.length > 0);
 
@@ -274,7 +273,6 @@ export default function ProductCard({
     ? Math.round(((originalSellingPrice - lowestPrice) / originalSellingPrice) * 100)
     : (getDiscountPercent(product) || 0);
 
-  const discount = discountPercent > 0 ? discountPercent : getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
 
   const activeVariants = hasVariants ? product.variants!.filter((v: any) => v.isActive !== false) : [];
@@ -298,12 +296,14 @@ export default function ProductCard({
       <Link href={productDetailUrl} className="flex flex-col h-full justify-between">
         <div>
           <div className="relative aspect-square overflow-hidden bg-[#F3F0EA]">
-            <img
+            <Image
               src={productImage}
               alt={product.name}
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
               loading="lazy"
               className={cn(
-                "h-full w-full object-cover transition duration-300 group-hover:scale-105",
+                "object-cover transition duration-300 group-hover:scale-105",
                 (isOutOfStock || isProductInactive) && "grayscale opacity-60"
               )}
             />

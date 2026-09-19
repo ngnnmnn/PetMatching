@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -50,6 +51,28 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function RatingInput({ value, onChange, compact = false }: {
+  value: number;
+  onChange: (rating: number) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((rating) => (
+        <button
+          key={rating}
+          type="button"
+          onClick={() => onChange(rating)}
+          className={`${compact ? 'p-0.5' : 'p-1'} text-[#F59E0B] transition hover:scale-110 cursor-pointer`}
+          aria-label={`Đánh giá ${rating} sao`}
+        >
+          <Star className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} ${rating <= value ? 'fill-[#F59E0B] text-[#F59E0B]' : 'text-gray-300'}`} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -61,7 +84,6 @@ export default function ProductDetailPage() {
   const [recommendedVariantId, setRecommendedVariantId] = useState<string | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [relatedLoading, setRelatedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [activeImage, setActiveImage] = useState<string>('');
@@ -93,6 +115,7 @@ export default function ProductDetailPage() {
 
   const searchParams = useSearchParams();
   const shouldScrollToReview = searchParams.get('review') === 'true';
+  const targetVariantId = searchParams.get('variantId');
   const reviewSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -122,12 +145,30 @@ export default function ProductDetailPage() {
   // Load product detail and related products
   useEffect(() => {
     if (!productId) return;
+    let cancelled = false;
 
     const fetchProductData = async () => {
       setLoading(true);
       setError(null);
+      setSelectedVariant(null);
+      setRecommendedVariantId(null);
+      setRecommendationPet(null);
+      setQuantity(1);
+      setQuantityError(null);
+      setReviews([]);
+      setRelatedProducts([]);
+      setCanUserReview(false);
+      const token = localStorage.getItem('accessToken');
+      const reviewsRequest = productsApi.getReviews(productId);
+      const eligibilityRequest = token
+        ? productsApi.canReview(productId)
+        : Promise.resolve({ data: false });
+      const reviewDataRequest = Promise.allSettled([reviewsRequest, eligibilityRequest]);
+      const profileRequest = token ? usersApi.getProfile().catch(() => null) : null;
+
       try {
         const response = await productsApi.getById(productId);
+        if (cancelled) return;
         const data = response.data;
         setProduct(data);
         setActiveImage(data.imageUrl || '/placeholder.svg');
@@ -139,12 +180,11 @@ export default function ProductDetailPage() {
             try {
               currentPet = JSON.parse(stored);
               setRecommendationPet(currentPet);
-            } catch (e) {}
+            } catch {}
           }
         }
 
         if (data.variants && data.variants.length > 0) {
-          const targetVariantId = searchParams.get('variantId');
           let matched = targetVariantId ? data.variants.find((v: any) => v.id === targetVariantId) : null;
 
           // Nếu không có variantId truyền từ URL nhưng người dùng đang chọn lọc theo Pet, tự động tìm phân loại gợi ý phù hợp nhất
@@ -168,19 +208,16 @@ export default function ProductDetailPage() {
         setLoading(false); // Show main product details immediately!
 
         // Fetch secondary data concurrently in parallel (non-blocking)
-        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-        if (token) {
-          usersApi.getProfile().then((res) => setCurrentUser(res.data)).catch(() => setCurrentUser(null));
+        if (profileRequest) {
+          void profileRequest
+            .then((res) => !cancelled && setCurrentUser(res?.data ?? null));
         }
 
-        setRelatedLoading(true);
+        const relatedRequest = productsApi.getList({ category: data.category, limit: 5 });
+        const [reviewsRes, eligibilityRes] = await reviewDataRequest;
+        const [relatedRes] = await Promise.allSettled([relatedRequest]);
 
-        const [reviewsRes, eligibilityRes, relatedRes] = await Promise.allSettled([
-          productsApi.getReviews(productId),
-          token ? productsApi.canReview(productId) : Promise.resolve({ data: false }),
-          productsApi.getList({ category: data.category, limit: 5 }),
-        ]);
-
+        if (cancelled) return;
         if (reviewsRes.status === 'fulfilled') {
           setReviews(reviewsRes.value.data);
         }
@@ -191,16 +228,19 @@ export default function ProductDetailPage() {
           const filtered = (relatedRes.value.data.data || []).filter((p: any) => p.id !== data.id);
           setRelatedProducts(filtered.slice(0, 4));
         }
-        setRelatedLoading(false);
       } catch (err) {
+        if (cancelled) return;
         console.error(err);
         setError('Không tìm thấy sản phẩm hoặc xảy ra lỗi kết nối.');
         setLoading(false);
       }
     };
 
-    fetchProductData();
-  }, [productId]);
+    void fetchProductData();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId, targetVariantId]);
 
   /** Tăng số lượng sản phẩm mua */
   const handleIncrement = () => {
@@ -246,7 +286,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!product) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (!token) {
@@ -255,18 +295,18 @@ export default function ProductDetailPage() {
       return;
     }
     setIsAddingToCart(true);
-
-    // Simulate adding to cart action
-    setTimeout(() => {
-      setIsAddingToCart(false);
-      addToCart(product, quantity, false, selectedVariant?.id);
+    try {
+      const added = await addToCart(product, quantity, false, selectedVariant?.id);
+      if (!added) return;
       toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}" vào giỏ hàng!`, {
         action: {
           label: 'Xem giỏ hàng',
           onClick: () => router.push('/cart'),
         },
       });
-    }, 800);
+    } finally {
+      setIsAddingToCart(false);
+    }
   };
 
 
@@ -278,38 +318,23 @@ export default function ProductDetailPage() {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
-    if (isEdit) {
-      if (editImages.length + files.length > 4) {
-        toast.warning('Tối đa 4 ảnh cho mỗi đánh giá');
-        return;
-      }
-      setUploadingEditImages(true);
-      try {
-        const uploaded = await uploadImages(files, 'review');
-        setEditImages((prev) => [...prev, ...uploaded.map((img) => img.url)]);
-      } catch (err: any) {
-        console.error('Failed to upload review image:', err);
-        const msg = err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.';
-        toast.error(msg);
-      } finally {
-        setUploadingEditImages(false);
-      }
-    } else {
-      if (submitImages.length + files.length > 4) {
-        toast.warning('Tối đa 4 ảnh cho mỗi đánh giá');
-        return;
-      }
-      setUploadingReviewImages(true);
-      try {
-        const uploaded = await uploadImages(files, 'review');
-        setSubmitImages((prev) => [...prev, ...uploaded.map((img) => img.url)]);
-      } catch (err: any) {
-        console.error('Failed to upload review image:', err);
-        const msg = err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.';
-        toast.error(msg);
-      } finally {
-        setUploadingReviewImages(false);
-      }
+    const images = isEdit ? editImages : submitImages;
+    if (images.length + files.length > 4) {
+      toast.warning('Tối đa 4 ảnh cho mỗi đánh giá');
+      return;
+    }
+
+    const setUploading = isEdit ? setUploadingEditImages : setUploadingReviewImages;
+    const setImages = isEdit ? setEditImages : setSubmitImages;
+    setUploading(true);
+    try {
+      const uploaded = await uploadImages(files, 'review');
+      setImages((previous) => [...previous, ...uploaded.map(({ url }) => url)]);
+    } catch (err: any) {
+      console.error('Failed to upload review image:', err);
+      toast.error(err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -510,9 +535,13 @@ export default function ProductDetailPage() {
           <div className="flex flex-col gap-4 lg:col-span-5">
             {/* Main Image Frame */}
             <div className="relative aspect-square overflow-hidden rounded-2xl border border-[#F0EBE4] bg-[#F8F7F4] flex items-center justify-center p-4">
-              <img
+              <Image
                 src={activeImage}
                 alt={product.name}
+                width={800}
+                height={800}
+                priority
+                sizes="(max-width: 1024px) 100vw, 42vw"
                 className={`max-h-full max-w-full object-contain transition-all duration-300 rounded-xl ${(currentStock === 0 || product.isActive === false) ? 'grayscale opacity-60' : ''
                   }`}
               />
@@ -556,7 +585,7 @@ export default function ProductDetailPage() {
                       : 'border-[var(--border-color)] hover:border-gray-300'
                       }`}
                   >
-                    <img src={img} alt={`thumbnail-${idx}`} className="h-full w-full object-cover" />
+                    <Image src={img} alt={`thumbnail-${idx}`} fill sizes="80px" className="object-cover" />
                   </button>
                 ))}
               </div>
@@ -1003,27 +1032,7 @@ export default function ProductDetailPage() {
               <form onSubmit={handleSubmitReview} className="space-y-4">
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-[var(--text-main)]">Chọn số sao đánh giá: *</label>
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: 5 }).map((_, i) => {
-                      const starValue = i + 1;
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setSubmitRating(starValue)}
-                          className="p-1 hover:scale-110 transition cursor-pointer text-[#F59E0B]"
-                          aria-label={`Đánh giá ${starValue} sao`}
-                        >
-                          <Star
-                            className={`h-7 w-7 ${starValue <= submitRating
-                              ? 'fill-[#F59E0B] text-[#F59E0B]'
-                              : 'text-gray-300'
-                              }`}
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <RatingInput value={submitRating} onChange={setSubmitRating} />
                 </div>
 
                 <div className="space-y-2">
@@ -1173,26 +1182,7 @@ export default function ProductDetailPage() {
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-bold text-gray-700">Chọn số sao:</label>
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: 5 }).map((_, i) => {
-                            const starValue = i + 1;
-                            return (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => setEditRating(starValue)}
-                                className="p-0.5 text-[#F59E0B] hover:scale-110 transition cursor-pointer"
-                              >
-                                <Star
-                                  className={`h-6 w-6 ${starValue <= editRating
-                                    ? 'fill-[#F59E0B] text-[#F59E0B]'
-                                    : 'text-gray-300'
-                                    }`}
-                                />
-                              </button>
-                            );
-                          })}
-                        </div>
+                        <RatingInput value={editRating} onChange={setEditRating} compact />
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-bold text-gray-700">Nhận xét:</label>
@@ -1334,23 +1324,11 @@ export default function ProductDetailPage() {
               <Sparkles className="h-5 w-5 text-[#F59E0B]" />
               <h2 className="text-xl font-black text-[var(--text-main)]">Sản phẩm tương tự</h2>
             </div>
-            {relatedLoading ? (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="animate-pulse rounded-lg border border-[var(--border-color)] bg-white p-3 space-y-3">
-                    <div className="aspect-square bg-gray-200 rounded-md" />
-                    <div className="h-4 bg-gray-200 rounded w-3/4" />
-                    <div className="h-3 bg-gray-200 rounded w-1/2" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {relatedProducts.map((p) => (
-                  <ProductCard key={p.id} product={p} />
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {relatedProducts.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
           </section>
         )}
 

@@ -16,6 +16,16 @@ export interface ManagerDashboardStats {
   };
 }
 
+export interface ManagerActivitySnapshot {
+  orderIds: string[];
+  ordersVersion: string;
+  inventoryVersion: string;
+  lowStockProducts: Array<{
+    id: string;
+    name: string;
+  }>;
+}
+
 /**
  * Kiểu dữ liệu sản phẩm quản lý cho Store Manager (kế thừa từ Product chung)
  */
@@ -135,16 +145,20 @@ export interface ManagerCustomer {
 }
 
 export const managerApi = {
-  getDashboardStats: () =>
-    api.get<ManagerDashboardStats>('/manager/dashboard-stats'),
-  getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
+  getDashboardStats: (signal?: AbortSignal) =>
+    api.get<ManagerDashboardStats>('/manager/dashboard-stats', { signal }),
+  getActivitySnapshot: (signal?: AbortSignal) =>
+    api.get<ManagerActivitySnapshot>('/manager/activity-snapshot', { signal }),
+  getProducts: (signal?: AbortSignal) =>
+    api.get<ManagerProduct[]>('/manager/products', { signal }),
   createProduct: (data: ManagerProductInput) =>
     api.post<ManagerProduct>('/manager/products', data),
   updateProduct: (id: string, data: ManagerProductInput) =>
     api.put<ManagerProduct>(`/manager/products/${id}`, data),
   deleteProduct: (id: string) => api.delete(`/manager/products/${id}`),
 
-  getOrders: () => api.get<ManagerOrder[]>('/manager/orders'),
+  getOrders: (signal?: AbortSignal) =>
+    api.get<ManagerOrder[]>('/manager/orders', { signal }),
   updateOrderStatus: (
     id: string,
     status: string,
@@ -187,7 +201,8 @@ export const managerApi = {
       responseType: 'blob',
     }),
 
-  getCustomers: () => api.get<ManagerCustomer[]>('/manager/customers'),
+  getCustomers: (signal?: AbortSignal) =>
+    api.get<ManagerCustomer[]>('/manager/customers', { signal }),
 
   createCategory: (data: { name: string }) =>
     api.post<Category>('/manager/categories', data),

@@ -172,7 +172,7 @@ export class CartService {
         });
       }
       return null;
-    } catch (e) {
+    } catch {
       // Ignore if already deleted
       return null;
     }
