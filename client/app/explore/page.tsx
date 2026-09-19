@@ -158,6 +158,8 @@ export default function UnifiedMatchingHubPage() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   // Đánh dấu người dùng đã tương tác (Pass/Like) ít nhất 1 hồ sơ trong phiên hiện tại
   const [hasSwipedAny, setHasSwipedAny] = useState(false);
+  // Số lượng hồ sơ đã bấm Bỏ qua (Pass) của bé cái hiện tại trong DB
+  const [passedCount, setPassedCount] = useState(0);
 
   // Requests Data
   const [incomingRequests, setIncomingRequests] = useState<MatchingRequest[]>([]);
@@ -236,10 +238,11 @@ export default function UnifiedMatchingHubPage() {
           if (firstPet.gender === 'FEMALE') {
             setLoadingCandidates(true);
             try {
-              const candRes = await api.get<{ data: Pet[] }>('/matching/candidates', {
+              const candRes = await api.get<{ data: Pet[]; meta?: { passedCount?: number } }>('/matching/candidates', {
                 params: { femalePetId: firstPet.id },
               });
               setCandidates(candRes.data?.data || []);
+              setPassedCount(candRes.data?.meta?.passedCount ?? 0);
               setHasSwipedAny(false);
             } catch {
               // silent catch
@@ -285,7 +288,7 @@ export default function UnifiedMatchingHubPage() {
       if (targetPet.gender === 'FEMALE') {
         setLoadingCandidates(true);
         try {
-          const candRes = await api.get<{ data: Pet[] }>('/matching/candidates', {
+          const candRes = await api.get<{ data: Pet[]; meta?: { passedCount?: number } }>('/matching/candidates', {
             params: {
               femalePetId: targetPet.id,
               species: activeFilters.species !== 'ALL' ? activeFilters.species : undefined,
@@ -300,6 +303,7 @@ export default function UnifiedMatchingHubPage() {
             },
           });
           setCandidates(candRes.data?.data || []);
+          setPassedCount(candRes.data?.meta?.passedCount ?? 0);
           setHasSwipedAny(false);
         } catch {
           toast.error('Không tải được danh sách ứng viên đề xuất.');
@@ -328,12 +332,13 @@ export default function UnifiedMatchingHubPage() {
   const handlePass = useCallback(async (candidateId: string) => {
     if (!selectedPetId) return;
     setHasSwipedAny(true);
+    setPassedCount((prev) => prev + 1);
     // Cập nhật giao diện ngay lập tức (Optimistic UI) để chuyển mượt sang thẻ tiếp theo
     setCandidates((curr) => curr.filter((p) => p.id !== candidateId));
     if (selectedCandidateDetail?.id === candidateId) setSelectedCandidateDetail(null);
     // Hiển thị thông báo ngay lập tức (0ms) đồng bộ với thao tác quẹt thẻ thay vì chờ mạng
     toast.success('Đã ẩn hồ sơ này.', {
-      id: 'pass-candidate-toast',
+      id: 'explore-matching-toast',
       duration: 1500,
     });
     try {
@@ -390,13 +395,27 @@ export default function UnifiedMatchingHubPage() {
     if (!selectedPetId) return;
     try {
       const res = await api.delete<{ count: number; message: string }>(`/matching/pass/${selectedPetId}`);
-      toast.success(res.data?.message || 'Đã khôi phục danh sách các bé đã bỏ qua!');
+      const restoredCount = res.data?.count ?? 0;
+      if (restoredCount > 0) {
+        toast.success(`Đã khôi phục ${restoredCount} hồ sơ đã bỏ qua!`, {
+          id: 'explore-matching-toast',
+          duration: 2500,
+        });
+      } else {
+        toast.info('Không có hồ sơ nào từng bị bỏ qua.', {
+          id: 'explore-matching-toast',
+          duration: 2500,
+        });
+      }
       setHasSwipedAny(false);
+      setPassedCount(0);
       if (selectedPet) {
         await handleSelectPet(selectedPet);
       }
     } catch {
-      toast.error('Không thể khôi phục danh sách đã bỏ qua.');
+      toast.error('Không thể khôi phục danh sách đã bỏ qua.', {
+        id: 'explore-matching-toast',
+      });
     }
   }, [selectedPetId, selectedPet, handleSelectPet]);
 
@@ -673,44 +692,42 @@ export default function UnifiedMatchingHubPage() {
             /* Trạng thái khi không còn ứng viên nào trong danh sách */
             <div className="py-16 text-center space-y-4 max-w-md mx-auto">
               <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-primary/10 text-primary">
-                {hasSwipedAny ? <Check className="size-10" /> : <Search className="size-10" />}
+                {passedCount > 0 ? <Check className="size-10" /> : <Search className="size-10" />}
               </div>
               <h3 className="text-xl font-extrabold">
-                {hasSwipedAny ? 'Đã xem hết các hồ sơ phù hợp!' : 'Không có hồ sơ phù hợp'}
+                {passedCount > 0 ? 'Đã xem hết các hồ sơ phù hợp!' : 'Không có hồ sơ phù hợp'}
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {hasSwipedAny
-                  ? 'Bạn đã lướt qua toàn bộ ứng viên ghép đôi hiện có quanh khu vực của bé. Bạn có thể xem lại các bé vừa bỏ qua hoặc mở rộng bán kính tìm kiếm nhé!'
+                {passedCount > 0
+                  ? `Bạn đã lướt qua các ứng viên ghép đôi quanh khu vực của bé (${passedCount} hồ sơ đã bỏ qua). Bạn có thể xem lại các bé vừa bỏ qua hoặc mở rộng bán kính tìm kiếm nhé!`
                   : 'Không tìm thấy bé cưng nào thỏa mãn tiêu chí lọc hiện tại. Thử nới lỏng bộ lọc hoặc mở rộng bán kính tìm kiếm.'}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                {hasSwipedAny && (
+                {passedCount > 0 && (
                   <Button
                     onClick={handleResetPassedPets}
                     className="rounded-xl font-bold gap-2 shadow-md shadow-primary/20"
                   >
                     <RotateCcw className="size-4" />
-                    Xem lại các bé đã bỏ qua
+                    Xem lại các bé đã bỏ qua ({passedCount})
                   </Button>
                 )}
                 <Button
-                  variant={hasSwipedAny ? 'outline' : 'default'}
+                  variant={passedCount > 0 ? 'outline' : 'default'}
                   onClick={() => setIsFilterOpen(true)}
                   className="rounded-xl font-bold gap-2"
                 >
                   <SlidersHorizontal className="size-4" />
-                  {hasSwipedAny ? 'Mở rộng bán kính & bộ lọc' : 'Điều chỉnh bộ lọc'}
+                  {passedCount > 0 ? 'Mở rộng bán kính & bộ lọc' : 'Điều chỉnh bộ lọc'}
                 </Button>
-                {!hasSwipedAny && (
-                  <Button
-                    variant="outline"
-                    onClick={handleResetFilters}
-                    className="rounded-xl font-bold gap-2"
-                  >
-                    <RotateCcw className="size-4" />
-                    Đặt lại bộ lọc
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  onClick={handleResetFilters}
+                  className="rounded-xl font-bold gap-2"
+                >
+                  <RotateCcw className="size-4" />
+                  Đặt lại bộ lọc
+                </Button>
               </div>
             </div>
           ) : viewMode === 'SWIPE' ? (
@@ -1952,7 +1969,20 @@ function CandidateCardGrid({
 
 function CandidateCardSkeleton() {
   return (
-    <div className="overflow-hidden rounded-3xl border bg-card shadow-sm animate-pulse aspect-[4/5] bg-muted" />
+    <div className="overflow-hidden rounded-3xl border bg-card shadow-sm aspect-[4/5] relative flex flex-col justify-between p-6 bg-muted/40 animate-pulse">
+      <div className="flex justify-between items-start">
+        <div className="h-6 w-28 bg-muted-foreground/20 rounded-full" />
+        <div className="h-6 w-16 bg-muted-foreground/20 rounded-full" />
+      </div>
+      <div className="space-y-3">
+        <div className="h-8 w-44 bg-muted-foreground/25 rounded-xl" />
+        <div className="h-4 w-60 bg-muted-foreground/15 rounded-lg" />
+        <div className="grid grid-cols-2 gap-3 pt-4">
+          <div className="h-12 bg-muted-foreground/20 rounded-2xl" />
+          <div className="h-12 bg-muted-foreground/20 rounded-2xl" />
+        </div>
+      </div>
+    </div>
   );
 }
 

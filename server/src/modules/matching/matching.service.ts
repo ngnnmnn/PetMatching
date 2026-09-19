@@ -406,13 +406,21 @@ export class MatchingService {
       data = data.filter((item) => item.distanceKm <= maxDist);
     }
 
-    // Sắp xếp theo điểm giảm dần
-    data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
-
     // Xóa trường tạm _candCoords trước khi trả về kết quả
     const cleanedData = data.map(({ _candCoords, ...item }) => item);
 
-    return { data: cleanedData };
+    // Đếm số lượng hồ sơ đã từng bị bấm Bỏ qua (Pass) của bé cái này để phục vụ hiển thị nút xem lại
+    const passedCount = Array.from(latestByMalePetId.values()).filter(
+      (item) => item.status === MatchingRequestStatus.PASSED,
+    ).length;
+
+    return {
+      data: cleanedData,
+      meta: {
+        total: cleanedData.length,
+        passedCount,
+      },
+    };
   }
 
   async passPet(userId: string, dto: PassPetDto) {
@@ -459,7 +467,10 @@ export class MatchingService {
     return {
       success: true,
       count: result.count,
-      message: `Đã khôi phục ${result.count} hồ sơ đã bỏ qua`,
+      message:
+        result.count > 0
+          ? `Đã khôi phục ${result.count} hồ sơ đã bỏ qua`
+          : 'Không có hồ sơ nào từng bị bỏ qua',
     };
   }
 
