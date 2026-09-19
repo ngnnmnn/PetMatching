@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -16,50 +16,126 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const authTokenRef = useRef<string | null>(null);
+  const countRequestTokenRef = useRef<string | null>(null);
+  const listRequestTokenRef = useRef<string | null>(null);
+  const popoverOpenRef = useRef(false);
 
   const refreshCount = useCallback(async () => {
-    if (!localStorage.getItem('accessToken')) return;
+    const token = localStorage.getItem('accessToken');
+    if (
+      !token ||
+      countRequestTokenRef.current === token ||
+      listRequestTokenRef.current === token ||
+      popoverOpenRef.current
+    ) return;
+
+    countRequestTokenRef.current = token;
     try {
       const response = await notificationsApi.getUnreadCount();
-      setUnreadCount(response.data.count);
+      if (
+        localStorage.getItem('accessToken') !== token ||
+        popoverOpenRef.current ||
+        listRequestTokenRef.current === token
+      ) return;
+      setUnreadCount((current) => current === response.data.count ? current : response.data.count);
     } catch {
       // The shared interceptor handles expired sessions.
+    } finally {
+      if (countRequestTokenRef.current === token) countRequestTokenRef.current = null;
     }
   }, []);
 
   const loadNotifications = useCallback(async () => {
+    const token = localStorage.getItem('accessToken');
+    if (!token || listRequestTokenRef.current === token) return;
+
+    listRequestTokenRef.current = token;
     setLoading(true);
     try {
       const response = await notificationsApi.getList({ limit: 8 });
+      if (localStorage.getItem('accessToken') !== token) return;
       setNotifications(response.data.data);
-      setUnreadCount(response.data.unreadCount);
+      setUnreadCount((current) =>
+        current === response.data.unreadCount ? current : response.data.unreadCount,
+      );
     } catch {
-      toast.error('Không thể tải danh sách thông báo.');
+      if (localStorage.getItem('accessToken') === token) {
+        toast.error('Không thể tải danh sách thông báo.');
+      }
     } finally {
-      setLoading(false);
+      if (listRequestTokenRef.current === token) {
+        listRequestTokenRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     const syncAuth = () => {
-      const hasToken = Boolean(localStorage.getItem('accessToken'));
-      setAuthenticated(hasToken);
-      if (hasToken) void refreshCount();
-      else {
+      const token = localStorage.getItem('accessToken');
+      const tokenChanged = authTokenRef.current !== token;
+      authTokenRef.current = token;
+      setAuthenticated(Boolean(token));
+
+      if (token) {
+        if (tokenChanged) void refreshCount();
+      } else {
+        popoverOpenRef.current = false;
+        setOpen(false);
+        setLoading(false);
         setUnreadCount(0);
         setNotifications([]);
       }
     };
-    syncAuth();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== 'accessToken') return;
+      if (event.oldValue && event.newValue) {
+        authTokenRef.current = event.newValue;
+        return;
+      }
+      syncAuth();
+    };
+
     window.addEventListener('auth-change', syncAuth);
+    window.addEventListener('storage', handleStorage);
+    const initialSyncTimer = window.setTimeout(syncAuth, 0);
+
+    return () => {
+      window.clearTimeout(initialSyncTimer);
+      window.removeEventListener('auth-change', syncAuth);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [refreshCount]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshCount();
     }, 30_000);
-    return () => {
-      window.removeEventListener('auth-change', syncAuth);
-      window.clearInterval(timer);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshCount();
     };
-  }, [refreshCount]);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [authenticated, refreshCount]);
+
+  const handlePopoverChange = (next: boolean) => {
+    popoverOpenRef.current = next;
+    setOpen(next);
+    if (next) void loadNotifications();
+  };
+
+  const closePopover = () => {
+    popoverOpenRef.current = false;
+    setOpen(false);
+  };
 
   const handleOpen = async (notification: AppNotification) => {
     if (!notification.isRead) {
@@ -72,7 +148,7 @@ export default function NotificationBell() {
         return;
       }
     }
-    setOpen(false);
+    closePopover();
     if (notification.targetUrl) router.push(notification.targetUrl);
     else toast.info('Đối tượng liên quan không còn tồn tại.');
   };
@@ -100,7 +176,7 @@ export default function NotificationBell() {
   if (!authenticated) return null;
 
   return (
-    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) void loadNotifications(); }}>
+    <Popover open={open} onOpenChange={handlePopoverChange}>
       <PopoverTrigger asChild>
         <button type="button" aria-label={`Thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ''}`} className="relative inline-flex size-10 items-center justify-center rounded-md border border-[var(--border-color)] bg-card text-foreground shadow-sm transition hover:border-primary hover:text-primary">
           <Bell className="size-5" />
@@ -134,7 +210,7 @@ export default function NotificationBell() {
             </div>
           )}
         </ScrollArea>
-        <button type="button" onClick={() => { setOpen(false); router.push('/notifications'); }} className="w-full border-t p-3 text-sm font-extrabold text-primary transition hover:bg-muted">
+        <button type="button" onClick={() => { closePopover(); router.push('/notifications'); }} className="w-full border-t p-3 text-sm font-extrabold text-primary transition hover:bg-muted">
           Xem tất cả thông báo
         </button>
       </PopoverContent>

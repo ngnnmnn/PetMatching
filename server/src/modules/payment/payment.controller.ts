@@ -39,6 +39,9 @@ export class PaymentController {
     if (payment.status === 'PAID') {
       return { isPaid: true, status: payment.status, orderId: referenceId };
     }
+    if (payment.status === 'CANCELLED' || payment.status === 'EXPIRED') {
+      return { isPaid: false, status: payment.status, orderId: referenceId };
+    }
 
     // Double check with PayOS API
     const paymentInfo =
@@ -46,6 +49,14 @@ export class PaymentController {
     if (paymentInfo && paymentInfo.status === 'PAID') {
       await this.paymentService.markPaidByOrderCode(orderCode);
       return { isPaid: true, status: 'PAID', orderId: referenceId };
+    }
+    if (
+      paymentInfo &&
+      (paymentInfo.status === 'CANCELLED' || paymentInfo.status === 'EXPIRED')
+    ) {
+      const status = paymentInfo.status;
+      await this.paymentService.markCancelledByOrderCode(orderCode, status);
+      return { isPaid: false, status, orderId: referenceId };
     }
 
     return { isPaid: false, status: payment.status, orderId: referenceId };
