@@ -50,7 +50,13 @@ export const usersApi = {
   deleteOrder: (id: string) => api.delete<any>(`/users/orders/${id}`),
   updateOrderShipping: (
     id: string,
-    data: { shippingAddress: string; districtId?: number; wardCode?: string },
+    data: {
+      shippingAddress: string;
+      districtId?: number;
+      wardCode?: string;
+      shippingLatitude: number;
+      shippingLongitude: number;
+    },
   ) => api.put<any>(`/users/orders/${id}/shipping`, data),
   retryPayment: (id: string) => api.post<any>(`/users/orders/${id}/retry-payment`),
   requestRefund: (
