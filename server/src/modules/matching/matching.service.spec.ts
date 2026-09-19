@@ -916,3 +916,53 @@ describe('MatchingService moderation', () => {
     expect(tx.auditLog.create).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Kiểm thử tính năng khôi phục danh sách ứng viên đã bỏ qua (resetPassedPets)
+ */
+describe('MatchingService resetPassedPets', () => {
+  it('resets passed matching requests for owned female pet', async () => {
+    const femalePet = { id: 'female-1', ownerId: 'user-1', gender: 'FEMALE' };
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue(femalePet),
+      },
+      matchingRequest: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 3 }),
+      },
+    };
+    const service = new MatchingService(prisma as any, {} as any, {} as any);
+
+    const result = await service.resetPassedPets('user-1', 'female-1');
+
+    expect(prisma.pet.findUnique).toHaveBeenCalledWith({
+      where: { id: 'female-1' },
+    });
+    expect(prisma.matchingRequest.deleteMany).toHaveBeenCalledWith({
+      where: {
+        requesterId: 'user-1',
+        femalePetId: 'female-1',
+        status: MatchingRequestStatus.PASSED,
+      },
+    });
+    expect(result).toEqual({
+      success: true,
+      count: 3,
+      message: 'Đã khôi phục 3 hồ sơ đã bỏ qua',
+    });
+  });
+
+  it('rejects reset when user does not own the female pet', async () => {
+    const femalePet = { id: 'female-1', ownerId: 'other-user', gender: 'FEMALE' };
+    const prisma = {
+      pet: {
+        findUnique: jest.fn().mockResolvedValue(femalePet),
+      },
+    };
+    const service = new MatchingService(prisma as any, {} as any, {} as any);
+
+    await expect(
+      service.resetPassedPets('user-1', 'female-1'),
+    ).rejects.toThrow();
+  });
+});

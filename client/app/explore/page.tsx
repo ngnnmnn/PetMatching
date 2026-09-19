@@ -11,6 +11,7 @@ import {
   Inbox,
   Info,
   Layers,
+  MapPin,
   Maximize2,
   PawPrint,
   RotateCcw,
@@ -66,6 +67,7 @@ type Pet = {
   ward?: string | null;
   distanceKm?: number;
   isRoadDistance?: boolean;
+  isSameWard?: boolean;
   avatarUrl?: string | null;
   avatar?: string | null;
   gallery: string[];
@@ -154,7 +156,8 @@ export default function UnifiedMatchingHubPage() {
   // Candidates & Matching State
   const [candidates, setCandidates] = useState<Pet[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
-  const [currentCandidateIndex, setCurrentCandidateIndex] = useState(0);
+  // Đánh dấu người dùng đã tương tác (Pass/Like) ít nhất 1 hồ sơ trong phiên hiện tại
+  const [hasSwipedAny, setHasSwipedAny] = useState(false);
 
   // Requests Data
   const [incomingRequests, setIncomingRequests] = useState<MatchingRequest[]>([]);
@@ -237,6 +240,7 @@ export default function UnifiedMatchingHubPage() {
                 params: { femalePetId: firstPet.id },
               });
               setCandidates(candRes.data?.data || []);
+              setHasSwipedAny(false);
             } catch {
               // silent catch
             } finally {
@@ -296,7 +300,7 @@ export default function UnifiedMatchingHubPage() {
             },
           });
           setCandidates(candRes.data?.data || []);
-          setCurrentCandidateIndex(0);
+          setHasSwipedAny(false);
         } catch {
           toast.error('Không tải được danh sách ứng viên đề xuất.');
         } finally {
@@ -320,15 +324,24 @@ export default function UnifiedMatchingHubPage() {
   }, [loadIncomingRequests]);
 
   // Actions
+  // Xử lý bỏ qua (Pass) một ứng viên ghép đôi (cập nhật tức thì trên giao diện và lưu vào backend)
   const handlePass = useCallback(async (candidateId: string) => {
     if (!selectedPetId) return;
+    setHasSwipedAny(true);
+    // Cập nhật giao diện ngay lập tức (Optimistic UI) để chuyển mượt sang thẻ tiếp theo
+    setCandidates((curr) => curr.filter((p) => p.id !== candidateId));
+    if (selectedCandidateDetail?.id === candidateId) setSelectedCandidateDetail(null);
+    // Hiển thị thông báo ngay lập tức (0ms) đồng bộ với thao tác quẹt thẻ thay vì chờ mạng
+    toast.success('Đã ẩn hồ sơ này.', {
+      id: 'pass-candidate-toast',
+      duration: 1500,
+    });
     try {
       await api.post('/matching/pass', { femalePetId: selectedPetId, malePetId: candidateId });
-      setCandidates((curr) => curr.filter((p) => p.id !== candidateId));
-      if (selectedCandidateDetail?.id === candidateId) setSelectedCandidateDetail(null);
-      toast.success('Đã ẩn hồ sơ này.');
     } catch {
-      toast.error('Không thể bỏ qua.');
+      toast.error('Không thể bỏ qua.', {
+        id: 'pass-candidate-toast',
+      });
     }
   }, [selectedPetId, selectedCandidateDetail]);
 
@@ -346,6 +359,7 @@ export default function UnifiedMatchingHubPage() {
         note: requestNote.trim() || undefined,
       });
       setCandidates((curr) => curr.filter((p) => p.id !== requestingPet.id));
+      setHasSwipedAny(true);
       if (selectedCandidateDetail?.id === requestingPet.id) setSelectedCandidateDetail(null);
       setRequestingPet(null);
       setRequestNote('');
@@ -371,6 +385,29 @@ export default function UnifiedMatchingHubPage() {
     }
   };
 
+  // Khôi phục (reset) toàn bộ danh sách các ứng viên đã từng bấm Bỏ qua (Pass) của thú cưng cái
+  const handleResetPassedPets = useCallback(async () => {
+    if (!selectedPetId) return;
+    try {
+      const res = await api.delete<{ count: number; message: string }>(`/matching/pass/${selectedPetId}`);
+      toast.success(res.data?.message || 'Đã khôi phục danh sách các bé đã bỏ qua!');
+      setHasSwipedAny(false);
+      if (selectedPet) {
+        await handleSelectPet(selectedPet);
+      }
+    } catch {
+      toast.error('Không thể khôi phục danh sách đã bỏ qua.');
+    }
+  }, [selectedPetId, selectedPet, handleSelectPet]);
+
+  // Đặt lại toàn bộ bộ lọc tìm kiếm về mặc định và tải lại danh sách ứng viên
+  const handleResetFilters = useCallback(() => {
+    setFilters(initialFilters);
+    if (selectedPet) {
+      handleSelectPet(selectedPet, initialFilters);
+    }
+  }, [selectedPet, handleSelectPet]);
+
   const getAge = (birthday: string) => {
     const diff = Date.now() - new Date(birthday).getTime();
     const months = Math.floor(diff / (1000 * 60 * 60 * 24 * 30.44));
@@ -379,7 +416,8 @@ export default function UnifiedMatchingHubPage() {
     return `${years} tuổi`;
   };
 
-  const currentSwipeCandidate = candidates[currentCandidateIndex];
+  // Thẻ ứng viên trên cùng trong ngăn xếp chế độ Swipe (Queue)
+  const currentSwipeCandidate = candidates[0];
 
   if (loadingPets) {
     return (
@@ -618,58 +656,83 @@ export default function UnifiedMatchingHubPage() {
             </p>
           </div>
 
-          {/* SWIPE CARD MODE */}
-          {viewMode === 'SWIPE' && (
-            <div className="mx-auto max-w-md py-4">
-              {loadingCandidates ? (
+          {/* CANDIDATES LIST / SWIPE CARDS */}
+          {loadingCandidates ? (
+            viewMode === 'SWIPE' ? (
+              <div className="mx-auto max-w-md py-4">
                 <CandidateCardSkeleton />
-              ) : candidates.length === 0 ? (
-                <EmptyState
-                  icon={<Search className="size-10" />}
-                  title="Không có hồ sơ phù hợp"
-                  description="Thử thay đổi bộ lọc hoặc mở rộng bán kính tìm kiếm."
-                  actionHref="#"
-                  actionLabel="Reset bộ lọc"
-                  onActionClick={() => setFilters(initialFilters)}
-                />
-              ) : currentCandidateIndex >= candidates.length ? (
-                <div className="py-16 text-center space-y-4">
-                  <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Check className="size-10" />
-                  </div>
-                  <h3 className="text-xl font-extrabold">Đã xem hết danh sách đề xuất!</h3>
-                  <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                    Bạn đã lướt hết các hồ sơ đực phù hợp hiện tại. Hãy quay lại sau hoặc thử thay đổi tiêu chí bộ lọc.
-                  </p>
-                  <Button onClick={() => setCurrentCandidateIndex(0)} className="rounded-xl font-bold">
-                    Xem lại từ đầu
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <CandidateCardSkeleton key={i} />
+                ))}
+              </div>
+            )
+          ) : candidates.length === 0 ? (
+            /* Trạng thái khi không còn ứng viên nào trong danh sách */
+            <div className="py-16 text-center space-y-4 max-w-md mx-auto">
+              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-primary/10 text-primary">
+                {hasSwipedAny ? <Check className="size-10" /> : <Search className="size-10" />}
+              </div>
+              <h3 className="text-xl font-extrabold">
+                {hasSwipedAny ? 'Đã xem hết các hồ sơ phù hợp!' : 'Không có hồ sơ phù hợp'}
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {hasSwipedAny
+                  ? 'Bạn đã lướt qua toàn bộ ứng viên ghép đôi hiện có quanh khu vực của bé. Bạn có thể xem lại các bé vừa bỏ qua hoặc mở rộng bán kính tìm kiếm nhé!'
+                  : 'Không tìm thấy bé cưng nào thỏa mãn tiêu chí lọc hiện tại. Thử nới lỏng bộ lọc hoặc mở rộng bán kính tìm kiếm.'}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                {hasSwipedAny && (
+                  <Button
+                    onClick={handleResetPassedPets}
+                    className="rounded-xl font-bold gap-2 shadow-md shadow-primary/20"
+                  >
+                    <RotateCcw className="size-4" />
+                    Xem lại các bé đã bỏ qua
                   </Button>
-                </div>
-              ) : (
-                <SwipeCardContainer
-                  pet={currentSwipeCandidate}
-                  femalePet={selectedPet}
-                  getAge={getAge}
-                  onPass={() => {
-                    handlePass(currentSwipeCandidate.id);
-                    setCurrentCandidateIndex((prev) => prev + 1);
-                  }}
-                  onRequestOpen={() => setRequestingPet(currentSwipeCandidate)}
-                  onViewDetail={() => {
-                    setAutoExpandCompatibility(false);
-                    setSelectedCandidateDetail(currentSwipeCandidate);
-                  }}
-                  onViewScoreDetail={() => {
-                    setAutoExpandCompatibility(true);
-                    setSelectedCandidateDetail(currentSwipeCandidate);
-                  }}
-                />
-              )}
+                )}
+                <Button
+                  variant={hasSwipedAny ? 'outline' : 'default'}
+                  onClick={() => setIsFilterOpen(true)}
+                  className="rounded-xl font-bold gap-2"
+                >
+                  <SlidersHorizontal className="size-4" />
+                  {hasSwipedAny ? 'Mở rộng bán kính & bộ lọc' : 'Điều chỉnh bộ lọc'}
+                </Button>
+                {!hasSwipedAny && (
+                  <Button
+                    variant="outline"
+                    onClick={handleResetFilters}
+                    className="rounded-xl font-bold gap-2"
+                  >
+                    <RotateCcw className="size-4" />
+                    Đặt lại bộ lọc
+                  </Button>
+                )}
+              </div>
             </div>
-          )}
-
-          {/* GRID MODE */}
-          {viewMode === 'GRID' && (
+          ) : viewMode === 'SWIPE' ? (
+            <div className="mx-auto max-w-md py-4">
+              <SwipeCardContainer
+                pet={currentSwipeCandidate}
+                femalePet={selectedPet}
+                getAge={getAge}
+                onPass={() => handlePass(currentSwipeCandidate.id)}
+                onRequestOpen={() => setRequestingPet(currentSwipeCandidate)}
+                onViewDetail={() => {
+                  setAutoExpandCompatibility(false);
+                  setSelectedCandidateDetail(currentSwipeCandidate);
+                }}
+                onViewScoreDetail={() => {
+                  setAutoExpandCompatibility(true);
+                  setSelectedCandidateDetail(currentSwipeCandidate);
+                }}
+              />
+            </div>
+          ) : (
+            /* GRID MODE */
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
               {candidates.map((pet) => (
                 <CandidateCardGrid
@@ -917,24 +980,77 @@ export default function UnifiedMatchingHubPage() {
                 </div>
 
                 {/* 3. Bán kính khoảng cách */}
-                <div className="space-y-2 pt-4 border-t">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Bán kính khoảng cách: {filters.distanceRadius > 0 ? `${filters.distanceRadius} km` : 'Tất cả (Toàn Hà Nội)'}
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="50"
-                    step="5"
-                    value={filters.distanceRadius}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, distanceRadius: Number(e.target.value) }))}
-                    className="w-full accent-primary cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
-                    <span>Gần nhất</span>
-                    <span>15 km</span>
-                    <span>30 km</span>
-                    <span>Toàn Hà Nội</span>
+                <div className="space-y-3 pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Bán kính khoảng cách
+                    </span>
+                    <span className="text-xs font-black text-primary">
+                      {filters.distanceRadius > 0 ? `< ${filters.distanceRadius} km` : 'Toàn Hà Nội'}
+                    </span>
+                  </div>
+
+                  {/* Vị trí mốc tham chiếu */}
+                  {selectedPet && (
+                    <div className="rounded-xl bg-muted/50 p-2.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      <MapPin className="size-4 text-primary shrink-0" />
+                      <span className="truncate">
+                        Tính từ bé <strong>{selectedPet.name}</strong> ({selectedPet.ward || selectedPet.district || 'Hà Nội'})
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Quick Preset Chips */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Gần tôi (< 5 km)', value: 5, desc: 'Cùng quận / lân cận' },
+                      { label: 'Nội thành (< 15 km)', value: 15, desc: 'Trung tâm Hà Nội' },
+                      { label: 'Mở rộng (< 30 km)', value: 30, desc: 'Bao gồm ven đô' },
+                      { label: 'Toàn Hà Nội', value: 0, desc: 'Không giới hạn km' },
+                    ].map((chip) => {
+                      const isSelected = filters.distanceRadius === chip.value;
+                      return (
+                        <button
+                          key={chip.value}
+                          type="button"
+                          onClick={() => setFilters((prev) => ({ ...prev, distanceRadius: chip.value }))}
+                          className={cn(
+                            'p-2.5 rounded-xl border text-left transition-all',
+                            isSelected
+                              ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                              : 'border-border bg-card text-foreground hover:bg-muted/40'
+                          )}
+                        >
+                          <div className="text-xs font-bold leading-tight">{chip.label}</div>
+                          <div className="text-[10px] text-muted-foreground font-normal mt-0.5">{chip.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Slider tuỳ chỉnh khoảng cách */}
+                  <div className="pt-2 space-y-1.5">
+                    <div className="flex justify-between items-center text-[11px] font-semibold text-muted-foreground">
+                      <span>Tùy chỉnh bán kính:</span>
+                      <span className="font-bold text-foreground">
+                        {filters.distanceRadius > 0 ? `${filters.distanceRadius} km (khoảng ${Math.round(filters.distanceRadius * 2)} phút đi xe)` : 'Tất cả (Toàn thành phố)'}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="50"
+                      step="5"
+                      value={filters.distanceRadius}
+                      onChange={(e) => setFilters((prev) => ({ ...prev, distanceRadius: Number(e.target.value) }))}
+                      className="w-full accent-primary cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
+                      <span>Toàn Hà Nội</span>
+                      <span>15 km</span>
+                      <span>30 km</span>
+                      <span>50 km</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1610,6 +1726,11 @@ function SwipeCardContainer({
             )}
 
             {/* Chỉ hiển thị trực tiếp loại giấy tờ đã được duyệt */}
+            {(pet.isSameWard || (pet.ward && femalePet?.ward && pet.ward.trim().toLowerCase() === femalePet.ward.trim().toLowerCase())) && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/95 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-emerald-300/40">
+                🏡 Cùng phường với bé
+              </span>
+            )}
             {pet.pedigreeVerified && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-amber-400/30">
                 🧬 Phả hệ VKA
@@ -1758,6 +1879,11 @@ function CandidateCardGrid({
 
         {/* Top Badges */}
         <div className="absolute left-3 top-3 flex flex-wrap gap-1.5 pointer-events-none">
+          {(pet.isSameWard || (pet.ward && femalePet?.ward && pet.ward.trim().toLowerCase() === femalePet.ward.trim().toLowerCase())) && (
+            <span className="rounded-md bg-emerald-500/95 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow border border-emerald-300/40 flex items-center gap-1">
+              🏡 Cùng phường
+            </span>
+          )}
           {pet.pedigreeVerified && (
             <span className="rounded-md bg-amber-500/90 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow">
               🧬 VKA

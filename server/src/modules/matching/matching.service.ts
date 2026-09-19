@@ -255,9 +255,13 @@ export class MatchingService {
         .filter((id) => id !== femalePet.id),
     );
 
-    const latestByMalePetId = new Map(
-      history.map((item) => [item.malePetId, item]),
-    );
+    // Nhóm lịch sử theo malePetId và chỉ giữ bản ghi mới nhất (vì history đã được sắp xếp createdAt: 'desc')
+    const latestByMalePetId = new Map<string, (typeof history)[number]>();
+    for (const item of history) {
+      if (!latestByMalePetId.has(item.malePetId)) {
+        latestByMalePetId.set(item.malePetId, item);
+      }
+    }
 
     // Filter candidates và tính compatibility score (async)
     const eligibleCandidates = candidates.filter((candidate) => {
@@ -358,6 +362,7 @@ export class MatchingService {
         breedInfo: compatibility.breedInfo,
         distanceKm,
         isRoadDistance: false,
+        isSameWard: Boolean(isSameWard),
         _candCoords:
           candLat != null && candLng != null
             ? { lat: candLat, lng: candLng }
@@ -428,6 +433,34 @@ export class MatchingService {
     });
 
     return { success: true, request };
+  }
+
+  /**
+   * Khôi phục toàn bộ danh sách các ứng viên đã từng bấm Bỏ qua (Pass) của thú cưng cái
+   * Giúp người dùng có thể xem lại các ứng viên khi đã lướt hết danh sách
+   */
+  async resetPassedPets(userId: string, femalePetId: string) {
+    const pet = await this.prisma.pet.findUnique({ where: { id: femalePetId } });
+    if (!pet) {
+      throw new NotFoundException('Female pet not found.');
+    }
+    if (pet.ownerId !== userId) {
+      throw new ForbiddenException('You do not own this pet.');
+    }
+
+    const result = await this.prisma.matchingRequest.deleteMany({
+      where: {
+        requesterId: userId,
+        femalePetId: pet.id,
+        status: MatchingRequestStatus.PASSED,
+      },
+    });
+
+    return {
+      success: true,
+      count: result.count,
+      message: `Đã khôi phục ${result.count} hồ sơ đã bỏ qua`,
+    };
   }
 
   async createRequest(userId: string, dto: CreateMatchingRequestDto) {
