@@ -11,14 +11,7 @@ export interface ProductFilters {
   limit?: number;
 }
 
-import { fetchWithCache, invalidateCache } from '@/lib/cache/api-cache';
-
-/**
- * Xóa bộ nhớ đệm danh mục sản phẩm khi có cập nhật từ trang quản lý
- */
-export function invalidateCategoriesCache() {
-  invalidateCache('products:categories');
-}
+import { fetchWithCache } from '@/lib/cache/api-cache';
 
 export const productsApi = {
   getList: (filters?: ProductFilters) =>

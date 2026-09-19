@@ -9,9 +9,11 @@ import Footer from '@/components/layout/Footer';
 import Link from 'next/link';
 
 export default function StorePage() {
-  const { featuredProducts, featuredLoading, error } = useProducts({ 
-    limit: 8,
-  });
+  const {
+    products: featuredProducts,
+    loading: featuredLoading,
+    error,
+  } = useProducts(undefined, 'featured');
 
   return (
     <div

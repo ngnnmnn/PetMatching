@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import * as XLSX from 'xlsx';
 import {
   appendJsonSheet,
@@ -41,6 +42,59 @@ export class ManagerService {
       throw new BadRequestException('Cửa hàng chưa được cấu hình.');
     }
     return storeId;
+  }
+
+  async getActivitySnapshot() {
+    const storeId = await this.getConfiguredStoreId();
+    const [orders, products] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { storeId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          updatedAt: true,
+          payment: { select: { method: true, status: true } },
+        },
+      }),
+      this.prisma.product.findMany({
+        where: { storeId },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          stock: true,
+          updatedAt: true,
+          variants: {
+            orderBy: { id: 'asc' },
+            select: {
+              id: true,
+              stock: true,
+              updatedAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const visibleOrders = orders.filter(
+      ({ payment }) =>
+        !(payment?.method === 'QR' && payment.status === 'PENDING'),
+    );
+    const hash = (value: unknown) =>
+      createHash('sha1').update(JSON.stringify(value)).digest('hex');
+
+    return {
+      orderIds: visibleOrders.map(({ id }) => id),
+      ordersVersion: hash(visibleOrders),
+      inventoryVersion: hash(products),
+      lowStockProducts: products
+        .filter((product) =>
+          product.variants.length > 0
+            ? product.variants.some((variant) => variant.stock < 5)
+            : (product.stock ?? 0) < 5,
+        )
+        .map((product) => ({ id: product.id, name: product.name })),
+    };
   }
 
   /**
@@ -133,39 +187,44 @@ export class ManagerService {
     const revenueOrderWhere = recognizedStoreRevenueWhere(storeId);
     const storeOrderWhere: Prisma.OrderWhereInput = { storeId };
 
-    const [
-      revenueSum,
-      totalOrders,
-      cancelledOrders,
-      itemsSold,
-      totalCustomers,
-      orderItems,
-    ] = await Promise.all([
-      this.prisma.order.aggregate({
-        where: revenueOrderWhere,
-        _sum: { totalAmount: true },
-      }),
-      this.prisma.order.count({ where: storeOrderWhere }),
-      this.prisma.order.count({
-        where: { ...storeOrderWhere, status: 'CANCELLED' },
-      }),
-      this.prisma.orderItem.aggregate({
-        where: { order: { storeId, payment: { status: 'PAID' } } },
-        _sum: { quantity: true },
-      }),
-      this.prisma.user.count({
-        where: { role: 'USER' },
-      }),
-      this.prisma.orderItem.findMany({
-        where: { order: revenueOrderWhere },
-        select: {
-          quantity: true,
-          price: true,
-          product: { select: { importPrice: true } },
-        },
-      }),
-    ]);
+    const [revenueSum, ordersByStatus, itemsSold, totalCustomers, orderItems] =
+      await Promise.all([
+        this.prisma.order.aggregate({
+          where: revenueOrderWhere,
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.groupBy({
+          by: ['status'],
+          where: storeOrderWhere,
+          _count: { _all: true },
+        }),
+        this.prisma.orderItem.aggregate({
+          where: { order: { storeId, payment: { status: 'PAID' } } },
+          _sum: { quantity: true },
+        }),
+        this.prisma.user.count({
+          where: { role: 'USER' },
+        }),
+        this.prisma.orderItem.findMany({
+          where: { order: revenueOrderWhere },
+          select: {
+            quantity: true,
+            price: true,
+            product: { select: { importPrice: true } },
+          },
+        }),
+      ]);
 
+    const orderCounts = Object.fromEntries(
+      ordersByStatus.map(({ status, _count }) => [status, _count._all]),
+    );
+    const countOrders = (...statuses: string[]) =>
+      statuses.reduce((total, status) => total + (orderCounts[status] ?? 0), 0);
+    const totalOrders = Object.values(orderCounts).reduce(
+      (total, count) => total + count,
+      0,
+    );
+    const cancelledOrders = countOrders('CANCELLED');
     const totalRevenue = revenueSum._sum.totalAmount ?? 0;
     const cancellationRate =
       totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
@@ -181,21 +240,12 @@ export class ManagerService {
     const profitMargin =
       totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-    // Thống kê phân bổ đơn hàng của cửa hàng theo 5 trạng thái chuẩn.
-    const [pendingCount, confirmedCount, shippedCount, deliveredCount, cancelledCount] = await Promise.all([
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'PENDING' } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CONFIRMED', 'PROCESSING', 'PACKED'] } } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'SHIPPED' } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'DELIVERED' } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] } } }),
-    ]);
-
     const statusDistribution = {
-      PENDING: pendingCount,
-      CONFIRMED: confirmedCount,
-      SHIPPED: shippedCount,
-      DELIVERED: deliveredCount,
-      CANCELLED: cancelledCount,
+      PENDING: countOrders('PENDING'),
+      CONFIRMED: countOrders('CONFIRMED', 'PROCESSING', 'PACKED'),
+      SHIPPED: countOrders('SHIPPED'),
+      DELIVERED: countOrders('DELIVERED'),
+      CANCELLED: countOrders('CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'),
     };
 
     return {
@@ -219,65 +269,46 @@ export class ManagerService {
       where: { storeId },
       orderBy: { createdAt: 'desc' },
       include: {
-        orderItems: {
-          where: { order: { status: { not: 'CANCELLED' } } },
-          select: { quantity: true, variantId: true },
-        },
-        variants: {
-          include: {
-            orderItems: {
-              where: { order: { status: { not: 'CANCELLED' } } },
-              select: { quantity: true },
-            },
-          },
-        },
-        reviews: {
-          select: { id: true },
-        },
+        variants: true,
+        _count: { select: { reviews: true } },
       },
     });
 
-    return Promise.all(
-      products.map(async (p) => {
-        const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-        const mappedVariants = p.variants.map((v) => {
-          const vSales = v.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-          const { orderItems, ...vRest } = v;
-          return {
-            ...vRest,
-            sales: vSales,
-          };
-        });
-        const { orderItems, ...rest } = p;
+    const salesRows = products.length
+      ? await this.prisma.orderItem.groupBy({
+          by: ['productId', 'variantId'],
+          where: {
+            productId: { in: products.map(({ id }) => id) },
+            order: { status: { not: 'CANCELLED' } },
+          },
+          _sum: { quantity: true },
+        })
+      : [];
+    const productSales = new Map<string, number>();
+    const variantSales = new Map<string, number>();
+    for (const { productId, variantId, _sum } of salesRows) {
+      const quantity = _sum.quantity ?? 0;
+      productSales.set(
+        productId,
+        (productSales.get(productId) ?? 0) + quantity,
+      );
+      if (variantId) variantSales.set(variantId, quantity);
+    }
 
-        // Nếu sản phẩm có phân loại và TOÀN BỘ phân loại đều bị tắt (v.isActive === false), 
-        // thì sản phẩm cha bắt buộc phải ở trạng thái ngưng bán (isActive = false).
-        const hasVariants = mappedVariants.length > 0;
-        const hasActiveVariant = hasVariants
-          ? mappedVariants.some((v) => v.isActive !== false)
-          : true;
-        
-        let effectiveIsActive = rest.isActive !== false;
-        if (hasVariants && !hasActiveVariant) {
-          effectiveIsActive = false;
-          // Đồng bộ lại DB nếu DB vẫn đang ghi nhận isActive = true
-          if (rest.isActive !== false) {
-            await this.prisma.product.update({
-              where: { id: p.id },
-              data: { isActive: false },
-            }).catch(() => {});
-          }
-        }
-
-        return {
-          ...rest,
-          isActive: effectiveIsActive,
-          variants: mappedVariants,
-          sales,
-          reviewCount: p.reviews?.length || 0,
-        };
-      }),
-    );
+    return products.map(({ _count, ...product }) => ({
+      ...product,
+      isActive:
+        product.variants.length > 0 &&
+        product.variants.every(({ isActive }) => isActive === false)
+          ? false
+          : product.isActive,
+      variants: product.variants.map((variant) => ({
+        ...variant,
+        sales: variantSales.get(variant.id) ?? 0,
+      })),
+      sales: productSales.get(product.id) ?? 0,
+      reviewCount: _count.reviews,
+    }));
   }
 
   private validateProductPrices(
@@ -854,13 +885,27 @@ export class ManagerService {
           some: {},
         },
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        phone: true,
         orders: {
-          include: {
-            payment: true,
+          select: {
+            id: true,
+            status: true,
+            totalAmount: true,
+            createdAt: true,
+            payment: {
+              select: { status: true },
+            },
             items: {
-              include: {
-                product: true,
+              select: {
+                id: true,
+                quantity: true,
+                price: true,
+                product: {
+                  select: { name: true },
+                },
               },
             },
           },

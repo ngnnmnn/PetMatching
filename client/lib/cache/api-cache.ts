@@ -92,7 +92,7 @@ export function invalidateCachePrefix(prefix: string): void {
  */
 export function clearAllApiCache(): void {
   memoryCache.clear();
-  inFlightRequests.delete(undefined as unknown as string);
+  inFlightRequests.clear();
 }
 
 // Lắng nghe sự kiện thay đổi phiên đăng nhập để làm sạch cache an toàn

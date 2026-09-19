@@ -13,13 +13,11 @@ interface ProductFilterSidebarProps {
   species: string;
   selectedCategories: string[];
   selectedRating?: number | null;
-  selectedPrices?: string[];
   customMinPrice?: number;
   customMaxPrice?: number;
   onSpeciesChange: (value: string) => void;
   onCategoriesChange: (values: string[]) => void;
   onRatingChange?: (rating: number | null) => void;
-  onPricesChange?: (values: string[]) => void;
   onCustomPriceChange?: (min?: number, max?: number) => void;
   onClearAllFilters?: () => void;
   hasActiveFilters?: boolean;
@@ -87,13 +85,11 @@ export default function ProductFilterSidebar({
   species,
   selectedCategories,
   selectedRating = null,
-  selectedPrices = [],
   customMinPrice,
   customMaxPrice,
   onSpeciesChange,
   onCategoriesChange,
   onRatingChange,
-  onPricesChange,
   onCustomPriceChange,
   onClearAllFilters,
   hasActiveFilters,
