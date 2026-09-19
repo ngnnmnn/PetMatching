@@ -467,15 +467,6 @@ export class UsersService {
         where: { endedById: userId },
         data: { endedById: null },
       });
-      await tx.complaint.updateMany({
-        where: { reporterId: userId },
-        data: { reporterId: null },
-      });
-      await tx.complaint.updateMany({
-        where: { targetId: userId, targetType: 'USER' },
-        data: { targetId: null },
-      });
-
       const pets = await this.petsService.deleteOwnedPetsInTransaction(
         tx,
         userId,

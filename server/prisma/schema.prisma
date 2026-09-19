@@ -616,27 +616,6 @@ model SpaFeedback {
   @@map("spa_feedbacks")
 }
 
-model Complaint {
-  id           String           @id @default(cuid())
-  type         ComplaintType
-  status       ComplaintStatus  @default(PENDING)
-  title        String
-  detail       String?
-  reporterId   String?
-  targetType   String?
-  targetId     String?
-  actionTaken  ComplaintAction?
-  adminNote    String?
-  resolvedById String?
-  resolvedAt   DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  @@index([type, status])
-  @@index([reporterId])
-  @@map("complaints")
-}
-
 model AuditLog {
   id         String   @id @default(cuid())
   actorId    String?
@@ -878,15 +857,6 @@ enum ApprovalStatus {
   ACTIVE
   SUSPENDED
   REJECTED
-}
-
-enum ComplaintType {
-  USER
-  PET
-  MATCHING
-  STORE
-  SPA
-  REVIEW
 }
 
 enum ComplaintStatus {

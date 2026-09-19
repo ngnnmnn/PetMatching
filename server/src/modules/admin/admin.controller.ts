@@ -15,8 +15,6 @@ import {
 import {
   AccountStatus,
   ApprovalStatus,
-  ComplaintStatus,
-  ComplaintType,
   PetStatus,
   Species,
   UserRole,
@@ -34,7 +32,6 @@ import {
   RevokeSpaManagerDto,
   RestorePetDto,
   ModerateReportAbuseDto,
-  ResolveComplaintDto,
   ResolveMatchingReportDto,
   ReviewPetDocumentDto,
   UpdateAccountStatusDto,
@@ -344,22 +341,5 @@ export class AdminController {
   @Get('spa-bookings')
   getSpaBookings() {
     return this.adminService.getSpaBookings();
-  }
-
-  @Get('complaints')
-  getComplaints(
-    @Query('type') type?: ComplaintType,
-    @Query('status') status?: ComplaintStatus,
-  ) {
-    return this.adminService.getComplaints({ type, status });
-  }
-
-  @Patch('complaints/:id/resolve')
-  resolveComplaint(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-    @Body() dto: ResolveComplaintDto,
-  ) {
-    return this.adminService.resolveComplaint(request.user, id, dto);
   }
 }
