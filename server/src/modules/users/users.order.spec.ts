@@ -90,6 +90,7 @@ describe('UsersService order pricing', () => {
       21.08,
       105.88,
       'Địa chỉ giao hàng',
+      [{ productId: 'product-1', quantity: 2 }],
     );
     expect(tx.order.create).toHaveBeenCalledWith(
       expect.objectContaining({

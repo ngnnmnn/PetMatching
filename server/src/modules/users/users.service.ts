@@ -708,13 +708,21 @@ export class UsersService {
    */
   async createOrder(userId: string, dto: CreateOrderDto) {
     const payosItems: { name: string; quantity: number; price: number }[] = [];
-    const estimatedShippingFee = (
-      await this.shippingService.estimateAhamoveShippingFee(
-        dto.shippingLatitude,
-        dto.shippingLongitude,
-        dto.shippingAddress,
-      )
-    ).feeVnd;
+    const shippingEstimation = await this.shippingService.estimateAhamoveShippingFee(
+      dto.shippingLatitude,
+      dto.shippingLongitude,
+      dto.shippingAddress,
+      dto.items,
+    );
+
+    if (shippingEstimation.isOverweightLimit || (shippingEstimation.totalWeightKg && shippingEstimation.totalWeightKg > 30)) {
+      throw new BadRequestException(
+        shippingEstimation.limitWarningMessage ||
+          `Đơn hàng có tổng khối lượng ${shippingEstimation.totalWeightKg}kg vượt quá giới hạn 30kg vận chuyển bằng xe máy. Vui lòng tách đơn hàng hoặc liên hệ cửa hàng.`,
+      );
+    }
+
+    const estimatedShippingFee = shippingEstimation.feeVnd;
     const paymentMethod = dto.paymentMethod === 'QR' ? 'QR' : 'COD';
     const orderCode =
       paymentMethod === 'QR'
@@ -742,6 +750,7 @@ export class UsersService {
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
           where: { id: item.productId },
+          include: { variants: true },
         });
 
         if (!product) {
@@ -754,6 +763,16 @@ export class UsersService {
           throw new BadRequestException(
             `Sản phẩm "${product.name}" hiện không mở bán.`,
           );
+        }
+
+        // Kiểm tra nếu sản phẩm có biến thể nhưng tất cả biến thể đều bị tắt hoạt động
+        if (product.variants && product.variants.length > 0) {
+          const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
+          if (activeVariants.length === 0) {
+            throw new BadRequestException(
+              `Sản phẩm "${product.name}" hiện đang tạm ngưng mở bán (tất cả phân loại đều ngưng kinh doanh).`,
+            );
+          }
         }
 
         let itemName = product.name;

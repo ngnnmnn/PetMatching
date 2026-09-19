@@ -46,6 +46,7 @@ export interface ManagerProductVariantInput {
   salePrice?: number | null;
   importPrice?: number | null;
   stock: number;
+  weightKg?: number | null;
   imageUrl?: string | null;
   isActive?: boolean;
 }
@@ -243,6 +244,7 @@ export interface ManagerProductVariant {
   salePrice?: number | null;
   importPrice?: number | null;
   stock: number;
+  weightKg?: number | null;
   sales?: number;
   imageUrl?: string | null;
   isActive: boolean;

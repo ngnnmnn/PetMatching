@@ -173,6 +173,7 @@ export interface ProductVariant {
   sellingPrice: number;
   salePrice?: number | null;
   stock: number;
+  weightKg?: number | null;
   imageUrl?: string | null;
   isActive: boolean;
   createdAt: string;
@@ -197,6 +198,7 @@ export interface Product {
   reviewCount: number;
   soldCount?: number;
   stock?: number | null;
+  weightKg?: number | null;
   isActive: boolean;
   isFeatured: boolean;
   createdAt: string;

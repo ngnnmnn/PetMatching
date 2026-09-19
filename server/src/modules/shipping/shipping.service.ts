@@ -434,14 +434,23 @@ export class ShippingService {
   }
 
   /**
-   * Tính toán cước phí giao hàng hỏa tốc AhaMove thời gian thực
-   * Ưu tiên gọi trực tiếp API báo giá chính thức của AhaMove Portal (/v3/orders/estimated-fee)
-   * Tự động chuyển về công thức tọa độ GPS Haversine nếu API mất kết nối
+   * Tính toán cước phí giao hàng hỏa tốc AhaMove thời gian thực kèm tính toán trọng lượng đơn hàng
+   * - Đơn <= 10kg: cước phí chuẩn theo khoảng cách
+   * - 10kg < Đơn <= 30kg: Cước chuẩn + Phụ phí quá cân (+5.000đ cho mỗi kg vượt quá 10kg)
+   * - Đơn > 30kg: Vượt quá giới hạn giao bằng xe máy, trả về flag isOverweightLimit để chặn đặt hàng
    * @param dropoffLat Vĩ độ điểm giao hàng (tùy chọn)
    * @param dropoffLng Kinh độ điểm giao hàng (tùy chọn)
    * @param addressStr Chuỗi địa chỉ giao hàng (tùy chọn)
+   * @param items Danh sách sản phẩm/phân loại trong đơn hàng để tính tổng trọng lượng (tùy chọn)
+   * @param customWeightKg Tổng trọng lượng truyền trực tiếp (tùy chọn)
    */
-  async estimateAhamoveShippingFee(dropoffLat?: number, dropoffLng?: number, addressStr?: string) {
+  async estimateAhamoveShippingFee(
+    dropoffLat?: number,
+    dropoffLng?: number,
+    addressStr?: string,
+    items?: Array<{ productId: string; variantId?: string | null; quantity: number }>,
+    customWeightKg?: number,
+  ) {
     const pickup = await this.getStorePickupPoint();
     const dropoff = this.resolveCoordinates(dropoffLat, dropoffLng, addressStr || '');
     const apiKey = process.env.AHAMOVE_API_KEY || 'sk_test_1oSlooJ79RRzEzAPV4xHQfEQEmuC0FYe';
@@ -514,15 +523,62 @@ export class ShippingService {
       }
     }
 
+    // 3. Tính toán tổng khối lượng đơn hàng và phụ phí quá kg (>10kg: +5k/kg, >30kg: quá tải trọng xe máy)
+    let totalWeightKg = 0;
+    if (items && Array.isArray(items) && items.length > 0) {
+      for (const item of items) {
+        let itemWeight = 0.5;
+        if (item.variantId) {
+          const variant = await this.prisma.productVariant.findUnique({
+            where: { id: item.variantId },
+            select: { weightKg: true, product: { select: { weightKg: true } } },
+          });
+          itemWeight = variant?.weightKg ?? variant?.product?.weightKg ?? 0.5;
+        } else if (item.productId) {
+          const product = await this.prisma.product.findUnique({
+            where: { id: item.productId },
+            select: { weightKg: true },
+          });
+          itemWeight = product?.weightKg ?? 0.5;
+        }
+        totalWeightKg += (item.quantity || 1) * itemWeight;
+      }
+    } else if (customWeightKg !== undefined && customWeightKg !== null) {
+      totalWeightKg = customWeightKg;
+    }
+    totalWeightKg = Number(totalWeightKg.toFixed(2));
+
+    let overweightFee = 0;
+    let isOverweightLimit = false;
+
+    if (totalWeightKg > 10) {
+      const extraKg = Math.ceil(totalWeightKg - 10);
+      overweightFee = extraKg * 5000;
+      if (totalWeightKg > 30) {
+        isOverweightLimit = true;
+      }
+    }
+
+    // Nếu quá trọng lượng tối đa 1 đơn (> 30kg), không tính phí ship xe máy (gán 0đ) và chỉ hiển thị cảnh báo cho khách hàng
+    const baseFee = isOverweightLimit ? 0 : estimatedFee;
+    const finalFee = isOverweightLimit ? 0 : baseFee + overweightFee;
+
     return {
       success: true,
-      feeVnd: estimatedFee,
+      feeVnd: finalFee,
+      baseFee: isOverweightLimit ? 0 : baseFee,
+      overweightFee: isOverweightLimit ? 0 : overweightFee,
+      totalWeightKg,
+      isOverweightLimit,
+      limitWarningMessage: isOverweightLimit
+        ? `Đơn hàng nặng ${totalWeightKg}kg vượt quá trọng lượng tối đa 30kg của 1 đơn xe máy. Không tính phí ship xe máy tự động. Cửa hàng sẽ liên hệ với bạn để hỗ trợ phương thức vận chuyển riêng.`
+        : null,
       isRealAhamoveFee,
       distanceKm,
       formattedFee: new Intl.NumberFormat('vi-VN', {
         style: 'currency',
         currency: 'VND',
-      }).format(estimatedFee),
+      }).format(finalFee),
     };
   }
 

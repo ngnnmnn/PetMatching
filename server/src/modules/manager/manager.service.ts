@@ -43,6 +43,10 @@ export class ManagerService {
     return storeId;
   }
 
+  /**
+   * Đồng bộ dữ liệu tồn kho, giá bán và trạng thái kinh doanh của sản phẩm theo các phân loại (variants).
+   * Nếu tất cả phân loại đều bị ngưng bán (isActive = false), tự động cập nhật sản phẩm thành ngưng bán (isActive = false).
+   */
   private async syncProductWithVariants(
     productId: string,
     transaction?: Prisma.TransactionClient,
@@ -76,6 +80,9 @@ export class ManagerService {
       }
     }
 
+    // Kiểm tra xem có bất kỳ phân loại nào đang mở bán hay không
+    const hasActiveVariant = variants.some((v) => v.isActive !== false);
+
     await client.product.update({
       where: { id: productId },
       data: {
@@ -85,6 +92,8 @@ export class ManagerService {
         ...(minVariant.importPrice !== null
           ? { importPrice: minVariant.importPrice }
           : {}),
+        // Nếu tất cả phân loại đều ngừng bán, sản phẩm cha cũng tự động chuyển sang ngừng bán
+        ...(!hasActiveVariant ? { isActive: false } : {}),
       },
     });
   }
@@ -228,24 +237,47 @@ export class ManagerService {
       },
     });
 
-    return products.map((p) => {
-      const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-      const mappedVariants = p.variants.map((v) => {
-        const vSales = v.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-        const { orderItems, ...vRest } = v;
+    return Promise.all(
+      products.map(async (p) => {
+        const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+        const mappedVariants = p.variants.map((v) => {
+          const vSales = v.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+          const { orderItems, ...vRest } = v;
+          return {
+            ...vRest,
+            sales: vSales,
+          };
+        });
+        const { orderItems, ...rest } = p;
+
+        // Nếu sản phẩm có phân loại và TOÀN BỘ phân loại đều bị tắt (v.isActive === false), 
+        // thì sản phẩm cha bắt buộc phải ở trạng thái ngưng bán (isActive = false).
+        const hasVariants = mappedVariants.length > 0;
+        const hasActiveVariant = hasVariants
+          ? mappedVariants.some((v) => v.isActive !== false)
+          : true;
+        
+        let effectiveIsActive = rest.isActive !== false;
+        if (hasVariants && !hasActiveVariant) {
+          effectiveIsActive = false;
+          // Đồng bộ lại DB nếu DB vẫn đang ghi nhận isActive = true
+          if (rest.isActive !== false) {
+            await this.prisma.product.update({
+              where: { id: p.id },
+              data: { isActive: false },
+            }).catch(() => {});
+          }
+        }
+
         return {
-          ...vRest,
-          sales: vSales,
+          ...rest,
+          isActive: effectiveIsActive,
+          variants: mappedVariants,
+          sales,
+          reviewCount: p.reviews?.length || 0,
         };
-      });
-      const { orderItems, ...rest } = p;
-      return {
-        ...rest,
-        variants: mappedVariants,
-        sales,
-        reviewCount: p.reviews?.length || 0,
-      };
-    });
+      }),
+    );
   }
 
   private validateProductPrices(
@@ -310,6 +342,11 @@ export class ManagerService {
     }
 
     // Chuẩn hóa và xác thực dữ liệu từng phân loại
+    const productWeightKg =
+      dto.weightKg !== undefined && dto.weightKg !== null && dto.weightKg !== ''
+        ? Number(dto.weightKg)
+        : 0.5;
+
     const processedVariants = dto.variants.map((v: any) => {
       if (!v.name || !v.name.trim()) {
         throw new BadRequestException('Tên phân loại không được để trống.');
@@ -345,6 +382,10 @@ export class ManagerService {
         v.stock !== undefined && v.stock !== null && v.stock !== ''
           ? Number(v.stock)
           : 0;
+      const vWeightKg =
+        v.weightKg !== undefined && v.weightKg !== null && v.weightKg !== ''
+          ? Number(v.weightKg)
+          : productWeightKg;
 
       return {
         name: v.name.trim(),
@@ -352,6 +393,7 @@ export class ManagerService {
         sellingPrice: vSellingPrice,
         salePrice: vSalePrice,
         stock: vStock,
+        weightKg: vWeightKg,
         imageUrl: v.imageUrl || null,
         isActive: v.isActive !== undefined ? v.isActive : true,
       };
@@ -386,6 +428,7 @@ export class ManagerService {
         salePrice,
         brand: dto.brand || '',
         stock: finalStock,
+        weightKg: productWeightKg,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
         isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : false,
         variants: {
@@ -446,6 +489,16 @@ export class ManagerService {
         ? variants.reduce((sum, v) => sum + v.stock, 0)
         : stock;
 
+    // Nếu manager yêu cầu mở bán sản phẩm (dto.isActive === true) nhưng tất cả phân loại đều bị tắt (isActive = false)
+    if (dto.isActive === true && variants.length > 0) {
+      const hasActiveVariant = variants.some((v) => v.isActive !== false);
+      if (!hasActiveVariant) {
+        throw new BadRequestException(
+          'Không thể mở bán sản phẩm! Vui lòng mở bán ít nhất 1 phân loại (variant) của sản phẩm.',
+        );
+      }
+    }
+
     // Đồng bộ khuyến mãi xuống toàn bộ phân loại con nếu có thiết lập khuyến mãi
     if (dto.discountType !== undefined && variants.length > 0) {
       if (dto.discountType === 'NONE') {
@@ -490,6 +543,10 @@ export class ManagerService {
         salePrice,
         brand: dto.brand,
         stock: finalStock,
+        weightKg:
+          dto.weightKg !== undefined && dto.weightKg !== null && dto.weightKg !== ''
+            ? Number(dto.weightKg)
+            : undefined,
         isActive: dto.isActive,
         isFeatured: dto.isFeatured,
       },
@@ -1511,6 +1568,7 @@ export class ManagerService {
           });
 
           if (variantName) {
+            // Khởi tạo phân loại biến thể mới cho sản phẩm vừa tạo
             await this.prisma.productVariant.create({
               data: {
                 productId: newProduct.id,
@@ -1518,7 +1576,7 @@ export class ManagerService {
                 sellingPrice,
                 salePrice: salePrice || null,
                 stock: quantity,
-                imageUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+                imageUrl: variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : null),
                 isActive: true,
               },
             });
@@ -1693,6 +1751,11 @@ export class ManagerService {
       throw new BadRequestException('Số lượng tồn kho phải là số không âm.');
     }
 
+    const weightKg =
+      dto.weightKg !== undefined && dto.weightKg !== null && dto.weightKg !== ''
+        ? Number(dto.weightKg)
+        : (product.weightKg ?? 0.5);
+
     const variant = await this.prisma.productVariant.create({
       data: {
         productId,
@@ -1701,6 +1764,7 @@ export class ManagerService {
         salePrice,
         importPrice,
         stock,
+        weightKg,
         imageUrl: dto.imageUrl || null,
         isActive: dto.isActive !== undefined ? dto.isActive : true,
       },
@@ -1750,6 +1814,12 @@ export class ManagerService {
           ? Number(dto.stock)
           : existing.stock
         : existing.stock;
+    const weightKg =
+      dto.weightKg !== undefined
+        ? dto.weightKg !== null && dto.weightKg !== ''
+          ? Number(dto.weightKg)
+          : existing.weightKg
+        : existing.weightKg;
 
     if (isNaN(sellingPrice) || sellingPrice <= 0) {
       throw new BadRequestException('Giá bán phải là số lớn hơn 0.');
@@ -1774,6 +1844,7 @@ export class ManagerService {
         salePrice,
         importPrice,
         stock,
+        weightKg,
         imageUrl:
           dto.imageUrl !== undefined ? dto.imageUrl || null : existing.imageUrl,
         isActive: dto.isActive !== undefined ? dto.isActive : existing.isActive,
