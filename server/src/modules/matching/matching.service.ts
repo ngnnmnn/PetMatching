@@ -715,10 +715,11 @@ export class MatchingService {
       orderBy: { updatedAt: 'desc' },
     });
 
-    const blocks = await this.prisma.userBlock.findMany({
-      where: { blockerId: userId },
-      select: { blockedId: true },
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { blockedUserIds: true },
     });
+    const blockedIds = new Set(currentUser?.blockedUserIds || []);
 
     return matches.map(({ reports, ...match }) => {
       const pet1 =
@@ -738,8 +739,7 @@ export class MatchingService {
         })),
         reportedTargetTypes: reports.map((report) => report.targetType),
         blockedByMe:
-          Boolean(otherUserId) &&
-          blocks.some((block) => block.blockedId === otherUserId),
+          Boolean(otherUserId && blockedIds.has(otherUserId)),
       };
     });
   }
@@ -879,14 +879,21 @@ export class MatchingService {
       const match = await this.getLockedMatch(tx, matchId);
       const participant = this.getParticipantContext(match, userId);
       const blockedUserId = participant.otherOwner.id;
-      const inserted = await tx.userBlock.createMany({
-        data: [{ blockerId: userId, blockedId: blockedUserId }],
-        skipDuplicates: true,
+      const currentUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { blockedUserIds: true },
       });
-
-      if (inserted.count === 0) {
+      const currentBlocked = currentUser?.blockedUserIds || [];
+      if (currentBlocked.includes(blockedUserId)) {
         return { success: true, blockedUserId, alreadyBlocked: true };
       }
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          blockedUserIds: { push: blockedUserId },
+        },
+      });
 
       const now = new Date();
       const ownerPairs = [
@@ -939,39 +946,61 @@ export class MatchingService {
     });
   }
 
-  getBlockedUsers(userId: string) {
-    return this.prisma.userBlock.findMany({
-      where: { blockerId: userId },
-      select: {
-        createdAt: true,
-        blocked: {
-          select: { id: true, name: true, avatarUrl: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+  /**
+   * Lấy danh sách người dùng đã bị người dùng hiện tại chặn
+   * @param userId ID người dùng thực hiện chặn
+   */
+  async getBlockedUsers(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { blockedUserIds: true },
     });
+    if (!user || !user.blockedUserIds || user.blockedUserIds.length === 0) {
+      return [];
+    }
+    const blockedUsers = await this.prisma.user.findMany({
+      where: { id: { in: user.blockedUserIds } },
+      select: { id: true, name: true, avatarUrl: true },
+    });
+    return blockedUsers.map((u) => ({
+      createdAt: new Date(),
+      blocked: u,
+    }));
   }
 
+  /**
+   * Bỏ chặn người dùng
+   * @param userId ID người dùng thực hiện bỏ chặn
+   * @param blockedUserId ID người dùng được bỏ chặn
+   */
   async unblockUser(userId: string, blockedUserId: string) {
     if (userId === blockedUserId) {
       throw new BadRequestException('Bạn không thể bỏ chặn chính mình.');
     }
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockUserPair(tx, userId, blockedUserId);
-      const deleted = await tx.userBlock.deleteMany({
-        where: { blockerId: userId, blockedId: blockedUserId },
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { blockedUserIds: true },
       });
-      if (deleted.count > 0) {
-        await tx.auditLog.create({
-          data: {
-            actorId: userId,
-            action: 'USER_UNBLOCK',
-            targetType: 'User',
-            targetId: blockedUserId,
-          },
-        });
+      const currentList = user?.blockedUserIds || [];
+      if (!currentList.includes(blockedUserId)) {
+        return 0;
       }
-      return deleted.count;
+      const nextList = currentList.filter((id) => id !== blockedUserId);
+      await tx.user.update({
+        where: { id: userId },
+        data: { blockedUserIds: nextList },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'USER_UNBLOCK',
+          targetType: 'User',
+          targetId: blockedUserId,
+        },
+      });
+      return 1;
     });
 
     return { success: true, blockedUserId, wasBlocked: result > 0 };
@@ -1251,31 +1280,43 @@ export class MatchingService {
     );
   }
 
+  /**
+   * Lấy toàn bộ ID người dùng có quan hệ chặn 2 chiều với người dùng hiện tại
+   */
   private async getBlockedUserIds(userId: string) {
-    const blocks = await this.prisma.userBlock.findMany({
-      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
-      select: { blockerId: true, blockedId: true },
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { blockedUserIds: true },
     });
-    return blocks.map((block) =>
-      block.blockerId === userId ? block.blockedId : block.blockerId,
-    );
+    const blockedByOthers = await this.prisma.user.findMany({
+      where: { blockedUserIds: { has: userId } },
+      select: { id: true },
+    });
+    const set = new Set<string>([
+      ...(currentUser?.blockedUserIds || []),
+      ...blockedByOthers.map((u) => u.id),
+    ]);
+    return Array.from(set);
   }
 
+  /**
+   * Đảm bảo giữa 2 người dùng không có quan hệ chặn trước khi ghép đôi hoặc nhắn tin
+   */
   private async ensureNoUserBlock(
     client: PrismaService | Prisma.TransactionClient,
     firstUserId: string,
     secondUserId: string,
   ) {
-    const block = await client.userBlock.findFirst({
-      where: {
-        OR: [
-          { blockerId: firstUserId, blockedId: secondUserId },
-          { blockerId: secondUserId, blockedId: firstUserId },
-        ],
-      },
-      select: { id: true },
+    const users = await client.user.findMany({
+      where: { id: { in: [firstUserId, secondUserId] } },
+      select: { id: true, blockedUserIds: true },
     });
-    if (block) {
+    const first = users.find((u) => u.id === firstUserId);
+    const second = users.find((u) => u.id === secondUserId);
+    if (
+      first?.blockedUserIds?.includes(secondUserId) ||
+      second?.blockedUserIds?.includes(firstUserId)
+    ) {
       throw new ForbiddenException(
         'Không thể tương tác vì một trong hai người dùng đã chặn người kia.',
       );

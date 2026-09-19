@@ -119,15 +119,9 @@ export class AdminService {
     query: { range?: string; from?: string; to?: string } = {},
   ) {
     const period = resolveDashboardRange(query);
-    const [storeId, spa] = await Promise.all([
-      findConfiguredStoreId(this.prisma),
-      this.prisma.addressSpa.findFirst({
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      }),
-    ]);
+    const storeId = await findConfiguredStoreId(this.prisma);
     const storeFilter = { storeId: storeId ?? '__missing__' };
-    const spaFilter = { addressSpaId: spa?.id ?? '__missing__' };
+    const spaFilter = { addressSpaId: storeId ?? '__missing__' };
     const now = new Date();
     const startOfToday = new Date(
       now.getFullYear(),
@@ -209,7 +203,7 @@ export class AdminService {
       }),
       this.prisma.spaBooking.findMany({
         where: {
-          ...recognizedSpaRevenueWhere(spa?.id),
+          ...recognizedSpaRevenueWhere(storeId ?? undefined),
           createdAt: {
             gte: period.previousFrom,
             lt: period.toExclusive,
@@ -503,7 +497,7 @@ export class AdminService {
       );
     }
 
-    const spa = await this.prisma.addressSpa.findFirst({
+    const spa = await this.prisma.store.findFirst({
       orderBy: { createdAt: 'asc' },
       select: { id: true, name: true, managerId: true },
     });
@@ -538,7 +532,7 @@ export class AdminService {
         },
       });
 
-      await tx.addressSpa.updateMany({
+      await tx.store.updateMany({
         where: { id: spa.id },
         data: { managerId: userId },
       });
@@ -594,13 +588,13 @@ export class AdminService {
       replacementManagerId = replacement.id;
     }
 
-    const managedSpa = await this.prisma.addressSpa.findFirst({
+    const managedSpa = await this.prisma.store.findFirst({
       where: { managerId: userId },
       select: { id: true, name: true },
     });
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.addressSpa.updateMany({
+      await tx.store.updateMany({
         where: { managerId: userId },
         data: { managerId: replacementManagerId },
       });
@@ -1420,20 +1414,17 @@ export class AdminService {
     return { success: true };
   }
 
-  /** Lấy hồ sơ hệ thống cùng tọa độ điểm lấy hàng đã được Admin xác nhận. */
+  /** Lấy hồ sơ hệ thống cùng tọa độ điểm lấy hàng đã được Admin xác nhận từ bảng Store hợp nhất. */
   async getSystemProfile() {
-    const [store, spa] = await Promise.all([
-      this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } }),
-      this.prisma.addressSpa.findFirst({ orderBy: { createdAt: 'asc' } }),
-    ]);
+    const store = await this.prisma.store.findFirst({ orderBy: { createdAt: 'asc' } });
 
     return {
-      name: store?.name || spa?.name || 'PetMatching',
-      description: store?.description || spa?.description || '',
-      address: store?.address?.trim() || spa?.address?.trim() || '',
+      name: store?.name || 'PetMatching',
+      description: store?.description || '',
+      address: store?.address?.trim() || '',
       latitude: store?.latitude ?? null,
       longitude: store?.longitude ?? null,
-      phone: store?.phone?.trim() || spa?.phone?.trim() || '',
+      phone: store?.phone?.trim() || '',
     };
   }
 
@@ -1473,37 +1464,23 @@ export class AdminService {
       );
     }
 
-    const [store, spa] = await Promise.all([
-      this.prisma.store.findFirst({
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      }),
-      this.prisma.addressSpa.findFirst({
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      }),
-    ]);
-    if (!store || !spa) {
+    const store = await this.prisma.store.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!store) {
       throw new NotFoundException(
-        'Không tìm thấy dữ liệu Store hoặc Spa để cập nhật.',
+        'Không tìm thấy dữ liệu Store để cập nhật.',
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await Promise.all([
-        tx.store.update({
-          where: { id: store.id },
-          data: {
-            ...shared,
-            latitude: dto.latitude,
-            longitude: dto.longitude,
-          },
-        }),
-        tx.addressSpa.update({
-          where: { id: spa.id },
-          data: shared,
-        }),
-      ]);
+    await this.prisma.store.update({
+      where: { id: store.id },
+      data: {
+        ...shared,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+      },
     });
 
     await this.audit(
@@ -1617,16 +1594,23 @@ export class AdminService {
     });
   }
 
-  getSpaBranches(query: { status?: ApprovalStatus }) {
-    return this.prisma.addressSpa.findMany({
+  async getSpaBranches(query: { status?: ApprovalStatus }) {
+    const branches = await this.prisma.store.findMany({
       where: query.status ? { status: query.status } : undefined,
       orderBy: { createdAt: 'asc' },
       take: 1,
       include: {
         manager: { select: { id: true, name: true, email: true, role: true } },
-        _count: { select: { staffs: true, bookings: true } },
+        _count: { select: { spaStaffs: true, spaBookings: true } },
       },
     });
+    return branches.map((b) => ({
+      ...b,
+      _count: {
+        staffs: b._count?.spaStaffs ?? 0,
+        bookings: b._count?.spaBookings ?? 0,
+      },
+    }));
   }
 
   async getStoreDashboard(
@@ -1868,7 +1852,7 @@ export class AdminService {
   ) {
     const period = resolveDashboardRange(query);
     const spa = query.branchId && query.branchId !== 'ALL'
-      ? await this.prisma.addressSpa.findUnique({
+      ? await this.prisma.store.findUnique({
           where: { id: query.branchId },
           select: {
             id: true,
@@ -1878,7 +1862,7 @@ export class AdminService {
             manager: { select: { name: true } },
           },
         })
-      : await this.prisma.addressSpa.findFirst({
+      : await this.prisma.store.findFirst({
           orderBy: { createdAt: 'asc' },
           select: {
             id: true,

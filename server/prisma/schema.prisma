@@ -30,7 +30,7 @@ model User {
   refreshToken            String?
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
-  managedSpaAddresses     AddressSpa[]         @relation("SpaAddressManager")
+  managedStores           Store[]              @relation("StoreManager")
   addresses               Address[]
   auditLogs               AuditLog[]           @relation("AuditActor")
   cartItems               CartItem[]
@@ -51,8 +51,7 @@ model User {
   matchingReportsCreated  PetReport[]          @relation("MatchingReportReporter")
   matchingReportsReceived PetReport[]          @relation("MatchingReportSubject")
   matchingReportsResolved PetReport[]          @relation("MatchingReportResolver")
-  matchingBlocksCreated   UserBlock[]          @relation("UserBlockBlocker")
-  matchingBlocksReceived  UserBlock[]          @relation("UserBlockBlocked")
+  blockedUserIds          String[]             @default([]) @map("blocked_user_ids")
   notifications           Notification[]
 
   @@map("users")
@@ -339,18 +338,7 @@ model PetReport {
   @@map("pet_reports")
 }
 
-model UserBlock {
-  id        String   @id @default(cuid())
-  blockerId String
-  blockedId String
-  createdAt DateTime @default(now())
-  blocker   User     @relation("UserBlockBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
-  blocked   User     @relation("UserBlockBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
 
-  @@unique([blockerId, blockedId])
-  @@index([blockedId])
-  @@map("user_blocks")
-}
 
 model Store {
   id          String         @id @default(cuid())
@@ -361,12 +349,17 @@ model Store {
   longitude   Float?
   phone       String?
   status      ApprovalStatus @default(PENDING)
+  managerId   String?        @map("manager_id")
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   orders      Order[]
   products    Product[]
+  manager     User?          @relation("StoreManager", fields: [managerId], references: [id])
+  spaBookings SpaBooking[]   @relation("SpaBookingStore")
+  spaStaffs   SpaStaff[]     @relation("StaffWorkplace")
 
   @@index([status])
+  @@index([managerId])
   @@map("stores")
 }
 
@@ -547,6 +540,7 @@ model SpaBooking {
   status                SpaBookingStatus @default(PENDING)
   priceSnapshot         Float?
   totalPrice            Float            @default(0)
+  subServicesSnapshot   Json?            @map("sub_services_snapshot")
   timeStartExpected     DateTime?
   timeEndExpected       DateTime?
   timeStartReal         DateTime?
@@ -561,7 +555,7 @@ model SpaBooking {
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
   reminderSentAt        DateTime?
-  addressSpa            AddressSpa?      @relation("SpaBookingAddress", fields: [addressSpaId], references: [id])
+  addressSpa            Store?           @relation("SpaBookingStore", fields: [addressSpaId], references: [id])
   category              SpaCategory?     @relation(fields: [categoryId], references: [id])
   pet                   Pet?             @relation(fields: [petId], references: [id])
   service               SpaService?      @relation(fields: [serviceId], references: [id])
@@ -669,31 +663,12 @@ model CartItem {
   @@map("cart_items")
 }
 
-model AddressSpa {
-  id          String         @id
-  name        String
-  description String?
-  address     String
-  phone       String?
-  status      ApprovalStatus @default(PENDING)
-  managerId   String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  manager     User?          @relation("SpaAddressManager", fields: [managerId], references: [id])
-  bookings    SpaBooking[]   @relation("SpaBookingAddress")
-  staffs      SpaStaff[]     @relation("StaffWorkplace")
-
-  @@index([status])
-  @@index([managerId])
-  @@map("address_spa")
-}
-
 model SpaStaff {
   id           String      @id
   userId       String      @unique
   addressSpaId String?
   status       String      @default("ACTIVE")
-  addressSpa   AddressSpa? @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
+  addressSpa   Store?      @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
   user         User        @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("spa_staff")

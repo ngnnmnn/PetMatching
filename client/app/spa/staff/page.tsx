@@ -37,6 +37,23 @@ import { uploadImages } from '@/lib/api/uploads';
 import { SpaBookingType, SpaServiceType, SpaStaffProfileType } from '@/types';
 import PayOSQRModal, { PayOSQRData } from '@/components/checkout/PayOSQRModal';
 import AppPagination from '@/components/ui/app-pagination';
+import { resolveServicePriceAndDuration } from '@/lib/spa-bracket.utils';
+
+/**
+ * Lấy giá tiền chính xác của dịch vụ lẻ dựa trên snapshot hoặc tính theo mốc cân nặng thú cưng
+ */
+function getSubServicePrice(sub: any, booking?: SpaBookingType | null): number {
+  if (typeof sub?.price === 'number' && !isNaN(sub.price)) {
+    return sub.price;
+  }
+  if (booking) {
+    const petSpecies = booking.petSpecies || booking.pet?.species || 'DOG';
+    const petWeight = booking.petWeight || booking.pet?.weight || 0;
+    const resolved = resolveServicePriceAndDuration(sub, petSpecies, petWeight);
+    return resolved.price;
+  }
+  return 0;
+}
 
 // Preset sample photos for easy mock upload
 const PRESET_PHOTOS = [
@@ -182,12 +199,19 @@ export default function SpaStaff() {
   // Helper to resolve subServices for a booking
   const getBookingSubServices = (booking: SpaBookingType) => {
     if (booking.subServices && booking.subServices.length > 0) {
-      return booking.subServices;
+      return booking.subServices.map((sub) => ({
+        ...sub,
+        price: getSubServicePrice(sub, booking),
+      }));
     }
     if (booking.subServiceIds && booking.subServiceIds.length > 0) {
       return booking.subServiceIds
         .map((id) => allSubServices.find((s) => s.id === id))
-        .filter((s): s is SpaServiceType => Boolean(s));
+        .filter((s): s is SpaServiceType => Boolean(s))
+        .map((sub) => ({
+          ...sub,
+          price: getSubServicePrice(sub, booking),
+        }));
     }
     return [];
   };
@@ -890,9 +914,9 @@ export default function SpaStaff() {
                                 <p className="font-bold text-gray-900">✂️ Gói chính: {b.service?.name || 'Chăm sóc Spa'}</p>
                                 {subList.length > 0 && (
                                   <div className="text-[11px] text-green-700 font-semibold space-y-0.5">
-                                    {subList.map((sub, i) => (
-                                      <span key={i} className="block">+ {sub.name} ({(sub.price || 0).toLocaleString('vi-VN')}đ)</span>
-                                    ))}
+                                      {subList.map((sub, i) => (
+                                        <span key={i} className="block">+ {sub.name} ({getSubServicePrice(sub, b).toLocaleString('vi-VN')}đ)</span>
+                                      ))}
                                   </div>
                                 )}
                               </div>
@@ -1082,7 +1106,7 @@ export default function SpaStaff() {
                                 {booking.service?.name || booking.mainServiceResolved?.name || 'Gói Chăm Sóc Spa'}
                               </span>
                               <span className="text-xs font-bold text-gray-700">
-                                {(booking.service?.price || booking.mainServiceResolved?.price || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                {(booking.priceSnapshot || (booking as any).mainServiceResolved?.resolvedPrice || 0).toLocaleString('vi-VN')}đ
                               </span>
                             </div>
                           </div>
@@ -1104,7 +1128,7 @@ export default function SpaStaff() {
                                         {sub.name}
                                       </span>
                                       <span className="font-extrabold text-green-700">
-                                        + {(sub.price || 0).toLocaleString('vi-VN')}đ
+                                        + {getSubServicePrice(sub, booking).toLocaleString('vi-VN')}đ
                                       </span>
                                     </div>
                                   ))}
@@ -1386,7 +1410,7 @@ export default function SpaStaff() {
                             )}
                           </div>
                           <span className="font-black text-xs text-purple-700 shrink-0 ml-2">
-                            + {sub.price.toLocaleString('vi-VN')}đ
+                            + {getSubServicePrice(sub, bookings.find((b) => b.id === addingSubServicesForId)).toLocaleString('vi-VN')}đ
                           </span>
                         </div>
                       );

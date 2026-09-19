@@ -26,7 +26,7 @@ type TransactionMock = {
   message: {
     create: jest.Mock;
   };
-  userBlock: { findFirst: jest.Mock };
+  user: { findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
 };
 
 describe('MatchingService chat', () => {
@@ -38,8 +38,7 @@ describe('MatchingService chat', () => {
   let prisma: {
     $transaction: jest.Mock;
     match: { findFirst: jest.Mock };
-    message: { updateMany: jest.Mock };
-    userBlock: { findFirst: jest.Mock };
+    user: { findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
   };
   let cloudinary: {
     uploadBuffer: jest.Mock;
@@ -85,7 +84,11 @@ describe('MatchingService chat', () => {
           }),
         ),
       },
-      userBlock: { findFirst: jest.fn().mockResolvedValue(null) },
+      user: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue({ id: userId, blockedUserIds: [] }),
+        update: jest.fn().mockResolvedValue({ id: userId }),
+      },
     };
     prisma = {
       $transaction: jest
@@ -101,7 +104,11 @@ describe('MatchingService chat', () => {
         }),
       },
       message: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      userBlock: { findFirst: jest.fn().mockResolvedValue(null) },
+      user: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue({ id: userId, blockedUserIds: [] }),
+        update: jest.fn().mockResolvedValue({ id: userId }),
+      },
     };
     cloudinary = {
       uploadBuffer: jest.fn().mockResolvedValue({ url: imageUrl }),
@@ -148,7 +155,7 @@ describe('MatchingService chat', () => {
   });
 
   it('does not save a message when either user has blocked the other', async () => {
-    transaction.userBlock.findFirst.mockResolvedValue({ id: 'block-1' });
+    transaction.user.findMany.mockResolvedValue([{ id: userId, blockedUserIds: ['user-2'] }]);
 
     await expect(
       service.sendMessage(userId, matchId, 'hello'),
@@ -332,7 +339,7 @@ describe('MatchingService accepting requests', () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([]),
       $executeRaw: jest.fn().mockResolvedValue(1),
-      userBlock: { findFirst: jest.fn().mockResolvedValue(null) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
       matchingRequest: {
         findUnique: jest.fn().mockResolvedValue({
           status: MatchingRequestStatus.PENDING,
@@ -414,7 +421,10 @@ describe('MatchingService pet eligibility', () => {
         findUnique: jest.fn().mockResolvedValue(activeFemale),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: activeFemale.ownerId, blockedUserIds: [] }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
       match: { findMany: jest.fn().mockResolvedValue([]) },
       breedRule: { findMany: jest.fn().mockResolvedValue([]) },
@@ -447,7 +457,10 @@ describe('MatchingService pet eligibility', () => {
         findUnique: jest.fn().mockResolvedValue(activeFemale),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: activeFemale.ownerId, blockedUserIds: [] }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
       match: { findMany: jest.fn().mockResolvedValue([]) },
       breedRule: { findMany: jest.fn().mockResolvedValue([]) },
@@ -536,7 +549,10 @@ describe('MatchingService pet eligibility', () => {
         findUnique: jest.fn().mockResolvedValue(activeFemale),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: activeFemale.ownerId, blockedUserIds: [] }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       matchingRequest: { findMany: jest.fn().mockResolvedValue([]) },
       match: { findMany: jest.fn().mockResolvedValue([]) },
       breedRule: {
@@ -646,9 +662,10 @@ describe('MatchingService moderation', () => {
           createdAt: new Date(),
         }),
       },
-      userBlock: {
-        createMany: jest.fn().mockResolvedValue({ count: 1 }),
-        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: userId, blockedUserIds: [] }),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({ id: userId }),
       },
       auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     };
@@ -844,17 +861,20 @@ describe('MatchingService moderation', () => {
       blockedUserId: otherUserId,
       alreadyBlocked: false,
     });
+    expect(tx.user.update).toHaveBeenCalledTimes(1);
     expect(tx.matchingRequest.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.match.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
 
-    tx.userBlock.createMany.mockResolvedValue({ count: 0 });
+    tx.user.findUnique.mockResolvedValue({ id: userId, blockedUserIds: [otherUserId] });
+    tx.user.update.mockClear();
     tx.matchingRequest.updateMany.mockClear();
     tx.match.updateMany.mockClear();
     tx.auditLog.create.mockClear();
     const repeated = await service.blockMatchUser(userId, matchId);
 
     expect(repeated.alreadyBlocked).toBe(true);
+    expect(tx.user.update).not.toHaveBeenCalled();
     expect(tx.matchingRequest.updateMany).not.toHaveBeenCalled();
     expect(tx.match.updateMany).not.toHaveBeenCalled();
     expect(tx.auditLog.create).not.toHaveBeenCalled();
@@ -865,15 +885,16 @@ describe('MatchingService moderation', () => {
       service.blockMatchUser('other-user', matchId),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(tx.userBlock.createMany).not.toHaveBeenCalled();
   });
 
   it('only removes a block created by the current user', async () => {
+    tx.user.findUnique.mockResolvedValue({ id: userId, blockedUserIds: [otherUserId] });
     await service.unblockUser(userId, otherUserId);
 
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
-    expect(tx.userBlock.deleteMany).toHaveBeenCalledWith({
-      where: { blockerId: userId, blockedId: otherUserId },
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: userId },
+      data: { blockedUserIds: [] },
     });
     expect(tx.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -883,7 +904,7 @@ describe('MatchingService moderation', () => {
   });
 
   it('handles repeated unblock requests without duplicate audit logs', async () => {
-    tx.userBlock.deleteMany.mockResolvedValue({ count: 0 });
+    tx.user.findUnique.mockResolvedValue({ id: userId, blockedUserIds: [] });
 
     const result = await service.unblockUser(userId, otherUserId);
 

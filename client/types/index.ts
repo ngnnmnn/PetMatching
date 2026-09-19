@@ -8,6 +8,7 @@ export interface User {
   avatarUrl?: string;
   phone?: string;
   isVerified: boolean;
+  blockedUserIds?: string[];
 }
 
 export interface AuthResponse {
@@ -337,6 +338,13 @@ export interface SpaBookingType {
     durationMin?: number;
     durationMax?: number | null;
   }>;
+  subServicesSnapshot?: Array<{
+    id: string;
+    name: string;
+    price: number;
+    duration?: number;
+    isMain?: boolean;
+  }> | null;
   user?: User | null;
   pet?: {
     id: string;
@@ -374,13 +382,22 @@ export interface SpaStaffType {
   phone?: string | null;
 }
 
+/**
+ * Đại diện thông tin Chi nhánh Cửa hàng kiêm Spa (Bảng Store hợp nhất)
+ */
 export interface AddressSpaType {
   id: string;
   name: string;
   description?: string | null;
   address: string;
   phone?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  status?: string;
+  managerId?: string | null;
 }
+
+export type StoreType = AddressSpaType;
 
 export interface SpaStaffProfileType {
   id: string;

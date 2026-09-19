@@ -60,7 +60,7 @@ describe('SpaService manager dashboard revenue', () => {
       },
     ];
     const prisma = {
-      addressSpa: {
+      store: {
         findMany: jest.fn().mockResolvedValue([{ id: 'spa-1' }]),
       },
       spaStaff: {
@@ -258,7 +258,7 @@ describe('SpaService getAvailability and slot deduction', () => {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'user-1' }),
       },
-      addressSpa: {
+      store: {
         findUnique: jest.fn().mockResolvedValue({ id: 'branch-1' }),
       },
       spaService: {
@@ -310,7 +310,7 @@ describe('SpaService getAvailability and slot deduction', () => {
     const prisma = {
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'user-1' }) },
       pet: { findUnique: jest.fn().mockResolvedValue({ id: 'pet-1' }) },
-      addressSpa: { findUnique: jest.fn().mockResolvedValue({ id: 'branch-1' }) },
+      store: { findUnique: jest.fn().mockResolvedValue({ id: 'branch-1' }) },
       spaService: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'service-1',
