@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, Clock, Copy, Check, QrCode, AlertCircle, ShieldCheck, ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -24,6 +24,14 @@ interface PayOSQRModalProps {
   onCancelOrder?: (orderId: string) => void;
   qrData: PayOSQRData | null;
 }
+
+type PayOSQRModalContentProps = Omit<PayOSQRModalProps, 'isOpen' | 'qrData'> & {
+  qrData: PayOSQRData;
+};
+
+const PAYMENT_TIMEOUT_SECONDS = 15 * 60;
+const PAYMENT_POLL_INTERVAL_MS = 3_000;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 function getBankNameByBin(bin: string): string {
   const bankMap: Record<string, string> = {
@@ -55,82 +63,185 @@ export default function PayOSQRModal({
   onCancelOrder,
   qrData,
 }: PayOSQRModalProps) {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  if (!isOpen || !qrData) return null;
 
-  // 15 minutes countdown (900 seconds)
-  const [timeLeft, setTimeLeft] = useState(900);
+  return (
+    <PayOSQRModalContent
+      key={qrData.orderCode}
+      onClose={onClose}
+      onSuccess={onSuccess}
+      onCancelOrder={onCancelOrder}
+      qrData={qrData}
+    />
+  );
+}
+
+function PayOSQRModalContent({
+  onClose,
+  onSuccess,
+  onCancelOrder,
+  qrData,
+}: PayOSQRModalContentProps) {
+  const [timeLeft, setTimeLeft] = useState(PAYMENT_TIMEOUT_SECONDS);
   const [isExpired, setIsExpired] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const expiresAtRef = useRef(0);
+  const paymentStateRef = useRef<'PENDING' | 'PAID' | 'EXPIRED'>('PENDING');
+  const paidOrderIdRef = useRef<string | null>(null);
+  const onSuccessRef = useRef(onSuccess);
+  const onCancelOrderRef = useRef(onCancelOrder);
+  const copyResetTimerRef = useRef<number | null>(null);
+  const successTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  useEffect(() => {
+    onCancelOrderRef.current = onCancelOrder;
+  }, [onCancelOrder]);
+
+  useEffect(() => () => {
+    if (copyResetTimerRef.current) window.clearTimeout(copyResetTimerRef.current);
+    if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+  }, []);
 
   const handleClose = () => {
-    if (!isPaid && qrData?.orderId && onCancelOrder) {
-      onCancelOrder(qrData.orderId);
+    if (paymentStateRef.current === 'PAID') {
+      if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+      onSuccessRef.current(
+        paidOrderIdRef.current || qrData.orderId || String(qrData.orderCode),
+      );
+      return;
+    }
+
+    if (
+      paymentStateRef.current === 'PENDING' &&
+      qrData.orderId &&
+      onCancelOrderRef.current
+    ) {
+      onCancelOrderRef.current(qrData.orderId);
     }
     onClose();
   };
 
-  // 15-Minute Countdown Timer
+  // Countdown is based on an absolute deadline so background-tab throttling cannot extend it.
   useEffect(() => {
-    if (!isOpen || !qrData) return;
+    if (isExpired || isPaid) return;
 
-    setTimeLeft(900);
-    setIsExpired(false);
-    setIsPaid(false);
+    expiresAtRef.current = Date.now() + PAYMENT_TIMEOUT_SECONDS * 1_000;
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setIsExpired(true);
-          if (!isPaid && qrData?.orderId && onCancelOrder) {
-            onCancelOrder(qrData.orderId);
-          }
-          return 0;
+    const updateCountdown = () => {
+      if (document.visibilityState !== 'visible') return;
+
+      const remaining = Math.max(
+        0,
+        Math.ceil((expiresAtRef.current - Date.now()) / 1_000),
+      );
+      setTimeLeft((current) => current === remaining ? current : remaining);
+
+      if (remaining === 0 && paymentStateRef.current === 'PENDING') {
+        paymentStateRef.current = 'EXPIRED';
+        setIsExpired(true);
+        if (qrData.orderId && onCancelOrderRef.current) {
+          onCancelOrderRef.current(qrData.orderId);
         }
-        return prev - 1;
-      });
-    }, 1000);
+      }
+    };
 
-    return () => clearInterval(timer);
-  }, [isOpen, qrData, isPaid, onCancelOrder]);
+    const countdownTimer = window.setInterval(updateCountdown, 1_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') updateCountdown();
+    };
 
-  // Real-time payment check (Poll every 3 seconds)
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(countdownTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isExpired, isPaid, qrData.orderId]);
+
+  // Check PayOS only while this payment modal is mounted, visible, and pending.
   useEffect(() => {
-    if (!isOpen || !qrData || isExpired || isPaid) return;
+    if (isExpired || isPaid) return;
 
-    const pollInterval = setInterval(async () => {
+    const abortController = new AbortController();
+    let requestInFlight = false;
+    const pollPaymentStatus = async () => {
+      if (
+        document.visibilityState !== 'visible' ||
+        requestInFlight ||
+        paymentStateRef.current !== 'PENDING'
+      ) return;
+
+      requestInFlight = true;
       try {
-        const res = await fetch(`${apiBaseUrl}/payment/check-status/${qrData.orderCode}`);
+        const res = await fetch(
+          `${API_BASE_URL}/payment/check-status/${qrData.orderCode}`,
+          { signal: abortController.signal },
+        );
+        if (!res.ok) return;
         const data = await res.json();
 
-        if (data.isPaid) {
+        if (data.isPaid && paymentStateRef.current === 'PENDING') {
+          const paidOrderId = data.orderId || String(qrData.orderCode);
+          paymentStateRef.current = 'PAID';
+          paidOrderIdRef.current = paidOrderId;
           setIsPaid(true);
           clearInterval(pollInterval);
           toast.success('Thanh toán đơn hàng thành công!');
-          setTimeout(() => {
-            onSuccess(data.orderId || String(qrData.orderCode));
+          successTimerRef.current = window.setTimeout(() => {
+            onSuccessRef.current(paidOrderId);
           }, 1500);
+        } else if (
+          paymentStateRef.current === 'PENDING' &&
+          (data.status === 'CANCELLED' || data.status === 'EXPIRED')
+        ) {
+          paymentStateRef.current = 'EXPIRED';
+          setTimeLeft(0);
+          setIsExpired(true);
         }
-      } catch (err) {
-        console.error('Failed to check payment status', err);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        // A later polling cycle can retry transient connection errors.
+      } finally {
+        requestInFlight = false;
       }
-    }, 3000);
+    };
 
-    return () => clearInterval(pollInterval);
-  }, [isOpen, qrData, isExpired, isPaid, apiBaseUrl, onSuccess]);
+    const pollInterval = window.setInterval(
+      () => void pollPaymentStatus(),
+      PAYMENT_POLL_INTERVAL_MS,
+    );
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void pollPaymentStatus();
+    };
 
-  if (!isOpen || !qrData) return null;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    void pollPaymentStatus();
+
+    return () => {
+      abortController.abort();
+      window.clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isExpired, isPaid, qrData.orderCode]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  const copyToClipboard = (text: string, fieldName: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldName);
-    toast.success(`Đã sao chép ${fieldName}!`);
-    setTimeout(() => setCopiedField(null), 2000);
+  const copyToClipboard = async (text: string, fieldName: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldName);
+      toast.success(`Đã sao chép ${fieldName}!`);
+      if (copyResetTimerRef.current) window.clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = window.setTimeout(() => setCopiedField(null), 2_000);
+    } catch {
+      toast.error('Không thể sao chép nội dung.');
+    }
   };
 
   return (

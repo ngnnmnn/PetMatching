@@ -132,12 +132,14 @@ describe('SpaService completed booking history', () => {
       {} as PaymentService,
       {} as any,
     );
+    const autoUpdate = jest.fn();
     Object.defineProperty(service, 'autoUpdateBookingStatuses', {
-      value: jest.fn(),
+      value: autoUpdate,
     });
 
     const [booking] = await service.getManagerBookings('manager-1', 'ALL');
 
+    expect(autoUpdate).not.toHaveBeenCalled();
     expect(booking.user).toEqual({
       id: null,
       name: 'Nguyễn Văn A',
@@ -608,5 +610,69 @@ describe('SpaService auto update overdue past bookings', () => {
         }),
       }),
     );
+  });
+
+  it('limits each status query to a small ordered batch', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new SpaService(
+      { spaBooking: { findMany } } as unknown as PrismaService,
+      {} as PaymentService,
+      {} as any,
+    );
+
+    await service.autoUpdateBookingStatuses();
+
+    expect(findMany).toHaveBeenCalledTimes(2);
+    expect(findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        orderBy: { scheduledAt: 'asc' },
+        take: 10,
+      }),
+    );
+    expect(findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: {
+            in: [
+              SpaBookingStatus.CHECK_IN,
+              SpaBookingStatus.IN_PROGRESS,
+            ],
+          },
+        }),
+        orderBy: { scheduledAt: 'asc' },
+        take: 10,
+      }),
+    );
+  });
+
+  it('does not overlap scheduled status update runs', async () => {
+    let finishUpdate: (() => void) | undefined;
+    const service = new SpaService(
+      {} as PrismaService,
+      {} as PaymentService,
+      {} as any,
+    );
+    const update = jest
+      .spyOn(service, 'autoUpdateBookingStatuses')
+      .mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishUpdate = resolve;
+          }),
+      );
+    const runScheduled = () =>
+      (service as unknown as {
+        runScheduledBookingStatusUpdate: () => Promise<void>;
+      }).runScheduledBookingStatusUpdate();
+
+    const firstRun = runScheduled();
+    await Promise.resolve();
+    await runScheduled();
+
+    expect(update).toHaveBeenCalledTimes(1);
+    finishUpdate?.();
+    await firstRun;
   });
 });
