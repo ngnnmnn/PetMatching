@@ -27,7 +27,12 @@ describe('ManagerService dashboard revenue', () => {
           { status: 'PENDING', _count: { _all: 1 } },
           { status: 'CANCELLED', _count: { _all: 1 } },
         ]),
-        findMany: jest.fn().mockResolvedValue([]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            { createdAt: new Date(), totalAmount: 464_500 },
+          ])
+          .mockResolvedValueOnce([]),
       },
       orderItem: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { quantity: 3 } }),
@@ -232,7 +237,11 @@ describe('ManagerService store payloads', () => {
       by: ['productId', 'variantId'],
       where: {
         productId: { in: ['product-1'] },
-        order: { status: { not: 'CANCELLED' } },
+        order: {
+          storeId: 'store-1',
+          status: 'DELIVERED',
+          OR: [{ refundStatus: null }, { refundStatus: { not: 'REFUNDED' } }],
+        },
       },
       _sum: { quantity: true },
     });

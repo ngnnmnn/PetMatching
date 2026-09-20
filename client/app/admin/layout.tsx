@@ -17,7 +17,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AdminDashboardRangeProvider } from '@/components/admin/admin-dashboard-range-context';
+import { AdminDashboardRangeProvider } from '@/components/admin/dashboard/admin-dashboard-range-context';
 
 const navGroups = [
   {

@@ -32,6 +32,7 @@ import * as bcrypt from 'bcrypt';
 import { PaymentService } from '../payment/payment.service';
 import {
   getSpaBookingRevenue,
+  getSpaRevenueAllocations,
   isRecognizedSpaBooking,
 } from '../../common/revenue.utils';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -40,8 +41,9 @@ import {
   resolveDashboardRange,
   buildDashboardBuckets,
   calculateRevenueGrowth,
+  getVietnamDayRange,
   serializeDashboardRange,
-} from '../admin/dashboard-range.utils';
+} from '../admin/shared/dashboard-range.utils';
 import {
   parseArrayField,
   resolveServicePriceAndDuration,
@@ -1775,53 +1777,59 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
     const selectedBranchIds = targetBranch ? [targetBranch] : managerBranchIds;
     const branchFilter = { addressSpaId: { in: selectedBranchIds } };
+    const today = getVietnamDayRange();
 
-    const staffCount = await this.prisma.spaStaff.count({
-      where: branchFilter,
-    });
-
-    const bookings = await this.prisma.spaBooking.findMany({
-      where: branchFilter,
-      select: {
-        id: true,
-        createdAt: true,
-        scheduledAt: true,
-        status: true,
-        totalPrice: true,
-        priceSnapshot: true,
-        serviceId: true,
-        mainServiceId: true,
-        subServiceIds: true,
-        categoryId: true,
-        petName: true,
-        customerNameSnapshot: true,
-        customerEmailSnapshot: true,
-        customerPhoneSnapshot: true,
-        note: true,
-        staffId: true,
-        service: {
-          select: { id: true, name: true, price: true, categoryId: true },
+    const [staffCount, bookings, todayBookings] = await Promise.all([
+      this.prisma.spaStaff.count({ where: branchFilter }),
+      this.prisma.spaBooking.findMany({
+        where: branchFilter,
+        select: {
+          createdAt: true,
+          scheduledAt: true,
+          status: true,
+          totalPrice: true,
+          priceSnapshot: true,
+          serviceId: true,
+          mainServiceId: true,
+          subServiceIds: true,
+          subServicesSnapshot: true,
+          categoryId: true,
+          payment: { select: { status: true } },
+          feedback: { select: { rateServices: true } },
         },
-        category: {
-          select: { id: true, name: true },
+      }),
+      this.prisma.spaBooking.findMany({
+        where: {
+          ...branchFilter,
+          OR: [
+            { scheduledAt: { gte: today.from, lt: today.toExclusive } },
+            {
+              status: {
+                in: [
+                  SpaBookingStatus.PENDING,
+                  SpaBookingStatus.CONFIRMED,
+                  SpaBookingStatus.CHECK_IN,
+                ],
+              },
+            },
+          ],
         },
-        user: {
-          select: { name: true },
+        select: {
+          id: true,
+          scheduledAt: true,
+          status: true,
+          petName: true,
+          customerNameSnapshot: true,
+          note: true,
+          staffId: true,
+          totalPrice: true,
+          service: { select: { name: true } },
+          user: { select: { name: true } },
+          pet: { select: { name: true } },
+          staff: { select: { name: true } },
         },
-        pet: {
-          select: { name: true },
-        },
-        staff: {
-          select: { name: true },
-        },
-        payment: {
-          select: { status: true, amount: true },
-        },
-        feedback: {
-          select: { rateServices: true },
-        },
-      },
-    });
+      }),
+    ]);
 
     const allMainServiceIds = Array.from(
       new Set(
@@ -1846,43 +1854,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
-    const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      23,
-      59,
-      59,
-      999,
-    );
-
     // Đếm chính xác các lịch hẹn có thời gian đúng trong ngày hôm nay (đồng bộ với Admin)
-    const strictlyTodayBookings = bookings.filter((b) => {
+    const strictlyTodayBookings = todayBookings.filter((b) => {
       const d = new Date(b.scheduledAt);
-      return d >= startOfDay && d <= endOfDay;
-    });
-
-    const todayBookings = bookings.filter((b) => {
-      const d = new Date(b.scheduledAt);
-      const isToday = d >= startOfDay && d <= endOfDay;
-      const isPendingOrConfirmed =
-        b.status === SpaBookingStatus.PENDING ||
-        b.status === SpaBookingStatus.CONFIRMED ||
-        b.status === SpaBookingStatus.CHECK_IN;
-      return isToday || isPendingOrConfirmed;
+      return d >= today.from && d < today.toExclusive;
     });
 
     const recognizedBookings = bookings.filter(isRecognizedSpaBooking);
 
     // Phân tách đơn và doanh thu kỳ hiện tại và kỳ trước theo khoảng thời gian đã chọn
-    const getBookingDate = (b: any) =>
-      b.createdAt ? new Date(b.createdAt) : new Date(b.scheduledAt);
+    const getBookingDate = (booking: { createdAt: Date }) => booking.createdAt;
 
     // Tất cả lịch hẹn trong kỳ lọc
     const bookingsInPeriod = bookings.filter((b) => {
@@ -1901,6 +1882,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const currentRevenue = currentPeriodBookings.reduce(
+      (sum, booking) => sum + getSpaBookingRevenue(booking),
+      0,
+    );
+    const allTimeRevenue = recognizedBookings.reduce(
       (sum, booking) => sum + getSpaBookingRevenue(booking),
       0,
     );
@@ -1968,72 +1953,30 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       return categoriesList[0]?.id || '';
     }
 
-    const isFilteredByRange = Boolean(
-      rangeInput && (rangeInput.range || rangeInput.from || rangeInput.to),
-    );
-
     // Phân bổ doanh thu danh mục theo các đơn hoàn thành trong kỳ đã lọc
-    const bookingsForCategoryStats = isFilteredByRange
-      ? currentPeriodBookings
-      : currentPeriodBookings.length > 0
-        ? currentPeriodBookings
-        : recognizedBookings;
-
-    const subServiceCategoryId =
-      categoriesList.find((c) => c.isMain === false)?.id ||
-      categoriesList.find((c) => c.name.toLowerCase().includes('lẻ'))?.id ||
-      categoriesList[categoriesList.length - 1]?.id ||
-      '';
-
-    bookingsForCategoryStats.forEach((b) => {
-      const targetId = b.serviceId || b.mainServiceId;
-      const mainService =
-        b.service || (targetId ? servicesMap.get(targetId) : null);
-      const resolvedSubServices = (b.subServiceIds || [])
-        .map((id) => servicesMap.get(id))
-        .filter(Boolean);
-
-      const mainPrice = b.priceSnapshot || (mainService as any)?.price || 0;
-      const bookingTotal = b.totalPrice ?? b.priceSnapshot ?? 0;
-      const subRevenue = Math.max(0, bookingTotal - mainPrice);
-
-      const mainCatId = findCategoryForService(mainService, b.categoryId);
-      const targetMain = categoryMap.get(mainCatId);
-      if (targetMain) {
-        targetMain.revenue += mainPrice;
-        if (b.feedback && typeof b.feedback.rateServices === 'number') {
-          targetMain.ratings.push(b.feedback.rateServices);
-        }
+    currentPeriodBookings.forEach((booking) => {
+      const ratedCategories = new Set<string>();
+      const allocations = getSpaRevenueAllocations(booking);
+      if (allocations.length === 0) {
+        allocations.push({
+          serviceId: booking.serviceId || booking.mainServiceId || '',
+          revenue: getSpaBookingRevenue(booking),
+        });
       }
-
-      if (subRevenue > 0) {
-        if (resolvedSubServices.length > 0) {
-          const resolvedSubTotal = resolvedSubServices.reduce(
-            (sum: number, s: any) => sum + (s?.price || 0),
-            0,
-          );
-          resolvedSubServices.forEach((s: any) => {
-            const subCatId = findCategoryForService(s, null);
-            const targetSub = categoryMap.get(subCatId);
-            if (targetSub) {
-              const ratio =
-                resolvedSubTotal > 0 ? (s?.price || 0) / resolvedSubTotal : 0;
-              targetSub.revenue += Math.round(subRevenue * ratio);
-              if (b.feedback && typeof b.feedback.rateServices === 'number') {
-                targetSub.ratings.push(b.feedback.rateServices);
-              }
-            }
-          });
-        } else {
-          const fallbackSub = categoryMap.get(subServiceCategoryId);
-          if (fallbackSub) {
-            fallbackSub.revenue += subRevenue;
-            if (b.feedback && typeof b.feedback.rateServices === 'number') {
-              fallbackSub.ratings.push(b.feedback.rateServices);
-            }
-          }
+      allocations.forEach(({ serviceId, revenue }) => {
+        const service = serviceId ? servicesMap.get(serviceId) : undefined;
+        const categoryId = findCategoryForService(service, booking.categoryId);
+        const category = categoryMap.get(categoryId);
+        if (!category) return;
+        category.revenue += revenue;
+        if (
+          !ratedCategories.has(categoryId) &&
+          typeof booking.feedback?.rateServices === 'number'
+        ) {
+          category.ratings.push(booking.feedback.rateServices);
+          ratedCategories.add(categoryId);
         }
-      }
+      });
     });
 
     const categoryBreakdown = categoriesList.map((cat) => {
@@ -2057,14 +2000,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
-    // Phân bổ trạng thái của tất cả lịch hẹn trong kỳ đã lọc
-    const targetBookingsForStatus = isFilteredByRange
-      ? bookingsInPeriod
-      : bookingsInPeriod.length > 0
-        ? bookingsInPeriod
-        : bookings;
+    // Trạng thái vận hành luôn dùng toàn bộ lịch, độc lập với bộ lọc doanh thu.
     const statusCountMap: Record<string, number> = {};
-    targetBookingsForStatus.forEach((b) => {
+    bookings.forEach((b) => {
       statusCountMap[b.status] = (statusCountMap[b.status] || 0) + 1;
     });
     const statusDistribution = Object.entries(statusCountMap).map(
@@ -2075,55 +2013,37 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       (b) => b.status === SpaBookingStatus.PENDING,
     ).length;
 
-    const completedBookingsCount = isFilteredByRange
-      ? bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED)
-          .length
-      : bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED)
-          .length || recognizedBookings.length;
-
-    const totalRevenue = isFilteredByRange
-      ? currentRevenue
-      : currentRevenue > 0
-        ? currentRevenue
-        : recognizedBookings.reduce(
-            (sum, b) => sum + getSpaBookingRevenue(b),
-            0,
-          );
+    const completedBookingsCount = bookingsInPeriod.filter(
+      (b) => b.status === SpaBookingStatus.COMPLETED,
+    ).length;
+    const allTimeCompletedBookingsCount = bookings.filter(
+      (b) => b.status === SpaBookingStatus.COMPLETED,
+    ).length;
 
     const serializedRange = serializeDashboardRange(period);
 
     return {
       todayBookingsCount: strictlyTodayBookings.length,
-      actionableTodayBookingsCount: todayBookings.length,
       unconfirmedBookingsCount,
       completedBookingsCount,
-      allTimeCompletedBookingsCount: recognizedBookings.length,
-      totalRevenue,
+      allTimeCompletedBookingsCount,
+      totalRevenue: currentRevenue,
+      allTimeRevenue,
       previousRevenue,
       revenueChangePercent,
       range: serializedRange,
-      recognizedBookings: currentPeriodBookings.length,
-      totalBookingsInPeriod: targetBookingsForStatus.length,
       staffCount,
-      revenueByService: categoryBreakdown,
       categoryBreakdown,
       statusDistribution,
       revenueSeries,
-      analytics: {
-        range: serializedRange,
-        revenue: {
-          current: totalRevenue,
-          previous: previousRevenue,
-          changePercent: revenueChangePercent,
-        },
-      },
       todayBookings: todayBookings.map((b) => ({
         id: b.id,
         scheduledAt: b.scheduledAt,
         serviceName: b.service?.name || 'Khác',
         status: b.status,
         petName: b.petName || b.pet?.name || 'Thú cưng',
-        customerName: this.resolveCustomerSnapshot(b)?.name || 'Khách hàng',
+        customerName:
+          b.customerNameSnapshot || b.user?.name || 'Khách hàng',
         note: b.note,
         staffId: b.staffId,
         staffName: b.staff?.name || null,
@@ -2132,7 +2052,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async getManagerServices(managerId: string) {
+  async getManagerServices() {
     const [services, allBookings] = await Promise.all([
       this.prisma.spaService.findMany({
         include: {
@@ -2142,16 +2062,17 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         },
       }),
       this.prisma.spaBooking.findMany({
-        select: { serviceId: true, subServiceIds: true },
+        select: { serviceId: true, mainServiceId: true, subServiceIds: true },
       }),
     ]);
 
     // Compute exact booking counts including main service & sub-services (subServiceIds)
     const bookingCountsMap: Record<string, number> = {};
     for (const b of allBookings) {
-      if (b.serviceId) {
-        bookingCountsMap[b.serviceId] =
-          (bookingCountsMap[b.serviceId] || 0) + 1;
+      const mainServiceId = b.serviceId || b.mainServiceId;
+      if (mainServiceId) {
+        bookingCountsMap[mainServiceId] =
+          (bookingCountsMap[mainServiceId] || 0) + 1;
       }
       if (Array.isArray(b.subServiceIds)) {
         for (const subId of b.subServiceIds) {

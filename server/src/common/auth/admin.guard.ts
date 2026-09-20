@@ -10,7 +10,7 @@ import { UserRole } from '@prisma/client';
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<{
-      user?: { role?: UserRole | string };
+      user?: { role?: UserRole };
     }>();
 
     if (request.user?.role !== UserRole.ADMIN) {
