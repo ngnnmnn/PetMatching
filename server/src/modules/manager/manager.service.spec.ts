@@ -16,6 +16,7 @@ const now = new Date('2026-09-20T00:00:00.000Z');
 
 describe('ManagerService dashboard revenue', () => {
   it('scopes dashboard metrics to the configured store', async () => {
+    // Mô phỏng đầy đủ các truy vấn preview nhẹ của dashboard sau tối ưu.
     const prisma = {
       store: configuredStore(),
       order: {
@@ -26,14 +27,14 @@ describe('ManagerService dashboard revenue', () => {
           { status: 'PENDING', _count: { _all: 1 } },
           { status: 'CANCELLED', _count: { _all: 1 } },
         ]),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       orderItem: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { quantity: 3 } }),
-        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
-      user: {
-        count: jest.fn().mockResolvedValue(10),
-      },
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+      category: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = createService(prisma);
 
@@ -52,9 +53,6 @@ describe('ManagerService dashboard revenue', () => {
     });
     expect(result.totalOrders).toBe(2);
     expect(result.statusDistribution.CANCELLED).toBe(1);
-    expect(prisma.user.count).toHaveBeenCalledWith({
-      where: { role: 'USER' },
-    });
   });
 
   it('rejects dashboard access when no store is configured', async () => {
@@ -144,45 +142,33 @@ describe('ManagerService product ownership', () => {
 
 describe('ManagerService store payloads', () => {
   it('returns a lightweight activity snapshot scoped to the configured store', async () => {
+    // Mô phỏng các aggregate phiên bản thay cho việc tải toàn bộ bảng để tạo hash.
     const prisma = {
       store: configuredStore(),
       order: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: 'order-visible',
-            updatedAt: now,
-            payment: { method: 'COD', status: 'PENDING' },
-          },
-          {
-            id: 'order-hidden-qr',
-            updatedAt: now,
-            payment: { method: 'QR', status: 'PENDING' },
-          },
-        ]),
+        findMany: jest.fn().mockResolvedValue([{ id: 'order-visible' }]),
+        aggregate: jest.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _max: { updatedAt: now },
+        }),
+      },
+      payment: {
+        aggregate: jest.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _max: { updatedAt: now },
+        }),
       },
       product: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: 'product-low',
-            name: 'Sản phẩm sắp hết',
-            stock: 20,
-            updatedAt: now,
-            variants: [
-              {
-                id: 'variant-low',
-                stock: 4,
-                updatedAt: now,
-              },
-            ],
-          },
-          {
-            id: 'product-ok',
-            name: 'Sản phẩm còn hàng',
-            stock: 10,
-            updatedAt: now,
-            variants: [],
-          },
-        ]),
+        aggregate: jest.fn().mockResolvedValue({
+          _count: { _all: 2 },
+          _max: { updatedAt: now },
+        }),
+      },
+      productVariant: {
+        aggregate: jest.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _max: { updatedAt: now },
+        }),
       },
     };
     const service = createService(prisma);
@@ -190,17 +176,13 @@ describe('ManagerService store payloads', () => {
     const result = await service.getActivitySnapshot();
 
     expect(prisma.order.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { storeId: 'store-1' } }),
-    );
-    expect(prisma.product.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { storeId: 'store-1' } }),
+      expect.objectContaining({
+        where: expect.objectContaining({ storeId: 'store-1' }),
+      }),
     );
     expect(result.orderIds).toEqual(['order-visible']);
-    expect(result.lowStockProducts).toEqual([
-      { id: 'product-low', name: 'Sản phẩm sắp hết' },
-    ]);
-    expect(result.ordersVersion).toMatch(/^[a-f0-9]{40}$/);
-    expect(result.inventoryVersion).toMatch(/^[a-f0-9]{40}$/);
+    expect(result.ordersVersion).toContain(':');
+    expect(result.inventoryVersion).toContain(':');
   });
 
   it('returns product counts without exposing review or order-item collections', async () => {

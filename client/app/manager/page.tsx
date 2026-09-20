@@ -198,49 +198,33 @@ function getProductEffectivePrice(p: ManagerProduct): number {
 /**
  * Phát âm thanh chuông thông báo cho Store Manager sử dụng Web Audio API tích hợp
  */
-function playStoreNotificationChime(type: 'order' | 'warning' = 'order') {
+function playStoreNotificationChime() {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(523.25, now);
+    gain1.gain.setValueAtTime(0.3, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.3);
 
-    if (type === 'order') {
-      const now = ctx.currentTime;
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(523.25, now);
-      gain1.gain.setValueAtTime(0.3, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.3);
-
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(659.25, now + 0.15);
-      gain2.gain.setValueAtTime(0.35, now + 0.15);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now + 0.15);
-      osc2.stop(now + 0.55);
-    } else {
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, now);
-      osc.frequency.exponentialRampToValueAtTime(330, now + 0.35);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.35);
-    }
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(659.25, now + 0.15);
+    gain2.gain.setValueAtTime(0.35, now + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.55);
   } catch {
     // Audio context có thể bị trình duyệt tạm khóa nếu người dùng chưa tương tác với trang
   }
@@ -540,34 +524,6 @@ function parseShippingAddress(addressStr: string) {
 export default function ManagerDashboard() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
-  const router = useRouter();
-  const [role, setRole] = useState<string>('');
-
-  useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      try {
-        const u = JSON.parse(stored);
-        if (u.role === 'SPA_MANAGER') {
-          router.replace('/managerSpa');
-          return;
-        }
-        setRole(u.role || '');
-      } catch {
-        setRole('');
-      }
-    }
-  }, [router]);
-
-  if (!role) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
-        <span className="ml-2 text-sm font-bold text-[var(--text-muted)]">Đang tải...</span>
-      </div>
-    );
-  }
-
   return <StoreManagerConsole currentTab={currentTab} />;
 }
 
@@ -724,7 +680,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   // Realtime Polling Refs
   const previousOrderIdsRef = React.useRef<Set<string> | null>(null);
-  const warnedProductIdsRef = React.useRef<Set<string>>(new Set());
   const ordersVersionRef = React.useRef<string | null>(null);
   const inventoryVersionRef = React.useRef<string | null>(null);
   const isPollingRef = React.useRef(false);
@@ -748,7 +703,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         (orderId) => !previousOrderIdsRef.current!.has(orderId),
       );
       if (newOrderIds.length > 0) {
-        playStoreNotificationChime('order');
+        playStoreNotificationChime();
         toast.success(`Có ${newOrderIds.length} đơn hàng mới vừa được đặt!`, {
           description: `Mã đơn: #${newOrderIds[0].slice(-6).toUpperCase()}`,
         });
@@ -756,12 +711,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     }
 
     previousOrderIdsRef.current = new Set(snapshot.orderIds);
-    snapshot.lowStockProducts.forEach((product) => {
-      if (warnedProductIdsRef.current.has(product.id)) return;
-      warnedProductIdsRef.current.add(product.id);
-      playStoreNotificationChime('warning');
-      toast.warning(`Sản phẩm "${product.name}" có phân loại sắp hết hàng (tồn kho < 5)!`);
-    });
   }, []);
 
   const fetchTabData = useCallback(async (
@@ -796,18 +745,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         return;
       }
 
-      const [statsRes, productsRes, ordersRes, categoriesRes] = await Promise.allSettled([
-        managerApi.getDashboardStats(signal),
-        managerApi.getProducts(signal),
-        managerApi.getOrders(signal),
-        productsApi.getCategories(),
-      ]);
-
+      const statsRes = await managerApi.getDashboardStats(signal);
       if (signal?.aborted) return;
-      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
-      if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
-      if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
-      if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
+      setStats(statsRes.data);
+      setCategories(statsRes.data.categories);
     } catch (error) {
       if (signal?.aborted) return;
       console.error('Failed to fetch manager dashboard data', error);
@@ -907,7 +848,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
     const interval = window.setInterval(
       () => void pollManagerData(),
-      currentTab === 'orders' ? 4000 : 5000,
+      currentTab === 'orders' ? 8000 : 15000,
     );
 
     const handleVisibilityChange = () => {
@@ -980,13 +921,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
     return result;
   }, [products, searchQuery, filterStatus, filterCategory, filterActiveStatus, sortBy]);
-
-  const topSellingProducts = useMemo(() => {
-    return [...products]
-      .filter((p) => (p.sales ?? 0) > 0)
-      .sort((a, b) => (b.sales ?? 0) - (a.sales ?? 0))
-      .slice(0, 5);
-  }, [products]);
 
   const filteredOrders = useMemo(() => {
     const list = orders.filter((order) => {
@@ -5648,7 +5582,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 </div>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-xs font-bold text-[#8A8980]">
-                    {orders.filter((o) => o.status === 'PENDING').length} đơn chờ xử lý
+                    {stats?.pendingOrders ?? 0} đơn chờ xử lý
                   </span>
                   <span className="text-xs font-black text-[var(--primary-color)] flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
                     Xem &rarr;
@@ -5695,7 +5629,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <div className="mt-4 divide-y divide-[#EFEAE2]">
                 {(() => {
                   // Lọc các sản phẩm có phân loại tồn kho < 5 hoặc cha tồn kho < 5 (đồng bộ hoàn toàn với Quản lý sản phẩm)
-                  const lowStockProducts = products.filter((p) => hasLowStockWarning(p));
+                  const lowStockProducts = stats?.lowStockProducts ?? [];
                   if (lowStockProducts.length === 0) {
                     return <p className="text-xs text-gray-400 py-4">Kho hàng dồi dào, không có sản phẩm nào sắp hết hàng.</p>;
                   }
@@ -5761,8 +5695,8 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
               <h3 className="text-base font-black">Sản phẩm bán chạy nhất</h3>
               <div className="mt-4 divide-y divide-[#EFEAE2]">
-                {topSellingProducts.length > 0 ? (
-                  topSellingProducts.map((p) => (
+                {(stats?.topSellingProducts?.length ?? 0) > 0 ? (
+                  stats!.topSellingProducts.map((p) => (
                     <div key={p.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                       <div>
                         <p className="text-sm font-bold text-[var(--text-main)]">{p.name}</p>
@@ -5785,13 +5719,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
               <h3 className="text-base font-black">Đơn đặt hàng gần đây nhất</h3>
               <div className="mt-4 divide-y divide-[#EFEAE2]">
-                {orders.length > 0 ? (
-                  orders.slice(0, 5).map((o) => {
+                {(stats?.recentOrders?.length ?? 0) > 0 ? (
+                  stats!.recentOrders.map((o) => {
                     const itemsStr = o.items.map((i) => `${i.quantity}x ${i.product.name}`).join(', ');
                     return (
                       <div key={o.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                         <div className="max-w-[70%]">
-                          <p className="text-sm font-bold text-[var(--text-main)]">{o.user?.name || 'Khách vãng lai'}</p>
+                          <p className="text-sm font-bold text-[var(--text-main)]">{o.userName}</p>
                           <p className="text-xs font-semibold text-[#8A8980] truncate" title={itemsStr}>
                             {itemsStr}
                           </p>

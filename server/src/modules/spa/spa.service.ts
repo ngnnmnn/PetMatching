@@ -1,7 +1,33 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CompleteSpaPaymentDto, CreateBookingDto, CreateStaffDto, CreateSpaFeedbackDto } from './dto/create-booking.dto';
-import { ApprovalStatus, SpaBookingStatus, AccountStatus, UserRole, Species, PaymentMethod, PaymentStatus, NotificationCategory, NotificationEventType, Prisma } from '@prisma/client';
+import { MemoryCacheService } from '../../common/cache/memory-cache.service';
+import {
+  CompleteSpaPaymentDto,
+  CreateBookingDto,
+  CreateStaffDto,
+  CreateSpaFeedbackDto,
+} from './dto/create-booking.dto';
+import {
+  ApprovalStatus,
+  SpaBookingStatus,
+  AccountStatus,
+  UserRole,
+  Species,
+  PaymentMethod,
+  PaymentStatus,
+  NotificationCategory,
+  NotificationEventType,
+  Prisma,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PaymentService } from '../payment/payment.service';
 import {
@@ -18,7 +44,6 @@ import {
 } from '../admin/dashboard-range.utils';
 import {
   parseArrayField,
-  getServiceBracketsForSpecies,
   resolveServicePriceAndDuration,
   computeServiceDisplayRanges,
 } from './spa-bracket.utils';
@@ -33,7 +58,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
     private readonly notifications: NotificationsService,
-  ) { }
+    private readonly cache: MemoryCacheService = new MemoryCacheService(),
+  ) {}
+
+  /** Xóa cache dữ liệu Spa công khai sau khi quản lý hoặc khách hàng cập nhật dữ liệu. */
+  private invalidatePublicSpaCache(): void {
+    this.cache.deleteByPrefix('spa:public:');
+  }
 
   /**
    * Khởi chạy quét tự động trạng thái lịch hẹn định kỳ mỗi 60 giây
@@ -52,7 +83,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
   private async runScheduledBookingStatusUpdate() {
     if (this.statusUpdateRunning) {
-      this.logger.warn('Bỏ qua vòng quét trạng thái Spa vì vòng trước chưa hoàn tất');
+      this.logger.warn(
+        'Bỏ qua vòng quét trạng thái Spa vì vòng trước chưa hoàn tất',
+      );
       return;
     }
 
@@ -61,7 +94,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       await this.autoUpdateBookingStatuses();
     } catch (error) {
       const trace = error instanceof Error ? error.stack : String(error);
-      this.logger.error('Không thể tự động cập nhật trạng thái lịch Spa', trace);
+      this.logger.error(
+        'Không thể tự động cập nhật trạng thái lịch Spa',
+        trace,
+      );
     } finally {
       this.statusUpdateRunning = false;
     }
@@ -73,9 +109,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   private getVNDateString(date: Date | string = new Date()): string {
     const d = date instanceof Date ? date : new Date(date);
     if (isNaN(d.getTime())) {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+      }).format(new Date());
     }
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(d);
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+    }).format(d);
   }
 
   private resolveCustomerSnapshot(booking: {
@@ -109,7 +149,12 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
   private notifyBooking(
     tx: Prisma.TransactionClient,
-    booking: { id: string; userId: string | null; status: SpaBookingStatus; petName: string | null },
+    booking: {
+      id: string;
+      userId: string | null;
+      status: SpaBookingStatus;
+      petName: string | null;
+    },
     eventType: NotificationEventType,
     content?: string,
   ) {
@@ -119,10 +164,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         userId: booking.userId,
         category: NotificationCategory.APPOINTMENT,
         eventType,
-        title: eventType === NotificationEventType.SPA_BOOKING_CREATED
-          ? 'Lịch Spa đã được tạo'
-          : 'Lịch Spa đã cập nhật',
-        content: content ?? `Lịch Spa của ${booking.petName || 'thú cưng'} đã chuyển sang trạng thái ${SPA_BOOKING_STATUS_LABELS[booking.status]}.`,
+        title:
+          eventType === NotificationEventType.SPA_BOOKING_CREATED
+            ? 'Lịch Spa đã được tạo'
+            : 'Lịch Spa đã cập nhật',
+        content:
+          content ??
+          `Lịch Spa của ${booking.petName || 'thú cưng'} đã chuyển sang trạng thái ${SPA_BOOKING_STATUS_LABELS[booking.status]}.`,
         targetUrl: `/spa/bookings?bookingId=${booking.id}`,
         entityType: 'SPA_BOOKING',
         entityId: booking.id,
@@ -131,30 +179,36 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /** Lấy nhóm dịch vụ Spa đang hoạt động từ cache công khai. */
   async getBranches() {
-    return this.prisma.spaCategory.findMany({
-      where: {
-        status: ApprovalStatus.ACTIVE,
-      },
-      include: {
-        services: {
-          where: {
-            isActive: true,
+    return this.cache.getOrSet('spa:public:branches', 5 * 60_000, () =>
+      this.prisma.spaCategory.findMany({
+        where: {
+          status: ApprovalStatus.ACTIVE,
+        },
+        include: {
+          services: {
+            where: {
+              isActive: true,
+            },
           },
         },
-      },
-    });
+      }),
+    );
   }
 
+  /** Lấy danh mục Spa đang hoạt động từ cache công khai. */
   async getCategories() {
-    return this.prisma.spaCategory.findMany({
-      where: {
-        status: ApprovalStatus.ACTIVE,
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
+    return this.cache.getOrSet('spa:public:categories', 10 * 60_000, () =>
+      this.prisma.spaCategory.findMany({
+        where: {
+          status: ApprovalStatus.ACTIVE,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+    );
   }
 
   /**
@@ -164,7 +218,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     if (!service) return 45;
     if (typeof service.durationMin === 'number') return service.durationMin;
     const dur = parseArrayField(service.duration);
-    const flat = dur.flat(Infinity).filter((n: any) => typeof n === 'number' && !isNaN(n));
+    const flat = dur
+      .flat(Infinity)
+      .filter((n: any) => typeof n === 'number' && !isNaN(n));
     return flat.length > 0 ? flat[0] : 45;
   }
 
@@ -173,9 +229,22 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
    * Nếu có truyền species và weight, tự động resolve mốc giá và thời lượng phù hợp
    */
   async getServices(species?: Species, weight?: number) {
+    const cacheKey = `spa:public:services:${species || 'ALL'}:${weight ?? ''}`;
+    return this.cache.getOrSet(cacheKey, 5 * 60_000, () =>
+      this.loadServices(species, weight),
+    );
+  }
+
+  /** Truy vấn dịch vụ và tính giá khi cache chưa có dữ liệu phù hợp. */
+  private async loadServices(species?: Species, weight?: number) {
     const services = await this.prisma.spaService.findMany({
       where: {
         isActive: true,
+        ...(species
+          ? {
+              OR: [{ species }, { species: 'ALL' }, { species: null }],
+            }
+          : {}),
       },
       include: {
         category: {
@@ -220,13 +289,6 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
-    if (species) {
-      return mapped.filter((s) => {
-        if (!s.species || s.species === 'ALL') return true;
-        return s.species === species;
-      });
-    }
-
     return mapped;
   }
 
@@ -253,7 +315,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       if (petExists) {
         validPetId = petExists.id;
         petSpeciesFromDb = petExists.species === 'CAT' ? 'CAT' : 'DOG';
-        petWeightFromDb = petExists.weight !== null && petExists.weight !== undefined ? Number(petExists.weight) : null;
+        petWeightFromDb =
+          petExists.weight !== null && petExists.weight !== undefined
+            ? Number(petExists.weight)
+            : null;
       }
     }
 
@@ -283,7 +348,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const subServiceIds = dto.subServiceIds || [];
 
     if (!mainServiceId && subServiceIds.length === 0) {
-      throw new BadRequestException('Vui lòng chọn ít nhất 1 dịch vụ chính hoặc 1 dịch vụ lẻ.');
+      throw new BadRequestException(
+        'Vui lòng chọn ít nhất 1 dịch vụ chính hoặc 1 dịch vụ lẻ.',
+      );
     }
 
     let mainService: any = null;
@@ -293,7 +360,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!mainService || !mainService.isActive) {
-        throw new NotFoundException('Dịch vụ Spa chính không tồn tại hoặc đã dừng hoạt động.');
+        throw new NotFoundException(
+          'Dịch vụ Spa chính không tồn tại hoặc đã dừng hoạt động.',
+        );
       }
     }
 
@@ -308,7 +377,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     const firstService = mainService || subServices[0];
-    const categoryId = dto.branchId || (firstService ? (firstService.categoryId || (firstService as any).brandId) : null);
+    const categoryId =
+      dto.branchId ||
+      (firstService
+        ? firstService.categoryId || (firstService as any).brandId
+        : null);
     const bookingTime = new Date(dto.scheduledAt);
 
     if (isNaN(bookingTime.getTime())) {
@@ -316,15 +389,27 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (bookingTime.getTime() <= Date.now()) {
-      throw new BadRequestException('Thời gian đặt lịch phải ở trong tương lai.');
+      throw new BadRequestException(
+        'Thời gian đặt lịch phải ở trong tương lai.',
+      );
     }
 
     // Trích xuất loài và cân nặng áp dụng cho đặt lịch
-    const effectiveSpecies: 'DOG' | 'CAT' = (dto.petSpecies === 'CAT' || petSpeciesFromDb === 'CAT') ? 'CAT' : 'DOG';
-    const effectiveWeight = (dto.petWeight !== undefined && dto.petWeight !== null) ? Number(dto.petWeight) : (petWeightFromDb || 0);
+    const effectiveSpecies: 'DOG' | 'CAT' =
+      dto.petSpecies === 'CAT' || petSpeciesFromDb === 'CAT' ? 'CAT' : 'DOG';
+    const effectiveWeight =
+      dto.petWeight !== undefined && dto.petWeight !== null
+        ? Number(dto.petWeight)
+        : petWeightFromDb || 0;
 
     // Calculate total price & expected duration từ mảng mốc cân nặng
-    const resolvedMain = mainService ? resolveServicePriceAndDuration(mainService, effectiveSpecies, effectiveWeight) : null;
+    const resolvedMain = mainService
+      ? resolveServicePriceAndDuration(
+          mainService,
+          effectiveSpecies,
+          effectiveWeight,
+        )
+      : null;
     const mainPrice = resolvedMain ? resolvedMain.price : 0;
     const mainDuration = resolvedMain ? resolvedMain.duration : 0;
 
@@ -332,7 +417,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     let subDurationTotal = 0;
     const subServicesSnapshot: any[] = [];
     for (const sub of subServices) {
-      const resolvedSub = resolveServicePriceAndDuration(sub, effectiveSpecies, effectiveWeight);
+      const resolvedSub = resolveServicePriceAndDuration(
+        sub,
+        effectiveSpecies,
+        effectiveWeight,
+      );
       subPriceTotal += resolvedSub.price;
       subDurationTotal += resolvedSub.duration;
       subServicesSnapshot.push({
@@ -347,17 +436,21 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const totalDurationMinutes = Math.max(15, mainDuration + subDurationTotal);
 
     const timeStartExpected = bookingTime;
-    const timeEndExpected = new Date(bookingTime.getTime() + totalDurationMinutes * 60 * 1000);
+    const timeEndExpected = new Date(
+      bookingTime.getTime() + totalDurationMinutes * 60 * 1000,
+    );
 
     // Validate operating hours: 09:00 - 18:00 (Vietnam timezone)
-    const { startMins: startMinsFromMidnight } = getVietnamTimeMinutes(bookingTime);
+    const { startMins: startMinsFromMidnight } =
+      getVietnamTimeMinutes(bookingTime);
     const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
 
-    const isValidOperatingHours = startMinsFromMidnight >= 9 * 60 && endMinsFromMidnight <= 18 * 60;
+    const isValidOperatingHours =
+      startMinsFromMidnight >= 9 * 60 && endMinsFromMidnight <= 18 * 60;
 
     if (!isValidOperatingHours) {
       throw new BadRequestException(
-        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
+        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`,
       );
     }
 
@@ -385,9 +478,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
 
       const isPetBusy = petOverlappingBookings.some((b) => {
-        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const bStart = new Date(
+          b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+        );
         const dur = this.getServiceDuration(b.service);
-        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        const bEnd = new Date(
+          b.timeEndExpected || bStart.getTime() + dur * 60 * 1000,
+        );
         return bStart < timeEndExpected && bEnd > timeStartExpected;
       });
 
@@ -403,7 +500,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         where: { addressSpaId: validAddressSpaId, status: 'ACTIVE' },
       });
       if (activeStaffs.length === 0) {
-        throw new BadRequestException('Chi nhánh hiện không có nhân viên nào đang hoạt động. Vui lòng chọn chi nhánh khác.');
+        throw new BadRequestException(
+          'Chi nhánh hiện không có nhân viên nào đang hoạt động. Vui lòng chọn chi nhánh khác.',
+        );
       }
 
       const overlappingBookings = await this.prisma.spaBooking.findMany({
@@ -428,23 +527,33 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
 
       const activeOverlapping = overlappingBookings.filter((b) => {
-        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const bStart = new Date(
+          b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+        );
         const dur = this.getServiceDuration(b.service);
-        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        const bEnd = new Date(
+          b.timeEndExpected || bStart.getTime() + dur * 60 * 1000,
+        );
         return bStart < timeEndExpected && bEnd > timeStartExpected;
       });
 
       const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
 
       const freeStaffs = activeStaffs.filter((staff) => {
-        const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        const staffAssigned = assignedBookings.filter(
+          (b) => b.staffId === staff.userId || b.staffId === staff.id,
+        );
         return !isStaffBusy(staffAssigned, timeStartExpected, timeEndExpected);
       });
 
       if (validStaffId) {
-        const targetStaffIsFree = freeStaffs.some((s) => s.userId === validStaffId || s.id === validStaffId);
+        const targetStaffIsFree = freeStaffs.some(
+          (s) => s.userId === validStaffId || s.id === validStaffId,
+        );
         if (!targetStaffIsFree) {
-          throw new BadRequestException('Nhân viên được chọn đã có lịch bận trong khung giờ này. Vui lòng chọn nhân viên khác hoặc để trống.');
+          throw new BadRequestException(
+            'Nhân viên được chọn đã có lịch bận trong khung giờ này. Vui lòng chọn nhân viên khác hoặc để trống.',
+          );
         }
       }
     }
@@ -452,58 +561,59 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const bookingStatus = SpaBookingStatus.PENDING;
 
     return this.prisma.$transaction(async (tx) => {
-      const booking = await tx.spaBooking.create({ data: {
-        userId,
-        customerNameSnapshot: userExists.name,
-        customerEmailSnapshot: userExists.email,
-        customerPhoneSnapshot: userExists.phone,
-        categoryId: categoryId,
-        addressSpaId: validAddressSpaId,
-        serviceId: mainServiceId,
-        mainServiceId: mainServiceId,
-        subServiceIds: subServiceIds,
-        staffId: validStaffId,
-        petId: validPetId,
-        petName: dto.petName || 'Thú cưng',
-        petSpecies: dto.petSpecies || null,
-        petWeight: dto.petWeight ? Number(dto.petWeight) : null,
-        scheduledAt: bookingTime,
-        status: bookingStatus,
-        priceSnapshot: mainPrice || totalPrice,
-        totalPrice,
-        subServicesSnapshot,
-        timeStartExpected,
-        timeEndExpected,
-        note: dto.note,
-        payment: {
-          create: {
-            sourceType: 'SPA_BOOKING',
-            method: PaymentMethod.COD,
-            status: PaymentStatus.PENDING,
-            amount: totalPrice,
+      const booking = await tx.spaBooking.create({
+        data: {
+          userId,
+          customerNameSnapshot: userExists.name,
+          customerEmailSnapshot: userExists.email,
+          customerPhoneSnapshot: userExists.phone,
+          categoryId: categoryId,
+          addressSpaId: validAddressSpaId,
+          serviceId: mainServiceId,
+          mainServiceId: mainServiceId,
+          subServiceIds: subServiceIds,
+          staffId: validStaffId,
+          petId: validPetId,
+          petName: dto.petName || 'Thú cưng',
+          petSpecies: dto.petSpecies || null,
+          petWeight: dto.petWeight ? Number(dto.petWeight) : null,
+          scheduledAt: bookingTime,
+          status: bookingStatus,
+          priceSnapshot: mainPrice || totalPrice,
+          totalPrice,
+          subServicesSnapshot,
+          timeStartExpected,
+          timeEndExpected,
+          note: dto.note,
+          payment: {
+            create: {
+              sourceType: 'SPA_BOOKING',
+              method: PaymentMethod.COD,
+              status: PaymentStatus.PENDING,
+              amount: totalPrice,
+            },
           },
         },
-      },
-      include: {
-        payment: true,
-        category: {
-          select: { name: true },
+        include: {
+          payment: true,
+          category: {
+            select: { name: true },
+          },
+          addressSpa: {
+            select: { name: true, address: true },
+          },
+          service: {
+            select: { name: true, price: true },
+          },
         },
-        addressSpa: {
-          select: { name: true, address: true },
-        },
-        service: {
-          select: { name: true, price: true },
-        },
-      },
-    });
+      });
 
-    await this.notifyBooking(
-      tx,
-      booking,
-      NotificationEventType.SPA_BOOKING_CREATED,
-      `Lịch Spa cho ${booking.petName || 'thú cưng'} đã được tạo thành công.`,
-    );
+      await this.notifyBooking(
+        tx,
+        booking,
+        NotificationEventType.SPA_BOOKING_CREATED,
+        `Lịch Spa cho ${booking.petName || 'thú cưng'} đã được tạo thành công.`,
+      );
 
       // Gửi thông báo đến Quản lý chi nhánh Spa
       const branch = await tx.store.findUnique({
@@ -576,29 +686,44 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const allSubServiceIds = Array.from(
-      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+      new Set(bookings.flatMap((b) => b.subServiceIds || [])),
     );
 
     const subServicesList =
       allSubServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
-          where: { id: { in: allSubServiceIds } },
-          select: { id: true, name: true, price: true, description: true, duration: true, petMinWeight: true, petMaxWeight: true },
-        })
+            where: { id: { in: allSubServiceIds } },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              description: true,
+              duration: true,
+              petMinWeight: true,
+              petMaxWeight: true,
+            },
+          })
         : [];
 
     const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
 
     return bookings.map((b) => {
       let subServicesDisplay: any[] = [];
-      if (Array.isArray(b.subServicesSnapshot) && b.subServicesSnapshot.length > 0) {
+      if (
+        Array.isArray(b.subServicesSnapshot) &&
+        b.subServicesSnapshot.length > 0
+      ) {
         subServicesDisplay = b.subServicesSnapshot as any[];
       } else {
         const rawSubs = (b.subServiceIds || [])
           .map((id) => subServicesMap.get(id))
           .filter(Boolean);
         subServicesDisplay = rawSubs.map((s: any) => {
-          const resolved = resolveServicePriceAndDuration(s, b.petSpecies, b.petWeight);
+          const resolved = resolveServicePriceAndDuration(
+            s,
+            b.petSpecies,
+            b.petWeight,
+          );
           return {
             id: s.id,
             name: s.name,
@@ -612,15 +737,23 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       // Giữ nguyên giá chốt ban đầu, tính tổng chi phí chính xác
       const mainPrice = b.priceSnapshot || 0;
-      const subServicesTotal = subServicesDisplay.reduce((sum, s) => sum + (Number(s?.price) || 0), 0);
-      const totalPrice = b.totalPrice && b.totalPrice > 0 ? b.totalPrice : Math.max(0, mainPrice + subServicesTotal);
+      const subServicesTotal = subServicesDisplay.reduce(
+        (sum, s) => sum + (Number(s?.price) || 0),
+        0,
+      );
+      const totalPrice =
+        b.totalPrice && b.totalPrice > 0
+          ? b.totalPrice
+          : Math.max(0, mainPrice + subServicesTotal);
 
       return {
         ...b,
-        service: b.service ? {
-          ...b.service,
-          durationMin: this.getServiceDuration(b.service),
-        } : null,
+        service: b.service
+          ? {
+              ...b.service,
+              durationMin: this.getServiceDuration(b.service),
+            }
+          : null,
         rescheduleCount: Number((b as any).rescheduleCount) || 0,
         priceSnapshot: mainPrice,
         totalPrice,
@@ -658,11 +791,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     // Check cancellation policy: at least 30 minutes before scheduled time
     const now = Date.now();
-    const scheduleTime = new Date(booking.scheduledAt || booking.timeStartExpected).getTime();
+    const scheduleTime = new Date(
+      booking.scheduledAt || booking.timeStartExpected,
+    ).getTime();
     const thirtyMinutesMs = 30 * 60 * 1000;
 
     if (scheduleTime - now < thirtyMinutesMs) {
-      throw new BadRequestException('Bạn chỉ có thể hủy lịch hẹn trước thời gian đặt lịch ít nhất 30 phút.');
+      throw new BadRequestException(
+        'Bạn chỉ có thể hủy lịch hẹn trước thời gian đặt lịch ít nhất 30 phút.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -685,7 +822,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+      await this.notifyBooking(
+        tx,
+        updated,
+        NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+      );
 
       // Gửi thông báo đến Quản lý chi nhánh Spa khi khách hủy lịch
       if (booking.addressSpaId) {
@@ -759,26 +900,37 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const allMainServiceIds = Array.from(
-      new Set(bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean))
+      new Set(
+        bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean),
+      ),
     );
     const allSubServiceIds = Array.from(
-      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+      new Set(bookings.flatMap((b) => b.subServiceIds || [])),
     );
-    const allServiceIds = Array.from(new Set([...allMainServiceIds, ...allSubServiceIds]));
+    const allServiceIds = Array.from(
+      new Set([...allMainServiceIds, ...allSubServiceIds]),
+    );
 
     const servicesList =
       allServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
-          where: { id: { in: allServiceIds as string[] } },
-          select: { id: true, name: true, price: true, description: true, isMain: true },
-        })
+            where: { id: { in: allServiceIds as string[] } },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              description: true,
+              isMain: true,
+            },
+          })
         : [];
 
     const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
     return bookings.map((b) => {
       const targetMainId = b.serviceId || b.mainServiceId;
-      const mainServiceResolved = b.service || (targetMainId ? servicesMap.get(targetMainId) : null);
+      const mainServiceResolved =
+        b.service || (targetMainId ? servicesMap.get(targetMainId) : null);
 
       // 1. Giá dịch vụ chính: BẢO VỆ TUYỆT ĐỐI TÍNH BẤT BIẾN (SNAPSHOT)
       // Ưu tiên b.priceSnapshot (giá đã chốt tại thời điểm đặt).
@@ -786,7 +938,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       let mainPrice = b.priceSnapshot;
       if (mainPrice === null || mainPrice === undefined) {
         if (mainServiceResolved) {
-          mainPrice = resolveServicePriceAndDuration(mainServiceResolved, b.petSpecies, b.petWeight).price;
+          mainPrice = resolveServicePriceAndDuration(
+            mainServiceResolved,
+            b.petSpecies,
+            b.petWeight,
+          ).price;
         } else {
           mainPrice = 0;
         }
@@ -795,7 +951,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       // 2. Dịch vụ phụ (Sub services):
       // Ưu tiên lấy từ b.subServicesSnapshot (đã chốt giá từng món)
       let subServicesDisplay: any[] = [];
-      if (Array.isArray(b.subServicesSnapshot) && b.subServicesSnapshot.length > 0) {
+      if (
+        Array.isArray(b.subServicesSnapshot) &&
+        b.subServicesSnapshot.length > 0
+      ) {
         subServicesDisplay = b.subServicesSnapshot as any[];
       } else {
         // Fallback cho booking cũ: lấy từ subServiceIds và tính giá theo cân nặng thú cưng
@@ -803,7 +962,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
           .map((id) => servicesMap.get(id))
           .filter(Boolean);
         subServicesDisplay = rawSubs.map((s: any) => {
-          const resolved = resolveServicePriceAndDuration(s, b.petSpecies, b.petWeight);
+          const resolved = resolveServicePriceAndDuration(
+            s,
+            b.petSpecies,
+            b.petWeight,
+          );
           return {
             id: s.id,
             name: s.name,
@@ -815,7 +978,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Fallback nếu có subServiceIds nhưng không tìm thấy dịch vụ tương ứng
-      if (subServicesDisplay.length === 0 && (b.subServiceIds || []).length > 0) {
+      if (
+        subServicesDisplay.length === 0 &&
+        (b.subServiceIds || []).length > 0
+      ) {
         const count = (b.subServiceIds || []).length;
         const subRevenue = Math.max(0, (b.totalPrice || 0) - mainPrice);
         const pricePerService = count > 0 ? Math.round(subRevenue / count) : 0;
@@ -828,8 +994,14 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         }));
       }
 
-      const subRevenue = subServicesDisplay.reduce((sum, s) => sum + (Number(s?.price) || 0), 0);
-      const totalPrice = b.totalPrice && b.totalPrice > 0 ? b.totalPrice : Math.max(0, mainPrice + subRevenue);
+      const subRevenue = subServicesDisplay.reduce(
+        (sum, s) => sum + (Number(s?.price) || 0),
+        0,
+      );
+      const totalPrice =
+        b.totalPrice && b.totalPrice > 0
+          ? b.totalPrice
+          : Math.max(0, mainPrice + subRevenue);
 
       return {
         ...b,
@@ -865,7 +1037,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
 
     if (todayVN < scheduledDateVN) {
-      throw new BadRequestException('Chưa đến ngày hẹn. Chỉ được phép check-in cho thú cưng vào đúng ngày hẹn hoặc sau đó.');
+      throw new BadRequestException(
+        'Chưa đến ngày hẹn. Chỉ được phép check-in cho thú cưng vào đúng ngày hẹn hoặc sau đó.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -875,7 +1049,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         include: { service: true, user: true, pet: true },
       });
       if (booking.status !== updated.status) {
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+        await this.notifyBooking(
+          tx,
+          updated,
+          NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+        );
       }
       return updated;
     });
@@ -885,7 +1063,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
    * Nhân viên thêm dịch vụ lẻ vào lịch hẹn đang thực hiện.
    * Chặn thao tác với các lịch hẹn thuộc ngày trong tương lai.
    */
-  async staffAddSubServices(staffId: string, bookingId: string, subServiceIds: string[]) {
+  async staffAddSubServices(
+    staffId: string,
+    bookingId: string,
+    subServiceIds: string[],
+  ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
     });
@@ -899,14 +1081,18 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
 
     if (todayVN < scheduledDateVN) {
-      throw new BadRequestException('Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.');
+      throw new BadRequestException(
+        'Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.',
+      );
     }
 
     // Giữ nguyên giá dịch vụ chính đã snapshot, KHÔNG tính lại theo giá mới của spaService!
     const mainPrice = booking.priceSnapshot ?? 0;
 
     // Lấy snapshot các dịch vụ lẻ hiện tại (nếu có)
-    const existingSubSnapshots: any[] = Array.isArray(booking.subServicesSnapshot)
+    const existingSubSnapshots: any[] = Array.isArray(
+      booking.subServicesSnapshot,
+    )
       ? (booking.subServicesSnapshot as any[])
       : [];
     const existingSubMap = new Map(existingSubSnapshots.map((s) => [s.id, s]));
@@ -921,7 +1107,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const updatedSubSnapshots = [...existingSubSnapshots];
     for (const added of addedSubServices) {
       if (!existingSubMap.has(added.id)) {
-        const resolved = resolveServicePriceAndDuration(added, targetSpecies, targetWeight);
+        const resolved = resolveServicePriceAndDuration(
+          added,
+          targetSpecies,
+          targetWeight,
+        );
         updatedSubSnapshots.push({
           id: added.id,
           name: added.name,
@@ -933,7 +1123,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     const newSubIds = updatedSubSnapshots.map((s) => s.id);
-    const subPriceTotal = updatedSubSnapshots.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const subPriceTotal = updatedSubSnapshots.reduce(
+      (sum, s) => sum + (Number(s.price) || 0),
+      0,
+    );
     const totalPrice = Math.max(0, mainPrice + subPriceTotal);
 
     return this.prisma.$transaction(async (tx) => {
@@ -987,14 +1180,18 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
 
     if (todayVN < scheduledDateVN) {
-      throw new BadRequestException('Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.');
+      throw new BadRequestException(
+        'Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.',
+      );
     }
 
     const updatedData: any = {};
     if (dto.status !== undefined) {
       if (dto.status === SpaBookingStatus.IN_PROGRESS) {
         if (booking.status !== SpaBookingStatus.CHECK_IN) {
-          throw new BadRequestException('Khách hàng chưa Check-in. Vui lòng Check-in cho khách trước khi bắt đầu làm dịch vụ!');
+          throw new BadRequestException(
+            'Khách hàng chưa Check-in. Vui lòng Check-in cho khách trước khi bắt đầu làm dịch vụ!',
+          );
         }
       }
       if (dto.status === SpaBookingStatus.COMPLETED) {
@@ -1003,7 +1200,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         );
       }
       updatedData.status = dto.status;
-      if (dto.status === SpaBookingStatus.IN_PROGRESS && !booking.timeStartReal) {
+      if (
+        dto.status === SpaBookingStatus.IN_PROGRESS &&
+        !booking.timeStartReal
+      ) {
         updatedData.timeStartReal = new Date();
       }
     }
@@ -1019,7 +1219,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     if (dto.petWeight !== undefined) {
       const weightNum = Number(dto.petWeight);
       if (isNaN(weightNum) || weightNum <= 0 || weightNum > 100) {
-        throw new BadRequestException('Cân nặng thú cưng không hợp lệ (phải từ 0.1kg đến 100kg).');
+        throw new BadRequestException(
+          'Cân nặng thú cưng không hợp lệ (phải từ 0.1kg đến 100kg).',
+        );
       }
       updatedData.petWeight = weightNum;
 
@@ -1033,8 +1235,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (currentMainService) {
-          const targetSpecies = booking.petSpecies || booking.pet?.species || currentMainService.species;
-          const resolvedMain = resolveServicePriceAndDuration(currentMainService, targetSpecies, weightNum);
+          const targetSpecies =
+            booking.petSpecies ||
+            booking.pet?.species ||
+            currentMainService.species;
+          const resolvedMain = resolveServicePriceAndDuration(
+            currentMainService,
+            targetSpecies,
+            weightNum,
+          );
           newMainPrice = resolvedMain.price;
         }
       }
@@ -1050,8 +1259,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         });
 
         for (const sub of currentSubServices) {
-          const targetSubSpecies = booking.petSpecies || booking.pet?.species || sub.species;
-          const resolvedSub = resolveServicePriceAndDuration(sub, targetSubSpecies, weightNum);
+          const targetSubSpecies =
+            booking.petSpecies || booking.pet?.species || sub.species;
+          const resolvedSub = resolveServicePriceAndDuration(
+            sub,
+            targetSubSpecies,
+            weightNum,
+          );
           newSubTotalPrice += resolvedSub.price;
           newSubSnapshots.push({
             id: sub.id,
@@ -1122,7 +1336,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (dto.status !== undefined && booking.status !== updated.status) {
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+        await this.notifyBooking(
+          tx,
+          updated,
+          NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+        );
       }
       return updated;
     });
@@ -1146,10 +1364,14 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const scheduledDateVN = this.getVNDateString(new Date(booking.scheduledAt));
 
     if (todayVN < scheduledDateVN) {
-      throw new BadRequestException('Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.');
+      throw new BadRequestException(
+        'Lịch hẹn thuộc ngày trong tương lai. Nhân viên chỉ có thể xem và chỉ được thao tác khi đến đúng ngày hẹn.',
+      );
     }
     if (booking.staffId !== staffId) {
-      throw new ForbiddenException('Bạn không được phép hoàn tất lịch hẹn này.');
+      throw new ForbiddenException(
+        'Bạn không được phép hoàn tất lịch hẹn này.',
+      );
     }
     if (booking.payment?.status === PaymentStatus.PAID) {
       throw new BadRequestException('Lịch hẹn này đã được thanh toán.');
@@ -1215,7 +1437,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (booking.status !== completedBooking.status) {
-        await this.notifyBooking(tx, completedBooking, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+        await this.notifyBooking(
+          tx,
+          completedBooking,
+          NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+        );
       }
 
       return { payment, booking: completedBooking };
@@ -1282,18 +1508,20 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
   /** Lấy danh sách chi nhánh địa chỉ Spa từ bảng Store hợp nhất */
   async getSpaAddresses() {
-    return this.prisma.store.findMany({
-      where: {
-        status: ApprovalStatus.ACTIVE,
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-      },
-    });
+    return this.cache.getOrSet('spa:public:addresses', 10 * 60_000, () =>
+      this.prisma.store.findMany({
+        where: {
+          status: ApprovalStatus.ACTIVE,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          address: true,
+          phone: true,
+        },
+      }),
+    );
   }
 
   async getStaffProfile(userId: string) {
@@ -1310,30 +1538,40 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /** Lấy tối đa 20 đánh giá công khai với đúng các trường giao diện sử dụng. */
   async getPublicFeedbacks() {
-    return this.prisma.spaFeedback.findMany({
-      take: 20,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
-          },
-        },
-        booking: {
-          include: {
-            service: {
-              select: { id: true, name: true },
-            },
-            category: {
-              select: { id: true, name: true },
+    return this.cache.getOrSet('spa:public:feedbacks', 2 * 60_000, () =>
+      this.prisma.spaFeedback.findMany({
+        take: 20,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          rateStaff: true,
+          rateServices: true,
+          comment: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatarUrl: true,
             },
           },
+          booking: {
+            select: {
+              serviceId: true,
+              categoryId: true,
+              service: {
+                select: { id: true, name: true },
+              },
+              category: {
+                select: { id: true, name: true },
+              },
+            },
+          },
         },
-      },
-    });
+      }),
+    );
   }
 
   // =============================================================
@@ -1349,10 +1587,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const noShowBookings = await this.prisma.spaBooking.findMany({
       where: {
         status: {
-          in: [
-            SpaBookingStatus.PENDING,
-            SpaBookingStatus.CONFIRMED,
-          ],
+          in: [SpaBookingStatus.PENDING, SpaBookingStatus.CONFIRMED],
         },
         scheduledAt: { lt: fifteenMinsAgo },
       },
@@ -1362,19 +1597,30 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       orderBy: { scheduledAt: 'asc' },
       take: 10,
     });
-    if (noShowBookings.length > 0) await this.prisma.$transaction(async (tx) => {
-      for (const booking of noShowBookings) {
-        // Tự động hủy trạng thái thanh toán nếu chưa thanh toán (khách không đến)
-        if (booking.payment && booking.payment.status !== PaymentStatus.PAID) {
-          await tx.payment.update({
-            where: { id: booking.payment.id },
-            data: { status: PaymentStatus.CANCELLED },
+    if (noShowBookings.length > 0)
+      await this.prisma.$transaction(async (tx) => {
+        for (const booking of noShowBookings) {
+          // Tự động hủy trạng thái thanh toán nếu chưa thanh toán (khách không đến)
+          if (
+            booking.payment &&
+            booking.payment.status !== PaymentStatus.PAID
+          ) {
+            await tx.payment.update({
+              where: { id: booking.payment.id },
+              data: { status: PaymentStatus.CANCELLED },
+            });
+          }
+          const updated = await tx.spaBooking.update({
+            where: { id: booking.id },
+            data: { status: SpaBookingStatus.NO_SHOW },
           });
+          await this.notifyBooking(
+            tx,
+            updated,
+            NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          );
         }
-        const updated = await tx.spaBooking.update({ where: { id: booking.id }, data: { status: SpaBookingStatus.NO_SHOW } });
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
-      }
-    });
+      });
 
     // 3. Các lịch hẹn của các ngày trước đó (khi hết ngày) chưa hoàn thành -> Tự động chuyển về trạng thái DONE (COMPLETED) với note "nhân viên chưa hoàn thành lịch hẹn"
     const todayVNStr = this.getVNDateString(now);
@@ -1384,10 +1630,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       where: {
         scheduledAt: { lt: startOfTodayVN },
         status: {
-          in: [
-            SpaBookingStatus.CHECK_IN,
-            SpaBookingStatus.IN_PROGRESS,
-          ],
+          in: [SpaBookingStatus.CHECK_IN, SpaBookingStatus.IN_PROGRESS],
         },
       },
       orderBy: { scheduledAt: 'asc' },
@@ -1399,7 +1642,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         for (const booking of overduePastBookings) {
           const noteSuffix = 'nhân viên chưa hoàn thành lịch hẹn';
           const updatedNote = booking.note
-            ? (booking.note.includes(noteSuffix) ? booking.note : `${booking.note} (${noteSuffix})`)
+            ? booking.note.includes(noteSuffix)
+              ? booking.note
+              : `${booking.note} (${noteSuffix})`
             : noteSuffix;
 
           const updated = await tx.spaBooking.update({
@@ -1407,10 +1652,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             data: {
               status: SpaBookingStatus.COMPLETED,
               note: updatedNote,
-              petConditionAfter: booking.petConditionAfter || 'Nhân viên chưa hoàn thành lịch hẹn',
+              petConditionAfter:
+                booking.petConditionAfter ||
+                'Nhân viên chưa hoàn thành lịch hẹn',
             },
           });
-          await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
+          await this.notifyBooking(
+            tx,
+            updated,
+            NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+          );
         }
       });
     }
@@ -1439,20 +1690,34 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     let managerId = booking.addressSpa?.managerId;
     if (!managerId) {
       const managerUser = await this.prisma.user.findFirst({
-        where: { role: UserRole.SPA_MANAGER, accountStatus: AccountStatus.ACTIVE },
+        where: {
+          role: UserRole.SPA_MANAGER,
+          accountStatus: AccountStatus.ACTIVE,
+        },
       });
       managerId = managerUser?.id;
     }
 
     if (!managerId) {
-      throw new BadRequestException('Không tìm thấy Quản lý phụ trách chi nhánh này.');
+      throw new BadRequestException(
+        'Không tìm thấy Quản lý phụ trách chi nhánh này.',
+      );
     }
 
     const scheduledDate = new Date(booking.scheduledAt);
-    const timeStr = scheduledDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    const dateStr = scheduledDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const customerName = booking.user?.name || booking.customerNameSnapshot || 'Khách hàng';
-    const customerPhone = booking.user?.phone || booking.customerPhoneSnapshot || 'Chưa có SĐT';
+    const timeStr = scheduledDate.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const dateStr = scheduledDate.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const customerName =
+      booking.user?.name || booking.customerNameSnapshot || 'Khách hàng';
+    const customerPhone =
+      booking.user?.phone || booking.customerPhoneSnapshot || 'Chưa có SĐT';
     const petName = booking.petName || booking.pet?.name || 'Thú cưng';
     const staffName = booking.staff?.name || 'Nhân viên';
 
@@ -1490,7 +1755,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   /**
    * Lấy dữ liệu thống kê Dashboard Quản lý Spa theo chi nhánh và khoảng thời gian (hỗ trợ 7d, 30d, 90d, 12m, tùy chọn ngày)
    */
-  async getManagerDashboardStats(managerId: string, branchId: string, rangeInput?: { range?: string; from?: string; to?: string }) {
+  async getManagerDashboardStats(
+    managerId: string,
+    branchId: string,
+    rangeInput?: { range?: string; from?: string; to?: string },
+  ) {
     const period = resolveDashboardRange(rangeInput || { range: '30d' });
 
     const managerBranches = await this.prisma.store.findMany({
@@ -1500,7 +1769,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const managerBranchIds = managerBranches.map((branch) => branch.id);
     const targetBranch = branchId && branchId !== 'ALL' ? branchId : undefined;
     if (targetBranch && !managerBranchIds.includes(targetBranch)) {
-      throw new ForbiddenException('Bạn không có quyền truy cập chi nhánh này.');
+      throw new ForbiddenException(
+        'Bạn không có quyền truy cập chi nhánh này.',
+      );
     }
     const selectedBranchIds = targetBranch ? [targetBranch] : managerBranchIds;
     const branchFilter = { addressSpaId: { in: selectedBranchIds } };
@@ -1553,26 +1824,43 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const allMainServiceIds = Array.from(
-      new Set(bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean))
+      new Set(
+        bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean),
+      ),
     );
     const allSubServiceIds = Array.from(
-      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+      new Set(bookings.flatMap((b) => b.subServiceIds || [])),
     );
 
-    const allServiceIds = Array.from(new Set([...allMainServiceIds, ...allSubServiceIds]));
+    const allServiceIds = Array.from(
+      new Set([...allMainServiceIds, ...allSubServiceIds]),
+    );
 
-    const servicesList = allServiceIds.length > 0
-      ? await this.prisma.spaService.findMany({
-        where: { id: { in: allServiceIds as string[] } },
-        include: { category: true },
-      })
-      : [];
+    const servicesList =
+      allServiceIds.length > 0
+        ? await this.prisma.spaService.findMany({
+            where: { id: { in: allServiceIds as string[] } },
+            include: { category: true },
+          })
+        : [];
 
     const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const startOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const endOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
 
     // Đếm chính xác các lịch hẹn có thời gian đúng trong ngày hôm nay (đồng bộ với Admin)
     const strictlyTodayBookings = bookings.filter((b) => {
@@ -1583,14 +1871,18 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const todayBookings = bookings.filter((b) => {
       const d = new Date(b.scheduledAt);
       const isToday = d >= startOfDay && d <= endOfDay;
-      const isPendingOrConfirmed = b.status === SpaBookingStatus.PENDING || b.status === SpaBookingStatus.CONFIRMED || b.status === SpaBookingStatus.CHECK_IN;
+      const isPendingOrConfirmed =
+        b.status === SpaBookingStatus.PENDING ||
+        b.status === SpaBookingStatus.CONFIRMED ||
+        b.status === SpaBookingStatus.CHECK_IN;
       return isToday || isPendingOrConfirmed;
     });
 
     const recognizedBookings = bookings.filter(isRecognizedSpaBooking);
 
     // Phân tách đơn và doanh thu kỳ hiện tại và kỳ trước theo khoảng thời gian đã chọn
-    const getBookingDate = (b: any) => (b.createdAt ? new Date(b.createdAt) : new Date(b.scheduledAt));
+    const getBookingDate = (b: any) =>
+      b.createdAt ? new Date(b.createdAt) : new Date(b.scheduledAt);
 
     // Tất cả lịch hẹn trong kỳ lọc
     const bookingsInPeriod = bookings.filter((b) => {
@@ -1640,7 +1932,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       orderBy: { createdAt: 'asc' },
     });
 
-    const categoryMap = new Map<string, { id: string; name: string; revenue: number; ratings: number[] }>();
+    const categoryMap = new Map<
+      string,
+      { id: string; name: string; revenue: number; ratings: number[] }
+    >();
     for (const c of categoriesList) {
       categoryMap.set(c.id, {
         id: c.id,
@@ -1650,7 +1945,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    function findCategoryForService(service?: any, bookingCatId?: string | null): string {
+    function findCategoryForService(
+      service?: any,
+      bookingCatId?: string | null,
+    ): string {
       if (service?.categoryId && categoryMap.has(service.categoryId)) {
         return service.categoryId;
       }
@@ -1660,29 +1958,40 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       const sName = (service?.name || '').toLowerCase();
       for (const cat of categoriesList) {
         const cName = cat.name.toLowerCase();
-        if (sName.includes(cName) || (cName.length > 2 && sName.includes(cName.substring(0, 3)))) {
+        if (
+          sName.includes(cName) ||
+          (cName.length > 2 && sName.includes(cName.substring(0, 3)))
+        ) {
           return cat.id;
         }
       }
       return categoriesList[0]?.id || '';
     }
 
-    const isFilteredByRange = Boolean(rangeInput && (rangeInput.range || rangeInput.from || rangeInput.to));
+    const isFilteredByRange = Boolean(
+      rangeInput && (rangeInput.range || rangeInput.from || rangeInput.to),
+    );
 
     // Phân bổ doanh thu danh mục theo các đơn hoàn thành trong kỳ đã lọc
     const bookingsForCategoryStats = isFilteredByRange
       ? currentPeriodBookings
-      : (currentPeriodBookings.length > 0 ? currentPeriodBookings : recognizedBookings);
+      : currentPeriodBookings.length > 0
+        ? currentPeriodBookings
+        : recognizedBookings;
 
-    const subServiceCategoryId = categoriesList.find((c) => c.isMain === false)?.id
-      || categoriesList.find((c) => c.name.toLowerCase().includes('lẻ'))?.id
-      || categoriesList[categoriesList.length - 1]?.id
-      || '';
+    const subServiceCategoryId =
+      categoriesList.find((c) => c.isMain === false)?.id ||
+      categoriesList.find((c) => c.name.toLowerCase().includes('lẻ'))?.id ||
+      categoriesList[categoriesList.length - 1]?.id ||
+      '';
 
     bookingsForCategoryStats.forEach((b) => {
       const targetId = b.serviceId || b.mainServiceId;
-      const mainService = b.service || (targetId ? servicesMap.get(targetId) : null);
-      const resolvedSubServices = (b.subServiceIds || []).map((id) => servicesMap.get(id)).filter(Boolean);
+      const mainService =
+        b.service || (targetId ? servicesMap.get(targetId) : null);
+      const resolvedSubServices = (b.subServiceIds || [])
+        .map((id) => servicesMap.get(id))
+        .filter(Boolean);
 
       const mainPrice = b.priceSnapshot || (mainService as any)?.price || 0;
       const bookingTotal = b.totalPrice ?? b.priceSnapshot ?? 0;
@@ -1699,12 +2008,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       if (subRevenue > 0) {
         if (resolvedSubServices.length > 0) {
-          const resolvedSubTotal = resolvedSubServices.reduce((sum: number, s: any) => sum + (s?.price || 0), 0);
+          const resolvedSubTotal = resolvedSubServices.reduce(
+            (sum: number, s: any) => sum + (s?.price || 0),
+            0,
+          );
           resolvedSubServices.forEach((s: any) => {
             const subCatId = findCategoryForService(s, null);
             const targetSub = categoryMap.get(subCatId);
             if (targetSub) {
-              const ratio = resolvedSubTotal > 0 ? (s?.price || 0) / resolvedSubTotal : 0;
+              const ratio =
+                resolvedSubTotal > 0 ? (s?.price || 0) / resolvedSubTotal : 0;
               targetSub.revenue += Math.round(subRevenue * ratio);
               if (b.feedback && typeof b.feedback.rateServices === 'number') {
                 targetSub.ratings.push(b.feedback.rateServices);
@@ -1724,10 +2037,17 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const categoryBreakdown = categoriesList.map((cat) => {
-      const data = categoryMap.get(cat.id) || { revenue: 0, ratings: [] as number[] };
-      const avgRating = data.ratings.length > 0
-        ? Math.round((data.ratings.reduce((a, b) => a + b, 0) / data.ratings.length) * 10) / 10
-        : 0;
+      const data = categoryMap.get(cat.id) || {
+        revenue: 0,
+        ratings: [] as number[],
+      };
+      const avgRating =
+        data.ratings.length > 0
+          ? Math.round(
+              (data.ratings.reduce((a, b) => a + b, 0) / data.ratings.length) *
+                10,
+            ) / 10
+          : 0;
       return {
         id: cat.id,
         name: cat.name,
@@ -1738,24 +2058,37 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     // Phân bổ trạng thái của tất cả lịch hẹn trong kỳ đã lọc
-    const targetBookingsForStatus = isFilteredByRange ? bookingsInPeriod : (bookingsInPeriod.length > 0 ? bookingsInPeriod : bookings);
+    const targetBookingsForStatus = isFilteredByRange
+      ? bookingsInPeriod
+      : bookingsInPeriod.length > 0
+        ? bookingsInPeriod
+        : bookings;
     const statusCountMap: Record<string, number> = {};
     targetBookingsForStatus.forEach((b) => {
       statusCountMap[b.status] = (statusCountMap[b.status] || 0) + 1;
     });
-    const statusDistribution = Object.entries(statusCountMap).map(([status, value]) => ({ status, value }));
+    const statusDistribution = Object.entries(statusCountMap).map(
+      ([status, value]) => ({ status, value }),
+    );
 
     const unconfirmedBookingsCount = bookings.filter(
-      (b) => b.status === SpaBookingStatus.PENDING
+      (b) => b.status === SpaBookingStatus.PENDING,
     ).length;
 
     const completedBookingsCount = isFilteredByRange
-      ? bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED).length
-      : (bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED).length || recognizedBookings.length);
+      ? bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED)
+          .length
+      : bookingsInPeriod.filter((b) => b.status === SpaBookingStatus.COMPLETED)
+          .length || recognizedBookings.length;
 
     const totalRevenue = isFilteredByRange
       ? currentRevenue
-      : (currentRevenue > 0 ? currentRevenue : recognizedBookings.reduce((sum, b) => sum + getSpaBookingRevenue(b), 0));
+      : currentRevenue > 0
+        ? currentRevenue
+        : recognizedBookings.reduce(
+            (sum, b) => sum + getSpaBookingRevenue(b),
+            0,
+          );
 
     const serializedRange = serializeDashboardRange(period);
 
@@ -1790,8 +2123,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         serviceName: b.service?.name || 'Khác',
         status: b.status,
         petName: b.petName || b.pet?.name || 'Thú cưng',
-        customerName:
-          this.resolveCustomerSnapshot(b)?.name || 'Khách hàng',
+        customerName: this.resolveCustomerSnapshot(b)?.name || 'Khách hàng',
         note: b.note,
         staffId: b.staffId,
         staffName: b.staff?.name || null,
@@ -1818,7 +2150,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const bookingCountsMap: Record<string, number> = {};
     for (const b of allBookings) {
       if (b.serviceId) {
-        bookingCountsMap[b.serviceId] = (bookingCountsMap[b.serviceId] || 0) + 1;
+        bookingCountsMap[b.serviceId] =
+          (bookingCountsMap[b.serviceId] || 0) + 1;
       }
       if (Array.isArray(b.subServiceIds)) {
         for (const subId of b.subServiceIds) {
@@ -1834,17 +2167,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
     }));
 
-    return servicesWithCount.sort((a, b) => b._count.bookings - a._count.bookings);
+    return servicesWithCount.sort(
+      (a, b) => b._count.bookings - a._count.bookings,
+    );
   }
 
   async getManagerCategories(managerId: string) {
     const [categories, allBookings] = await Promise.all([
       this.prisma.spaCategory.findMany({
         where: {
-          OR: [
-            { managerId },
-            { managerId: null },
-          ],
+          OR: [{ managerId }, { managerId: null }],
         },
         include: {
           services: {
@@ -1866,7 +2198,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       for (const b of allBookings) {
         const isDirectCat = b.categoryId === c.id;
-        const isMainInCat = b.serviceId ? serviceIds.includes(b.serviceId) : false;
+        const isMainInCat = b.serviceId
+          ? serviceIds.includes(b.serviceId)
+          : false;
         const isSubInCat = Array.isArray(b.subServiceIds)
           ? b.subServiceIds.some((id) => serviceIds.includes(id))
           : false;
@@ -1899,7 +2233,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Tên danh mục phải có ít nhất 2 ký tự.');
     }
 
-    return this.prisma.spaCategory.create({
+    const createdCategory = await this.prisma.spaCategory.create({
       data: {
         name: dto.name.trim(),
         description: dto.description ? dto.description.trim() : null,
@@ -1908,6 +2242,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         managerId,
       },
     });
+    this.invalidatePublicSpaCache();
+    return createdCategory;
   }
 
   async updateManagerCategory(
@@ -1929,7 +2265,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (existing.managerId && existing.managerId !== managerId) {
-      throw new ForbiddenException('Bạn không có quyền chỉnh sửa danh mục này.');
+      throw new ForbiddenException(
+        'Bạn không có quyền chỉnh sửa danh mục này.',
+      );
     }
 
     const data: any = {};
@@ -1939,14 +2277,17 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
       data.name = dto.name.trim();
     }
-    if (dto.description !== undefined) data.description = dto.description ? dto.description.trim() : null;
+    if (dto.description !== undefined)
+      data.description = dto.description ? dto.description.trim() : null;
     if (dto.isMain !== undefined) data.isMain = dto.isMain;
     if (dto.status !== undefined) data.status = dto.status;
 
-    return this.prisma.spaCategory.update({
+    const updatedCategory = await this.prisma.spaCategory.update({
       where: { id: categoryId },
       data,
     });
+    this.invalidatePublicSpaCache();
+    return updatedCategory;
   }
 
   async deleteManagerCategory(managerId: string, categoryId: string) {
@@ -1966,12 +2307,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (existing._count.services > 0) {
-      throw new BadRequestException(`Không thể xóa danh mục đang chứa ${existing._count.services} dịch vụ!`);
+      throw new BadRequestException(
+        `Không thể xóa danh mục đang chứa ${existing._count.services} dịch vụ!`,
+      );
     }
 
-    return this.prisma.spaCategory.delete({
+    const deletedCategory = await this.prisma.spaCategory.delete({
       where: { id: categoryId },
     });
+    this.invalidatePublicSpaCache();
+    return deletedCategory;
   }
 
   /**
@@ -1999,14 +2344,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     const category = await this.prisma.spaCategory.findFirst({
       where: {
         id: catId,
-        OR: [
-          { managerId },
-          { managerId: null },
-        ],
+        OR: [{ managerId }, { managerId: null }],
       },
     });
     if (!category) {
-      throw new ForbiddenException('Danh mục Spa không tồn tại hoặc bạn không có quyền.');
+      throw new ForbiddenException(
+        'Danh mục Spa không tồn tại hoặc bạn không có quyền.',
+      );
     }
 
     let targetImageUrl: string | null = dto.imageUrl || null;
@@ -2015,7 +2359,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     // Nếu không tải ảnh lên, tìm kiếm xem có dịch vụ trùng tên đã có ảnh chưa
     if (!targetImageUrl) {
       const existingSameName = await this.prisma.spaService.findFirst({
-        where: { name: { equals: serviceName, mode: 'insensitive' }, imageUrl: { not: null } },
+        where: {
+          name: { equals: serviceName, mode: 'insensitive' },
+          imageUrl: { not: null },
+        },
         select: { imageUrl: true },
       });
       if (existingSameName?.imageUrl) {
@@ -2023,8 +2370,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    let petMinWeight = dto.petMinWeight;
-    let petMaxWeight = dto.petMaxWeight;
+    const petMinWeight = dto.petMinWeight;
+    const petMaxWeight = dto.petMaxWeight;
     let duration = dto.duration;
     let price = dto.price;
 
@@ -2058,6 +2405,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    this.invalidatePublicSpaCache();
     return createdService;
   }
 
@@ -2090,7 +2438,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('Dịch vụ không tồn tại.');
     }
 
-    if (service.category.managerId && service.category.managerId !== managerId) {
+    if (
+      service.category.managerId &&
+      service.category.managerId !== managerId
+    ) {
       throw new ForbiddenException('Bạn không quản lý dịch vụ này.');
     }
 
@@ -2115,7 +2466,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const finalName = data.name || service.name;
-    const finalImageUrl = dto.imageUrl !== undefined ? (dto.imageUrl || null) : service.imageUrl;
+    const finalImageUrl =
+      dto.imageUrl !== undefined ? dto.imageUrl || null : service.imageUrl;
     if (finalImageUrl !== undefined) {
       await this.prisma.spaService.updateMany({
         where: { name: { equals: finalName, mode: 'insensitive' } },
@@ -2123,21 +2475,34 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    this.invalidatePublicSpaCache();
     return updated;
   }
 
   async getManagerBookings(managerId: string, branchId: string) {
-    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
+    const targetBranch = branchId && branchId !== 'ALL' ? branchId : undefined;
 
     const bookings = await this.prisma.spaBooking.findMany({
       where: targetBranch ? { addressSpaId: targetBranch } : {},
       include: {
         payment: true,
         service: {
-          select: { id: true, name: true, price: true, duration: true, description: true },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            duration: true,
+            description: true,
+          },
         },
         user: {
-          select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            avatarUrl: true,
+          },
         },
         pet: true,
         staff: {
@@ -2148,26 +2513,38 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     // Collect ALL service IDs (main + sub) for a single bulk query
     const allMainServiceIds = Array.from(
-      new Set(bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean))
+      new Set(
+        bookings.map((b) => b.serviceId || b.mainServiceId).filter(Boolean),
+      ),
     ) as string[];
     const allSubServiceIds = Array.from(
-      new Set(bookings.flatMap((b) => b.subServiceIds || []))
+      new Set(bookings.flatMap((b) => b.subServiceIds || [])),
     ) as string[];
-    const allServiceIds = Array.from(new Set([...allMainServiceIds, ...allSubServiceIds]));
+    const allServiceIds = Array.from(
+      new Set([...allMainServiceIds, ...allSubServiceIds]),
+    );
 
-    const servicesList = allServiceIds.length > 0
-      ? await this.prisma.spaService.findMany({
-        where: { id: { in: allServiceIds } },
-        select: { id: true, name: true, price: true, description: true, isMain: true },
-      })
-      : [];
+    const servicesList =
+      allServiceIds.length > 0
+        ? await this.prisma.spaService.findMany({
+            where: { id: { in: allServiceIds } },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              description: true,
+              isMain: true,
+            },
+          })
+        : [];
 
     const servicesMap = new Map(servicesList.map((s) => [s.id, s]));
 
     const mappedBookings = bookings.map((b) => {
       const targetMainId = b.serviceId || b.mainServiceId;
       // Resolve main service: prefer Prisma include, fall back to bulk query
-      const mainServiceResolved: any = b.service || (targetMainId ? servicesMap.get(targetMainId) : null);
+      const mainServiceResolved: any =
+        b.service || (targetMainId ? servicesMap.get(targetMainId) : null);
 
       // Resolve sub-services from bulk query
       const resolvedSubServices = (b.subServiceIds || [])
@@ -2176,8 +2553,12 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       // Use DB totalPrice (actual price paid), fall back to computed only if null
       const mainPrice = b.priceSnapshot || mainServiceResolved?.price || 0;
-      const resolvedSubTotal = resolvedSubServices.reduce((sum, s) => sum + (s?.price || 0), 0);
-      const totalPrice = b.totalPrice ?? Math.max(0, mainPrice + resolvedSubTotal);
+      const resolvedSubTotal = resolvedSubServices.reduce(
+        (sum, s) => sum + (s?.price || 0),
+        0,
+      );
+      const totalPrice =
+        b.totalPrice ?? Math.max(0, mainPrice + resolvedSubTotal);
       const subRevenue = Math.max(0, totalPrice - mainPrice);
 
       // Build sub-services display:
@@ -2186,7 +2567,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       let subServicesDisplay: any[] = resolvedSubServices;
       const subIds = b.subServiceIds || [];
       if (resolvedSubServices.length === 0 && subIds.length > 0) {
-        const priceEach = subIds.length > 0 ? Math.round(subRevenue / subIds.length) : 0;
+        const priceEach =
+          subIds.length > 0 ? Math.round(subRevenue / subIds.length) : 0;
         subServicesDisplay = subIds.map((id, i) => ({
           id,
           name: `Dịch vụ lẻ #${i + 1}`,
@@ -2211,7 +2593,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     return mappedBookings.sort((a, b) => {
       const getPriority = (item: any) => {
         if (item.status === SpaBookingStatus.PENDING) return 1;
-        if (item.status === SpaBookingStatus.CONFIRMED && !item.staffId) return 2;
+        if (item.status === SpaBookingStatus.CONFIRMED && !item.staffId)
+          return 2;
         return 3;
       };
 
@@ -2219,11 +2602,17 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       const prioB = getPriority(b);
 
       if (prioA !== prioB) return prioA - prioB;
-      return new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime();
+      return (
+        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+      );
     });
   }
 
-  async managerReassignStaff(managerId: string, bookingId: string, newStaffId: string) {
+  async managerReassignStaff(
+    managerId: string,
+    bookingId: string,
+    newStaffId: string,
+  ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
     });
@@ -2261,7 +2650,8 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     // Check staff availability during full expected duration
     const start = booking.timeStartExpected || booking.scheduledAt;
-    const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
+    const end =
+      booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
 
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
@@ -2279,7 +2669,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const busy = isStaffBusy(activeBookings, start, end);
     if (busy) {
-      throw new BadRequestException('Nhân viên này đang bận trong khoảng thời gian của ca làm việc.');
+      throw new BadRequestException(
+        'Nhân viên này đang bận trong khoảng thời gian của ca làm việc.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -2288,17 +2680,24 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         data: { staffId: staff.userId },
       });
       if (booking.staffId !== updated.staffId) {
-        await this.notifyBooking(tx, updated, NotificationEventType.SPA_BOOKING_STATUS_CHANGED);
-        await this.notifications.create({
-          userId: staff.userId,
-          category: NotificationCategory.APPOINTMENT,
-          eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
-          title: 'Bạn được phân công lịch Spa',
-          content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-6).toUpperCase()}.`,
-          targetUrl: `/spa/staff?bookingId=${bookingId}`,
-          entityType: 'SPA_BOOKING',
-          entityId: bookingId,
-        }, tx);
+        await this.notifyBooking(
+          tx,
+          updated,
+          NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+        );
+        await this.notifications.create(
+          {
+            userId: staff.userId,
+            category: NotificationCategory.APPOINTMENT,
+            eventType: NotificationEventType.SPA_BOOKING_STATUS_CHANGED,
+            title: 'Bạn được phân công lịch Spa',
+            content: `Bạn được phân công phụ trách lịch Spa #${bookingId.slice(-6).toUpperCase()}.`,
+            targetUrl: `/spa/staff?bookingId=${bookingId}`,
+            entityType: 'SPA_BOOKING',
+            entityId: bookingId,
+          },
+          tx,
+        );
       }
       return updated;
     });
@@ -2307,7 +2706,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   /**
    * Quản lý Spa đổi lịch hẹn cho khách hàng và gửi thông báo đến khách hàng & nhân viên phụ trách
    */
-  async rescheduleBooking(managerId: string, bookingId: string, scheduledAt: string) {
+  async rescheduleBooking(
+    managerId: string,
+    bookingId: string,
+    scheduledAt: string,
+  ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
     });
@@ -2323,7 +2726,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (((booking as any).rescheduleCount || 0) >= 2) {
-      throw new BadRequestException('Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.');
+      throw new BadRequestException(
+        'Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.',
+      );
     }
 
     const newStart = new Date(scheduledAt);
@@ -2331,18 +2736,21 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Thời gian đổi lịch không hợp lệ.');
     }
 
-    const durationMs = (booking.timeEndExpected && booking.timeStartExpected)
-      ? (booking.timeEndExpected.getTime() - booking.timeStartExpected.getTime())
-      : 45 * 60 * 1000;
+    const durationMs =
+      booking.timeEndExpected && booking.timeStartExpected
+        ? booking.timeEndExpected.getTime() -
+          booking.timeStartExpected.getTime()
+        : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const { startMins: startMinsFromMidnight } = getVietnamTimeMinutes(newStart);
+    const { startMins: startMinsFromMidnight } =
+      getVietnamTimeMinutes(newStart);
     const totalDurationMinutes = Math.round(durationMs / (60 * 1000));
     const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
 
     if (startMinsFromMidnight < 9 * 60 || endMinsFromMidnight > 18 * 60) {
       throw new BadRequestException(
-        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
+        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`,
       );
     }
 
@@ -2354,7 +2762,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         where: { addressSpaId: booking.addressSpaId, status: 'ACTIVE' },
       });
       if (activeStaffs.length === 0) {
-        throw new BadRequestException('Chi nhánh hiện không có nhân viên nào đang hoạt động.');
+        throw new BadRequestException(
+          'Chi nhánh hiện không có nhân viên nào đang hoạt động.',
+        );
       }
 
       const overlappingBookings = await this.prisma.spaBooking.findMany({
@@ -2380,21 +2790,29 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
 
       const activeOverlapping = overlappingBookings.filter((b) => {
-        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const bStart = new Date(
+          b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+        );
         const dur = this.getServiceDuration(b.service);
-        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        const bEnd = new Date(
+          b.timeEndExpected || bStart.getTime() + dur * 60 * 1000,
+        );
         return bStart < newEnd && bEnd > newStart;
       });
 
       const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
 
       const freeStaffs = activeStaffs.filter((staff) => {
-        const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        const staffAssigned = assignedBookings.filter(
+          (b) => b.staffId === staff.userId || b.staffId === staff.id,
+        );
         return !isStaffBusy(staffAssigned, newStart, newEnd);
       });
 
       if (booking.staffId) {
-        const currentStaffIsFree = freeStaffs.some((s) => s.userId === booking.staffId || s.id === booking.staffId);
+        const currentStaffIsFree = freeStaffs.some(
+          (s) => s.userId === booking.staffId || s.id === booking.staffId,
+        );
         if (!currentStaffIsFree) {
           nextStaffId = null;
           nextStatus = SpaBookingStatus.CONFIRMED;
@@ -2421,8 +2839,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         WHERE id = ${bookingId}
       `;
 
-      const timeStr = newStart.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = newStart.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeStr = newStart.toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const dateStr = newStart.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
 
       // Gửi thông báo đến khách hàng
       if (booking.userId) {
@@ -2469,7 +2894,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   /**
    * Khách hàng (User) đổi lịch hẹn và gửi thông báo đến Quản lý chi nhánh Spa & nhân viên phụ trách
    */
-  async userRescheduleBooking(userId: string, bookingId: string, scheduledAt: string) {
+  async userRescheduleBooking(
+    userId: string,
+    bookingId: string,
+    scheduledAt: string,
+  ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
     });
@@ -2483,7 +2912,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (((booking as any).rescheduleCount || 0) >= 2) {
-      throw new BadRequestException('Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.');
+      throw new BadRequestException(
+        'Lịch hẹn này đã đổi tối đa 2 lần, không thể đổi thêm.',
+      );
     }
 
     // Allow rescheduling ONLY when status is PENDING or CONFIRMED
@@ -2499,12 +2930,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Time restriction: Rescheduling can only be done at least 30 minutes before scheduled booking time
-    const currentScheduledTime = new Date(booking.scheduledAt || booking.timeStartExpected).getTime();
+    const currentScheduledTime = new Date(
+      booking.scheduledAt || booking.timeStartExpected,
+    ).getTime();
     const now = Date.now();
     const thirtyMinutesMs = 30 * 60 * 1000;
 
     if (currentScheduledTime - now < thirtyMinutesMs) {
-      throw new BadRequestException('Bạn chỉ có thể đổi lịch hẹn trước thời gian đặt lịch ít nhất 30 phút.');
+      throw new BadRequestException(
+        'Bạn chỉ có thể đổi lịch hẹn trước thời gian đặt lịch ít nhất 30 phút.',
+      );
     }
 
     const newStart = new Date(scheduledAt);
@@ -2513,22 +2948,26 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (newStart.getTime() <= now) {
-      throw new BadRequestException('Thời gian hẹn mới phải ở trong tương lai.');
+      throw new BadRequestException(
+        'Thời gian hẹn mới phải ở trong tương lai.',
+      );
     }
 
     const durationMs =
       booking.timeEndExpected && booking.timeStartExpected
-        ? booking.timeEndExpected.getTime() - booking.timeStartExpected.getTime()
+        ? booking.timeEndExpected.getTime() -
+          booking.timeStartExpected.getTime()
         : 45 * 60 * 1000;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const { startMins: startMinsFromMidnight } = getVietnamTimeMinutes(newStart);
+    const { startMins: startMinsFromMidnight } =
+      getVietnamTimeMinutes(newStart);
     const totalDurationMinutes = Math.round(durationMs / (60 * 1000));
     const endMinsFromMidnight = startMinsFromMidnight + totalDurationMinutes;
 
     if (startMinsFromMidnight < 9 * 60 || endMinsFromMidnight > 18 * 60) {
       throw new BadRequestException(
-        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`
+        `Thời gian dịch vụ (${totalDurationMinutes} phút) vượt quá khung giờ hoạt động của Spa (09:00 - 18:00). Vui lòng chọn khung giờ sớm hơn.`,
       );
     }
 
@@ -2540,7 +2979,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         where: { addressSpaId: booking.addressSpaId, status: 'ACTIVE' },
       });
       if (activeStaffs.length === 0) {
-        throw new BadRequestException('Chi nhánh hiện không có nhân viên nào đang hoạt động.');
+        throw new BadRequestException(
+          'Chi nhánh hiện không có nhân viên nào đang hoạt động.',
+        );
       }
 
       const overlappingBookings = await this.prisma.spaBooking.findMany({
@@ -2566,21 +3007,29 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       });
 
       const activeOverlapping = overlappingBookings.filter((b) => {
-        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const bStart = new Date(
+          b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+        );
         const dur = this.getServiceDuration(b.service);
-        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        const bEnd = new Date(
+          b.timeEndExpected || bStart.getTime() + dur * 60 * 1000,
+        );
         return bStart < newEnd && bEnd > newStart;
       });
 
       const assignedBookings = activeOverlapping.filter((b) => !!b.staffId);
 
       const freeStaffs = activeStaffs.filter((staff) => {
-        const staffAssigned = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        const staffAssigned = assignedBookings.filter(
+          (b) => b.staffId === staff.userId || b.staffId === staff.id,
+        );
         return !isStaffBusy(staffAssigned, newStart, newEnd);
       });
 
       if (booking.staffId) {
-        const currentStaffIsFree = freeStaffs.some((s) => s.userId === booking.staffId || s.id === booking.staffId);
+        const currentStaffIsFree = freeStaffs.some(
+          (s) => s.userId === booking.staffId || s.id === booking.staffId,
+        );
         if (!currentStaffIsFree) {
           nextStaffId = null;
           nextStatus = SpaBookingStatus.CONFIRMED;
@@ -2607,8 +3056,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         WHERE id = ${bookingId}
       `;
 
-      const timeStr = newStart.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = newStart.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeStr = newStart.toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const dateStr = newStart.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
 
       // Gửi thông báo đến Quản lý chi nhánh
       const branch = booking.addressSpaId
@@ -2656,7 +3112,12 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async managerUpdateBookingServices(managerId: string, bookingId: string, mainServiceId: string, subServiceIds: string[] = []) {
+  async managerUpdateBookingServices(
+    managerId: string,
+    bookingId: string,
+    mainServiceId: string,
+    subServiceIds: string[] = [],
+  ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
       include: { pet: true },
@@ -2665,7 +3126,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('Lịch hẹn không tồn tại.');
     }
 
-    const mainService = await this.prisma.spaService.findUnique({ where: { id: mainServiceId } });
+    const mainService = await this.prisma.spaService.findUnique({
+      where: { id: mainServiceId },
+    });
     if (!mainService) {
       throw new NotFoundException('Dịch vụ chính không tồn tại.');
     }
@@ -2674,17 +3137,26 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: subServiceIds } },
     });
 
-    const effectiveSpecies = booking.petSpecies || booking.pet?.species || 'DOG';
+    const effectiveSpecies =
+      booking.petSpecies || booking.pet?.species || 'DOG';
     const effectiveWeight = booking.petWeight || booking.pet?.weight || 0;
 
-    const resolvedMain = resolveServicePriceAndDuration(mainService, effectiveSpecies, effectiveWeight);
+    const resolvedMain = resolveServicePriceAndDuration(
+      mainService,
+      effectiveSpecies,
+      effectiveWeight,
+    );
     const mainPrice = resolvedMain.price;
     const mainDuration = resolvedMain.duration;
 
     let subPriceTotal = 0;
     let subDurationTotal = 0;
     for (const sub of subServices) {
-      const resolvedSub = resolveServicePriceAndDuration(sub, effectiveSpecies, effectiveWeight);
+      const resolvedSub = resolveServicePriceAndDuration(
+        sub,
+        effectiveSpecies,
+        effectiveWeight,
+      );
       subPriceTotal += resolvedSub.price;
       subDurationTotal += resolvedSub.duration;
     }
@@ -2713,7 +3185,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async getManagerStaffPerformance(managerId: string, branchId: string, filter?: 'ALL' | 'ON_TIME' | 'LATE') {
+  async getManagerStaffPerformance(
+    managerId: string,
+    branchId: string,
+    filter?: 'ALL' | 'ON_TIME' | 'LATE',
+  ) {
     const branch = await this.prisma.store.findFirst({
       where: { id: branchId, managerId },
     });
@@ -2748,7 +3224,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         user: this.resolveCustomerSnapshot(b),
         isLate,
         diffMinutes: Math.abs(diff),
-        statusText: isLate ? `Muộn ${diff} phút` : `Đúng giờ / Sớm ${Math.abs(diff)} phút`,
+        statusText: isLate
+          ? `Muộn ${diff} phút`
+          : `Đúng giờ / Sớm ${Math.abs(diff)} phút`,
       };
     });
 
@@ -2781,7 +3259,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const staffIdTrimmed = staffId?.trim();
     if (!staffIdTrimmed) {
-      throw new BadRequestException('Vui lòng chọn nhân viên kỹ thuật phụ trách khi xác nhận lịch hẹn.');
+      throw new BadRequestException(
+        'Vui lòng chọn nhân viên kỹ thuật phụ trách khi xác nhận lịch hẹn.',
+      );
     }
 
     const staff = await this.prisma.spaStaff.findFirst({
@@ -2795,11 +3275,14 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!staff) {
-      throw new BadRequestException('Nhân viên không thuộc chi nhánh này hoặc đang không hoạt động.');
+      throw new BadRequestException(
+        'Nhân viên không thuộc chi nhánh này hoặc đang không hoạt động.',
+      );
     }
 
     const start = booking.timeStartExpected || new Date(booking.scheduledAt);
-    const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
+    const end =
+      booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
 
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
@@ -2820,7 +3303,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const busy = isStaffBusy(activeBookings, start, end);
     if (busy) {
-      throw new BadRequestException('Nhân viên được chọn đang bận trong khung giờ của lịch hẹn.');
+      throw new BadRequestException(
+        'Nhân viên được chọn đang bận trong khung giờ của lịch hẹn.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -2856,7 +3341,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async managerCancelBooking(managerId: string, bookingId: string, reason: string) {
+  async managerCancelBooking(
+    managerId: string,
+    bookingId: string,
+    reason: string,
+  ) {
     const cancelReason = reason?.trim();
     if (!cancelReason) {
       throw new BadRequestException('Vui lòng nhập lý do hủy lịch hẹn.');
@@ -2955,10 +3444,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const allStaffKeys = Array.from(new Set(staffs.flatMap((s) => [s.userId, s.id])));
+    const allStaffKeys = Array.from(
+      new Set(staffs.flatMap((s) => [s.userId, s.id])),
+    );
 
     const start = booking.timeStartExpected || new Date(booking.scheduledAt);
-    const end = booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
+    const end =
+      booking.timeEndExpected || new Date(start.getTime() + 45 * 60 * 1000);
 
     const activeBookings = await this.prisma.spaBooking.findMany({
       where: {
@@ -2979,7 +3471,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const availableStaffs = [];
     for (const staff of staffs) {
-      const staffBookings = activeBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+      const staffBookings = activeBookings.filter(
+        (b) => b.staffId === staff.userId || b.staffId === staff.id,
+      );
       const busy = isStaffBusy(staffBookings, start, end);
       if (!busy) {
         availableStaffs.push({
@@ -3015,7 +3509,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     // Phone validation: starts with 0 and has exactly 10 digits
     const phoneRegex = /^0\d{9}$/;
     if (!phone || !phoneRegex.test(phone)) {
-      throw new BadRequestException('Số điện thoại phải bắt đầu bằng số 0 và bao gồm đúng 10 chữ số (vd: 0912345678).');
+      throw new BadRequestException(
+        'Số điện thoại phải bắt đầu bằng số 0 và bao gồm đúng 10 chữ số (vd: 0912345678).',
+      );
     }
 
     // Check existing username or phone
@@ -3085,7 +3581,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getManagerStaffs(managerId: string, branchId: string) {
-    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
+    const targetBranch = branchId && branchId !== 'ALL' ? branchId : undefined;
 
     const staffs = await this.prisma.spaStaff.findMany({
       where: targetBranch ? { addressSpaId: targetBranch } : {},
@@ -3096,7 +3592,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const allStaffKeys = Array.from(new Set(staffs.flatMap((s) => [s.userId, s.id])));
+    const allStaffKeys = Array.from(
+      new Set(staffs.flatMap((s) => [s.userId, s.id])),
+    );
 
     const bookings = await this.prisma.spaBooking.findMany({
       where: {
@@ -3113,27 +3611,51 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     return staffs.map((staff) => {
-      const staffBookings = bookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
-      const completed = staffBookings.filter((b) => b.status === SpaBookingStatus.COMPLETED);
-      const active = staffBookings.filter((b) =>
-        b.status === SpaBookingStatus.IN_PROGRESS ||
-        b.status === SpaBookingStatus.CHECK_IN
+      const staffBookings = bookings.filter(
+        (b) => b.staffId === staff.userId || b.staffId === staff.id,
+      );
+      const completed = staffBookings.filter(
+        (b) => b.status === SpaBookingStatus.COMPLETED,
+      );
+      const active = staffBookings.filter(
+        (b) =>
+          b.status === SpaBookingStatus.IN_PROGRESS ||
+          b.status === SpaBookingStatus.CHECK_IN,
       );
 
       const currentlyDoing = staffBookings.find(
-        (b) => b.status === SpaBookingStatus.IN_PROGRESS || b.status === SpaBookingStatus.CHECK_IN
+        (b) =>
+          b.status === SpaBookingStatus.IN_PROGRESS ||
+          b.status === SpaBookingStatus.CHECK_IN,
       );
       const isBusy = !!currentlyDoing;
       const workStatus = isBusy ? 'BUSY' : 'AVAILABLE';
 
-      const ratedBookings = staffBookings.filter((b) => b.feedback && typeof b.feedback.rateStaff === 'number');
-      const averageRating = ratedBookings.length > 0
-        ? Math.round((ratedBookings.reduce((sum, b) => sum + (b.feedback?.rateStaff || 0), 0) / ratedBookings.length) * 10) / 10
-        : 0;
+      const ratedBookings = staffBookings.filter(
+        (b) => b.feedback && typeof b.feedback.rateStaff === 'number',
+      );
+      const averageRating =
+        ratedBookings.length > 0
+          ? Math.round(
+              (ratedBookings.reduce(
+                (sum, b) => sum + (b.feedback?.rateStaff || 0),
+                0,
+              ) /
+                ratedBookings.length) *
+                10,
+            ) / 10
+          : 0;
 
-      const onTimeBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) <= 0);
-      const lateBookings = completed.filter((b) => (b.completionDiffMinutes ?? 0) > 0);
-      const onTimeRate = completed.length > 0 ? Math.round((onTimeBookings.length / completed.length) * 100) : 100;
+      const onTimeBookings = completed.filter(
+        (b) => (b.completionDiffMinutes ?? 0) <= 0,
+      );
+      const lateBookings = completed.filter(
+        (b) => (b.completionDiffMinutes ?? 0) > 0,
+      );
+      const onTimeRate =
+        completed.length > 0
+          ? Math.round((onTimeBookings.length / completed.length) * 100)
+          : 100;
       const paidBookings = staffBookings.filter(
         (b) => b.payment?.status === PaymentStatus.PAID,
       );
@@ -3151,11 +3673,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         status: staff.status || 'ACTIVE',
         workStatus,
         isBusy,
-        currentBooking: currentlyDoing ? {
-          id: currentlyDoing.id,
-          petName: currentlyDoing.petName,
-          status: currentlyDoing.status,
-        } : null,
+        currentBooking: currentlyDoing
+          ? {
+              id: currentlyDoing.id,
+              petName: currentlyDoing.petName,
+              status: currentlyDoing.status,
+            }
+          : null,
         completedCount: completed.length,
         activeCount: active.length,
         onTimeCount: onTimeBookings.length,
@@ -3188,7 +3712,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getManagerFeedbacks(managerId: string, branchId?: string) {
-    const targetBranch = (branchId && branchId !== 'ALL') ? branchId : undefined;
+    const targetBranch = branchId && branchId !== 'ALL' ? branchId : undefined;
 
     const feedbacks = await this.prisma.spaFeedback.findMany({
       where: targetBranch ? { booking: { addressSpaId: targetBranch } } : {},
@@ -3225,15 +3749,15 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     });
 
     const allSubServiceIds = Array.from(
-      new Set(feedbacks.flatMap((f) => f.booking?.subServiceIds || []))
+      new Set(feedbacks.flatMap((f) => f.booking?.subServiceIds || [])),
     );
 
     const subServicesList =
       allSubServiceIds.length > 0
         ? await this.prisma.spaService.findMany({
-          where: { id: { in: allSubServiceIds } },
-          select: { id: true, name: true, price: true, description: true },
-        })
+            where: { id: { in: allSubServiceIds } },
+            select: { id: true, name: true, price: true, description: true },
+          })
         : [];
 
     const subServicesMap = new Map(subServicesList.map((s) => [s.id, s]));
@@ -3246,14 +3770,23 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
             user: f.user,
           })
         : f.user,
-      booking: f.booking ? {
-        ...f.booking,
-        subServices: (f.booking.subServiceIds || []).map((id) => subServicesMap.get(id)).filter(Boolean),
-      } : null,
+      booking: f.booking
+        ? {
+            ...f.booking,
+            subServices: (f.booking.subServiceIds || [])
+              .map((id) => subServicesMap.get(id))
+              .filter(Boolean),
+          }
+        : null,
     }));
   }
 
-  async getAvailability(branchId: string, dateStr: string, durationMin: number = 30, petId?: string) {
+  async getAvailability(
+    branchId: string,
+    dateStr: string,
+    durationMin: number = 30,
+    petId?: string,
+  ) {
     const staffs = await this.prisma.spaStaff.findMany({
       where: { addressSpaId: branchId, status: 'ACTIVE' },
       include: {
@@ -3263,7 +3796,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const normalizedDateStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const normalizedDateStr = dateStr.includes('T')
+      ? dateStr.split('T')[0]
+      : dateStr;
     const startOfDay = new Date(`${normalizedDateStr}T00:00:00+07:00`);
     const endOfDay = new Date(`${normalizedDateStr}T23:59:59.999+07:00`);
 
@@ -3292,14 +3827,19 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     let petBookings: any[] = [];
     if (petId) {
-      const petRecord = this.prisma.pet ? await this.prisma.pet.findUnique({
-        where: { id: petId },
-        select: { id: true, name: true, ownerId: true },
-      }) : null;
+      const petRecord = this.prisma.pet
+        ? await this.prisma.pet.findUnique({
+            where: { id: petId },
+            select: { id: true, name: true, ownerId: true },
+          })
+        : null;
 
       const orConditions: any[] = [{ petId }];
       if (petRecord) {
-        orConditions.push({ userId: petRecord.ownerId, petName: petRecord.name });
+        orConditions.push({
+          userId: petRecord.ownerId,
+          petName: petRecord.name,
+        });
       }
 
       petBookings = await this.prisma.spaBooking.findMany({
@@ -3327,9 +3867,24 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     const timeSlots = [
-      '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-      '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
-      '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+      '09:00',
+      '09:30',
+      '10:00',
+      '10:30',
+      '11:00',
+      '11:30',
+      '12:00',
+      '12:30',
+      '13:00',
+      '13:30',
+      '14:00',
+      '14:30',
+      '15:00',
+      '15:30',
+      '16:00',
+      '16:30',
+      '17:00',
+      '17:30',
     ];
 
     const result = [];
@@ -3352,9 +3907,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       // Bookings overlapping with this time slot
       const overlappingBookings = activeBookings.filter((b) => {
-        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const bStart = new Date(
+          b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+        );
         const dur = this.getServiceDuration(b.service);
-        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        const bEnd = new Date(
+          b.timeEndExpected || bStart.getTime() + dur * 60 * 1000,
+        );
         return bStart < slotEnd && bEnd > slotStart;
       });
 
@@ -3362,7 +3921,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       const freeStaffs = [];
       for (const staff of staffs) {
-        const staffBookings = assignedBookings.filter((b) => b.staffId === staff.userId || b.staffId === staff.id);
+        const staffBookings = assignedBookings.filter(
+          (b) => b.staffId === staff.userId || b.staffId === staff.id,
+        );
         const busy = isStaffBusy(staffBookings, slotStart, slotEnd);
         if (!busy) {
           freeStaffs.push({
@@ -3376,9 +3937,13 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
       // Check if pet is busy during this slot
       const isPetBusy = petBookings.some((b) => {
-        const bStart = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+        const bStart = new Date(
+          b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+        );
         const dur = this.getServiceDuration(b.service);
-        const bEnd = new Date(b.timeEndExpected || (bStart.getTime() + dur * 60 * 1000));
+        const bEnd = new Date(
+          b.timeEndExpected || bStart.getTime() + dur * 60 * 1000,
+        );
         return bStart < slotEnd && bEnd > slotStart;
       });
 
@@ -3398,7 +3963,11 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
-  async createFeedback(userId: string, bookingId: string, dto: CreateSpaFeedbackDto) {
+  async createFeedback(
+    userId: string,
+    bookingId: string,
+    dto: CreateSpaFeedbackDto,
+  ) {
     const booking = await this.prisma.spaBooking.findUnique({
       where: { id: bookingId },
       include: { feedback: true },
@@ -3413,7 +3982,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (booking.status !== SpaBookingStatus.COMPLETED) {
-      throw new BadRequestException('Chỉ có thể đánh giá những đơn hàng ở trạng thái hoàn thành.');
+      throw new BadRequestException(
+        'Chỉ có thể đánh giá những đơn hàng ở trạng thái hoàn thành.',
+      );
     }
 
     if (booking.feedback) {
@@ -3421,7 +3992,10 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
 
     const rateStaff = Math.min(5, Math.max(1, Number(dto.rateStaff) || 1));
-    const rateServices = Math.min(5, Math.max(1, Number(dto.rateServices) || 1));
+    const rateServices = Math.min(
+      5,
+      Math.max(1, Number(dto.rateServices) || 1),
+    );
 
     const feedback = await this.prisma.spaFeedback.create({
       data: {
@@ -3433,11 +4007,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    this.invalidatePublicSpaCache();
     return feedback;
   }
 }
 
-function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: Date): boolean {
+function isStaffBusy(
+  staffBookings: any[],
+  candidateStart: Date,
+  candidateEnd: Date,
+): boolean {
   for (const b of staffBookings) {
     if (
       b.status === SpaBookingStatus.CANCELLED ||
@@ -3447,18 +4026,24 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
       continue;
     }
 
-    const start = new Date(b.timeStartReal || b.timeStartExpected || b.scheduledAt);
+    const start = new Date(
+      b.timeStartReal || b.timeStartExpected || b.scheduledAt,
+    );
     let duration = 45;
     if (b.service) {
       if (typeof b.service.durationMin === 'number') {
         duration = b.service.durationMin;
       } else if (b.service.duration) {
         const parsed = parseArrayField(b.service.duration);
-        const flat = parsed.flat(Infinity).filter((n: any) => typeof n === 'number');
+        const flat = parsed
+          .flat(Infinity)
+          .filter((n: any) => typeof n === 'number');
         if (flat.length > 0) duration = flat[0];
       }
     }
-    const end = new Date(b.timeEndExpected || (start.getTime() + duration * 60 * 1000));
+    const end = new Date(
+      b.timeEndExpected || start.getTime() + duration * 60 * 1000,
+    );
 
     if (start < candidateEnd && end > candidateStart) {
       return true; // Overlaps - staff is busy
@@ -3467,7 +4052,11 @@ function isStaffBusy(staffBookings: any[], candidateStart: Date, candidateEnd: D
   return false;
 }
 
-function getVietnamTimeMinutes(date: Date): { startMins: number; hours: number; minutes: number } {
+function getVietnamTimeMinutes(date: Date): {
+  startMins: number;
+  hours: number;
+  minutes: number;
+} {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Ho_Chi_Minh',
     hour: 'numeric',
