@@ -5,8 +5,6 @@ export interface ManagerDashboardStats {
   totalRevenue: number;
   totalOrders: number;
   totalProductsSold: number;
-  totalCustomers: number;
-  cancellationRate: number;
   statusDistribution?: {
     PENDING: number;
     CONFIRMED: number;
@@ -14,16 +12,35 @@ export interface ManagerDashboardStats {
     DELIVERED: number;
     CANCELLED: number;
   };
+  pendingOrders: number;
+  lowStockProducts: Array<{
+    id: string;
+    name: string;
+    category: string;
+    imageUrl?: string | null;
+    stock: number | null;
+    variants: Array<{ id: string; name: string; stock: number }>;
+  }>;
+  topSellingProducts: Array<{
+    id: string;
+    name: string;
+    category: string;
+    sales: number;
+  }>;
+  recentOrders: Array<{
+    id: string;
+    totalAmount: number;
+    createdAt: string;
+    userName: string;
+    items: Array<{ quantity: number; product: { name: string } }>;
+  }>;
+  categories: Category[];
 }
 
 export interface ManagerActivitySnapshot {
   orderIds: string[];
   ordersVersion: string;
   inventoryVersion: string;
-  lowStockProducts: Array<{
-    id: string;
-    name: string;
-  }>;
 }
 
 /**
