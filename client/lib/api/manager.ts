@@ -1,10 +1,22 @@
 import api from '@/lib/axios';
 import { Category, Product, Order } from '@/types';
+import type { AdminDashboardParams } from '@/lib/api/admin';
 
 export interface ManagerDashboardStats {
   totalRevenue: number;
+  allTimeRevenue: number;
+  previousRevenue: number;
+  revenueChangePercent: number;
+  range: {
+    label: string;
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+  };
   totalOrders: number;
   totalProductsSold: number;
+  allTimeProductsSold: number;
   statusDistribution?: {
     PENDING: number;
     CONFIRMED: number;
@@ -162,8 +174,14 @@ export interface ManagerCustomer {
 }
 
 export const managerApi = {
-  getDashboardStats: (signal?: AbortSignal) =>
-    api.get<ManagerDashboardStats>('/manager/dashboard-stats', { signal }),
+  getDashboardStats: (
+    params?: AdminDashboardParams,
+    signal?: AbortSignal,
+  ) =>
+    api.get<ManagerDashboardStats>('/manager/dashboard-stats', {
+      params,
+      signal,
+    }),
   getActivitySnapshot: (signal?: AbortSignal) =>
     api.get<ManagerActivitySnapshot>('/manager/activity-snapshot', { signal }),
   getProducts: (signal?: AbortSignal) =>

@@ -17,3 +17,17 @@ export async function findConfiguredStoreId(
 
   return store?.id ?? null;
 }
+
+/** Products that still have stock overall but need a variant-level refill. */
+export function lowStockProductWhere(
+  storeId?: string,
+): Prisma.ProductWhereInput {
+  return {
+    storeId: storeId ?? '__missing__',
+    stock: { gt: 0 },
+    OR: [
+      { variants: { some: { stock: { lt: 5 } } } },
+      { variants: { none: {} }, stock: { lt: 5 } },
+    ],
+  };
+}

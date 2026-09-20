@@ -46,6 +46,11 @@ import {
   ManagerProductVariantInput,
 } from '@/lib/api/manager';
 import { shippingApi } from '@/lib/api/shipping';
+import type { AdminDashboardParams } from '@/lib/api/admin';
+import {
+  DashboardTimeControls,
+  RevenueGrowthBadge,
+} from '@/components/admin/dashboard/dashboard-time-controls';
 
 /**
  * Định dạng số thành chuỗi phân cách hàng nghìn bằng dấu chấm chuẩn tiền Việt (ví dụ: 3000 -> "3.000")
@@ -531,6 +536,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<ManagerDashboardStats | null>(null);
+  const [dashboardTimeRange, setDashboardTimeRange] =
+    useState<AdminDashboardParams>({ range: '30d' });
+  const [refreshingStats, setRefreshingStats] = useState(false);
   const [products, setProducts] = useState<ManagerProduct[]>([]);
   const [orders, setOrders] = useState<ManagerOrder[]>([]);
   const [customers, setCustomers] = useState<ManagerCustomer[]>([]);
@@ -745,7 +753,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
         return;
       }
 
-      const statsRes = await managerApi.getDashboardStats(signal);
+      const statsRes = await managerApi.getDashboardStats(
+        dashboardTimeRange,
+        signal,
+      );
       if (signal?.aborted) return;
       setStats(statsRes.data);
       setCategories(statsRes.data.categories);
@@ -756,7 +767,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     } finally {
       if (showLoading && !signal?.aborted) setLoading(false);
     }
-  }, [applyLatestOrders]);
+  }, [applyLatestOrders, dashboardTimeRange]);
+
+  const refreshDashboard = useCallback(async () => {
+    setRefreshingStats(true);
+    try {
+      await fetchTabData('dashboard', false);
+    } finally {
+      setRefreshingStats(false);
+    }
+  }, [fetchTabData]);
 
   const refreshOrders = async () => {
     const response = await managerApi.getOrders();
@@ -5565,6 +5585,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           </section>
 
+          <section className="flex flex-col gap-3 rounded-2xl border border-[#EFEAE2] bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase text-[#8A8980]">
+                Khoảng thống kê
+              </p>
+              <p className="mt-1 text-sm font-bold text-gray-900">
+                {stats?.range?.label ?? '30 ngày qua'}
+              </p>
+            </div>
+            <DashboardTimeControls
+              value={dashboardTimeRange}
+              onChange={setDashboardTimeRange}
+              onRefresh={() => void refreshDashboard()}
+              refreshing={refreshingStats}
+            />
+          </section>
+
           {/* Metrics & Biểu đồ phân bổ trạng thái đơn hàng */}
           <section className="grid gap-4 lg:grid-cols-12">
             {/* 3 Thẻ Chỉ số chính */}
@@ -5573,12 +5610,27 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase text-[#8A8980]">Tổng doanh thu</span>
+                    <span className="text-xs font-black uppercase text-[#8A8980]">Doanh thu trong kỳ</span>
                     <span className="p-2 rounded-lg bg-[rgba(228,93,28,0.1)] text-[var(--primary-color)]">
                       <TrendingUp className="size-4" />
                     </span>
                   </div>
                   <p className="mt-3 text-2xl font-black text-gray-900">{currency.format(stats?.totalRevenue ?? 0)}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-[#8A8980]">
+                      Tổng tích lũy {currency.format(stats?.allTimeRevenue ?? 0)}
+                    </span>
+                    <RevenueGrowthBadge
+                      comparison={{
+                        range: stats?.range,
+                        revenue: {
+                          current: stats?.totalRevenue ?? 0,
+                          previous: stats?.previousRevenue ?? 0,
+                          changePercent: stats?.revenueChangePercent ?? 0,
+                        },
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -5619,6 +5671,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </span>
                   </div>
                   <p className="mt-3 text-2xl font-black text-gray-900">{stats?.totalProductsSold ?? 0} món</p>
+                  <p className="mt-2 text-[10px] font-bold text-[#8A8980]">
+                    Tổng tích lũy {stats?.allTimeProductsSold ?? 0} món
+                  </p>
                 </div>
               </div>
             </div>
@@ -5628,7 +5683,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <PieChart className="size-4 text-[var(--primary-color)]" />
-                  <h3 className="text-xs font-black uppercase text-[#8A8980] tracking-wider">Trạng thái đơn hàng</h3>
+                  <h3 className="text-xs font-black uppercase text-[#8A8980] tracking-wider">Trạng thái đơn hàng · toàn thời gian</h3>
                 </div>
               </div>
               <OrderStatusDonutChart
@@ -5712,7 +5767,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
             {/* Best Sellers */}
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
-              <h3 className="text-base font-black">Sản phẩm bán chạy nhất</h3>
+              <h3 className="text-base font-black">Sản phẩm bán chạy · {stats?.range?.label ?? '30 ngày qua'}</h3>
               <div className="mt-4 divide-y divide-[#EFEAE2]">
                 {(stats?.topSellingProducts?.length ?? 0) > 0 ? (
                   stats!.topSellingProducts.map((p) => (

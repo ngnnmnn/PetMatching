@@ -27,10 +27,15 @@ type DashboardRangeInput = {
   to?: string;
 };
 
-function startOfVietnamDay(value: Date) {
+export function startOfVietnamDay(value: Date) {
   const shifted = new Date(value.getTime() + VIETNAM_OFFSET_MS);
   shifted.setUTCHours(0, 0, 0, 0);
   return new Date(shifted.getTime() - VIETNAM_OFFSET_MS);
+}
+
+export function getVietnamDayRange(now = new Date()) {
+  const from = startOfVietnamDay(now);
+  return { from, toExclusive: addDays(from, 1) };
 }
 
 function startOfVietnamMonth(value: Date) {
@@ -235,8 +240,10 @@ export function serializeDashboardRange(period: DashboardRange) {
   return {
     label: period.label,
     from: period.from.toISOString(),
-    to: period.toExclusive.toISOString(),
+    to: new Date(period.toExclusive.getTime() - 1).toISOString(),
     previousFrom: period.previousFrom.toISOString(),
-    previousTo: period.previousToExclusive.toISOString(),
+    previousTo: new Date(
+      period.previousToExclusive.getTime() - 1,
+    ).toISOString(),
   };
 }

@@ -1980,6 +1980,9 @@ function SpaManagerConsoleContent() {
                   <div>
                     <span className="text-[11px] font-black uppercase text-[#8A8980]">Hoàn thành</span>
                     <p className="text-2xl font-black text-gray-900 mt-1">{stats.completedBookingsCount}</p>
+                    <span className="text-[10px] font-semibold text-gray-400 block mt-0.5">
+                      {stats.range?.label || '30 ngày qua'} · Tổng {stats.allTimeCompletedBookingsCount ?? 0}
+                    </span>
                   </div>
                   <div className="size-10 rounded-full bg-green-50 shadow-inner flex items-center justify-center text-green-600">
                     <CheckCircle2 className="size-5" />
@@ -2006,7 +2009,7 @@ function SpaManagerConsoleContent() {
                     <p className="text-2xl font-black text-gray-900 mt-1">{(stats.totalRevenue || 0).toLocaleString('vi-VN')}đ</p>
                     {stats.range?.label && (
                       <span className="text-[10px] font-semibold text-gray-400 block mt-0.5">
-                        {stats.range.label}
+                        {stats.range.label} · Tổng {(stats.allTimeRevenue || 0).toLocaleString('vi-VN')}đ
                       </span>
                     )}
                   </div>
@@ -2042,7 +2045,7 @@ function SpaManagerConsoleContent() {
                   </div>
                   <div className="space-y-3 pt-1">
                     {(() => {
-                      const categoriesData = stats.revenueByService || stats.categoryBreakdown || [];
+                      const categoriesData = stats.categoryBreakdown || [];
                       const maxVal = Math.max(...categoriesData.map((x: any) => x.value || 0), 1);
 
                       if (!categoriesData || categoriesData.length === 0) {
@@ -2100,7 +2103,7 @@ function SpaManagerConsoleContent() {
                             </p>
                           </div>
                           <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
-                            {stats.range?.label || '30 ngày'}
+                            Toàn thời gian
                           </span>
                         </div>
 

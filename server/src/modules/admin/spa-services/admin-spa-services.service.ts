@@ -4,7 +4,7 @@ export class AdminSpaServicesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getServices() {
-    const [services, mainServiceGroups, bookingsWithSubServices] =
+    const [services, mainServiceGroups, bookingsWithRelatedServices] =
       await Promise.all([
         this.prisma.spaService.findMany({
           orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
@@ -18,8 +18,17 @@ export class AdminSpaServicesService {
           _count: { _all: true },
         }),
         this.prisma.spaBooking.findMany({
-          where: { subServiceIds: { isEmpty: false } },
-          select: { subServiceIds: true },
+          where: {
+            OR: [
+              { subServiceIds: { isEmpty: false } },
+              { serviceId: null, mainServiceId: { not: null } },
+            ],
+          },
+          select: {
+            serviceId: true,
+            mainServiceId: true,
+            subServiceIds: true,
+          },
         }),
       ]);
 
@@ -29,7 +38,13 @@ export class AdminSpaServicesService {
         bookingCountByService.set(group.serviceId, group._count._all);
       }
     });
-    bookingsWithSubServices.forEach((booking) => {
+    bookingsWithRelatedServices.forEach((booking) => {
+      if (!booking.serviceId && booking.mainServiceId) {
+        bookingCountByService.set(
+          booking.mainServiceId,
+          (bookingCountByService.get(booking.mainServiceId) ?? 0) + 1,
+        );
+      }
       booking.subServiceIds.forEach((serviceId) => {
         bookingCountByService.set(
           serviceId,

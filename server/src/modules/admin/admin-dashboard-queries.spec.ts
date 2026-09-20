@@ -149,8 +149,16 @@ describe('Admin dashboard optimized queries', () => {
       findMany: jest
         .fn()
         .mockResolvedValue([
-          { subServiceIds: ['extra-1', 'extra-2'] },
-          { subServiceIds: ['extra-1'] },
+          {
+            serviceId: 'main-1',
+            mainServiceId: 'main-1',
+            subServiceIds: ['extra-1', 'extra-2'],
+          },
+          {
+            serviceId: null,
+            mainServiceId: null,
+            subServiceIds: ['extra-1'],
+          },
         ]),
     };
     const service = new AdminSpaServicesService({
@@ -172,8 +180,17 @@ describe('Admin dashboard optimized queries', () => {
       expect.objectContaining({ by: ['serviceId'] }),
     );
     expect(spaBooking.findMany).toHaveBeenCalledWith({
-      where: { subServiceIds: { isEmpty: false } },
-      select: { subServiceIds: true },
+      where: {
+        OR: [
+          { subServiceIds: { isEmpty: false } },
+          { serviceId: null, mainServiceId: { not: null } },
+        ],
+      },
+      select: {
+        serviceId: true,
+        mainServiceId: true,
+        subServiceIds: true,
+      },
     });
     expect(result).toEqual([
       { id: 'main-1', _count: { bookings: 4 } },

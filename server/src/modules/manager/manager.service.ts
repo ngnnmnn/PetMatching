@@ -12,8 +12,19 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MemoryCacheService } from '../../common/cache/memory-cache.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
-import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
-import { findConfiguredStoreId } from '../../common/store.utils';
+import {
+  fulfilledStoreOrderWhere,
+  recognizedStoreRevenueWhere,
+} from '../../common/revenue.utils';
+import {
+  findConfiguredStoreId,
+  lowStockProductWhere,
+} from '../../common/store.utils';
+import {
+  calculateRevenueGrowth,
+  resolveDashboardRange,
+  serializeDashboardRange,
+} from '../admin/shared/dashboard-range.utils';
 import {
   NotificationCategory,
   NotificationEventType,
@@ -186,22 +197,34 @@ export class ManagerService {
     );
   }
 
-  async getDashboardStats() {
+  async getDashboardStats(
+    query: { range?: string; from?: string; to?: string } = {},
+  ) {
     const storeId = await this.getConfiguredStoreId();
-    const revenueOrderWhere = recognizedStoreRevenueWhere(storeId);
+    const period = resolveDashboardRange(query);
     const storeOrderWhere: Prisma.OrderWhereInput = { storeId };
+    const fulfilledOrderWhere = fulfilledStoreOrderWhere(storeId);
 
     const [
-      revenueSum,
+      periodRevenueOrders,
+      allTimeRevenueSum,
       ordersByStatus,
       itemsSold,
+      allTimeItemsSold,
       lowStockProducts,
       topProductSales,
       recentOrders,
       categories,
     ] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          ...recognizedStoreRevenueWhere(storeId),
+          createdAt: { gte: period.previousFrom, lt: period.toExclusive },
+        },
+        select: { createdAt: true, totalAmount: true },
+      }),
       this.prisma.order.aggregate({
-        where: revenueOrderWhere,
+        where: recognizedStoreRevenueWhere(storeId),
         _sum: { totalAmount: true },
       }),
       this.prisma.order.groupBy({
@@ -210,17 +233,20 @@ export class ManagerService {
         _count: { _all: true },
       }),
       this.prisma.orderItem.aggregate({
-        where: { order: { storeId, payment: { status: 'PAID' } } },
+        where: {
+          order: {
+            ...fulfilledOrderWhere,
+            createdAt: { gte: period.from, lt: period.toExclusive },
+          },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.orderItem.aggregate({
+        where: { order: fulfilledOrderWhere },
         _sum: { quantity: true },
       }),
       this.prisma.product.findMany({
-        where: {
-          storeId,
-          OR: [
-            { variants: { some: { stock: { lt: 5 } } } },
-            { variants: { none: {} }, stock: { lt: 5 } },
-          ],
-        },
+        where: lowStockProductWhere(storeId),
         orderBy: { createdAt: 'desc' },
         take: 6,
         select: {
@@ -237,7 +263,10 @@ export class ManagerService {
       this.prisma.orderItem.groupBy({
         by: ['productId'],
         where: {
-          order: { storeId, status: { not: OrderStatus.CANCELLED } },
+          order: {
+            ...fulfilledOrderWhere,
+            createdAt: { gte: period.from, lt: period.toExclusive },
+          },
         },
         _sum: { quantity: true },
         orderBy: { _sum: { quantity: 'desc' } },
@@ -278,8 +307,22 @@ export class ManagerService {
       (total, count) => total + count,
       0,
     );
-    const totalRevenue = revenueSum._sum.totalAmount ?? 0;
+    const currentRevenueOrders = periodRevenueOrders.filter(
+      (order) => order.createdAt >= period.from,
+    );
+    const previousRevenueOrders = periodRevenueOrders.filter(
+      (order) => order.createdAt < period.from,
+    );
+    const sumRevenue = (orders: typeof periodRevenueOrders) =>
+      orders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const totalRevenue = sumRevenue(currentRevenueOrders);
+    const previousRevenue = sumRevenue(previousRevenueOrders);
+    const revenueChangePercent = calculateRevenueGrowth(
+      totalRevenue,
+      previousRevenue,
+    );
     const totalProductsSold = itemsSold._sum.quantity ?? 0;
+    const allTimeProductsSold = allTimeItemsSold._sum.quantity ?? 0;
 
     const statusDistribution = {
       PENDING: countOrders('PENDING'),
@@ -306,8 +349,13 @@ export class ManagerService {
 
     return {
       totalRevenue,
+      allTimeRevenue: allTimeRevenueSum._sum.totalAmount ?? 0,
+      previousRevenue,
+      revenueChangePercent,
+      range: serializeDashboardRange(period),
       totalOrders,
       totalProductsSold,
+      allTimeProductsSold,
       statusDistribution,
       pendingOrders: countOrders('PENDING'),
       lowStockProducts,
@@ -343,7 +391,7 @@ export class ManagerService {
           by: ['productId', 'variantId'],
           where: {
             productId: { in: products.map(({ id }) => id) },
-            order: { status: { not: 'CANCELLED' } },
+            order: fulfilledStoreOrderWhere(storeId),
           },
           _sum: { quantity: true },
         })

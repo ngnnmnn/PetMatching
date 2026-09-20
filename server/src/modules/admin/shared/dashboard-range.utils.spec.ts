@@ -1,6 +1,8 @@
 import {
   buildDashboardBuckets,
+  getVietnamDayRange,
   resolveDashboardRange,
+  serializeDashboardRange,
 } from './dashboard-range.utils';
 
 describe('admin dashboard range utils', () => {
@@ -46,5 +48,15 @@ describe('admin dashboard range utils', () => {
     );
 
     expect(range.key).toBe('30d');
+  });
+
+  it('serializes inclusive dates and uses Vietnam day boundaries', () => {
+    const range = resolveDashboardRange({ range: '7d' }, now);
+    const serialized = serializeDashboardRange(range);
+    const today = getVietnamDayRange(now);
+
+    expect(serialized.to).toBe('2026-09-06T16:59:59.999Z');
+    expect(today.from.toISOString()).toBe('2026-09-05T17:00:00.000Z');
+    expect(today.toExclusive.toISOString()).toBe('2026-09-06T17:00:00.000Z');
   });
 });

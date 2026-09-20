@@ -24,14 +24,22 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import {
+  fulfilledStoreOrderWhere,
   getSpaBookingRevenue,
+  getSpaRevenueAllocations,
   recognizedSpaRevenueWhere,
   recognizedStoreRevenueWhere,
 } from '../../common/revenue.utils';
-import { findConfiguredStoreId } from '../../common/store.utils';
+import {
+  findConfiguredStoreId,
+  lowStockProductWhere,
+} from '../../common/store.utils';
 import {
   buildDashboardBuckets,
+  calculateRevenueGrowth,
+  getVietnamDayRange,
   resolveDashboardRange,
+  serializeDashboardRange,
 } from './shared/dashboard-range.utils';
 import {
   COMMUNITY_STANDARDS_BLOCK_MESSAGE,
@@ -85,30 +93,6 @@ const REPORT_SPAM_SUSPECTED_7D = 5;
 
 type AdminDb = PrismaService | Prisma.TransactionClient;
 
-function calculateRevenueGrowth(
-  currentRevenue: number,
-  previousRevenue: number,
-) {
-  if (previousRevenue > 0) {
-    return ((currentRevenue - previousRevenue) / previousRevenue) * 100;
-  }
-  return currentRevenue > 0 ? 100 : 0;
-}
-
-function serializeDashboardRange(
-  period: ReturnType<typeof resolveDashboardRange>,
-) {
-  return {
-    label: period.label,
-    from: period.from.toISOString(),
-    to: new Date(period.toExclusive.getTime() - 1).toISOString(),
-    previousFrom: period.previousFrom.toISOString(),
-    previousTo: new Date(
-      period.previousToExclusive.getTime() - 1,
-    ).toISOString(),
-  };
-}
-
 @Injectable()
 export class AdminService {
   private readonly storeProductsService: AdminStoreProductsService;
@@ -135,11 +119,7 @@ export class AdminService {
     const storeFilter = { storeId: storeId ?? '__missing__' };
     const spaFilter = { addressSpaId: storeId ?? '__missing__' };
     const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
+    const startOfToday = getVietnamDayRange(now).from;
     const overdueThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const [
       totalPets,
@@ -1620,21 +1600,7 @@ export class AdminService {
         status: true,
       },
     });
-    const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      23,
-      59,
-      59,
-      999,
-    );
+    const today = getVietnamDayRange();
     const storeFilter = store
       ? { storeId: store.id }
       : { storeId: '__missing__' };
@@ -1651,18 +1617,18 @@ export class AdminService {
       topProductGroups,
       recentOrders,
       allTimeRevenueOrders,
-      allTimePaidItemsSold,
+      allTimeItemsSold,
     ] = await Promise.all([
       this.prisma.product.count({ where: storeFilter }),
       this.prisma.product.count({ where: { ...storeFilter, isActive: true } }),
       this.prisma.product.count({ where: { ...storeFilter, stock: 0 } }),
       this.prisma.product.count({
-        where: { ...storeFilter, stock: { gt: 0, lte: 10 } },
+        where: lowStockProductWhere(store?.id),
       }),
       this.prisma.order.count({
         where: {
           ...storeFilter,
-          createdAt: { gte: startOfDay, lte: endOfDay },
+          createdAt: { gte: today.from, lt: today.toExclusive },
         },
       }),
       this.prisma.order.groupBy({
@@ -1673,7 +1639,7 @@ export class AdminService {
       this.prisma.orderItem.aggregate({
         where: {
           order: {
-            ...recognizedStoreRevenueWhere(store?.id),
+            ...fulfilledStoreOrderWhere(store?.id),
             createdAt: { gte: period.from, lt: period.toExclusive },
           },
         },
@@ -1690,7 +1656,7 @@ export class AdminService {
         by: ['productId'],
         where: {
           order: {
-            ...recognizedStoreRevenueWhere(store?.id),
+            ...fulfilledStoreOrderWhere(store?.id),
             createdAt: { gte: period.from, lt: period.toExclusive },
           },
         },
@@ -1718,7 +1684,7 @@ export class AdminService {
         _sum: { totalAmount: true },
       }),
       this.prisma.orderItem.aggregate({
-        where: { order: { storeId: store?.id, payment: { status: 'PAID' } } },
+        where: { order: fulfilledStoreOrderWhere(store?.id) },
         _sum: { quantity: true },
       }),
     ]);
@@ -1749,7 +1715,7 @@ export class AdminService {
       OrderStatus.PAYMENT_ERROR,
     );
     const allTimeRevenue = allTimeRevenueOrders._sum.totalAmount ?? 0;
-    const allTimeProductsSold = allTimePaidItemsSold._sum.quantity ?? 0;
+    const allTimeProductsSold = allTimeItemsSold._sum.quantity ?? 0;
 
     const topProductIds = topProductGroups.map((item) => item.productId);
     const topProductNames = topProductIds.length
@@ -1867,20 +1833,7 @@ export class AdminService {
             },
           });
     const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      23,
-      59,
-      59,
-      999,
-    );
+    const today = getVietnamDayRange(now);
     const addressFilter = spa
       ? { addressSpaId: spa.id }
       : { addressSpaId: '__missing__' };
@@ -1892,8 +1845,6 @@ export class AdminService {
       bookingStatusGroups,
       periodCompletedBookings,
       periodRevenueBookings,
-      recognizedServiceGroups,
-      legacyServiceGroups,
       upcomingBookings,
       allTimeSpaRevenue,
       allTimeLegacySpaRevenue,
@@ -1910,7 +1861,7 @@ export class AdminService {
       this.prisma.spaBooking.count({
         where: {
           ...addressFilter,
-          scheduledAt: { gte: startOfDay, lte: endOfDay },
+          scheduledAt: { gte: today.from, lt: today.toExclusive },
         },
       }),
       this.prisma.spaBooking.groupBy({
@@ -1930,27 +1881,15 @@ export class AdminService {
           ...recognizedSpaRevenueWhere(spa?.id),
           createdAt: { gte: period.previousFrom, lt: period.toExclusive },
         },
-        select: { createdAt: true, totalPrice: true, priceSnapshot: true },
-      }),
-      this.prisma.spaBooking.groupBy({
-        by: ['serviceId'],
-        where: {
-          ...recognizedSpaRevenueWhere(spa?.id),
-          serviceId: { not: null },
-          createdAt: { gte: period.from, lt: period.toExclusive },
+        select: {
+          createdAt: true,
+          totalPrice: true,
+          priceSnapshot: true,
+          serviceId: true,
+          mainServiceId: true,
+          subServiceIds: true,
+          subServicesSnapshot: true,
         },
-        _count: { _all: true },
-        _sum: { totalPrice: true },
-      }),
-      this.prisma.spaBooking.groupBy({
-        by: ['serviceId'],
-        where: {
-          ...recognizedSpaRevenueWhere(spa?.id),
-          serviceId: { not: null },
-          totalPrice: 0,
-          createdAt: { gte: period.from, lt: period.toExclusive },
-        },
-        _sum: { priceSnapshot: true },
       }),
       this.prisma.spaBooking.findMany({
         where: { ...addressFilter, scheduledAt: { gte: now } },
@@ -2016,35 +1955,6 @@ export class AdminService {
       SpaBookingStatus.CANCELLED,
       SpaBookingStatus.NO_SHOW,
     );
-    const serviceIds = recognizedServiceGroups
-      .map((item) => item.serviceId)
-      .filter((id): id is string => Boolean(id));
-    const serviceNames = serviceIds.length
-      ? await this.prisma.spaService.findMany({
-          where: { id: { in: serviceIds } },
-          select: { id: true, name: true },
-        })
-      : [];
-    const serviceNameById = new Map(
-      serviceNames.map((service) => [service.id, service.name]),
-    );
-    const legacyRevenueByService = new Map(
-      legacyServiceGroups.map((item) => [
-        item.serviceId,
-        item._sum.priceSnapshot ?? 0,
-      ]),
-    );
-    const topServices = recognizedServiceGroups
-      .map((item) => ({
-        id: item.serviceId ?? 'legacy-service',
-        name: serviceNameById.get(item.serviceId ?? '') ?? 'Dịch vụ Spa',
-        bookings: item._count._all,
-        revenue:
-          (item._sum.totalPrice ?? 0) +
-          (legacyRevenueByService.get(item.serviceId) ?? 0),
-      }))
-      .sort((left, right) => right.revenue - left.revenue)
-      .slice(0, 5);
     const currentRevenueBookings = periodRevenueBookings.filter(
       (booking) => booking.createdAt >= period.from,
     );
@@ -2060,6 +1970,39 @@ export class AdminService {
       recognizedRevenue,
       previousRevenue,
     );
+    const serviceStats = new Map<
+      string,
+      { bookings: number; revenue: number }
+    >();
+    currentRevenueBookings.forEach((booking) => {
+      getSpaRevenueAllocations(booking).forEach(({ serviceId, revenue }) => {
+        const current = serviceStats.get(serviceId) ?? {
+          bookings: 0,
+          revenue: 0,
+        };
+        current.bookings += 1;
+        current.revenue += revenue;
+        serviceStats.set(serviceId, current);
+      });
+    });
+    const rankedServiceIds = Array.from(serviceStats.entries())
+      .sort((left, right) => right[1].revenue - left[1].revenue)
+      .slice(0, 5)
+      .map(([serviceId]) => serviceId);
+    const rankedServices = rankedServiceIds.length
+      ? await this.prisma.spaService.findMany({
+          where: { id: { in: rankedServiceIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const serviceNameById = new Map(
+      rankedServices.map((service) => [service.id, service.name]),
+    );
+    const topServices = rankedServiceIds.map((serviceId) => ({
+      id: serviceId,
+      name: serviceNameById.get(serviceId) ?? 'Dịch vụ Spa',
+      ...serviceStats.get(serviceId)!,
+    }));
     const revenueSeries = buildDashboardBuckets(period).map((bucket) => ({
       label: bucket.label,
       revenue: sumRevenue(
