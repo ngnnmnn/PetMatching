@@ -4,10 +4,9 @@ import {
   adminDateCell,
   formatComplaintTarget,
   formatMatchingReportReason,
-  formatRole,
   formatStatus,
   type AdminRow,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 export type AdminSectionConfig = {
   title: string;
@@ -20,29 +19,24 @@ export type AdminSectionConfig = {
   }>;
 };
 
-export const sectionsWithoutTableActions = new Set([
-  "system-profile",
-  "store-overview",
-  "store-products",
-  "store-orders",
-  "spa-overview",
-  "spa-services",
-  "spa-bookings",
-]);
+export type AdminSectionKey =
+  | "users"
+  | "pets"
+  | "system-profile"
+  | "store-overview"
+  | "store-products"
+  | "store-orders"
+  | "spa-overview"
+  | "spa-services"
+  | "spa-bookings"
+  | "reports";
 
-export const adminSectionConfig: Record<string, AdminSectionConfig> = {
+export const adminSectionConfig = {
   users: {
     title: "Người dùng & vai trò",
     description: "Xem người dùng, gán vai trò và khóa hoặc mở khóa tài khoản.",
     loader: adminApi.users,
-    columns: [
-      { key: "name", label: "Tên" },
-      { key: "email", label: "Email" },
-      { key: "role", label: "Vai trò", render: (row) => formatRole(row.role) },
-      { key: "accountStatus", label: "Trạng thái", render: (row) => formatStatus(row.accountStatus) },
-      { key: "isVerified", label: "Email xác thực", render: (row) => (row.isVerified ? "Có" : "Không") },
-      { key: "createdAt", label: "Ngày tạo", render: adminDateCell },
-    ],
+    columns: [],
   },
   pets: {
     title: "Thú cưng",
@@ -98,7 +92,7 @@ export const adminSectionConfig: Record<string, AdminSectionConfig> = {
     loader: loadMatchingReports,
     columns: matchingReportColumns(),
   },
-};
+} satisfies Record<AdminSectionKey, AdminSectionConfig>;
 
 function matchingReportColumns(): AdminSectionConfig["columns"] {
   return [

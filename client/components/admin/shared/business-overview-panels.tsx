@@ -33,7 +33,7 @@ import {
   DashboardTimeControls,
   RevenueGrowthBadge,
   type RevenueComparison,
-} from "@/components/admin/dashboard-time-controls";
+} from "@/components/admin/dashboard/dashboard-time-controls";
 import type { AdminDashboardParams } from "@/lib/api/admin";
 
 type RevenuePoint = { label: string; revenue: number };

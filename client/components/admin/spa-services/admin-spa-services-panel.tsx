@@ -12,13 +12,13 @@ import {
   Scissors,
   Search,
 } from "lucide-react";
-import { AdminFilterSelect } from "@/components/admin/admin-ui";
-import { AdminPagination } from "@/components/admin/admin-section-components";
+import { AdminFilterSelect } from "@/components/admin/shared/admin-ui";
+import { AdminPagination } from "@/components/admin/shared/admin-section-components";
 import {
   ADMIN_PAGE_SIZE,
   groupSpaServiceVariants,
   type AdminRow as Row,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 import { Input } from "@/components/ui/input";
 import {
   computeServiceDisplayRanges,

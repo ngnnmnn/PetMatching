@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { adminApi } from "@/lib/api/admin";
-import { getAdminErrorMessage, type AdminRow as Row } from "@/components/admin/admin-section-utils";
+import { getAdminErrorMessage, type AdminRow as Row } from "@/components/admin/shared/admin-section-utils";
 
 export type SpaManagerRoleFlow = {
   mode: "GRANT" | "REVOKE";

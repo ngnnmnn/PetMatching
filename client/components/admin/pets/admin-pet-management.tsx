@@ -5,12 +5,12 @@ import Image from "next/image";
 import { CheckCircle2, Eye, EyeOff, Loader2, PawPrint, ShieldAlert, XCircle, ZoomIn } from "lucide-react";
 import { toast } from "sonner";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
-import { AdminFilterSelect } from "@/components/admin/admin-ui";
+import { AdminFilterSelect } from "@/components/admin/shared/admin-ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { adminApi, type DocumentStatus, type HidePetReason, type RestorePetReason } from "@/lib/api/admin";
-import { AdminPagination, StatusBadge } from "@/components/admin/admin-section-components";
+import { AdminPagination, StatusBadge } from "@/components/admin/shared/admin-section-components";
 import {
   adminDateCell as dateCell,
   formatDateValue,
@@ -25,7 +25,7 @@ import {
   hasRejectedPetDocument,
   type AdminRow as Row,
   type PetVerificationFilter,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 export type PetModerationFlow = {
   mode: "HIDE" | "RESTORE";

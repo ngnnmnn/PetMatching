@@ -27,7 +27,7 @@ import {
   AdminStatusBadge,
   AdminSummaryCard as SummaryCard,
   AdminTextBlock as TextBlock,
-} from "@/components/admin/admin-ui";
+} from "@/components/admin/shared/admin-ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,7 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { matchesAdminStatusFilter } from "@/components/admin/admin-section-utils";
+import { matchesAdminStatusFilter } from "@/components/admin/shared/admin-section-utils";
 
 type OrderItem = {
   id?: string;

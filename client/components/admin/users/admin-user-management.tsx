@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AccountStatus, AdminRole } from "@/lib/api/admin";
-import { ActionGroup, AdminPagination, RoleBadge, StatusBadge, UserQuickStat } from "@/components/admin/admin-section-components";
+import { ActionGroup, AdminPagination, RoleBadge, StatusBadge, UserQuickStat } from "@/components/admin/shared/admin-section-components";
 import {
   ADMIN_ACCOUNT_STATUS_OPTIONS as accountStatusOptions,
   ADMIN_PAGE_SIZE,
@@ -17,7 +17,7 @@ import {
   formatStatus,
   getInitials,
   type AdminRow as Row,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 export function UserManagementPanel({
   users,

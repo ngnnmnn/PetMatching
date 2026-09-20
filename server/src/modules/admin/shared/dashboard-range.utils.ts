@@ -173,7 +173,10 @@ export function buildDashboardBuckets(
   if (range.granularity === 'month') {
     let cursor = startOfVietnamMonth(range.from);
     if (range.key === 'all') {
-      const twelveMonthsAgo = addMonths(startOfVietnamMonth(range.toExclusive), -11);
+      const twelveMonthsAgo = addMonths(
+        startOfVietnamMonth(range.toExclusive),
+        -11,
+      );
       if (cursor < twelveMonthsAgo) {
         cursor = twelveMonthsAgo;
       }
@@ -215,7 +218,10 @@ export function buildDashboardBuckets(
 /**
  * Tính phần trăm tăng trưởng doanh thu giữa kỳ hiện tại và kỳ trước đó
  */
-export function calculateRevenueGrowth(current: number, previous: number): number {
+export function calculateRevenueGrowth(
+  current: number,
+  previous: number,
+): number {
   if (previous === 0) {
     return current > 0 ? 100 : 0;
   }

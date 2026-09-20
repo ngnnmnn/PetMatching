@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { AlertTriangle, CheckCircle2, Loader2, Search } from "lucide-react";
-import { AdminFilterSelect } from "@/components/admin/admin-ui";
+import { AdminFilterSelect } from "@/components/admin/shared/admin-ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
   formatMatchingReportConclusion,
   formatMatchingReportReason,
   type AdminRow as Row,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 type ReuploadDocumentType = "VACCINE_RECORD" | "PEDIGREE_CERT";
 

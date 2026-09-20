@@ -41,7 +41,7 @@ import {
   buildDashboardBuckets,
   calculateRevenueGrowth,
   serializeDashboardRange,
-} from '../admin/dashboard-range.utils';
+} from '../admin/shared/dashboard-range.utils';
 import {
   parseArrayField,
   resolveServicePriceAndDuration,

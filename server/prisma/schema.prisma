@@ -54,6 +54,7 @@ model User {
   blockedUserIds          String[]             @default([]) @map("blocked_user_ids")
   notifications           Notification[]
 
+  @@index([role, accountStatus, createdAt])
   @@map("users")
 }
 
@@ -157,6 +158,8 @@ model Pet {
   @@index([ownerId])
   @@index([breed])
   @@index([location])
+  @@index([status, createdAt])
+  @@index([verificationBadge, createdAt])
   @@map("pets")
 }
 
@@ -305,6 +308,7 @@ model PetDocument {
 
   @@index([petId, type])
   @@index([status, type])
+  @@index([status, createdAt])
   @@map("pet_documents")
 }
 
@@ -337,8 +341,6 @@ model PetReport {
   @@index([status, createdAt])
   @@map("pet_reports")
 }
-
-
 
 model Store {
   id          String         @id @default(cuid())
@@ -397,7 +399,9 @@ model Product {
   @@index([category, isActive])
   @@index([isFeatured, isActive])
   @@index([targetSpecies, isActive])
-  @@index([storeId])
+  @@index([storeId, createdAt])
+  @@index([storeId, isActive])
+  @@index([storeId, stock])
   @@map("products")
 }
 
@@ -462,7 +466,8 @@ model Order {
   user                  User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
-  @@index([storeId])
+  @@index([storeId, createdAt])
+  @@index([storeId, status])
   @@map("orders")
 }
 
@@ -519,6 +524,7 @@ model SpaService {
   category     SpaCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([categoryId, isActive])
+  @@index([isActive, updatedAt])
   @@map("spa_services")
 }
 
@@ -569,6 +575,9 @@ model SpaBooking {
   @@index([categoryId, status])
   @@index([userId])
   @@index([staffId])
+  @@index([addressSpaId, status])
+  @@index([addressSpaId, createdAt])
+  @@index([addressSpaId, scheduledAt])
   @@index([reminderSentAt, scheduledAt, status])
   @@map("spa_bookings")
 }
@@ -645,13 +654,14 @@ model CartItem {
 }
 
 model SpaStaff {
-  id           String      @id
-  userId       String      @unique
+  id           String  @id
+  userId       String  @unique
   addressSpaId String?
-  status       String      @default("ACTIVE")
-  addressSpa   Store?      @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
-  user         User        @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
+  status       String  @default("ACTIVE")
+  addressSpa   Store?  @relation("StaffWorkplace", fields: [addressSpaId], references: [id])
+  user         User    @relation("UserSpaStaffProfile", fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([addressSpaId, status])
   @@map("spa_staff")
 }
 

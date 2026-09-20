@@ -20,7 +20,7 @@ import {
   formatRole,
   formatStatus,
   type AdminRow as Row,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 export function UserQuickStat({
   icon: Icon,

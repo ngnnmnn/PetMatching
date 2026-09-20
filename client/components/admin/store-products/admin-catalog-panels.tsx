@@ -3,16 +3,16 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import { AlertTriangle, PackageOpen, Search } from "lucide-react";
-import { AdminFilterSelect } from "@/components/admin/admin-ui";
+import { AdminFilterSelect } from "@/components/admin/shared/admin-ui";
 import { Input } from "@/components/ui/input";
-import { AdminPagination } from "@/components/admin/admin-section-components";
+import { AdminPagination } from "@/components/admin/shared/admin-section-components";
 import {
   ADMIN_PAGE_SIZE,
   adminDateCell as dateCell,
   adminMoneyCell as moneyCell,
   formatCategory,
   type AdminRow as Row,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 export function ProductCatalogPanel({ products }: { products: Row[] }) {
   const [query, setQuery] = useState("");

@@ -1,14 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { notFound, useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Loader2, PackageOpen, ShieldAlert, UsersRound } from "lucide-react";
 import { toast } from "sonner";
-import type { SpaManagerRoleFlow } from "@/components/admin/admin-spa-role-dialog";
-import type { PetModerationFlow } from "@/components/admin/admin-pet-management";
-import { ActionGroup, AdminPagination, MiniStat, RoleBadge, StatusBadge } from "@/components/admin/admin-section-components";
-import { adminSectionConfig as sectionConfig, sectionsWithoutTableActions } from "@/components/admin/admin-section-config";
+import type { SpaManagerRoleFlow } from "@/components/admin/users/admin-spa-role-dialog";
+import type { PetModerationFlow } from "@/components/admin/pets/admin-pet-management";
+import { ActionGroup, AdminPagination, MiniStat, StatusBadge } from "@/components/admin/shared/admin-section-components";
+import {
+  adminSectionConfig as sectionConfig,
+  type AdminSectionKey,
+} from "@/components/admin/shared/admin-section-config";
 import {
   ADMIN_PAGE_SIZE,
   formatMatchingReportReason,
@@ -21,7 +24,7 @@ import {
   renderAdminValue as renderValue,
   type AdminRow as Row,
   type PetVerificationFilter,
-} from "@/components/admin/admin-section-utils";
+} from "@/components/admin/shared/admin-section-utils";
 
 /**
  * Hiệu ứng chờ tải lười (Lazy loading skeleton) cho các Panel quản trị
@@ -34,72 +37,70 @@ const DynamicPanelLoader = () => (
 
 // Áp dụng Code-splitting (Tải lười theo từng section) để giảm dung lượng bundle JS ban đầu
 const MatchingReportDialog = dynamic(
-  () => import("@/components/admin/admin-matching-reports").then((m) => m.MatchingReportDialog),
+  () => import("@/components/admin/reports/admin-matching-reports").then((m) => m.MatchingReportDialog),
   { ssr: false }
 );
 const MatchingReportFilters = dynamic(
-  () => import("@/components/admin/admin-matching-reports").then((m) => m.MatchingReportFilters),
+  () => import("@/components/admin/reports/admin-matching-reports").then((m) => m.MatchingReportFilters),
   { ssr: false }
 );
 const UserManagementPanel = dynamic(
-  () => import("@/components/admin/admin-user-management").then((m) => m.UserManagementPanel),
+  () => import("@/components/admin/users/admin-user-management").then((m) => m.UserManagementPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const ProductCatalogPanel = dynamic(
-  () => import("@/components/admin/admin-catalog-panels").then((m) => m.ProductCatalogPanel),
+  () => import("@/components/admin/store-products/admin-catalog-panels").then((m) => m.ProductCatalogPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const SpaServicesPanel = dynamic(
-  () => import("@/components/admin/admin-spa-services-panel").then((m) => m.SpaServicesPanel),
+  () => import("@/components/admin/spa-services/admin-spa-services-panel").then((m) => m.SpaServicesPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const SystemProfileForm = dynamic(
-  () => import("@/components/admin/admin-system-profile").then((m) => m.SystemProfileForm),
+  () => import("@/components/admin/system-profile/admin-system-profile").then((m) => m.SystemProfileForm),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const SpaManagerRoleDialog = dynamic(
-  () => import("@/components/admin/admin-spa-role-dialog").then((m) => m.SpaManagerRoleDialog),
+  () => import("@/components/admin/users/admin-spa-role-dialog").then((m) => m.SpaManagerRoleDialog),
   { ssr: false }
 );
 const PetDetailDialog = dynamic(
-  () => import("@/components/admin/admin-pet-management").then((m) => m.PetDetailDialog),
+  () => import("@/components/admin/pets/admin-pet-management").then((m) => m.PetDetailDialog),
   { ssr: false }
 );
 const PetManagementPanel = dynamic(
-  () => import("@/components/admin/admin-pet-management").then((m) => m.PetManagementPanel),
+  () => import("@/components/admin/pets/admin-pet-management").then((m) => m.PetManagementPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const PetModerationDialog = dynamic(
-  () => import("@/components/admin/admin-pet-management").then((m) => m.PetModerationDialog),
+  () => import("@/components/admin/pets/admin-pet-management").then((m) => m.PetModerationDialog),
   { ssr: false }
 );
 const SpaOverviewPanel = dynamic(
-  () => import("@/components/admin/business-overview-panels").then((m) => m.SpaOverviewPanel),
+  () => import("@/components/admin/spa-overview/spa-overview-panel").then((m) => m.SpaOverviewPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const StoreOverviewPanel = dynamic(
-  () => import("@/components/admin/business-overview-panels").then((m) => m.StoreOverviewPanel),
+  () => import("@/components/admin/store-overview/store-overview-panel").then((m) => m.StoreOverviewPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const SpaBookingsPanel = dynamic(
-  () => import("@/components/admin/spa-bookings-panel").then((m) => m.SpaBookingsPanel),
+  () => import("@/components/admin/spa-bookings/spa-bookings-panel").then((m) => m.SpaBookingsPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
 const StoreOrdersPanel = dynamic(
-  () => import("@/components/admin/store-orders-panel").then((m) => m.StoreOrdersPanel),
+  () => import("@/components/admin/store-orders/store-orders-panel").then((m) => m.StoreOrdersPanel),
   { loading: DynamicPanelLoader, ssr: false }
 );
-import { useAdminDashboardRange } from "@/components/admin/admin-dashboard-range-context";
+import { useAdminDashboardRange } from "@/components/admin/dashboard/admin-dashboard-range-context";
 import { AdminRole, adminApi, ModerateReportAbusePayload } from "@/lib/api/admin";
-export default function AdminSectionPage() {
-  const params = useParams<{ section: string }>();
-  const router = useRouter();
+export default function AdminSectionScreen({
+  section,
+}: {
+  section: AdminSectionKey;
+}) {
   const searchParams = useSearchParams();
-  const requestedSection = params.section;
-  const section =
-    requestedSection === "pet-verifications" ? "pets" : requestedSection;
   const config = sectionConfig[section];
-  const showTableActions = !sectionsWithoutTableActions.has(section);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -112,8 +113,7 @@ export default function AdminSectionPage() {
     useAdminDashboardRange();
   const [petVerificationFilter, setPetVerificationFilter] =
     useState<PetVerificationFilter>(
-      requestedSection === "pet-verifications" ||
-        searchParams.get("verification") === "pending"
+      searchParams.get("verification") === "pending"
         ? "PENDING"
         : "ALL",
     );
@@ -128,7 +128,6 @@ export default function AdminSectionPage() {
   const [matchingReportLoading, setMatchingReportLoading] = useState(false);
 
   const load = useCallback(() => {
-    if (!config) return;
     setCurrentPage(1);
     setLoading(true);
     setError("");
@@ -149,12 +148,6 @@ export default function AdminSectionPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
-
-  useEffect(() => {
-    if (requestedSection === "pet-verifications") {
-      router.replace("/admin/pets?verification=pending");
-    }
-  }, [requestedSection, router]);
 
   useEffect(() => {
     if (section !== "reports") return;
@@ -369,8 +362,6 @@ export default function AdminSectionPage() {
     }
   };
 
-  if (!config) notFound();
-
   return (
     <div className="grid gap-6">
       <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-sm">
@@ -546,11 +537,9 @@ export default function AdminSectionPage() {
                         {column.label}
                       </th>
                     ))}
-                    {showTableActions && (
-                      <th className="px-5 py-4 text-right text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                        Thao tác
-                      </th>
-                    )}
+                    <th className="px-5 py-4 text-right text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                      Thao tác
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -567,33 +556,29 @@ export default function AdminSectionPage() {
                           {renderAdminCell(column, row)}
                         </td>
                       ))}
-                      {showTableActions && (
-                        <td className="px-5 py-4">
-                          <ActionGroup
-                            section={section}
-                            row={row}
-                            busy={savingId === row.id}
-                            onAction={(action, success) =>
-                              runAction(row, action, success)
-                            }
-                            onRoleChange={(nextRole) =>
-                              handleRoleChange(row, nextRole)
-                            }
-                            onInspectMatchingReport={() =>
-                              inspectMatchingReport(row)
-                            }
-                          />
-                        </td>
-                      )}
+                      <td className="px-5 py-4">
+                        <ActionGroup
+                          section={section}
+                          row={row}
+                          busy={savingId === row.id}
+                          onAction={(action, success) =>
+                            runAction(row, action, success)
+                          }
+                          onRoleChange={(nextRole) =>
+                            handleRoleChange(row, nextRole)
+                          }
+                          onInspectMatchingReport={() =>
+                            inspectMatchingReport(row)
+                          }
+                        />
+                      </td>
                     </tr>
                   ))}
                   {!visibleRows.length && (
                     <tr>
                       <td
                         className="px-5 py-14 text-center text-sm font-semibold text-muted-foreground"
-                        colSpan={
-                          config.columns.length + (showTableActions ? 1 : 0)
-                        }
+                        colSpan={config.columns.length + 1}
                       >
                         Chưa có dữ liệu.
                       </td>
@@ -606,13 +591,7 @@ export default function AdminSectionPage() {
               currentPage={activePage}
               totalItems={visibleRows.length}
               onPageChange={setCurrentPage}
-              itemLabel={
-                section === "pets"
-                  ? "thú cưng"
-                  : section === "reports"
-                    ? "phản ánh"
-                    : "mục"
-              }
+              itemLabel="phản ánh"
             />
           </div>
         )}
@@ -653,31 +632,32 @@ export default function AdminSectionPage() {
         />
       )}
 
-      <MatchingReportDialog
-        key={matchingReportDetail?.id ?? "closed"}
-        report={matchingReportDetail}
-        open={Boolean(matchingReportDetail)}
-        onOpenChange={(open) => !open && setMatchingReportDetail(null)}
-        resolving={Boolean(
-          matchingReportDetail && savingId === matchingReportDetail.id,
-        )}
-        moderatingReporter={Boolean(
-          matchingReportDetail &&
-          savingId === `reporter:${matchingReportDetail.id}`,
-        )}
-        onModerateReporter={moderateMatchingReportReporter}
-        onResolve={(payload) => {
-          if (!matchingReportDetail) return;
-          runAction(
-            matchingReportDetail,
-            () =>
-              adminApi.resolveMatchingReport(matchingReportDetail.id, payload),
-            "Đã xử lý phản ánh.",
-          ).then((resolved) => {
-            if (resolved) setMatchingReportDetail(null);
-          });
-        }}
-      />
+      {section === "reports" && matchingReportDetail && (
+        <MatchingReportDialog
+          key={matchingReportDetail.id}
+          report={matchingReportDetail}
+          open
+          onOpenChange={(open) => !open && setMatchingReportDetail(null)}
+          resolving={savingId === matchingReportDetail.id}
+          moderatingReporter={
+            savingId === `reporter:${matchingReportDetail.id}`
+          }
+          onModerateReporter={moderateMatchingReportReporter}
+          onResolve={(payload) => {
+            runAction(
+              matchingReportDetail,
+              () =>
+                adminApi.resolveMatchingReport(
+                  matchingReportDetail.id,
+                  payload,
+                ),
+              "Đã xử lý phản ánh.",
+            ).then((resolved) => {
+              if (resolved) setMatchingReportDetail(null);
+            });
+          }}
+        />
+      )}
       {matchingReportLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
           <Loader2 className="size-8 animate-spin text-white" />
@@ -691,11 +671,10 @@ function renderAdminCell(
   column: { key: string; render?: (row: Row) => ReactNode },
   row: Row,
 ) {
-  if (column.key === "status" || column.key === "accountStatus") {
+  if (column.key === "status") {
     return (
       <StatusBadge status={row[column.key]} label={column.render?.(row)} />
     );
   }
-  if (column.key === "role") return <RoleBadge role={row.role} />;
   return column.render ? column.render(row) : renderValue(row[column.key]);
 }

@@ -36,7 +36,7 @@ import AppPagination from '@/components/ui/app-pagination';
 import {
   DashboardTimeControls,
   RevenueGrowthBadge,
-} from '@/components/admin/dashboard-time-controls';
+} from '@/components/admin/dashboard/dashboard-time-controls';
 import type { AdminDashboardParams } from '@/lib/api/admin';
 import {
   ResponsiveContainer,
