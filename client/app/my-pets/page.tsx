@@ -210,16 +210,23 @@ export default function MyPetsPage() {
         return target === "ALL" || target === pet.species;
       });
 
-      const recommendations: RecommendedProduct[] = matched.map((p) => {
-        // Đồng bộ 100% thuật toán gợi ý phân loại (variant) cho pet giữa popup my-pets và trang shop
-        const bestVariants: ProductVariant[] = getSuitableVariantsForPet(p, pet);
+      const recommendations: RecommendedProduct[] = matched
+        .map((p) => {
+          // Đồng bộ 100% thuật toán gợi ý phân loại (variant) còn hàng cho pet giữa popup my-pets và trang shop
+          const bestVariants: ProductVariant[] = getSuitableVariantsForPet(p, pet);
 
-        return {
-          ...p,
-          matchedVariants: bestVariants,
-          selectedVariant: bestVariants[0] || null,
-        };
-      });
+          return {
+            ...p,
+            matchedVariants: bestVariants,
+            selectedVariant: bestVariants[0] || null,
+          };
+        })
+        .filter((p) => {
+          if (p.variants && p.variants.length > 0) {
+            return p.matchedVariants.length > 0;
+          }
+          return Number(p.stock || 0) > 0;
+        });
 
       const breedLower = pet.breed.toLowerCase();
       recommendations.sort((a, b) => {
@@ -1056,22 +1063,6 @@ export default function MyPetsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
-                    type="button"
-                    size="sm"
-                    className="rounded-xl font-extrabold text-xs bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white shadow-md hover:opacity-95 transition cursor-pointer"
-                    onClick={() => {
-                      if (selectedRecommendPet) {
-                        localStorage.setItem(
-                          "petmatch_shop_selected_pet",
-                          JSON.stringify(selectedRecommendPet),
-                        );
-                        router.push(`/shop?petId=${selectedRecommendPet.id}`);
-                      }
-                    }}
-                  >
-                    🛍️ Xem toàn bộ sản phẩm
-                  </Button>
-                  <Button
                     variant="ghost"
                     size="icon"
                     className="rounded-full hover:bg-slate-100"
@@ -1250,15 +1241,20 @@ export default function MyPetsPage() {
 
               {/* Fixed Footer CTA to view all shop products for this pet */}
               {selectedRecommendPet && (
-                <div className="shrink-0 px-6 py-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3 bg-amber-50/70 border-amber-200/60 z-10">
-                  <div className="flex items-center gap-2 text-xs font-bold text-stone-700">
-                    <span className="text-base">🐾</span>
-                    <span>Muốn khám phá thêm hàng trăm sản phẩm khác dành riêng cho bé <strong>{selectedRecommendPet.name}</strong>?</span>
+                <div className="shrink-0 px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 bg-amber-50/90 border-amber-200/80 z-10">
+                  <div className="flex items-center gap-2.5 text-base sm:text-lg font-extrabold text-stone-800 leading-snug">
+                    <span className="text-xl shrink-0">🐾</span>
+                    <span>
+                      Muốn khám phá thêm hàng trăm sản phẩm khác dành riêng cho bé{" "}
+                      <strong className="font-black text-primary">
+                        {selectedRecommendPet.name}
+                      </strong>
+                      ?
+                    </span>
                   </div>
                   <Button
                     type="button"
-                    size="sm"
-                    className="w-full sm:w-auto rounded-xl font-black text-xs bg-primary hover:bg-[var(--primary-color)] text-white shadow-md cursor-pointer"
+                    className="w-full sm:w-auto h-11 px-5 rounded-xl font-black text-sm bg-primary hover:bg-[var(--primary-color)] text-white shadow-md cursor-pointer shrink-0"
                     onClick={() => {
                       if (selectedRecommendPet) {
                         localStorage.setItem(
