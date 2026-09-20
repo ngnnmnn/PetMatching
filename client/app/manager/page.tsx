@@ -3638,9 +3638,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                       <h5 className="text-xs font-black text-[var(--text-main)]">
                                         {item.user?.name || 'Khách hàng PetMatching'}
                                       </h5>
-                                      <div className="flex items-center text-orange-400 text-[10px] mt-0.5">
-                                        {"★".repeat(item.rating)}
-                                        {"☆".repeat(5 - item.rating)}
+                                      <div className="flex items-center gap-2 flex-wrap text-orange-400 text-[10px] mt-0.5">
+                                        <span>
+                                          {"★".repeat(item.rating)}
+                                          {"☆".repeat(5 - item.rating)}
+                                        </span>
+                                        {(item.variantName || item.variant?.name) && (
+                                          <span className="text-gray-700 bg-gray-100 border border-gray-200/80 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                                            Phân loại: {item.variantName || item.variant?.name}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -3655,6 +3662,18 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     <span className="italic text-gray-400">Khách hàng không viết nhận xét bằng văn bản.</span>
                                   )}
                                 </p>
+                                {(item.images?.length ?? 0) > 0 && (
+                                  <div className="flex flex-wrap gap-2 pl-12 pt-1">
+                                    {item.images.map((imgUrl: string, imgIdx: number) => (
+                                      <img
+                                        key={imgIdx}
+                                        src={imgUrl}
+                                        alt={`Review photo ${imgIdx + 1}`}
+                                        className="size-14 rounded-lg object-cover border border-gray-200 shadow-2xs hover:scale-105 transition cursor-pointer"
+                                      />
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

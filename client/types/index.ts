@@ -157,6 +157,12 @@ export interface ProductReview {
   images?: string[];
   userId: string;
   productId: string;
+  variantId?: string | null;
+  variantName?: string | null;
+  variant?: {
+    id: string;
+    name: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
   user: {

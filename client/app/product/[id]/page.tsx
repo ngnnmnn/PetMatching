@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -28,6 +28,7 @@ import Footer from '@/components/layout/Footer';
 import { productsApi } from '@/lib/api/products';
 import { usersApi } from '@/lib/api/users';
 import { uploadImages } from '@/lib/api/uploads';
+import { petsApi } from '@/lib/api/pets';
 import { Product, ProductVariant, ProductCategory, ProductReview } from '@/types';
 import ProductCard, { findRecommendedVariantForPet, getSuitableVariantsForPet } from '@/components/home/ProductCard';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -110,6 +111,25 @@ export default function ProductDetailPage() {
   const [deletingReviewLoading, setDeletingReviewLoading] = useState(false);
 
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [selectedVariantFilter, setSelectedVariantFilter] = useState<string>('ALL');
+
+  // Danh sách tên các biến thể có trong nhận xét
+  const reviewVariantNames = useMemo(() => {
+    const names = new Set<string>();
+    reviews.forEach((r) => {
+      const vName = r.variantName || r.variant?.name;
+      if (vName) names.add(vName);
+    });
+    return Array.from(names);
+  }, [reviews]);
+
+  // Danh sách đánh giá đã lọc theo biến thể
+  const filteredReviews = useMemo(() => {
+    if (selectedVariantFilter === 'ALL') return reviews;
+    return reviews.filter(
+      (r) => (r.variantName || r.variant?.name) === selectedVariantFilter,
+    );
+  }, [reviews, selectedVariantFilter]);
 
   const { addToCart } = useCart();
 
@@ -172,15 +192,30 @@ export default function ProductDetailPage() {
         const data = response.data;
         setProduct(data);
         setActiveImage(data.imageUrl || '/placeholder.svg');
-        // Nạp thông tin Pet đã chọn từ localStorage để phục vụ hiển thị Banner tư vấn gợi ý
+        // Nạp thông tin Pet đã chọn từ URL hoặc localStorage để phục vụ hiển thị Banner tư vấn gợi ý
         let currentPet: any = null;
+        const petIdFromUrl = searchParams.get('petId');
         if (typeof window !== 'undefined') {
           const stored = localStorage.getItem('petmatch_shop_selected_pet');
           if (stored) {
             try {
               currentPet = JSON.parse(stored);
-              setRecommendationPet(currentPet);
-            } catch {}
+              if (petIdFromUrl && currentPet.id !== petIdFromUrl) {
+                currentPet = null;
+              }
+            } catch (e) { }
+          }
+        }
+        if (!currentPet && petIdFromUrl) {
+          try {
+            const petRes = await petsApi.getDetail(petIdFromUrl);
+            currentPet = petRes.data;
+          } catch (e) { }
+        }
+        if (currentPet) {
+          setRecommendationPet(currentPet);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('petmatch_shop_selected_pet', JSON.stringify(currentPet));
           }
         }
 
@@ -663,24 +698,6 @@ export default function ProductDetailPage() {
                     </span>
                   </>
                 )}
-                <span className="text-gray-300">|</span>
-                <span className="font-bold flex items-center gap-1">
-                  {!isProductEffectivelyActive || !isSelectedVariantActive ? (
-                    <span className="text-rose-600 font-extrabold flex items-center gap-1">
-                      🚫 Tạm ngưng bán
-                    </span>
-                  ) : currentStock === null || currentStock === undefined ? (
-                    <span className="text-[#0F766E] flex items-center gap-1">
-                      <span className="text-xs font-bold">✓</span> Còn hàng
-                    </span>
-                  ) : currentStock > 0 ? (
-                    <span className="text-[#0F766E] flex items-center gap-1">
-                      <span className="text-xs font-bold">✓</span> Còn hàng ({currentStock} sản phẩm)
-                    </span>
-                  ) : (
-                    <span className="text-red-500 font-extrabold">Tạm hết hàng</span>
-                  )}
-                </span>
               </div>
 
               {/* Khung thông báo tư vấn đề xuất phân loại cho Thú cưng - Giao diện tinh chỉnh mới theo yêu cầu */}
@@ -787,8 +804,7 @@ export default function ProductDetailPage() {
                                 setActiveImage(v.imageUrl);
                               }
                             }}
-                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 flex items-center gap-2 cursor-pointer ${
-                              isVariantInactive
+                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 flex items-center gap-2 cursor-pointer ${isVariantInactive
                                 ? 'opacity-60 border-stone-200 bg-stone-100 text-stone-400 line-through cursor-not-allowed'
                                 : isSelected && isRecommended
                                   ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
@@ -797,7 +813,7 @@ export default function ProductDetailPage() {
                                     : isRecommended
                                       ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
                                       : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
-                            }`}
+                              }`}
                           >
                             <span>{v.name}</span>
                             {isVariantInactive && (
@@ -837,13 +853,6 @@ export default function ProductDetailPage() {
                   )}
                 </div>
               </div>
-
-              {/* Short Description */}
-              {product.description && (
-                <p className="mt-5 text-sm text-[var(--text-main)]/80 leading-relaxed font-medium">
-                  {product.description.split(/[.\n]/)[0]}.
-                </p>
-              )}
             </div>
 
             {/* Actions card */}
@@ -959,9 +968,9 @@ export default function ProductDetailPage() {
                 <span className="flex items-center gap-1.5">
                   <span className="text-[#0F766E] text-base">🚚</span> Miễn phí giao hàng đơn từ 500K
                 </span>
-                <span className="flex items-center gap-1.5">
+                {/* <span className="flex items-center gap-1.5">
                   <span className="text-[#0F766E] text-base">✓</span> Đổi trả trong 7 ngày
-                </span>
+                </span> */}
               </div>
 
             </div>
@@ -1105,8 +1114,45 @@ export default function ProductDetailPage() {
 
           {/* Reviews List */}
           <div className="space-y-4">
-            {reviews.length > 0 ? (
-              reviews.map((review) => (
+            {/* Bộ lọc phân loại hàng nếu có sản phẩm có biến thể */}
+            {reviewVariantNames.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-[var(--border-color)]">
+                <span className="text-xs font-bold text-[var(--text-muted)]">Phân loại:</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedVariantFilter('ALL')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                    selectedVariantFilter === 'ALL'
+                      ? 'bg-[var(--primary-color)] text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Tất cả ({reviews.length})
+                </button>
+                {reviewVariantNames.map((vName: string) => {
+                  const count = reviews.filter(
+                    (r) => (r.variantName || r.variant?.name) === vName,
+                  ).length;
+                  return (
+                    <button
+                      key={vName}
+                      type="button"
+                      onClick={() => setSelectedVariantFilter(vName)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        selectedVariantFilter === vName
+                          ? 'bg-[var(--primary-color)] text-white shadow-xs'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {vName} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {filteredReviews.length > 0 ? (
+              filteredReviews.map((review: ProductReview) => (
                 <div key={review.id} className="rounded-2xl border border-[var(--border-color)] bg-white p-5 space-y-3 shadow-sm animate-fadeIn">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -1119,13 +1165,23 @@ export default function ProductDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm font-bold text-[var(--text-main)]">{review.user?.name}</p>
-                        <p className="text-xxs text-[var(--text-muted)] font-semibold">
-                          {new Date(review.createdAt).toLocaleDateString('vi-VN', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                          })}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap text-xxs text-[var(--text-muted)] font-semibold mt-0.5">
+                          <span>
+                            {new Date(review.createdAt).toLocaleDateString('vi-VN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            })}
+                          </span>
+                          {(review.variantName || review.variant?.name) && (
+                            <>
+                              <span>•</span>
+                              <span className="text-gray-600 bg-gray-100 border border-gray-200/80 px-2 py-0.5 rounded-md font-bold">
+                                Phân loại hàng: {review.variantName || review.variant?.name}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1259,7 +1315,7 @@ export default function ProductDetailPage() {
                       {/* Display Review Images Gallery */}
                       {review.images && review.images.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">
-                          {review.images.map((imgUrl, imgIdx) => (
+                          {review.images.map((imgUrl: string, imgIdx: number) => (
                             <button
                               key={imgIdx}
                               type="button"

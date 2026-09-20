@@ -448,7 +448,14 @@ export default function OrdersPage() {
     }
   };
 
+  /**
+   * Xử lý mở modal đổi địa chỉ giao hàng cho đơn hàng PENDING (chặn đơn hàng đã thanh toán qua QR)
+   */
   const handleAddressEditClick = async (order: Order) => {
+    if (order.payment?.method === 'QR' && order.payment?.status === 'PAID') {
+      toast.error('Đơn hàng đã thanh toán bằng mã QR không thể thay đổi địa chỉ giao hàng.');
+      return;
+    }
     setEditOrder(order);
     try {
       const res = await usersApi.getAddresses();
@@ -855,7 +862,17 @@ export default function OrdersPage() {
                         )}
                         {order.status === 'PENDING' && (
                           <>
-                            {order.payment?.method !== 'QR' && (
+                            {(order.payment?.status as string) === 'PAID' ? (
+                              <button
+                                type="button"
+                                disabled
+                                title="Đơn hàng đã thanh toán bằng mã QR không thể sửa địa chỉ giao hàng"
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-400 cursor-not-allowed opacity-60"
+                              >
+                                <Edit2 className="size-3" />
+                                Sửa địa chỉ
+                              </button>
+                            ) : (
                               <button
                                 type="button"
                                 onClick={() => handleAddressEditClick(order)}

@@ -1254,6 +1254,9 @@ export class UsersService {
     });
   }
 
+  /**
+   * Cập nhật địa chỉ giao hàng và tính lại phí vận chuyển của đơn hàng (chỉ dành cho đơn PENDING chưa thanh toán QR)
+   */
   async updateOrderShipping(
     userId: string,
     orderId: string,
@@ -1478,6 +1481,13 @@ export class UsersService {
 
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    // Chỉ những đơn hàng đã thanh toán tiền thực tế (payment.status = 'PAID') mới được phép yêu cầu hoàn tiền
+    if (order.payment?.status !== 'PAID') {
+      throw new BadRequestException(
+        'Chỉ các đơn hàng đã được thanh toán thành công mới có thể gửi yêu cầu hoàn tiền.',
+      );
     }
 
     if (order.status !== 'PROCESSING' && order.status !== 'CANCELLED') {

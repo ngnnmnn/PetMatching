@@ -60,6 +60,8 @@ type OrderReview = {
   images?: string[];
   createdAt?: string | null;
   product?: { name?: string | null } | null;
+  variantName?: string | null;
+  variant?: { name?: string | null } | null;
 };
 
 type StoreOrderRow = {
@@ -949,6 +951,11 @@ function StoreOrderDetailDialog({
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-black text-foreground">
                         {review.product?.name ?? "Sản phẩm"}
+                        {(review.variantName || review.variant?.name) && (
+                          <span className="ml-1.5 font-bold text-muted-foreground text-xs">
+                            ({review.variantName || review.variant?.name})
+                          </span>
+                        )}
                       </p>
                       <span className="whitespace-nowrap text-sm font-black text-amber-600">
                         {review.rating ?? 0}/5 ★

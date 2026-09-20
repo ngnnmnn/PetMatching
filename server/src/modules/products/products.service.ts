@@ -465,13 +465,24 @@ export class ProductsService {
     );
   }
 
-  /** Lấy đánh giá sản phẩm từ cache ngắn hạn theo mã sản phẩm. */
+  /** Lấy đánh giá sản phẩm từ cache ngắn hạn theo mã sản phẩm (bao gồm thông tin người dùng và biến thể sản phẩm) */
   async getReviews(productId: string) {
     return this.cache.getOrSet(
       `${PRODUCT_CACHE_PREFIX}reviews:${productId}`,
       PRODUCT_LIST_TTL_MS,
-      () =>
-        this.prisma.productReview.findMany({
+      async () => {
+        const product = await this.prisma.product.findUnique({
+          where: { id: productId },
+          select: {
+            variants: {
+              select: { id: true, name: true },
+            },
+          },
+        });
+
+        const hasProductVariants = (product?.variants?.length ?? 0) > 0;
+
+        const reviews = await this.prisma.productReview.findMany({
           where: { productId },
           include: {
             user: {
@@ -481,9 +492,49 @@ export class ProductsService {
                 avatarUrl: true,
               },
             },
+            variant: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            order: {
+              select: {
+                items: {
+                  where: { productId },
+                  include: {
+                    variant: {
+                      select: {
+                        id: true,
+                        name: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
-        }),
+        });
+
+        return reviews.map((review) => {
+          const fallbackVariant = review.order?.items?.[0]?.variant;
+          let computedVariantName =
+            review.variantName ||
+            review.variant?.name ||
+            fallbackVariant?.name ||
+            null;
+
+          if (!computedVariantName && hasProductVariants) {
+            computedVariantName = 'Mặc định';
+          }
+
+          return {
+            ...review,
+            variantName: computedVariantName,
+          };
+        });
+      },
     );
   }
 
@@ -528,6 +579,9 @@ export class ProductsService {
     return !!order;
   }
 
+  /**
+   * Tạo đánh giá mới cho sản phẩm (lưu vết cả biến thể variantId & variantName đã mua)
+   */
   async createReview(
     userId: string,
     productId: string,
@@ -554,8 +608,23 @@ export class ProductsService {
       targetOrderId = unreviewedOrder.id;
     }
 
+    // Lấy thông tin biến thể từ chi tiết đơn hàng tương ứng
+    let variantId: string | undefined = undefined;
+    let variantName: string | undefined = undefined;
+
+    if (targetOrderId) {
+      const orderItem = await this.prisma.orderItem.findFirst({
+        where: { orderId: targetOrderId, productId },
+        include: { variant: { select: { id: true, name: true } } },
+      });
+      if (orderItem) {
+        variantId = orderItem.variantId ?? undefined;
+        variantName = orderItem.variant?.name ?? undefined;
+      }
+    }
+
     const createdReview = await this.prisma.$transaction(async (tx) => {
-      // 1. Create the review with orderId
+      // 1. Create the review with orderId and variant details
       const review = await tx.productReview.create({
         data: {
           rating,
@@ -563,6 +632,8 @@ export class ProductsService {
           images: Array.isArray(images) ? images : [],
           userId,
           productId,
+          variantId,
+          variantName,
           orderId: targetOrderId,
         },
       });
@@ -588,6 +659,7 @@ export class ProductsService {
 
       return review;
     });
+
     this.invalidateProductCache();
     return createdReview;
   }

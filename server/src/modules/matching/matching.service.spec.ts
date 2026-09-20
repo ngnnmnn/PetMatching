@@ -38,6 +38,7 @@ describe('MatchingService chat', () => {
   let prisma: {
     $transaction: jest.Mock;
     match: { findFirst: jest.Mock };
+    message: { updateMany: jest.Mock };
     user: { findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
   };
   let cloudinary: {
