@@ -1,18 +1,15 @@
 'use client';
 
-import React, { Suspense, useEffect, useState, useMemo } from 'react';
+import { Suspense, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
-  Calendar,
   Clock,
-  MapPin,
   ChevronLeft,
   ChevronRight,
   Plus,
   PawPrint,
-  CheckCircle,
   Scissors,
   Sparkles,
   AlertTriangle,
@@ -22,7 +19,6 @@ import Footer from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import api from '@/lib/axios';
 import { spaApi } from '@/lib/api/spa';
 import { petsApi } from '@/lib/api/pets';
 import { SpaServiceType, AddressSpaType } from '@/types';
@@ -140,8 +136,8 @@ function SpaBookingWizard() {
 
   // Selected Booking form state
   const [selectedPetId, setSelectedPetId] = useState<string>('');
-  const [customSpecies, setCustomSpecies] = useState<'DOG' | 'CAT'>('DOG');
-  const [customWeight, setCustomWeight] = useState<number>(3);
+  const customSpecies: 'DOG' | 'CAT' = 'DOG';
+  const customWeight = 3;
   const [selectedMainServiceId, setSelectedMainServiceId] = useState<string>('');
   const [selectedSubServiceIds, setSelectedSubServiceIds] = useState<string[]>([]);
 

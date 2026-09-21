@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Grid,
@@ -33,12 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { petsApi, type PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -156,8 +149,6 @@ export default function UnifiedMatchingHubPage() {
   // Candidates & Matching State
   const [candidates, setCandidates] = useState<Pet[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
-  // Đánh dấu người dùng đã tương tác (Pass/Like) ít nhất 1 hồ sơ trong phiên hiện tại
-  const [hasSwipedAny, setHasSwipedAny] = useState(false);
   // Số lượng hồ sơ đã bấm Bỏ qua (Pass) của bé cái hiện tại trong DB
   const [passedCount, setPassedCount] = useState(0);
 
@@ -243,7 +234,6 @@ export default function UnifiedMatchingHubPage() {
               });
               setCandidates(candRes.data?.data || []);
               setPassedCount(candRes.data?.meta?.passedCount ?? 0);
-              setHasSwipedAny(false);
             } catch {
               // silent catch
             } finally {
@@ -304,7 +294,6 @@ export default function UnifiedMatchingHubPage() {
           });
           setCandidates(candRes.data?.data || []);
           setPassedCount(candRes.data?.meta?.passedCount ?? 0);
-          setHasSwipedAny(false);
         } catch {
           toast.error('Không tải được danh sách ứng viên đề xuất.');
         } finally {
@@ -331,7 +320,6 @@ export default function UnifiedMatchingHubPage() {
   // Xử lý bỏ qua (Pass) một ứng viên ghép đôi (cập nhật tức thì trên giao diện và lưu vào backend)
   const handlePass = useCallback(async (candidateId: string) => {
     if (!selectedPetId) return;
-    setHasSwipedAny(true);
     setPassedCount((prev) => prev + 1);
     // Cập nhật giao diện ngay lập tức (Optimistic UI) để chuyển mượt sang thẻ tiếp theo
     setCandidates((curr) => curr.filter((p) => p.id !== candidateId));
@@ -364,7 +352,6 @@ export default function UnifiedMatchingHubPage() {
         note: requestNote.trim() || undefined,
       });
       setCandidates((curr) => curr.filter((p) => p.id !== requestingPet.id));
-      setHasSwipedAny(true);
       if (selectedCandidateDetail?.id === requestingPet.id) setSelectedCandidateDetail(null);
       setRequestingPet(null);
       setRequestNote('');
@@ -407,7 +394,6 @@ export default function UnifiedMatchingHubPage() {
           duration: 2500,
         });
       }
-      setHasSwipedAny(false);
       setPassedCount(0);
       if (selectedPet) {
         await handleSelectPet(selectedPet);

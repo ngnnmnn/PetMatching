@@ -12,7 +12,6 @@ import {
   Eye,
   MapPin,
   PawPrint,
-  Phone,
   RefreshCw,
   Scissors,
   Sparkles,
