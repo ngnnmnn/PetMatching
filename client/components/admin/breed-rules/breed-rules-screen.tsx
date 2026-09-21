@@ -486,13 +486,14 @@ export default function BreedRulesPage() {
                       {breed.isActive ? 'Tắt kích hoạt' : 'Bật kích hoạt'}
                     </button>
                     <div className="flex items-center gap-1">
+                      {/* Nút thêm quy tắc phối giống mới cho giống này */}
                       <button
                         type="button"
                         onClick={() => openCreateRule(breed.name)}
-                        title="Tạo quy tắc phối cho giống này"
-                        className="p-1 rounded-lg text-primary hover:bg-primary/10 font-bold text-xs flex items-center gap-1"
+                        title="Thêm quy tắc phối giống cho giống này"
+                        className="px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-bold text-xs flex items-center gap-1 transition-colors"
                       >
-                        <SlidersHorizontal className="size-3.5" /> Rule
+                        <Plus className="size-3.5" /> Quy tắc
                       </button>
                       <button
                         type="button"
@@ -595,7 +596,7 @@ export default function BreedRulesPage() {
                         </span>
                         {rule.isBlocked ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white flex items-center gap-1 shadow-xs">
-                            <ShieldAlert className="size-3" /> CẤM GHÉP ĐÔI (HARD BLOCK)
+                            <ShieldAlert className="size-3" /> CẤM GHÉP ĐÔI TUYỆT ĐỐI
                           </span>
                         ) : (
                           <span
@@ -980,7 +981,7 @@ export default function BreedRulesPage() {
                     className="size-4 accent-destructive"
                   />
                   <span className="text-xs font-black text-destructive uppercase tracking-wide flex items-center gap-1.5">
-                    <ShieldAlert className="size-4" /> Cấm ghép đôi tuyệt đối (Hard Block)
+                    <ShieldAlert className="size-4" /> Cấm ghép đôi tuyệt đối
                   </span>
                 </label>
                 <p className="text-[11px] text-muted-foreground leading-relaxed pl-6.5">
