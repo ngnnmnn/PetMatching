@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Grid,
   Heart,
-  Inbox,
   Info,
   Layers,
   MapPin,
@@ -36,10 +35,6 @@ import { petsApi, type PetStatus } from '@/lib/api/pets';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { CompatibilityBreakdown } from '@/components/matching/compatibility-breakdown';
-import {
-  PetPublicProfileDialog,
-  type PetWithOwner,
-} from '@/components/pets/PetPublicProfileDialog';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
 
 
@@ -74,6 +69,7 @@ type Pet = {
   status: PetStatus;
   breedingOption?: 'CASH' | 'SHARE_LITTER' | 'NEGOTIATE';
   breedingFee?: number | null;
+  breedingPrice?: number | null;
   shareLitterCount?: number | null;
   compatibilityScore?: number;
   matchReasons?: string[];
@@ -90,15 +86,6 @@ type Pet = {
   };
   ownerName?: string;
   ownerAvatar?: string | null;
-};
-
-type MatchingRequest = {
-  id: string;
-  note?: string | null;
-  createdAt: string;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
-  femalePet: PetWithOwner;
-  malePet: PetWithOwner;
 };
 
 type FilterState = {
@@ -138,7 +125,6 @@ const initialFilters: FilterState = {
 // =============================================================
 
 export default function UnifiedMatchingHubPage() {
-  const [activeTab, setActiveTab] = useState<'EXPLORE' | 'REQUESTS'>('EXPLORE');
   const [viewMode, setViewMode] = useState<'SWIPE' | 'GRID'>('SWIPE');
 
   // User & Pet States
@@ -152,10 +138,6 @@ export default function UnifiedMatchingHubPage() {
   // Số lượng hồ sơ đã bấm Bỏ qua (Pass) của bé cái hiện tại trong DB
   const [passedCount, setPassedCount] = useState(0);
 
-  // Requests Data
-  const [incomingRequests, setIncomingRequests] = useState<MatchingRequest[]>([]);
-  const [requestsTab, setRequestsTab] = useState<'INCOMING' | 'OUTGOING'>('INCOMING');
-
   // Filter Drawer & Modals State
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
@@ -167,12 +149,6 @@ export default function UnifiedMatchingHubPage() {
   const [requestingPet, setRequestingPet] = useState<Pet | null>(null);
   const [requestNote, setRequestNote] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
-  const [viewingPetProfile, setViewingPetProfile] = useState<{
-    pet: PetWithOwner;
-    requestNote?: string | null;
-    requestId?: string;
-    matchingLocked?: boolean;
-  } | null>(null);
 
   // Extract all distinct images for selected candidate
   const candidateImages = useMemo(() => {
@@ -306,16 +282,6 @@ export default function UnifiedMatchingHubPage() {
     [filters],
   );
 
-  const loadIncomingRequests = useCallback(() => {
-    api.get<MatchingRequest[]>('/matching/requests/incoming')
-      .then((res) => setIncomingRequests(res.data || []))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    loadIncomingRequests();
-  }, [loadIncomingRequests]);
-
   // Actions
   // Xử lý bỏ qua (Pass) một ứng viên ghép đôi (cập nhật tức thì trên giao diện và lưu vào backend)
   const handlePass = useCallback(async (candidateId: string) => {
@@ -360,20 +326,6 @@ export default function UnifiedMatchingHubPage() {
       toast.error(err.response?.data?.message || 'Không thể gửi yêu cầu.');
     } finally {
       setSendingRequest(false);
-    }
-  };
-
-  const handleRespondRequest = async (id: string, action: 'accept' | 'reject') => {
-    try {
-      await api.post(`/matching/requests/${id}/${action}`);
-      if (action === 'accept') {
-        toast.success('🎉 Đã chấp nhận yêu cầu và tạo Match thành công!');
-      } else {
-        toast.success('Đã từ chối yêu cầu.');
-      }
-      loadIncomingRequests();
-    } catch {
-      toast.error('Không thể xử lý yêu cầu.');
     }
   };
 
@@ -499,7 +451,7 @@ export default function UnifiedMatchingHubPage() {
             </div>
 
             {/* View Mode Toggle (For Exploration) */}
-            {activeTab === 'EXPLORE' && isSelectedFemale && (
+            {isSelectedFemale && (
               <div className="flex items-center gap-2 bg-card border rounded-2xl p-1 shadow-sm shrink-0">
                 <button
                   type="button"
@@ -590,30 +542,31 @@ export default function UnifiedMatchingHubPage() {
         </div>
       </section>
 
-      {/* ================= TAB 1: EXPLORE (DISCOVERY & SWIPE CARD) ================= */}
-      {activeTab === 'EXPLORE' && (
-        <section className="container mx-auto flex-1 px-4 py-6">
-          {/* Male Pet Alert */}
-          {isSelectedMale ? (
-            <div className="py-16 text-center space-y-4">
-              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-blue-500/10 text-blue-600">
-                <Info className="size-10" />
-              </div>
-              <h3 className="text-xl font-extrabold text-blue-900">Tính năng Khám phá dành cho thú cưng cái</h3>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Bạn đang chọn bé đực <span className="font-bold text-foreground">{selectedPet?.name}</span>. Theo quy định, các bé đực sẽ được hiển thị trên hệ thống để bé cái tìm kiếm.
-              </p>
-              <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
-                <Button variant="outline" className="rounded-xl font-bold border-blue-200 text-blue-700 hover:bg-blue-50" asChild>
-                  <Link href="/my-pets">Cấu hình ghép đôi</Link>
-                </Button>
-                <Button className="rounded-xl font-bold bg-blue-600 shadow-md shadow-blue-500/20" onClick={() => setActiveTab('REQUESTS')}>
-                  Xem Yêu cầu nhận được
-                </Button>
-              </div>
+      {/* ================= KHÁM PHÁ (DISCOVERY & SWIPE CARD) ================= */}
+      <section className="container mx-auto flex-1 px-4 py-6">
+        {/* Male Pet Alert */}
+        {isSelectedMale ? (
+          <div className="py-16 text-center space-y-4">
+            <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-blue-500/10 text-blue-600">
+              <Info className="size-10" />
             </div>
-          ) : (
-            <>
+            <h3 className="text-xl font-extrabold text-blue-900">Tính năng Khám phá dành cho thú cưng cái</h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              Bạn đang chọn bé đực <span className="font-bold text-foreground">{selectedPet?.name}</span>. Theo quy định, các bé đực sẽ được hiển thị trên hệ thống để bé cái tìm kiếm.
+            </p>
+            <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
+              <Button variant="outline" className="rounded-xl font-bold border-blue-200 text-blue-700 hover:bg-blue-50" asChild>
+                <Link href="/my-pets">Cấu hình ghép đôi</Link>
+              </Button>
+              <Button className="rounded-xl font-bold bg-blue-600 shadow-md shadow-blue-500/20" asChild>
+                <Link href="/messages">
+                  Xem Yêu cầu nhận được
+                </Link>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
               {/* Underage Notice Banner for Selected Female Pet */}
               {selectedPet && isSelectedPetUnderage && (
                 <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30 flex items-start gap-3 shadow-xs">
@@ -760,128 +713,6 @@ export default function UnifiedMatchingHubPage() {
             </>
           )}
         </section>
-      )}
-
-      {/* ================= TAB 2: REQUESTS (INCOMING & OUTGOING) ================= */}
-      {activeTab === 'REQUESTS' && (
-        <section className="container mx-auto flex-1 px-4 py-6 space-y-6">
-          <div className="flex gap-2 border-b">
-            <button
-              type="button"
-              onClick={() => setRequestsTab('INCOMING')}
-              className={cn(
-                'px-4 py-2 text-xs font-extrabold border-b-2 transition-all',
-                requestsTab === 'INCOMING' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground',
-              )}
-            >
-              Yêu cầu Nhận được (Pet Đực) ({incomingRequests.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setRequestsTab('OUTGOING')}
-              className={cn(
-                'px-4 py-2 text-xs font-extrabold border-b-2 transition-all',
-                requestsTab === 'OUTGOING' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground',
-              )}
-            >
-              Yêu cầu Đã gửi (Pet Cái)
-            </button>
-          </div>
-
-          {requestsTab === 'INCOMING' ? (
-            incomingRequests.length === 0 ? (
-              <EmptyState
-                icon={<Inbox className="size-10" />}
-                title="Chưa có yêu cầu ghép đôi mới nào"
-                description="Khi các thú cưng cái gửi lời mời phối giống cho bé đực của bạn, yêu cầu sẽ xuất hiện tại đây."
-                actionHref="/my-pets"
-                actionLabel="Cấu hình pet đực ngay"
-              />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {incomingRequests.map((req) => {
-                  const matchingLocked = req.femalePet.status !== 'ACTIVE' || req.malePet.status !== 'ACTIVE';
-                  const femaleImage = req.femalePet.avatarUrl || req.femalePet.gallery?.[0] || '/placeholder.svg';
-                  return (
-                    <article key={req.id} className="rounded-2xl border bg-card p-5 shadow-sm space-y-4 hover:border-primary/40 transition-all">
-                    <div className="flex items-start gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setViewingPetProfile({
-                          pet: req.femalePet,
-                          requestNote: req.note,
-                          requestId: req.id,
-                          matchingLocked,
-                        })}
-                        className="group relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-2xl border bg-muted"
-                        title="Bấm để xem chi tiết hồ sơ bé cái"
-                      >
-                        <img src={femaleImage} alt={req.femalePet.name} className="size-full object-cover transition-transform group-hover:scale-110" />
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setViewingPetProfile({
-                              pet: req.femalePet,
-                              requestNote: req.note,
-                              requestId: req.id,
-                              matchingLocked,
-                            })}
-                            className="text-left group cursor-pointer truncate"
-                          >
-                            <h3 className="font-extrabold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
-                              {req.femalePet.name}
-                              <span className="text-xs font-bold text-pink-600 shrink-0">(♀)</span>
-                            </h3>
-                          </button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setViewingPetProfile({
-                              pet: req.femalePet,
-                              requestNote: req.note,
-                              requestId: req.id,
-                              matchingLocked,
-                            })}
-                            className="rounded-xl text-xs font-bold h-8 shrink-0 hover:bg-primary/10 hover:text-primary"
-                          >
-                            Xem hồ sơ
-                          </Button>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">Chủ sở hữu: <span className="text-foreground font-semibold">{req.femalePet.owner?.name}</span></p>
-                        <p className="mt-1 text-xs font-bold text-primary truncate">Muốn phối với bé đực: {req.malePet.name}</p>
-                      </div>
-                    </div>
-                    {req.note && <div className="rounded-xl border bg-muted/40 p-3 text-xs italic text-muted-foreground">&ldquo;{req.note}&rdquo;</div>}
-                    {matchingLocked && (
-                      <p className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">
-                        Yêu cầu tạm khóa vì một hồ sơ thú cưng không khả dụng.
-                      </p>
-                    )}
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button variant="outline" className="rounded-xl font-bold" onClick={() => handleRespondRequest(req.id, 'reject')}>
-                        <X className="mr-1 size-4" /> Từ chối
-                      </Button>
-                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => handleRespondRequest(req.id, 'accept')}>
-                        <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
-                      </Button>
-                    </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )
-          ) : (
-            <div className="text-center py-12">
-              <Button asChild className="rounded-xl font-bold">
-                <Link href="/messages">Xem toàn bộ Lịch sử Yêu cầu Đã gửi</Link>
-              </Button>
-            </div>
-          )}
-        </section>
-      )}
 
       {/* ================= ADVANCED FILTER DRAWER ================= */}
       <AnimatePresence>
@@ -1327,11 +1158,6 @@ export default function UnifiedMatchingHubPage() {
                         >
                           {selectedCandidateDetail.gender === 'MALE' ? '♂ Đực' : '♀ Cái'}
                         </span>
-
-                        {/* Breeding Ready Tag */}
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 text-xs font-black">
-                          ✨ Sẵn sàng phối giống
-                        </span>
                       </div>
                     </div>
 
@@ -1457,9 +1283,9 @@ export default function UnifiedMatchingHubPage() {
                           <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900/80 px-3 py-1.5 text-xs font-bold text-orange-800 dark:text-orange-200">
                             {selectedCandidateDetail.breedingOption === 'CASH' ? '💰 Thu phí phối giống' : selectedCandidateDetail.breedingOption === 'SHARE_LITTER' ? '🐾 Thỏa thuận chia đàn con' : '🤝 Thỏa thuận đôi bên'}
                           </span>
-                          {selectedCandidateDetail.breedingOption === 'CASH' && selectedCandidateDetail.breedingFee && (
+                          {selectedCandidateDetail.breedingOption === 'CASH' && (selectedCandidateDetail.breedingFee || selectedCandidateDetail.breedingPrice) && (
                             <span className="inline-flex items-center gap-1.5 rounded-xl bg-orange-100 dark:bg-orange-900/80 px-3 py-1.5 text-xs font-black text-orange-900 dark:text-orange-100">
-                              Mức phí: {selectedCandidateDetail.breedingFee.toLocaleString('vi-VN')} VNĐ
+                              Mức phí: {(selectedCandidateDetail.breedingFee ?? selectedCandidateDetail.breedingPrice)!.toLocaleString('vi-VN')} VNĐ
                             </span>
                           )}
                           {selectedCandidateDetail.breedingOption === 'SHARE_LITTER' && selectedCandidateDetail.shareLitterCount && (
@@ -1545,24 +1371,6 @@ export default function UnifiedMatchingHubPage() {
           </div>
         )}
       </AnimatePresence>
-
-      {viewingPetProfile && (
-        <PetPublicProfileDialog
-          pet={viewingPetProfile.pet}
-          open={Boolean(viewingPetProfile)}
-          onClose={() => setViewingPetProfile(null)}
-          requestNote={viewingPetProfile.requestNote}
-          requestAction={
-            viewingPetProfile.requestId
-              ? {
-                  onAccept: () => handleRespondRequest(viewingPetProfile.requestId!, 'accept'),
-                  onReject: () => handleRespondRequest(viewingPetProfile.requestId!, 'reject'),
-                  acceptDisabled: viewingPetProfile.matchingLocked,
-                }
-              : undefined
-          }
-        />
-      )}
 
       {/* Lightbox for Fullscreen Image View */}
       <ImageLightbox
@@ -1757,7 +1565,7 @@ function SwipeCardContainer({
             title="Bấm để xem phân tích chi tiết độ phù hợp"
           >
             <Sparkles className="mr-1.5 size-4 text-white fill-white/20 group-hover/score:rotate-12 transition-transform" />
-            <span className="text-xs font-black text-white tracking-wide">{pet.compatibilityScore || 95}% Phù hợp</span>
+            <span className="text-xs font-black text-white tracking-wide">{pet.compatibilityScore ?? 95}% Phù hợp</span>
           </button>
         </div>
 
@@ -1771,23 +1579,18 @@ function SwipeCardContainer({
             {pet.breed} · {pet.ward || pet.location}
           </p>
 
-          <div className="flex flex-wrap gap-2 pt-1 text-xs font-bold">
-            {/* Khoảng cách di chuyển */}
-            <span
-              className="rounded-lg bg-teal-500/90 text-white font-extrabold px-2.5 py-1 backdrop-blur-md shadow"
-              title={pet.isRoadDistance ? "Khoảng cách đường bộ thực tế (OpenStreetMap OSRM)" : "Khoảng cách ước tính"}
-            >
-              {pet.isRoadDistance ? '🛣️' : '📍'} {pet.distanceKm != null && pet.distanceKm <= 1 ? `Cùng khu vực (${pet.distanceKm} km)` : `Cách ~${pet.distanceKm ?? 5} km${pet.isRoadDistance ? ' đ.bộ' : ''}`}
+          <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+            {/* Khoảng cách di chuyển đường bộ thực tế */}
+            <span className="rounded-lg bg-black/60 backdrop-blur-md px-2.5 py-1 text-white shadow font-bold flex items-center gap-1">
+              {pet.isRoadDistance ? '🛣️' : '📍'} {pet.distanceKm != null && pet.distanceKm <= 1 ? '< 1 km' : `${pet.distanceKm ?? 5} km${pet.isRoadDistance ? ' đ.bộ' : ''}`}
             </span>
 
-            {/* Cân nặng & chỉ báo mức độ an toàn sinh nở */}
+            {/* Cân nặng */}
             <span className={cn(
-              "rounded-lg px-2.5 py-1 backdrop-blur-md shadow flex items-center gap-1",
+              "rounded-lg backdrop-blur-md px-2.5 py-1 font-bold shadow flex items-center gap-1",
               weightDiff != null && Math.abs(weightDiff) <= 2
-                ? "bg-emerald-600/90 text-white font-black"
-                : weightDiff != null && weightDiff > 5
-                ? "bg-rose-600/90 text-white font-black"
-                : "bg-black/50 text-white font-bold",
+                ? "bg-emerald-600/80 text-white"
+                : "bg-black/60 text-white"
             )}>
               ⚖️ {pet.weight} kg
               {weightDiff != null && (
@@ -1810,7 +1613,7 @@ function SwipeCardContainer({
               <span className="rounded-lg bg-primary/95 px-2.5 py-1 text-white shadow font-black">
                 💰{' '}
                 {pet.breedingOption === 'CASH'
-                  ? pet.breedingFee ? `${pet.breedingFee.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
+                  ? (pet.breedingFee ?? pet.breedingPrice) ? `${(pet.breedingFee ?? pet.breedingPrice)!.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
                   : pet.breedingOption === 'SHARE_LITTER'
                   ? `Chia ${pet.shareLitterCount || 1} con non`
                   : 'Thỏa thuận'}
@@ -1908,7 +1711,7 @@ function CandidateCardGrid({
           }}
           title="Bấm để xem phân tích chi tiết độ phù hợp"
         >
-          ✨ {pet.compatibilityScore || 95}%
+          ✨ {pet.compatibilityScore ?? 95}%
         </div>
         <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
           <h2 className="text-xl font-black">{pet.name}</h2>
@@ -1936,7 +1739,7 @@ function CandidateCardGrid({
             <span>💰</span>
             <span>
               {pet.breedingOption === 'CASH'
-                ? pet.breedingFee ? `Phí: ${pet.breedingFee.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
+                ? (pet.breedingFee ?? pet.breedingPrice) ? `Phí: ${(pet.breedingFee ?? pet.breedingPrice)!.toLocaleString('vi-VN')}đ` : 'Phối thu phí'
                 : pet.breedingOption === 'SHARE_LITTER'
                 ? `Chia đàn: ${pet.shareLitterCount || 1} con non`
                 : 'Hình thức: Thỏa thuận đôi bên'}

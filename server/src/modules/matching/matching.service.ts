@@ -520,7 +520,7 @@ export class MatchingService {
           eventType: NotificationEventType.MATCH_REQUEST_CREATED,
           title: 'Yêu cầu ghép đôi mới',
           content: `${femalePet.name} đã gửi yêu cầu ghép đôi với ${malePet.name}.`,
-          targetUrl: '/requests',
+          targetUrl: '/messages',
           entityType: 'MATCHING_REQUEST',
           entityId: createdRequest.id,
         },
@@ -647,8 +647,16 @@ export class MatchingService {
           matchReasons: compatibility.reasons,
         },
         include: {
-          pet1: true,
-          pet2: true,
+          pet1: {
+            include: {
+              owner: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          },
+          pet2: {
+            include: {
+              owner: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          },
         },
       });
 
@@ -713,7 +721,7 @@ export class MatchingService {
           eventType: NotificationEventType.MATCH_REQUEST_REJECTED,
           title: 'Yêu cầu ghép đôi bị từ chối',
           content: `Yêu cầu ghép đôi ${pendingRequest.femalePet.name} với ${pendingRequest.malePet.name} đã bị từ chối.`,
-          targetUrl: '/requests',
+          targetUrl: '/messages',
           entityType: 'MATCHING_REQUEST',
           entityId: requestId,
         },
@@ -723,6 +731,40 @@ export class MatchingService {
     });
 
     return { success: true, request };
+  }
+
+  /**
+   * Hủy yêu cầu ghép đôi do chính mình gửi đi (chỉ người gửi mới có quyền hủy khi request đang PENDING)
+   */
+  async cancelRequest(userId: string, requestId: string) {
+    const request = await this.prisma.matchingRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        femalePet: true,
+        malePet: true,
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Không tìm thấy yêu cầu ghép đôi.');
+    }
+    if (request.requesterId !== userId && request.femalePet.ownerId !== userId) {
+      throw new ForbiddenException('Bạn không có quyền hủy yêu cầu ghép đôi này.');
+    }
+    if (request.status !== MatchingRequestStatus.PENDING) {
+      throw new BadRequestException('Chỉ có thể hủy yêu cầu đang ở trạng thái chờ phản hồi.');
+    }
+
+    const cancelledRequest = await this.prisma.matchingRequest.update({
+      where: { id: requestId },
+      data: {
+        status: MatchingRequestStatus.CANCELLED,
+        respondedAt: new Date(),
+      },
+      include: this.requestInclude(),
+    });
+
+    return { success: true, request: cancelledRequest };
   }
 
   async getMatches(userId: string) {
@@ -1757,6 +1799,7 @@ export class MatchingService {
       personality: pet.personality,
       breedingOption: pet.breedingOption,
       breedingPrice: pet.breedingFee,
+      breedingFee: pet.breedingFee,
       location: pet.location,
       district: pet.district,
       ward: pet.ward,

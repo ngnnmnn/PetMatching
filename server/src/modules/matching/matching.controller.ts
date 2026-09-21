@@ -102,6 +102,14 @@ export class MatchingController {
     return this.matchingService.rejectRequest(request.user.id, id);
   }
 
+  /**
+   * Hủy yêu cầu ghép đôi do chính mình gửi đi (chỉ thực hiện khi yêu cầu đang ở trạng thái PENDING)
+   */
+  @Post('requests/:id/cancel')
+  cancelRequest(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.matchingService.cancelRequest(request.user.id, id);
+  }
+
   @Get('matches')
   getMatches(@Req() request: AuthenticatedRequest) {
     return this.matchingService.getMatches(request.user.id);
