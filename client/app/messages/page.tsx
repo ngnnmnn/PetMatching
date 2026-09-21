@@ -2,10 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import {
-  BadgeCheck,
   Check,
-  ChevronRight,
-  Clock,
   Eye,
   Heart,
   ImageIcon,
@@ -14,10 +11,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Paperclip,
-  PawPrint,
   Send,
-  Sparkles,
-  User,
   UserCheck,
   UserX,
   Flag,

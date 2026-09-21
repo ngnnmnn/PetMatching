@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Award, Camera, Cat, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Lock, Minus, Plus, Scale, ShieldCheck, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
+import { Award, Camera, Cat, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Lock, Minus, Plus, Scale, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"

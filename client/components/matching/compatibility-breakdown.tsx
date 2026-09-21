@@ -1,13 +1,12 @@
 "use client"
 
-import React, { useState } from "react"
+import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   AlertTriangle,
   Award,
   ChevronDown,
   Dna,
-  HeartHandshake,
   Info,
   MapPin,
   Scale,

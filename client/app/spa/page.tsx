@@ -10,8 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { spaApi } from '@/lib/api/spa';
-import { SpaBranchType, SpaServiceType, AddressSpaType } from '@/types';
-import BookingDialog from '@/components/spa/BookingDialog';
+import { SpaServiceType, AddressSpaType } from '@/types';
 import AppPagination from '@/components/ui/app-pagination';
 import { getServiceBracketsForSpecies, formatWeightRange } from '@/lib/spa-bracket.utils';
 
@@ -29,29 +28,6 @@ const SERVICE_IMAGES: Record<string, string> = {
 };
 
 const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=600&h=400&fit=crop';
-
-// Mock ratings and reviews to match the user's mockup style
-const RATING_MOCK: Record<string, { rating: number; reviews: number }> = {
-  'Tắm & sấy cơ bản': { rating: 4.7, reviews: 234 },
-  'Tắm & sấy cao cấp': { rating: 4.9, reviews: 156 },
-  'Cắt tỉa lông cơ bản': { rating: 4.6, reviews: 98 },
-  'Cắt tỉa lông theo yêu cầu': { rating: 4.8, reviews: 189 },
-  'Chăm sóc móng': { rating: 4.5, reviews: 64 },
-  'Vệ sinh tai & răng': { rating: 4.7, reviews: 112 },
-  'Massage thư giãn': { rating: 4.9, reviews: 45 },
-  'Gói spa full day': { rating: 5.0, reviews: 88 },
-  'Gói spa mèo Premium': { rating: 4.8, reviews: 73 },
-};
-
-const CATEGORIES = [
-  { label: 'Tất cả', value: 'all' },
-  { label: 'Tắm & Sấy', value: 'Tắm & Sấy' },
-  { label: 'Cắt tỉa lông', value: 'Cắt tỉa lông' },
-  { label: 'Chăm sóc móng', value: 'Chăm sóc móng' },
-  { label: 'Vệ sinh tai & răng', value: 'Vệ sinh tai và răng' },
-  { label: 'Massage & Thư giãn', value: 'Massage thư giãn' },
-  { label: 'Gói combo', value: 'gói combo' },
-];
 
 export default function SpaHome() {
   const router = useRouter();
@@ -71,16 +47,6 @@ export default function SpaHome() {
   useEffect(() => {
     setServicePage(1);
   }, [searchQuery, selectedCategory]);
-
-  // Booking dialog state
-  const [bookingDialogOpen, setBookingDialogOpen] = useState<boolean>(false);
-  const [selectedService, setSelectedService] = useState<{
-    id: string;
-    name: string;
-    price: number;
-    branchId: string;
-    branchName: string;
-  } | null>(null);
 
   // Service Detail Popup modal state
   const [detailCard, setDetailCard] = useState<any | null>(null);
@@ -112,25 +78,6 @@ export default function SpaHome() {
 
   const safeServices = Array.isArray(services) ? services : [];
   const safeBranches = Array.isArray(branches) ? branches : [];
-
-  const handleOpenBooking = (service: SpaServiceType) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-    const targetUrl = '/spa/book';
-    if (!token) {
-      toast.error('Vui lòng đăng nhập để thực hiện đặt lịch Spa.');
-      router.push(`/login?redirect=${encodeURIComponent(targetUrl)}`);
-      return;
-    }
-    const defaultBranch = safeBranches.length > 0 ? safeBranches[0] : null;
-    setSelectedService({
-      id: service.id,
-      name: service.name,
-      price: service.price,
-      branchId: service.branchId ?? service.categoryId ?? service.brandId ?? defaultBranch?.id ?? '',
-      branchName: service.branch?.name || defaultBranch?.name || 'Chi nhánh Spa',
-    });
-    setBookingDialogOpen(true);
-  };
 
   const handleBookClick = (serviceId: string, title?: string, brandId?: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
@@ -367,12 +314,9 @@ export default function SpaHome() {
               }
             });
 
-            // Tính toán khoảng giá thực tế và dải cân nặng tổng hợp cho từng thẻ hiển thị trên trang chủ
+            // Tính toán khoảng giá thực tế cho từng thẻ hiển thị trên trang chủ
             brandMap.forEach((card) => {
               const allPrices: number[] = [];
-              const allMins: number[] = [];
-              const allMaxs: (number | null)[] = [];
-
               card.services.forEach((s) => {
                 // Thu thập giá
                 if (Array.isArray(s.price)) {
@@ -382,37 +326,11 @@ export default function SpaHome() {
                   const p = Number(s.price);
                   if (!isNaN(p) && p > 0) allPrices.push(p);
                 }
-
-                // Thu thập cân nặng min
-                if (Array.isArray(s.petMinWeight)) {
-                  const flatMin = (s.petMinWeight as any[]).flat(Infinity).map(Number).filter((n) => !isNaN(n));
-                  allMins.push(...flatMin);
-                } else if (s.petMinWeight !== null && s.petMinWeight !== undefined) {
-                  const n = Number(s.petMinWeight);
-                  if (!isNaN(n)) allMins.push(n);
-                }
-
-                // Thu thập cân nặng max
-                if (Array.isArray(s.petMaxWeight)) {
-                  const flatMax = (s.petMaxWeight as any[]).flat(Infinity).map((n) => (n !== null && n !== undefined ? Number(n) : null));
-                  allMaxs.push(...flatMax);
-                } else if (s.petMaxWeight !== null && s.petMaxWeight !== undefined) {
-                  allMaxs.push(Number(s.petMaxWeight));
-                } else {
-                  allMaxs.push(null);
-                }
               });
 
               // Xác định khoảng giá thực tế (Min – Max)
               card.minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
               card.maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
-
-              // Xác định dải cân nặng tổng hợp không phân biệt chó mèo
-              const minW = allMins.length > 0 ? Math.min(...allMins) : 0;
-              const hasNullMax = allMaxs.some((n) => n === null || n >= 100);
-              const validMaxs = allMaxs.filter((n): n is number => n !== null && n < 100);
-              const maxW = validMaxs.length > 0 ? Math.max(...validMaxs) : null;
-
               // Tên thẻ Spa hiển thị chung không phân biệt chó mèo
               card.title = `${card.baseName}`;
             });
@@ -527,17 +445,6 @@ export default function SpaHome() {
           if (spec === 'DOG') return 'Chó 🐶';
           if (spec === 'CAT') return 'Mèo 🐱';
           return 'Chó & Mèo 🐶🐱';
-        };
-
-        // Hàm định dạng khoảng cân nặng chuẩn từ min và max
-        const formatWeightText = (min: any, max: any): string => {
-          const minN = min !== null && min !== undefined && !isNaN(Number(min)) ? Number(min) : 0;
-          const maxN = max !== null && max !== undefined && !isNaN(Number(max)) ? Number(max) : null;
-
-          if (minN === 0 && (maxN === null || maxN >= 100)) return 'Mọi cân nặng';
-          if (maxN === null || maxN >= 100) return `Trên ${minN}kg (>= ${minN}kg)`;
-          if (minN === maxN) return `${minN}kg`;
-          return `${minN}kg – ${maxN}kg`;
         };
 
         // Danh sách mốc cân nặng trích xuất từ dữ liệu thật trong cơ sở dữ liệu
@@ -782,21 +689,6 @@ export default function SpaHome() {
           </div>
         );
       })()}
-
-      {/* Booking Dialog Modal */}
-      {
-        selectedService && (
-          <BookingDialog
-            isOpen={bookingDialogOpen}
-            onClose={() => setBookingDialogOpen(false)}
-            branchId={selectedService.branchId}
-            branchName={selectedService.branchName}
-            serviceId={selectedService.id}
-            serviceName={selectedService.name}
-            price={selectedService.price}
-          />
-        )
-      }
 
       <Footer />
     </main >
