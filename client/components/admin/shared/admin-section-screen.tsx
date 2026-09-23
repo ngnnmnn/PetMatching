@@ -22,10 +22,12 @@ import {
   normalizeAdminRows as normalizeRows,
   petMatchesVerificationFilter,
   petMatchesSpeciesFilter,
+  petMatchesGenderFilter,
   renderAdminValue as renderValue,
   type AdminRow as Row,
   type PetVerificationFilter,
   type PetSpeciesFilter,
+  type PetGenderFilter,
 } from "@/components/admin/shared/admin-section-utils";
 
 /**
@@ -124,6 +126,11 @@ export default function AdminSectionScreen({
   const [petSpeciesFilter, setPetSpeciesFilter] = useState<PetSpeciesFilter>(
     initialSpecies === "DOG" || initialSpecies === "CAT" ? initialSpecies : "ALL",
   );
+  // Bộ lọc giới tính thú cưng (Tất cả / Đực / Cái) dành cho màn hình quản trị thú cưng
+  const initialGender = searchParams.get("gender")?.toUpperCase();
+  const [petGenderFilter, setPetGenderFilter] = useState<PetGenderFilter>(
+    initialGender === "MALE" || initialGender === "FEMALE" ? initialGender : "ALL",
+  );
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] =
     useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] =
@@ -174,7 +181,8 @@ export default function AdminSectionScreen({
         .filter(
           (row) =>
             petMatchesVerificationFilter(row, petVerificationFilter) &&
-            petMatchesSpeciesFilter(row, petSpeciesFilter),
+            petMatchesSpeciesFilter(row, petSpeciesFilter) &&
+            petMatchesGenderFilter(row, petGenderFilter),
         )
         .sort(
           (left, right) =>
@@ -207,6 +215,7 @@ export default function AdminSectionScreen({
   }, [
     complaintStatus,
     complaintTarget,
+    petGenderFilter,
     petSpeciesFilter,
     petVerificationFilter,
     reportSearch,
@@ -464,6 +473,7 @@ export default function AdminSectionScreen({
             pets={paginatedRows}
             filter={petVerificationFilter}
             speciesFilter={petSpeciesFilter}
+            genderFilter={petGenderFilter}
             currentPage={activePage}
             totalItems={visibleRows.length}
             onFilterChange={(value) => {
@@ -490,6 +500,22 @@ export default function AdminSectionScreen({
                 params.set("species", value.toLowerCase());
               } else {
                 params.delete("species");
+              }
+              const queryString = params.toString();
+              window.history.replaceState(
+                null,
+                "",
+                queryString ? `/admin/pets?${queryString}` : "/admin/pets",
+              );
+            }}
+            onGenderFilterChange={(value) => {
+              setPetGenderFilter(value);
+              setCurrentPage(1);
+              const params = new URLSearchParams(window.location.search);
+              if (value !== "ALL") {
+                params.set("gender", value.toLowerCase());
+              } else {
+                params.delete("gender");
               }
               const queryString = params.toString();
               window.history.replaceState(

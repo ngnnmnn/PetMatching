@@ -18,6 +18,11 @@ export type PetVerificationFilter =
  */
 export type PetSpeciesFilter = "ALL" | "DOG" | "CAT";
 
+/**
+ * Kiểu bộ lọc giới tính thú cưng (Tất cả / Đực / Cái) dành cho quản trị viên
+ */
+export type PetGenderFilter = "ALL" | "MALE" | "FEMALE";
+
 export const ADMIN_PAGE_SIZE = 10;
 export const ADMIN_ROLE_OPTIONS: AdminRole[] = ["USER", "STORE_MANAGER", "SPA_MANAGER", "SPA_STAFF"];
 export const ADMIN_ACCOUNT_STATUS_OPTIONS: AccountStatus[] = ["ACTIVE", "SUSPENDED"];
@@ -260,6 +265,14 @@ export function petMatchesVerificationFilter(pet: AdminRow, filter: PetVerificat
 export function petMatchesSpeciesFilter(pet: AdminRow, filter: PetSpeciesFilter) {
   if (filter === "ALL") return true;
   return String(pet.species ?? "").toUpperCase() === filter;
+}
+
+/**
+ * Kiểm tra thú cưng có phù hợp với bộ lọc giới tính (Tất cả / Đực / Cái) hay không
+ */
+export function petMatchesGenderFilter(pet: AdminRow, filter: PetGenderFilter) {
+  if (filter === "ALL") return true;
+  return String(pet.gender ?? "").toUpperCase() === filter;
 }
 
 /**
