@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, OnApplicationBootstrap } from '@nestjs/common';
 import { PayOS } from '@payos/node';
 import { NotificationCategory, NotificationEventType, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -6,7 +6,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ORDER_STATUS_LABELS } from '../notifications/notification-status-labels';
 
 @Injectable()
-export class PaymentService {
+export class PaymentService implements OnApplicationBootstrap {
   private payos: PayOS;
 
   constructor(
@@ -28,6 +28,62 @@ export class PaymentService {
       apiKey: apiKey || '',
       checksumKey: checksumKey || '',
     });
+  }
+
+  /**
+   * Tự động chạy khi Server mở lại:
+   * Quét toàn bộ đơn QR ở trạng thái PENDING và gọi API PayOS để đối soát.
+   * Nếu khách đã chuyển khoản thành công trong lúc server sập, tự động xác nhận đơn thành công (PAID / PROCESSING).
+   */
+  async onApplicationBootstrap() {
+    try {
+      const pendingQrPayments = await this.prisma.payment.findMany({
+        where: {
+          method: 'QR',
+          status: PaymentStatus.PENDING,
+          orderCode: { not: null },
+        },
+        select: { orderCode: true },
+      });
+
+      if (pendingQrPayments.length === 0) return;
+
+      console.log(
+        `[PaymentService] Đang tự động đối soát ${pendingQrPayments.length} đơn QR chờ thanh toán khi server mở lại...`,
+      );
+
+      for (const p of pendingQrPayments) {
+        if (!p.orderCode) continue;
+        try {
+          const info = await this.getPaymentLinkInformation(p.orderCode);
+          if (
+            info &&
+            (info.status === 'PAID' ||
+              (typeof info.amountPaid === 'number' &&
+                info.amountPaid >= info.amount))
+          ) {
+            await this.markPaidByOrderCode(p.orderCode);
+            console.log(
+              `[PaymentService Startup Sync] Đơn hàng QR #${p.orderCode} đã được tự động xác nhận thanh toán thành công!`,
+            );
+          } else if (
+            info &&
+            (info.status === 'CANCELLED' || info.status === 'EXPIRED')
+          ) {
+            await this.markCancelledByOrderCode(p.orderCode, 'EXPIRED');
+          }
+        } catch (err: any) {
+          console.warn(
+            `[PaymentService Startup Sync Notice] Không thể tra cứu orderCode ${p.orderCode}: ${err.message}`,
+          );
+        }
+      }
+    } catch (error: any) {
+      console.error(
+        '[PaymentService Startup Sync Error] Lỗi khi tự động đối soát đơn hàng khi server mở lại:',
+        error,
+      );
+    }
   }
 
   async generateOrderCode(): Promise<number> {

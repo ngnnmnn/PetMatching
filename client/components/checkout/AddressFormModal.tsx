@@ -274,9 +274,13 @@ export default function AddressFormModal({
       return;
     }
 
-    if (selectedLat == null || selectedLng == null) {
-      toast.error('Vui lòng chọn địa chỉ từ danh sách gợi ý OpenStreetMap để xác định đúng vị trí giao hàng.');
-      return;
+    let finalLat = selectedLat;
+    let finalLng = selectedLng;
+
+    // Tự động sử dụng tọa độ mặc định nếu chọn địa chỉ đã lưu trong quá khứ chưa có GPS
+    if (finalLat == null || finalLng == null) {
+      finalLat = 21.0285;
+      finalLng = 105.8542;
     }
 
     const phoneRegex = /^(0[3|5|7|8|9])[0-9]{8}$/;
@@ -297,8 +301,8 @@ export default function AddressFormModal({
       wardCode: finalWardCode || '10101',
       saveAddressToDb,
       setAsDefault,
-      lat: selectedLat,
-      lng: selectedLng,
+      lat: finalLat,
+      lng: finalLng,
     });
   };
 

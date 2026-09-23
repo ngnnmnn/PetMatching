@@ -654,11 +654,12 @@ export class UsersService {
   }
 
   /**
-   * Lấy danh sách đơn hàng của người dùng đang đăng nhập (bao gồm sản phẩm, biến thể và thông tin thanh toán)
+   * Lấy danh sách đơn hàng của người dùng đang đăng nhập (bao gồm sản phẩm, biến thể và thông tin thanh toán).
+   * Tự động kiểm tra và đối soát thời gian thực với PayOS cho các đơn QR đang ở trạng thái PENDING.
    * @param userId ID người dùng
    */
   async getOrders(userId: string) {
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -682,6 +683,78 @@ export class UsersService {
         },
       },
     });
+
+    // Tự động đối soát thời gian thực các đơn QR đang PENDING với PayOS
+    const pendingQrOrders = orders.filter(
+      (o) =>
+        o.payment?.method === 'QR' &&
+        o.payment?.status === 'PENDING' &&
+        o.payment?.orderCode,
+    );
+
+    if (pendingQrOrders.length > 0) {
+      let statusUpdated = false;
+      for (const order of pendingQrOrders) {
+        if (!order.payment?.orderCode) continue;
+        try {
+          const info = await this.paymentService.getPaymentLinkInformation(
+            order.payment.orderCode,
+          );
+          if (
+            info &&
+            (info.status === 'PAID' ||
+              (typeof info.amountPaid === 'number' &&
+                info.amountPaid >= info.amount))
+          ) {
+            await this.paymentService.markPaidByOrderCode(
+              order.payment.orderCode,
+            );
+            statusUpdated = true;
+          } else if (
+            info &&
+            (info.status === 'CANCELLED' || info.status === 'EXPIRED')
+          ) {
+            await this.paymentService.markCancelledByOrderCode(
+              order.payment.orderCode,
+              'EXPIRED',
+            );
+            statusUpdated = true;
+          }
+        } catch (err: any) {
+          // Bỏ qua lỗi kết nối cá nhân để không gây chậm trang
+        }
+      }
+
+      // Nếu có đơn được cập nhật trạng thái mới -> Re-fetch lại danh sách đơn hàng để hiển thị đúng ngay cho người dùng
+      if (statusUpdated) {
+        return this.prisma.order.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            payment: true,
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    imageUrl: true,
+                  },
+                },
+                variant: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+    }
+
+    return orders;
   }
 
   /**

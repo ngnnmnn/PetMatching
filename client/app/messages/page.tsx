@@ -99,8 +99,13 @@ function getImageValidationError(file: File) {
   return null;
 }
 
+/**
+ * Type thông tin cặp Match và thông tin chủ pet
+ */
 type Match = {
   id: string;
+  pet1OwnerId?: string | null;
+  pet2OwnerId?: string | null;
   status: 'ACTIVE' | 'CANCELLED';
   compatibilityScore: number;
   endedAt?: string | null;
