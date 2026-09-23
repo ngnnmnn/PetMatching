@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -58,14 +58,11 @@ function getItemStockStatus(item: CartItem) {
 
   const isOutOfStock = availableStock <= 0;
   const isStockInsufficient = availableStock < item.quantity;
-  const isUnpurchasable = isInactive || isOutOfStock || isStockInsufficient;
-
   return {
     isInactive,
     availableStock,
     isOutOfStock,
     isStockInsufficient,
-    isUnpurchasable,
   };
 }
 
@@ -99,24 +96,20 @@ export default function CartPage() {
 
   // 1. Phân loại và sắp xếp sản phẩm:
   // - Sản phẩm khả dụng: Đang mở bán và còn hàng trong kho (stock > 0), xếp theo thời gian thêm vào giỏ (mới nhất lên trên)
-  const availableItems = cartItems
-    .filter((item) => {
+  const [availableItems, unavailableItems] = useMemo(() => {
+    const available: CartItem[] = [];
+    const unavailable: CartItem[] = [];
+    cartItems.forEach((item) => {
       const status = getItemStockStatus(item);
-      return !status.isInactive && !status.isOutOfStock;
-    })
-    .sort(compareAddedTime);
-
-  // - Sản phẩm không khả dụng: Hết hàng trong kho hoặc tạm ngưng bán, xếp theo thời gian thêm vào giỏ (mới nhất lên trên)
-  const unavailableItems = cartItems
-    .filter((item) => {
-      const status = getItemStockStatus(item);
-      return status.isInactive || status.isOutOfStock;
-    })
-    .sort(compareAddedTime);
+      (status.isInactive || status.isOutOfStock ? unavailable : available).push(item);
+    });
+    return [available.sort(compareAddedTime), unavailable.sort(compareAddedTime)];
+  }, [cartItems]);
 
   // Các sản phẩm có thể thanh toán (phải thuộc availableItems và số lượng mua <= tồn kho)
-  const purchasableItems = availableItems.filter(
-    (item) => !getItemStockStatus(item).isStockInsufficient,
+  const purchasableItems = useMemo(
+    () => availableItems.filter((item) => !getItemStockStatus(item).isStockInsufficient),
+    [availableItems],
   );
   // Danh sách ID được chọn hợp lệ (chỉ chấp nhận các item khả dụng)
   const validSelectedItemIds = selectedItemIds.filter((id) =>
@@ -162,13 +155,7 @@ export default function CartPage() {
   const handleClearUnavailable = async () => {
     if (unavailableItems.length === 0) return;
     const ids = unavailableItems.map((i) => i.id);
-    if (removeMultipleFromCart) {
-      await removeMultipleFromCart(ids);
-    } else {
-      for (const id of ids) {
-        await removeFromCart(id);
-      }
-    }
+    await removeMultipleFromCart(ids);
   };
 
   /**

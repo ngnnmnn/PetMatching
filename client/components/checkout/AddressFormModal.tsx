@@ -42,9 +42,8 @@ export interface AddressFormData {
   wardCode?: string;
   saveAddressToDb: boolean;
   setAsDefault: boolean;
-  lat?: number;
-  lng?: number;
-  calculatedShippingFee?: number;
+  lat: number;
+  lng: number;
 }
 
 interface AddressFormModalProps {
@@ -112,7 +111,11 @@ export default function AddressFormModal({
 
   // Cước phí giao hỏa tốc AhaMove tính toán thời gian thực (nếu chưa có địa chỉ thì để null)
   const [dynamicShippingFee, setDynamicShippingFee] = useState<number | null>(null);
-  const calculatedShippingFee = showShippingFee ? dynamicShippingFee : null;
+  const calculatedShippingFee = showShippingFee
+    ? itemsSubtotal !== undefined && itemsSubtotal > 500000
+      ? 0
+      : dynamicShippingFee
+    : null;
   // Ref ghi nhớ trạng thái đã khởi tạo form để chỉ chạy 1 lần khi mở Modal, tránh tự động reset tab khi re-render hoặc auto-polling
   const hasInitializedRef = useRef(false);
 
@@ -222,7 +225,7 @@ export default function AddressFormModal({
           addressStr: fullAddress,
         })
         .then((res) => {
-          if (isCurrentRequest && res.data?.feeVnd && typeof res.data.feeVnd === 'number') {
+          if (isCurrentRequest && typeof res.data?.feeVnd === 'number') {
             setDynamicShippingFee(res.data.feeVnd);
           }
         })
@@ -296,7 +299,6 @@ export default function AddressFormModal({
       setAsDefault,
       lat: selectedLat,
       lng: selectedLng,
-      calculatedShippingFee: calculatedShippingFee ?? undefined,
     });
   };
 
@@ -524,7 +526,7 @@ export default function AddressFormModal({
             </>
           )}
 
-          {/* Hiển thị cước phí vận chuyển mới và tổng đơn hàng cập nhật khi đổi địa chỉ */}
+          {/* Hiển thị cước phí vận chuyển mới khi đổi địa chỉ. Tổng tiền chính thức do backend tính. */}
           {showShippingFee && (
             <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
               <div className="flex justify-between items-center font-extrabold text-emerald-900">
@@ -537,16 +539,6 @@ export default function AddressFormModal({
                   )}
                 </span>
               </div>
-              {itemsSubtotal !== undefined && (
-                <div className="flex justify-between items-center font-black text-gray-900 pt-1.5 border-t border-emerald-200/60 text-sm">
-                  <span>Tổng thanh toán đơn hàng sau khi đổi địa chỉ:</span>
-                  <span className="text-lg text-[var(--primary-color)] font-mono">
-                    {calculatedShippingFee !== null
-                      ? formatCurrency(itemsSubtotal + calculatedShippingFee)
-                      : '—'}
-                  </span>
-                </div>
-              )}
             </div>
           )}
 

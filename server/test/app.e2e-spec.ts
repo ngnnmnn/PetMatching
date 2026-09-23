@@ -3,7 +3,6 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
-import { PaymentSyncService } from './../src/modules/payment/payment-sync.service';
 import { SpaReminderService } from './../src/modules/notifications/spa-reminder.service';
 
 describe('Public API (e2e)', () => {
@@ -13,8 +12,6 @@ describe('Public API (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideProvider(PaymentSyncService)
-      .useValue({})
       .overrideProvider(SpaReminderService)
       .useValue({})
       .compile();

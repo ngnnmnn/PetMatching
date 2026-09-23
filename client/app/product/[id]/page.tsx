@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -27,6 +28,7 @@ import Footer from '@/components/layout/Footer';
 import { productsApi } from '@/lib/api/products';
 import { usersApi } from '@/lib/api/users';
 import { uploadImages } from '@/lib/api/uploads';
+import { petsApi } from '@/lib/api/pets';
 import { Product, ProductVariant, ProductCategory, ProductReview } from '@/types';
 import ProductCard, { findRecommendedVariantForPet, getSuitableVariantsForPet } from '@/components/home/ProductCard';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -50,6 +52,28 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function RatingInput({ value, onChange, compact = false }: {
+  value: number;
+  onChange: (rating: number) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((rating) => (
+        <button
+          key={rating}
+          type="button"
+          onClick={() => onChange(rating)}
+          className={`${compact ? 'p-0.5' : 'p-1'} text-[#F59E0B] transition hover:scale-110 cursor-pointer`}
+          aria-label={`Đánh giá ${rating} sao`}
+        >
+          <Star className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} ${rating <= value ? 'fill-[#F59E0B] text-[#F59E0B]' : 'text-gray-300'}`} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -61,7 +85,6 @@ export default function ProductDetailPage() {
   const [recommendedVariantId, setRecommendedVariantId] = useState<string | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [relatedLoading, setRelatedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [activeImage, setActiveImage] = useState<string>('');
@@ -88,11 +111,31 @@ export default function ProductDetailPage() {
   const [deletingReviewLoading, setDeletingReviewLoading] = useState(false);
 
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [selectedVariantFilter, setSelectedVariantFilter] = useState<string>('ALL');
+
+  // Danh sách tên các biến thể có trong nhận xét
+  const reviewVariantNames = useMemo(() => {
+    const names = new Set<string>();
+    reviews.forEach((r) => {
+      const vName = r.variantName || r.variant?.name;
+      if (vName) names.add(vName);
+    });
+    return Array.from(names);
+  }, [reviews]);
+
+  // Danh sách đánh giá đã lọc theo biến thể
+  const filteredReviews = useMemo(() => {
+    if (selectedVariantFilter === 'ALL') return reviews;
+    return reviews.filter(
+      (r) => (r.variantName || r.variant?.name) === selectedVariantFilter,
+    );
+  }, [reviews, selectedVariantFilter]);
 
   const { addToCart } = useCart();
 
   const searchParams = useSearchParams();
   const shouldScrollToReview = searchParams.get('review') === 'true';
+  const targetVariantId = searchParams.get('variantId');
   const reviewSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -122,29 +165,61 @@ export default function ProductDetailPage() {
   // Load product detail and related products
   useEffect(() => {
     if (!productId) return;
+    let cancelled = false;
 
     const fetchProductData = async () => {
       setLoading(true);
       setError(null);
+      setSelectedVariant(null);
+      setRecommendedVariantId(null);
+      setRecommendationPet(null);
+      setQuantity(1);
+      setQuantityError(null);
+      setReviews([]);
+      setRelatedProducts([]);
+      setCanUserReview(false);
+      const token = localStorage.getItem('accessToken');
+      const reviewsRequest = productsApi.getReviews(productId);
+      const eligibilityRequest = token
+        ? productsApi.canReview(productId)
+        : Promise.resolve({ data: false });
+      const reviewDataRequest = Promise.allSettled([reviewsRequest, eligibilityRequest]);
+      const profileRequest = token ? usersApi.getProfile().catch(() => null) : null;
+
       try {
         const response = await productsApi.getById(productId);
+        if (cancelled) return;
         const data = response.data;
         setProduct(data);
         setActiveImage(data.imageUrl || '/placeholder.svg');
-        // Nạp thông tin Pet đã chọn từ localStorage để phục vụ hiển thị Banner tư vấn gợi ý
+        // Nạp thông tin Pet đã chọn từ URL hoặc localStorage để phục vụ hiển thị Banner tư vấn gợi ý
         let currentPet: any = null;
+        const petIdFromUrl = searchParams.get('petId');
         if (typeof window !== 'undefined') {
           const stored = localStorage.getItem('petmatch_shop_selected_pet');
           if (stored) {
             try {
               currentPet = JSON.parse(stored);
-              setRecommendationPet(currentPet);
-            } catch (e) {}
+              if (petIdFromUrl && currentPet.id !== petIdFromUrl) {
+                currentPet = null;
+              }
+            } catch (e) { }
+          }
+        }
+        if (!currentPet && petIdFromUrl) {
+          try {
+            const petRes = await petsApi.getDetail(petIdFromUrl);
+            currentPet = petRes.data;
+          } catch (e) { }
+        }
+        if (currentPet) {
+          setRecommendationPet(currentPet);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('petmatch_shop_selected_pet', JSON.stringify(currentPet));
           }
         }
 
         if (data.variants && data.variants.length > 0) {
-          const targetVariantId = searchParams.get('variantId');
           let matched = targetVariantId ? data.variants.find((v: any) => v.id === targetVariantId) : null;
 
           // Nếu không có variantId truyền từ URL nhưng người dùng đang chọn lọc theo Pet, tự động tìm phân loại gợi ý phù hợp nhất
@@ -168,19 +243,16 @@ export default function ProductDetailPage() {
         setLoading(false); // Show main product details immediately!
 
         // Fetch secondary data concurrently in parallel (non-blocking)
-        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-        if (token) {
-          usersApi.getProfile().then((res) => setCurrentUser(res.data)).catch(() => setCurrentUser(null));
+        if (profileRequest) {
+          void profileRequest
+            .then((res) => !cancelled && setCurrentUser(res?.data ?? null));
         }
 
-        setRelatedLoading(true);
+        const relatedRequest = productsApi.getList({ category: data.category, limit: 5 });
+        const [reviewsRes, eligibilityRes] = await reviewDataRequest;
+        const [relatedRes] = await Promise.allSettled([relatedRequest]);
 
-        const [reviewsRes, eligibilityRes, relatedRes] = await Promise.allSettled([
-          productsApi.getReviews(productId),
-          token ? productsApi.canReview(productId) : Promise.resolve({ data: false }),
-          productsApi.getList({ category: data.category, limit: 5 }),
-        ]);
-
+        if (cancelled) return;
         if (reviewsRes.status === 'fulfilled') {
           setReviews(reviewsRes.value.data);
         }
@@ -191,16 +263,19 @@ export default function ProductDetailPage() {
           const filtered = (relatedRes.value.data.data || []).filter((p: any) => p.id !== data.id);
           setRelatedProducts(filtered.slice(0, 4));
         }
-        setRelatedLoading(false);
       } catch (err) {
+        if (cancelled) return;
         console.error(err);
         setError('Không tìm thấy sản phẩm hoặc xảy ra lỗi kết nối.');
         setLoading(false);
       }
     };
 
-    fetchProductData();
-  }, [productId]);
+    void fetchProductData();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId, targetVariantId]);
 
   /** Tăng số lượng sản phẩm mua */
   const handleIncrement = () => {
@@ -246,7 +321,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!product) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (!token) {
@@ -255,18 +330,18 @@ export default function ProductDetailPage() {
       return;
     }
     setIsAddingToCart(true);
-
-    // Simulate adding to cart action
-    setTimeout(() => {
-      setIsAddingToCart(false);
-      addToCart(product, quantity, false, selectedVariant?.id);
+    try {
+      const added = await addToCart(product, quantity, false, selectedVariant?.id);
+      if (!added) return;
       toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}" vào giỏ hàng!`, {
         action: {
           label: 'Xem giỏ hàng',
           onClick: () => router.push('/cart'),
         },
       });
-    }, 800);
+    } finally {
+      setIsAddingToCart(false);
+    }
   };
 
 
@@ -278,38 +353,23 @@ export default function ProductDetailPage() {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
-    if (isEdit) {
-      if (editImages.length + files.length > 4) {
-        toast.warning('Tối đa 4 ảnh cho mỗi đánh giá');
-        return;
-      }
-      setUploadingEditImages(true);
-      try {
-        const uploaded = await uploadImages(files, 'review');
-        setEditImages((prev) => [...prev, ...uploaded.map((img) => img.url)]);
-      } catch (err: any) {
-        console.error('Failed to upload review image:', err);
-        const msg = err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.';
-        toast.error(msg);
-      } finally {
-        setUploadingEditImages(false);
-      }
-    } else {
-      if (submitImages.length + files.length > 4) {
-        toast.warning('Tối đa 4 ảnh cho mỗi đánh giá');
-        return;
-      }
-      setUploadingReviewImages(true);
-      try {
-        const uploaded = await uploadImages(files, 'review');
-        setSubmitImages((prev) => [...prev, ...uploaded.map((img) => img.url)]);
-      } catch (err: any) {
-        console.error('Failed to upload review image:', err);
-        const msg = err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.';
-        toast.error(msg);
-      } finally {
-        setUploadingReviewImages(false);
-      }
+    const images = isEdit ? editImages : submitImages;
+    if (images.length + files.length > 4) {
+      toast.warning('Tối đa 4 ảnh cho mỗi đánh giá');
+      return;
+    }
+
+    const setUploading = isEdit ? setUploadingEditImages : setUploadingReviewImages;
+    const setImages = isEdit ? setEditImages : setSubmitImages;
+    setUploading(true);
+    try {
+      const uploaded = await uploadImages(files, 'review');
+      setImages((previous) => [...previous, ...uploaded.map(({ url }) => url)]);
+    } catch (err: any) {
+      console.error('Failed to upload review image:', err);
+      toast.error(err.response?.data?.message || 'Lỗi khi tải ảnh lên. Vui lòng kiểm tra kích thước file (tối đa 5MB) và thử lại.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -510,9 +570,13 @@ export default function ProductDetailPage() {
           <div className="flex flex-col gap-4 lg:col-span-5">
             {/* Main Image Frame */}
             <div className="relative aspect-square overflow-hidden rounded-2xl border border-[#F0EBE4] bg-[#F8F7F4] flex items-center justify-center p-4">
-              <img
+              <Image
                 src={activeImage}
                 alt={product.name}
+                width={800}
+                height={800}
+                priority
+                sizes="(max-width: 1024px) 100vw, 42vw"
                 className={`max-h-full max-w-full object-contain transition-all duration-300 rounded-xl ${(currentStock === 0 || product.isActive === false) ? 'grayscale opacity-60' : ''
                   }`}
               />
@@ -556,7 +620,7 @@ export default function ProductDetailPage() {
                       : 'border-[var(--border-color)] hover:border-gray-300'
                       }`}
                   >
-                    <img src={img} alt={`thumbnail-${idx}`} className="h-full w-full object-cover" />
+                    <Image src={img} alt={`thumbnail-${idx}`} fill sizes="80px" className="object-cover" />
                   </button>
                 ))}
               </div>
@@ -634,24 +698,6 @@ export default function ProductDetailPage() {
                     </span>
                   </>
                 )}
-                <span className="text-gray-300">|</span>
-                <span className="font-bold flex items-center gap-1">
-                  {!isProductEffectivelyActive || !isSelectedVariantActive ? (
-                    <span className="text-rose-600 font-extrabold flex items-center gap-1">
-                      🚫 Tạm ngưng bán
-                    </span>
-                  ) : currentStock === null || currentStock === undefined ? (
-                    <span className="text-[#0F766E] flex items-center gap-1">
-                      <span className="text-xs font-bold">✓</span> Còn hàng
-                    </span>
-                  ) : currentStock > 0 ? (
-                    <span className="text-[#0F766E] flex items-center gap-1">
-                      <span className="text-xs font-bold">✓</span> Còn hàng ({currentStock} sản phẩm)
-                    </span>
-                  ) : (
-                    <span className="text-red-500 font-extrabold">Tạm hết hàng</span>
-                  )}
-                </span>
               </div>
 
               {/* Khung thông báo tư vấn đề xuất phân loại cho Thú cưng - Giao diện tinh chỉnh mới theo yêu cầu */}
@@ -758,8 +804,7 @@ export default function ProductDetailPage() {
                                 setActiveImage(v.imageUrl);
                               }
                             }}
-                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 flex items-center gap-2 cursor-pointer ${
-                              isVariantInactive
+                            className={`relative rounded-xl border-2 px-4 py-2.5 text-xs font-black transition-all duration-200 flex items-center gap-2 cursor-pointer ${isVariantInactive
                                 ? 'opacity-60 border-stone-200 bg-stone-100 text-stone-400 line-through cursor-not-allowed'
                                 : isSelected && isRecommended
                                   ? 'border-orange-500 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 text-orange-950 ring-2 ring-orange-400/40 shadow-md'
@@ -768,7 +813,7 @@ export default function ProductDetailPage() {
                                     : isRecommended
                                       ? 'border-amber-400 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 hover:border-amber-500 shadow-xs'
                                       : 'border-[var(--border-color)] bg-white hover:border-gray-300 text-[var(--text-main)]'
-                            }`}
+                              }`}
                           >
                             <span>{v.name}</span>
                             {isVariantInactive && (
@@ -808,13 +853,6 @@ export default function ProductDetailPage() {
                   )}
                 </div>
               </div>
-
-              {/* Short Description */}
-              {product.description && (
-                <p className="mt-5 text-sm text-[var(--text-main)]/80 leading-relaxed font-medium">
-                  {product.description.split(/[.\n]/)[0]}.
-                </p>
-              )}
             </div>
 
             {/* Actions card */}
@@ -930,9 +968,9 @@ export default function ProductDetailPage() {
                 <span className="flex items-center gap-1.5">
                   <span className="text-[#0F766E] text-base">🚚</span> Miễn phí giao hàng đơn từ 500K
                 </span>
-                <span className="flex items-center gap-1.5">
+                {/* <span className="flex items-center gap-1.5">
                   <span className="text-[#0F766E] text-base">✓</span> Đổi trả trong 7 ngày
-                </span>
+                </span> */}
               </div>
 
             </div>
@@ -1003,27 +1041,7 @@ export default function ProductDetailPage() {
               <form onSubmit={handleSubmitReview} className="space-y-4">
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-[var(--text-main)]">Chọn số sao đánh giá: *</label>
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: 5 }).map((_, i) => {
-                      const starValue = i + 1;
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setSubmitRating(starValue)}
-                          className="p-1 hover:scale-110 transition cursor-pointer text-[#F59E0B]"
-                          aria-label={`Đánh giá ${starValue} sao`}
-                        >
-                          <Star
-                            className={`h-7 w-7 ${starValue <= submitRating
-                              ? 'fill-[#F59E0B] text-[#F59E0B]'
-                              : 'text-gray-300'
-                              }`}
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <RatingInput value={submitRating} onChange={setSubmitRating} />
                 </div>
 
                 <div className="space-y-2">
@@ -1096,8 +1114,45 @@ export default function ProductDetailPage() {
 
           {/* Reviews List */}
           <div className="space-y-4">
-            {reviews.length > 0 ? (
-              reviews.map((review) => (
+            {/* Bộ lọc phân loại hàng nếu có sản phẩm có biến thể */}
+            {reviewVariantNames.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-[var(--border-color)]">
+                <span className="text-xs font-bold text-[var(--text-muted)]">Phân loại:</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedVariantFilter('ALL')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                    selectedVariantFilter === 'ALL'
+                      ? 'bg-[var(--primary-color)] text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Tất cả ({reviews.length})
+                </button>
+                {reviewVariantNames.map((vName: string) => {
+                  const count = reviews.filter(
+                    (r) => (r.variantName || r.variant?.name) === vName,
+                  ).length;
+                  return (
+                    <button
+                      key={vName}
+                      type="button"
+                      onClick={() => setSelectedVariantFilter(vName)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        selectedVariantFilter === vName
+                          ? 'bg-[var(--primary-color)] text-white shadow-xs'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {vName} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {filteredReviews.length > 0 ? (
+              filteredReviews.map((review: ProductReview) => (
                 <div key={review.id} className="rounded-2xl border border-[var(--border-color)] bg-white p-5 space-y-3 shadow-sm animate-fadeIn">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -1110,13 +1165,23 @@ export default function ProductDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm font-bold text-[var(--text-main)]">{review.user?.name}</p>
-                        <p className="text-xxs text-[var(--text-muted)] font-semibold">
-                          {new Date(review.createdAt).toLocaleDateString('vi-VN', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                          })}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap text-xxs text-[var(--text-muted)] font-semibold mt-0.5">
+                          <span>
+                            {new Date(review.createdAt).toLocaleDateString('vi-VN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            })}
+                          </span>
+                          {(review.variantName || review.variant?.name) && (
+                            <>
+                              <span>•</span>
+                              <span className="text-gray-600 bg-gray-100 border border-gray-200/80 px-2 py-0.5 rounded-md font-bold">
+                                Phân loại hàng: {review.variantName || review.variant?.name}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1173,26 +1238,7 @@ export default function ProductDetailPage() {
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-bold text-gray-700">Chọn số sao:</label>
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: 5 }).map((_, i) => {
-                            const starValue = i + 1;
-                            return (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => setEditRating(starValue)}
-                                className="p-0.5 text-[#F59E0B] hover:scale-110 transition cursor-pointer"
-                              >
-                                <Star
-                                  className={`h-6 w-6 ${starValue <= editRating
-                                    ? 'fill-[#F59E0B] text-[#F59E0B]'
-                                    : 'text-gray-300'
-                                    }`}
-                                />
-                              </button>
-                            );
-                          })}
-                        </div>
+                        <RatingInput value={editRating} onChange={setEditRating} compact />
                       </div>
                       <div className="space-y-1">
                         <label className="block text-xs font-bold text-gray-700">Nhận xét:</label>
@@ -1269,7 +1315,7 @@ export default function ProductDetailPage() {
                       {/* Display Review Images Gallery */}
                       {review.images && review.images.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">
-                          {review.images.map((imgUrl, imgIdx) => (
+                          {review.images.map((imgUrl: string, imgIdx: number) => (
                             <button
                               key={imgIdx}
                               type="button"
@@ -1334,23 +1380,11 @@ export default function ProductDetailPage() {
               <Sparkles className="h-5 w-5 text-[#F59E0B]" />
               <h2 className="text-xl font-black text-[var(--text-main)]">Sản phẩm tương tự</h2>
             </div>
-            {relatedLoading ? (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="animate-pulse rounded-lg border border-[var(--border-color)] bg-white p-3 space-y-3">
-                    <div className="aspect-square bg-gray-200 rounded-md" />
-                    <div className="h-4 bg-gray-200 rounded w-3/4" />
-                    <div className="h-3 bg-gray-200 rounded w-1/2" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {relatedProducts.map((p) => (
-                  <ProductCard key={p.id} product={p} />
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {relatedProducts.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
           </section>
         )}
 

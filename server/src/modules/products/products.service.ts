@@ -5,8 +5,14 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { MemoryCacheService } from '../../common/cache/memory-cache.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GetProductsDto } from './dto/get-products.dto';
+
+const PRODUCT_CACHE_PREFIX = 'products:';
+const PRODUCT_LIST_TTL_MS = 30_000;
+const PRODUCT_DETAIL_TTL_MS = 60_000;
+const PRODUCT_CATEGORY_TTL_MS = 10 * 60_000;
 
 /**
  * Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không phân biệt có dấu và không dấu
@@ -23,13 +29,35 @@ function removeVietnameseTones(str: string): string {
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: MemoryCacheService = new MemoryCacheService(),
+  ) {}
+
+  /** Tạo khóa cache ổn định theo đúng các tham số ảnh hưởng đến danh sách sản phẩm. */
+  private getProductListCacheKey(dto: GetProductsDto): string {
+    return `${PRODUCT_CACHE_PREFIX}list:${JSON.stringify({
+      category: dto.category || '',
+      targetSpecies: dto.targetSpecies || '',
+      search: dto.search?.trim().toLowerCase() || '',
+      sortBy: dto.sortBy || 'popular',
+      page: dto.page || 1,
+      limit: dto.limit || 12,
+    })}`;
+  }
+
+  /** Xóa dữ liệu công khai đã cache sau khi đánh giá làm thay đổi sản phẩm. */
+  private invalidateProductCache(): void {
+    this.cache.deleteByPrefix(PRODUCT_CACHE_PREFIX);
+  }
 
   /**
    * Tính tổng số lượng sản phẩm đã bán thực tế từ các đơn hàng thành công (DELIVERED, SHIPPED, PROCESSING, PACKED)
    * và tính toán tổng tồn kho thực tế từ danh sách biến thể đính kèm vào mỗi sản phẩm.
    */
-  private async attachSoldCount<T extends { id: string; stock?: number | null; variants?: any[] }>(products: T[]) {
+  private async attachSoldCount<
+    T extends { id: string; stock?: number | null; variants?: any[] },
+  >(products: T[]) {
     if (!products.length) return [];
     const productIds = products.map((p) => p.id);
     const sales = await this.prisma.orderItem.groupBy({
@@ -110,9 +138,14 @@ export class ProductsService {
   private getProductAvailability(product: any): number {
     if (product.isActive === false) return 0;
     if (product.variants && product.variants.length > 0) {
-      const activeVars = product.variants.filter((v: any) => v.isActive !== false);
+      const activeVars = product.variants.filter(
+        (v: any) => v.isActive !== false,
+      );
       if (activeVars.length === 0) return 0;
-      const totalStock = activeVars.reduce((sum: number, v: any) => sum + Number(v.stock || 0), 0);
+      const totalStock = activeVars.reduce(
+        (sum: number, v: any) => sum + Number(v.stock || 0),
+        0,
+      );
       return totalStock > 0 ? 1 : 0;
     }
     return Number(product.stock || 0) > 0 ? 1 : 0;
@@ -123,6 +156,15 @@ export class ProductsService {
    * và thuật toán xếp hạng đa tầng (Nổi bật -> Bán chạy -> Rating -> Còn lại).
    */
   async getProducts(dto: GetProductsDto) {
+    return this.cache.getOrSet(
+      this.getProductListCacheKey(dto),
+      PRODUCT_LIST_TTL_MS,
+      () => this.loadProducts(dto),
+    );
+  }
+
+  /** Truy vấn, lọc và sắp xếp danh sách khi cache chưa có dữ liệu. */
+  private async loadProducts(dto: GetProductsDto) {
     const {
       category,
       targetSpecies,
@@ -145,7 +187,10 @@ export class ProductsService {
     // Tải toàn bộ sản phẩm thỏa mãn điều kiện trạng thái, danh mục, loài
     const allDbProducts = await this.prisma.product.findMany({
       where,
-      include: { variants: true },
+      omit: { storeId: true, importPrice: true },
+      include: {
+        variants: { omit: { importPrice: true } },
+      },
     });
 
     // Lọc theo từ khóa tìm kiếm (hỗ trợ có dấu hoặc không dấu tiếng Việt)
@@ -170,9 +215,13 @@ export class ProductsService {
     if (sortBy === 'price_asc' || sortBy === 'price_desc') {
       const getEffectivePrice = (p: any) => {
         if (p.variants && p.variants.length > 0) {
-          const activeVars = p.variants.filter((v: any) => v.isActive !== false);
+          const activeVars = p.variants.filter(
+            (v: any) => v.isActive !== false,
+          );
           const vars = activeVars.length > 0 ? activeVars : p.variants;
-          const prices = vars.map((v: any) => v.salePrice ?? v.sellingPrice).filter((pr: number) => pr > 0);
+          const prices = vars
+            .map((v: any) => v.salePrice ?? v.sellingPrice)
+            .filter((pr: number) => pr > 0);
           if (prices.length > 0) {
             return Math.min(...prices);
           }
@@ -221,7 +270,9 @@ export class ProductsService {
           const revB = Number(b.reviewCount || 0);
           if (revB !== revA) return revB - revA;
 
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
         })
         .slice(skip, skip + limit);
 
@@ -238,9 +289,13 @@ export class ProductsService {
       const getProductDiscountPercent = (p: any) => {
         const getEffectivePrice = (item: any) => {
           if (item.variants && item.variants.length > 0) {
-            const activeVars = item.variants.filter((v: any) => v.isActive !== false);
+            const activeVars = item.variants.filter(
+              (v: any) => v.isActive !== false,
+            );
             const vars = activeVars.length > 0 ? activeVars : item.variants;
-            const prices = vars.map((v: any) => v.salePrice ?? v.sellingPrice).filter((pr: number) => pr > 0);
+            const prices = vars
+              .map((v: any) => v.salePrice ?? v.sellingPrice)
+              .filter((pr: number) => pr > 0);
             if (prices.length > 0) return Math.min(...prices);
           }
           return item.salePrice ?? (item.sellingPrice || 0);
@@ -265,11 +320,15 @@ export class ProductsService {
           if (discB !== discA) return discB - discA;
 
           // 2. Cùng % giảm thì xét số tiền giảm
-          const diffA = (a.sellingPrice || 0) - (a.salePrice ?? a.sellingPrice ?? 0);
-          const diffB = (b.sellingPrice || 0) - (b.salePrice ?? b.sellingPrice ?? 0);
+          const diffA =
+            (a.sellingPrice || 0) - (a.salePrice ?? a.sellingPrice ?? 0);
+          const diffB =
+            (b.sellingPrice || 0) - (b.salePrice ?? b.sellingPrice ?? 0);
           if (diffB !== diffA) return diffB - diffA;
 
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
         })
         .slice(skip, skip + limit);
 
@@ -300,10 +359,13 @@ export class ProductsService {
 
         // 3. Đánh giá (Rating & reviewCount)
         if (b.rating !== a.rating) return b.rating - a.rating;
-        if (b.reviewCount !== a.reviewCount) return b.reviewCount - a.reviewCount;
+        if (b.reviewCount !== a.reviewCount)
+          return b.reviewCount - a.reviewCount;
 
         // 4. Các sản phẩm còn lại theo ngày tạo
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       });
 
       // Áp dụng giới hạn đa dạng danh mục (tối đa 3 sản phẩm/danh mục ở trang 1) khi xem tất cả
@@ -326,7 +388,9 @@ export class ProductsService {
         const availB = this.getProductAvailability(b);
         if (availB !== availA) return availB - availA; // Còn hàng lên trên, hết hàng xuống dưới
 
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       })
       .slice(skip, skip + limit);
 
@@ -338,86 +402,168 @@ export class ProductsService {
     };
   }
 
+  /** Lấy sản phẩm nổi bật từ cache ngắn hạn để tránh lặp truy vấn bán hàng nặng. */
   async getFeaturedProducts() {
-    const products = await this.prisma.product.findMany({
-      where: {
-        isFeatured: true,
-        isActive: true,
-        stock: { gt: 0 },
-      },
-      include: {
-        variants: true,
-      },
-    });
+    return this.cache.getOrSet(
+      `${PRODUCT_CACHE_PREFIX}featured`,
+      PRODUCT_DETAIL_TTL_MS,
+      async () => {
+        const products = await this.prisma.product.findMany({
+          where: {
+            isFeatured: true,
+            isActive: true,
+            stock: { gt: 0 },
+          },
+          omit: { storeId: true, importPrice: true },
+          include: {
+            variants: { omit: { importPrice: true } },
+          },
+        });
 
-    const productsWithSales = await this.attachSoldCount(products);
-    return productsWithSales.sort((a, b) => b.soldCount - a.soldCount).slice(0, 8);
+        const productsWithSales = await this.attachSoldCount(products);
+        return productsWithSales
+          .sort((a, b) => b.soldCount - a.soldCount)
+          .slice(0, 8);
+      },
+    );
   }
 
+  /** Lấy chi tiết sản phẩm và số đã bán từ cache theo mã sản phẩm. */
   async getProductById(id: string) {
-    const product = await this.prisma.product.findUnique({
-      where: { id },
-      include: {
-        variants: {
-          where: { isActive: true },
-          orderBy: { name: 'asc' },
-        },
+    return this.cache.getOrSet(
+      `${PRODUCT_CACHE_PREFIX}detail:${id}`,
+      PRODUCT_DETAIL_TTL_MS,
+      async () => {
+        const product = await this.prisma.product.findUnique({
+          where: { id },
+          omit: { storeId: true, importPrice: true },
+          include: {
+            variants: {
+              where: { isActive: true },
+              orderBy: { name: 'asc' },
+              omit: { importPrice: true },
+            },
+          },
+        });
+
+        if (!product) return null;
+        const [withSales] = await this.attachSoldCount([product]);
+        return withSales;
       },
-    });
-
-    if (!product) return null;
-    const [withSales] = await this.attachSoldCount([product]);
-    return withSales;
+    );
   }
 
+  /** Lấy danh mục sản phẩm từ cache dài hơn vì dữ liệu ít thay đổi. */
   async getCategories() {
-    return this.prisma.category.findMany({
-      orderBy: { name: 'asc' },
-    });
+    return this.cache.getOrSet(
+      `${PRODUCT_CACHE_PREFIX}categories`,
+      PRODUCT_CATEGORY_TTL_MS,
+      () =>
+        this.prisma.category.findMany({
+          orderBy: { name: 'asc' },
+        }),
+    );
   }
 
+  /** Lấy đánh giá sản phẩm từ cache ngắn hạn theo mã sản phẩm (bao gồm thông tin người dùng và biến thể sản phẩm) */
   async getReviews(productId: string) {
-    return this.prisma.productReview.findMany({
-      where: { productId },
-      include: {
-        user: {
+    return this.cache.getOrSet(
+      `${PRODUCT_CACHE_PREFIX}reviews:${productId}`,
+      PRODUCT_LIST_TTL_MS,
+      async () => {
+        const product = await this.prisma.product.findUnique({
+          where: { id: productId },
           select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
+            variants: {
+              select: { id: true, name: true },
+            },
+          },
+        });
+
+        const hasProductVariants = (product?.variants?.length ?? 0) > 0;
+
+        const reviews = await this.prisma.productReview.findMany({
+          where: { productId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatarUrl: true,
+              },
+            },
+            variant: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            order: {
+              select: {
+                items: {
+                  where: { productId },
+                  include: {
+                    variant: {
+                      select: {
+                        id: true,
+                        name: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        return reviews.map((review) => {
+          const fallbackVariant = review.order?.items?.[0]?.variant;
+          let computedVariantName =
+            review.variantName ||
+            review.variant?.name ||
+            fallbackVariant?.name ||
+            null;
+
+          if (!computedVariantName && hasProductVariants) {
+            computedVariantName = 'Mặc định';
+          }
+
+          return {
+            ...review,
+            variantName: computedVariantName,
+          };
+        });
+      },
+    );
+  }
+
+  /** Tìm đơn đã giao chưa được đánh giá bằng hai truy vấn chạy song song. */
+  async getUnreviewedOrder(userId: string, productId: string) {
+    const [deliveredOrders, existingReviews] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          userId,
+          status: 'DELIVERED',
+          items: {
+            some: { productId },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async getUnreviewedOrder(userId: string, productId: string) {
-    // Find all DELIVERED orders for this user containing this product
-    const deliveredOrders = await this.prisma.order.findMany({
-      where: {
-        userId,
-        status: 'DELIVERED',
-        items: {
-          some: { productId },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.productReview.findMany({
+        where: {
+          userId,
+          productId,
         },
-      },
-      select: { id: true },
-      orderBy: { createdAt: 'desc' },
-    });
+        select: { orderId: true },
+      }),
+    ]);
 
     if (deliveredOrders.length === 0) {
       return null;
     }
-
-    // Find reviews user has written for this product
-    const existingReviews = await this.prisma.productReview.findMany({
-      where: {
-        userId,
-        productId,
-      },
-      select: { orderId: true },
-    });
 
     const reviewedOrderIds = new Set(
       existingReviews.map((r) => r.orderId).filter(Boolean),
@@ -433,10 +579,18 @@ export class ProductsService {
     return !!order;
   }
 
+  /**
+   * Tạo đánh giá mới cho sản phẩm (lưu vết cả biến thể variantId & variantName đã mua)
+   */
   async createReview(
     userId: string,
     productId: string,
-    dto: { rating: number; comment?: string; images?: string[]; orderId?: string },
+    dto: {
+      rating: number;
+      comment?: string;
+      images?: string[];
+      orderId?: string;
+    },
   ) {
     const { rating, comment, images = [] } = dto;
     if (rating < 1 || rating > 5) {
@@ -454,8 +608,23 @@ export class ProductsService {
       targetOrderId = unreviewedOrder.id;
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Create the review with orderId
+    // Lấy thông tin biến thể từ chi tiết đơn hàng tương ứng
+    let variantId: string | undefined = undefined;
+    let variantName: string | undefined = undefined;
+
+    if (targetOrderId) {
+      const orderItem = await this.prisma.orderItem.findFirst({
+        where: { orderId: targetOrderId, productId },
+        include: { variant: { select: { id: true, name: true } } },
+      });
+      if (orderItem) {
+        variantId = orderItem.variantId ?? undefined;
+        variantName = orderItem.variant?.name ?? undefined;
+      }
+    }
+
+    const createdReview = await this.prisma.$transaction(async (tx) => {
+      // 1. Create the review with orderId and variant details
       const review = await tx.productReview.create({
         data: {
           rating,
@@ -463,6 +632,8 @@ export class ProductsService {
           images: Array.isArray(images) ? images : [],
           userId,
           productId,
+          variantId,
+          variantName,
           orderId: targetOrderId,
         },
       });
@@ -488,6 +659,9 @@ export class ProductsService {
 
       return review;
     });
+
+    this.invalidateProductCache();
+    return createdReview;
   }
 
   async updateReview(
@@ -509,16 +683,20 @@ export class ProductsService {
     }
 
     if (review.userId !== userId) {
-      throw new ForbiddenException('Bạn không có quyền chỉnh sửa đánh giá này.');
+      throw new ForbiddenException(
+        'Bạn không có quyền chỉnh sửa đánh giá này.',
+      );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedReviewResult = await this.prisma.$transaction(async (tx) => {
       const updatedReview = await tx.productReview.update({
         where: { id: reviewId },
         data: {
           rating,
           comment,
-          ...(images !== undefined && { images: Array.isArray(images) ? images : [] }),
+          ...(images !== undefined && {
+            images: Array.isArray(images) ? images : [],
+          }),
         },
       });
 
@@ -541,6 +719,8 @@ export class ProductsService {
 
       return updatedReview;
     });
+    this.invalidateProductCache();
+    return updatedReviewResult;
   }
 
   async deleteReview(userId: string, reviewId: string) {
@@ -567,7 +747,7 @@ export class ProductsService {
       throw new ForbiddenException('Bạn không có quyền xóa đánh giá này.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const deleteResult = await this.prisma.$transaction(async (tx) => {
       await tx.productReview.delete({
         where: { id: reviewId },
       });
@@ -591,5 +771,7 @@ export class ProductsService {
 
       return { success: true, message: 'Đã xóa đánh giá thành công.' };
     });
+    this.invalidateProductCache();
+    return deleteResult;
   }
 }

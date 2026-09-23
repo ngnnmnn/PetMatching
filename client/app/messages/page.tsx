@@ -2,10 +2,8 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import {
-  BadgeCheck,
+  ArrowLeft,
   Check,
-  ChevronRight,
-  Clock,
   Eye,
   Heart,
   ImageIcon,
@@ -14,10 +12,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Paperclip,
-  PawPrint,
   Send,
-  Sparkles,
-  User,
   UserCheck,
   UserX,
   Flag,
@@ -202,6 +197,9 @@ export default function MessagesPage() {
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [acceptingRequestId, setAcceptingRequestId] = useState<string | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+  const [cancellingRequest, setCancellingRequest] = useState(false);
   const [matchAction, setMatchAction] = useState<'END' | 'REPORT' | 'BLOCK' | 'UNBLOCK' | null>(null);
   const [endReason, setEndReason] = useState('');
   const [reportTargetType, setReportTargetType] = useState<ReportTargetType>('USER');
@@ -218,9 +216,9 @@ export default function MessagesPage() {
     [reportImagePreviews],
   );
 
-  const loadData = () => {
+  const loadData = (targetMatchId?: string) => {
     setLoading(true);
-    Promise.allSettled([
+    return Promise.allSettled([
       api.get<MatchingRequest[]>('/matching/requests/incoming'),
       api.get<MatchingRequest[]>('/matching/requests/outgoing'),
       api.get<Match[]>('/matching/matches'),
@@ -231,11 +229,14 @@ export default function MessagesPage() {
         if (matchResult.status === 'fulfilled') {
           const loadedMatches = matchResult.value.data || [];
           setMatches(loadedMatches);
-          setSelectedMatch((current) =>
-            current
+          setSelectedMatch((current) => {
+            if (targetMatchId) {
+              return loadedMatches.find((match) => match.id === targetMatchId) ?? current ?? loadedMatches[0] ?? null;
+            }
+            return current
               ? (loadedMatches.find((match) => match.id === current.id) ?? loadedMatches[0] ?? null)
-              : (loadedMatches[0] ?? null),
-          );
+              : (loadedMatches[0] ?? null);
+          });
         }
         const failedSections = [
           reqResult.status === 'rejected' ? 'yêu cầu đến' : '',
@@ -249,7 +250,9 @@ export default function MessagesPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(loadData, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -329,13 +332,42 @@ export default function MessagesPage() {
     };
   }, []);
 
+  /**
+   * Phản hồi yêu cầu ghép đôi (chấp nhận hoặc từ chối)
+   * Khi chấp nhận thành công, tự động mở ngay cuộc trò chuyện mới được tạo
+   */
   const respondRequest = async (id: string, action: 'accept' | 'reject') => {
     try {
-      await api.post(`/matching/requests/${id}/${action}`);
-      toast.success(action === 'accept' ? 'Đã chấp nhận yêu cầu ghép đôi và tạo Match!' : 'Đã từ chối yêu cầu.');
-      loadData();
+      const res = await api.post<{ success: boolean; request: MatchingRequest; match?: Match }>(
+        `/matching/requests/${id}/${action}`,
+      );
+      if (action === 'accept') {
+        toast.success('🎉 Đã chấp nhận yêu cầu ghép đôi và tạo Match!');
+        const createdMatch = res.data?.match;
+        setActiveTab('CHAT');
+        await loadData(createdMatch?.id);
+      } else {
+        toast.success('Đã từ chối yêu cầu.');
+        await loadData();
+      }
     } catch {
       toast.error('Không thể xử lý yêu cầu.');
+    }
+  };
+
+  /**
+   * Hủy yêu cầu ghép đôi do chính mình gửi đi khi đang ở trạng thái PENDING
+   */
+  const handleCancelRequest = async (id: string) => {
+    setCancellingRequest(true);
+    try {
+      await api.post(`/matching/requests/${id}/cancel`);
+      toast.success('Đã hủy yêu cầu ghép đôi thành công.');
+      loadData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể hủy yêu cầu.');
+    } finally {
+      setCancellingRequest(false);
     }
   };
 
@@ -560,9 +592,9 @@ export default function MessagesPage() {
 
   const handleUnblockUser = async () => {
     if (!selectedMatch || matchAction) return;
-    const otherUserId = selectedMatch.pet1.owner.id === currentUserId
-      ? selectedMatch.pet2.owner.id
-      : selectedMatch.pet1.owner.id;
+    const pet1OwnerId = selectedMatch.pet1.owner?.id || selectedMatch.pet1OwnerId;
+    const pet2OwnerId = selectedMatch.pet2.owner?.id || selectedMatch.pet2OwnerId;
+    const otherUserId = pet1OwnerId === currentUserId ? pet2OwnerId : pet1OwnerId;
     if (!otherUserId) {
       toast.error('Tài khoản phía bên kia không còn khả dụng.');
       return;
@@ -587,7 +619,7 @@ export default function MessagesPage() {
   const chatModerated = selectedMatch?.pet1.status === 'HIDDEN' || selectedMatch?.pet2.status === 'HIDDEN';
   const chatReadOnly = selectedMatch?.status === 'CANCELLED' || chatModerated;
 
-  const currentUserOwnsPet1 = selectedMatch?.pet1.owner.id === currentUserId;
+  const currentUserOwnsPet1 = (selectedMatch?.pet1?.owner?.id || selectedMatch?.pet1OwnerId) === currentUserId;
   const ownPet = selectedMatch
     ? (currentUserOwnsPet1 ? selectedMatch.pet1 : selectedMatch.pet2)
     : null;
@@ -697,8 +729,11 @@ export default function MessagesPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[min(720px,calc(100vh-280px))] min-h-[520px] rounded-3xl border bg-card overflow-hidden shadow-xl">
-              {/* Sidebar Matches List (Left 4 cols) */}
-              <div className="lg:col-span-4 min-h-0 border-r flex flex-col bg-muted/20">
+              {/* Sidebar Matches List (Left 4 cols) - Tự động ẩn trên mobile khi đã chọn một cuộc trò chuyện */}
+              <div className={cn(
+                "lg:col-span-4 min-h-0 border-r flex flex-col bg-muted/20",
+                selectedMatch ? "hidden lg:flex" : "flex"
+              )}>
                 <div className="p-4 border-b">
                   <h3 className="font-extrabold text-base">Danh sách Cặp đôi ({matches.length})</h3>
                   <p className="text-xs text-muted-foreground">Chọn cuộc trò chuyện để trao đổi</p>
@@ -771,19 +806,30 @@ export default function MessagesPage() {
                 </div>
               </div>
 
-              {/* Active Chat Window (Right 8 cols) */}
+              {/* Active Chat Window (Right 8 cols) - Hiển thị toàn màn hình trên mobile khi có match được chọn */}
               {selectedMatch ? (
                 <div className="lg:col-span-8 min-h-0 flex flex-col h-full bg-card overflow-hidden">
                   {/* Chat Header */}
                   <div className="shrink-0 flex items-center justify-between gap-3 border-b p-4 bg-muted/10">
                     <div className="flex items-center gap-3">
+                      {/* Nút quay lại danh sách trên mobile */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedMatch(null)}
+                        className="lg:hidden -ml-2 h-9 w-9 p-0 rounded-full text-muted-foreground hover:text-foreground"
+                        title="Quay lại danh sách cặp đôi"
+                      >
+                        <ArrowLeft className="size-5" />
+                      </Button>
                       <div className="flex -space-x-2">
                         <img src={selectedMatch.pet1.avatarUrl || '/placeholder.svg'} alt={selectedMatch.pet1.name} className="size-10 rounded-full border object-cover" />
                         <img src={selectedMatch.pet2.avatarUrl || '/placeholder.svg'} alt={selectedMatch.pet2.name} className="size-10 rounded-full border object-cover" />
                       </div>
                       <div>
                         <h3 className="font-black text-base leading-tight">
-                          {selectedMatch.pet1.name} ({selectedMatch.pet1.owner.name}) & {selectedMatch.pet2.name} ({selectedMatch.pet2.owner.name})
+                          {selectedMatch.pet1.name} ({selectedMatch.pet1.owner?.name ?? 'Chủ nuôi'}) & {selectedMatch.pet2.name} ({selectedMatch.pet2.owner?.name ?? 'Chủ nuôi'})
                         </h3>
                         <span className={cn(
                           'inline-flex items-center gap-1 text-[11px] font-bold',
@@ -965,7 +1011,7 @@ export default function MessagesPage() {
                   )}
                 </div>
               ) : (
-                <div className="lg:col-span-8 flex items-center justify-center text-muted-foreground">
+                <div className="hidden lg:flex lg:col-span-8 items-center justify-center text-muted-foreground">
                   Chọn một cuộc trò chuyện để bắt đầu nhắn tin
                 </div>
               )}
@@ -1073,7 +1119,7 @@ export default function MessagesPage() {
                       <Button variant="outline" className="rounded-xl font-bold" onClick={() => respondRequest(req.id, 'reject')}>
                         <X className="mr-1 size-4" /> Từ chối
                       </Button>
-                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => respondRequest(req.id, 'accept')}>
+                      <Button disabled={matchingLocked} className="rounded-xl font-bold shadow-md shadow-primary/20" onClick={() => setAcceptingRequestId(req.id)}>
                         <Check className="mr-1 size-4" /> Chấp nhận ghép đôi
                       </Button>
                     </div>
@@ -1188,6 +1234,17 @@ export default function MessagesPage() {
 
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2 border-t font-semibold">
                       <span>Gửi ngày: {new Date(req.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                      {req.status === 'PENDING' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setCancellingRequestId(req.id)}
+                          className="h-7 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 rounded-lg"
+                        >
+                          Hủy yêu cầu
+                        </Button>
+                      )}
                     </div>
                   </article>
                   );
@@ -1249,7 +1306,7 @@ export default function MessagesPage() {
                 }}
               >
                 <option value="USER" disabled={selectedMatch?.reportedTargetTypes?.includes('USER')}>
-                  Người dùng: {otherPet?.owner.name ?? '-'}
+                  Người dùng: {otherPet?.owner?.name ?? '-'}
                 </option>
                 <option value="PET" disabled={selectedMatch?.reportedTargetTypes?.includes('PET')}>
                   Thú cưng: {otherPet?.name ?? '-'}
@@ -1350,6 +1407,37 @@ export default function MessagesPage() {
         loading={matchAction === 'BLOCK'}
       />
 
+      {/* Dialog xác nhận chấp nhận yêu cầu ghép đôi */}
+      <ConfirmDialog
+        open={Boolean(acceptingRequestId)}
+        onCancel={() => setAcceptingRequestId(null)}
+        onConfirm={() => {
+          if (acceptingRequestId) {
+            respondRequest(acceptingRequestId, 'accept');
+            setAcceptingRequestId(null);
+          }
+        }}
+        title="Chấp nhận yêu cầu ghép đôi"
+        description="Khi chấp nhận, hệ thống sẽ kết nối thành công và mở ngay phòng trò chuyện trực tiếp để hai bạn trao đổi chi tiết."
+        confirmText="Chấp nhận ngay"
+      />
+
+      {/* Dialog xác nhận hủy yêu cầu ghép đôi đã gửi */}
+      <ConfirmDialog
+        open={Boolean(cancellingRequestId)}
+        onCancel={() => setCancellingRequestId(null)}
+        onConfirm={() => {
+          if (cancellingRequestId) {
+            handleCancelRequest(cancellingRequestId);
+            setCancellingRequestId(null);
+          }
+        }}
+        title="Hủy yêu cầu ghép đôi"
+        description="Bạn có chắc chắn muốn hủy yêu cầu ghép đôi này không? Lời mời sẽ không còn hiệu lực."
+        confirmText="Hủy yêu cầu"
+        loading={cancellingRequest}
+      />
+
       <ImageLightbox
         imageUrl={viewingImageUrl}
         alt="Ảnh trong cuộc trò chuyện"
@@ -1365,7 +1453,11 @@ export default function MessagesPage() {
           requestAction={
             viewingPetProfile.isIncoming && viewingPetProfile.requestId
               ? {
-                  onAccept: () => respondRequest(viewingPetProfile.requestId!, 'accept'),
+                  onAccept: () => {
+                    const reqId = viewingPetProfile.requestId!;
+                    setViewingPetProfile(null);
+                    setAcceptingRequestId(reqId);
+                  },
                   onReject: () => respondRequest(viewingPetProfile.requestId!, 'reject'),
                   acceptDisabled: viewingPetProfile.matchingLocked,
                 }

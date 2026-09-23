@@ -11,11 +11,12 @@ const DEFAULT_META = {
   totalPages: 0,
 };
 
-export function useProducts(initialFilters?: ProductFilters) {
+export function useProducts(
+  initialFilters?: ProductFilters,
+  mode: 'list' | 'featured' = 'list',
+) {
   const [products, setProducts] = useState<Product[]>([]);
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [featuredLoading, setFeaturedLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState(DEFAULT_META);
   const [filters, setFilters] = useState<ProductFilters>({
@@ -30,42 +31,36 @@ export function useProducts(initialFilters?: ProductFilters) {
     setError(null);
 
     try {
+      if (mode === 'featured') {
+        const response = await productsApi.getFeatured();
+        setProducts(response.data);
+        return;
+      }
       const response = await productsApi.getList(filters);
       setProducts(response.data.data);
       setMeta(response.data.meta);
     } catch {
-      setError('Không thể tải danh sách sản phẩm. Vui lòng thử lại.');
+      setError(
+        mode === 'featured'
+          ? 'Không thể tải sản phẩm nổi bật. Vui lòng thử lại.'
+          : 'Không thể tải danh sách sản phẩm. Vui lòng thử lại.',
+      );
     } finally {
       setLoading(false);
     }
-  }, [filters]);
-
-  const fetchFeaturedProducts = useCallback(async () => {
-    setFeaturedLoading(true);
-
-    try {
-      const response = await productsApi.getFeatured();
-      setFeaturedProducts(response.data);
-    } catch {
-      setFeaturedProducts([]);
-    } finally {
-      setFeaturedLoading(false);
-    }
-  }, []);
+  }, [filters, mode]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
-
-  useEffect(() => {
-    fetchFeaturedProducts();
-  }, [fetchFeaturedProducts]);
+    const loadTimer = window.setTimeout(
+      () => void fetchProducts(),
+      filters.search ? 300 : 0,
+    );
+    return () => window.clearTimeout(loadTimer);
+  }, [fetchProducts, filters.search]);
 
   return {
     products,
-    featuredProducts,
     loading,
-    featuredLoading,
     error,
     meta,
     filters,

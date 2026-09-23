@@ -1,12 +1,22 @@
 import api from '@/lib/axios';
 import { Category, Product, Order } from '@/types';
+import type { AdminDashboardParams } from '@/lib/api/admin';
 
 export interface ManagerDashboardStats {
   totalRevenue: number;
+  allTimeRevenue: number;
+  previousRevenue: number;
+  revenueChangePercent: number;
+  range: {
+    label: string;
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+  };
   totalOrders: number;
   totalProductsSold: number;
-  totalCustomers: number;
-  cancellationRate: number;
+  allTimeProductsSold: number;
   statusDistribution?: {
     PENDING: number;
     CONFIRMED: number;
@@ -14,6 +24,35 @@ export interface ManagerDashboardStats {
     DELIVERED: number;
     CANCELLED: number;
   };
+  pendingOrders: number;
+  lowStockProducts: Array<{
+    id: string;
+    name: string;
+    category: string;
+    imageUrl?: string | null;
+    stock: number | null;
+    variants: Array<{ id: string; name: string; stock: number }>;
+  }>;
+  topSellingProducts: Array<{
+    id: string;
+    name: string;
+    category: string;
+    sales: number;
+  }>;
+  recentOrders: Array<{
+    id: string;
+    totalAmount: number;
+    createdAt: string;
+    userName: string;
+    items: Array<{ quantity: number; product: { name: string } }>;
+  }>;
+  categories: Category[];
+}
+
+export interface ManagerActivitySnapshot {
+  orderIds: string[];
+  ordersVersion: string;
+  inventoryVersion: string;
 }
 
 /**
@@ -135,16 +174,26 @@ export interface ManagerCustomer {
 }
 
 export const managerApi = {
-  getDashboardStats: () =>
-    api.get<ManagerDashboardStats>('/manager/dashboard-stats'),
-  getProducts: () => api.get<ManagerProduct[]>('/manager/products'),
+  getDashboardStats: (
+    params?: AdminDashboardParams,
+    signal?: AbortSignal,
+  ) =>
+    api.get<ManagerDashboardStats>('/manager/dashboard-stats', {
+      params,
+      signal,
+    }),
+  getActivitySnapshot: (signal?: AbortSignal) =>
+    api.get<ManagerActivitySnapshot>('/manager/activity-snapshot', { signal }),
+  getProducts: (signal?: AbortSignal) =>
+    api.get<ManagerProduct[]>('/manager/products', { signal }),
   createProduct: (data: ManagerProductInput) =>
     api.post<ManagerProduct>('/manager/products', data),
   updateProduct: (id: string, data: ManagerProductInput) =>
     api.put<ManagerProduct>(`/manager/products/${id}`, data),
   deleteProduct: (id: string) => api.delete(`/manager/products/${id}`),
 
-  getOrders: () => api.get<ManagerOrder[]>('/manager/orders'),
+  getOrders: (signal?: AbortSignal) =>
+    api.get<ManagerOrder[]>('/manager/orders', { signal }),
   updateOrderStatus: (
     id: string,
     status: string,
@@ -187,7 +236,8 @@ export const managerApi = {
       responseType: 'blob',
     }),
 
-  getCustomers: () => api.get<ManagerCustomer[]>('/manager/customers'),
+  getCustomers: (signal?: AbortSignal) =>
+    api.get<ManagerCustomer[]>('/manager/customers', { signal }),
 
   createCategory: (data: { name: string }) =>
     api.post<Category>('/manager/categories', data),

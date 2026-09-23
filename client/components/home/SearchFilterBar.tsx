@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { Search, X, ArrowDownAZ } from 'lucide-react';
 
 interface SearchFilterBarProps {
+  value: string;
   onSearch: (value: string) => void;
   onSortChange: (value: string) => void;
   sortBy: string;
@@ -15,35 +15,16 @@ interface SearchFilterBarProps {
  * - Lựa chọn tiêu chí sắp xếp hiển thị
  */
 export default function SearchFilterBar({
+  value,
   onSearch,
   onSortChange,
   sortBy,
 }: SearchFilterBarProps) {
-  const [searchValue, setSearchValue] = useState('');
-
-  /**
-   * Xử lý khi thay đổi nội dung tìm kiếm: Cập nhật state và tìm kiếm tức thì
-   */
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setSearchValue(val);
-    onSearch(val.trim());
-  };
-
-  /**
-   * Kích hoạt tìm kiếm khi nhấn phím Enter
-   */
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      onSearch(searchValue.trim());
-    }
+    if (event.key === 'Enter') onSearch(value);
   };
 
-  /**
-   * Xóa nội dung tìm kiếm và tải lại danh sách đầy đủ
-   */
   const handleClear = () => {
-    setSearchValue('');
     onSearch('');
   };
 
@@ -55,13 +36,13 @@ export default function SearchFilterBar({
           <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
-            value={searchValue}
-            onChange={handleInputChange}
+            value={value}
+            onChange={(event) => onSearch(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Tìm theo tên sản phẩm, thương hiệu (có dấu hoặc không dấu)..."
             className="h-11 w-full rounded-xl border border-[var(--border-color)] bg-[#FBFAF7] pl-10 pr-10 text-sm text-[var(--text-main)] transition placeholder:text-[#A6A6A6] focus:border-[var(--primary-color)] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[rgba(228,93,28,0.12)]"
           />
-          {searchValue && (
+          {value && (
             <button
               type="button"
               aria-label="Xóa tìm kiếm"
@@ -74,7 +55,7 @@ export default function SearchFilterBar({
         </div>
         <button
           type="button"
-          onClick={() => onSearch(searchValue.trim())}
+          onClick={() => onSearch(value)}
           className="h-11 px-5 rounded-xl bg-[var(--primary-color)] hover:bg-[#cf5017] text-white text-sm font-bold shadow-sm transition-all duration-150 active:scale-95 shrink-0 cursor-pointer"
         >
           Tìm kiếm

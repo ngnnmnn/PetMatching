@@ -22,13 +22,11 @@ export default function ProductGrid({
   products,
   loading,
   selectedPet,
-  selectedPrices,
   gridClassName,
 }: {
   products: Product[];
   loading: boolean;
   selectedPet?: any;
-  selectedPrices?: string[];
   gridClassName?: string;
 }) {
   return (
@@ -41,7 +39,6 @@ export default function ProductGrid({
                 key={product.id}
                 product={product}
                 selectedPet={selectedPet}
-                selectedPrices={selectedPrices}
               />
             ))}
       </div>

@@ -47,7 +47,7 @@ export default function RootLayout({
             {children}
           </RouteGuard>
         </CartProvider>
-        <Toaster richColors position="bottom-center" closeButton />
+        <Toaster richColors position="bottom-center" closeButton visibleToasts={1} />
         {process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === 'true' && <Analytics />}
       </body>
     </html>

@@ -53,9 +53,8 @@ interface OrderItem {
 
 interface Order {
   id: string;
-  status: 'PENDING' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
+  status: 'PENDING' | 'CONFIRMED' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
-  shippingFee?: number;
   shippingAddress: string;
   payment?: {
     method: 'COD' | 'QR';
@@ -194,8 +193,8 @@ const removeAccentsAndUpperCase = (str: string) => {
 // Danh sách tab lọc trạng thái đơn hàng dành cho Khách hàng (theo quy trình 6 bước AhaMove)
 const ORDER_STATUS_TABS = [
   { id: 'ALL', label: 'Tất cả' },
-  { id: 'PENDING', label: 'Xác nhận / Đã thanh toán', statuses: ['PENDING'] },
-  { id: 'PACKED', label: 'Đã gói hàng', statuses: ['PACKED'] },
+  { id: 'PENDING', label: 'Xác nhận / Đã thanh toán', statuses: ['PENDING', 'CONFIRMED'] },
+  { id: 'PACKED', label: 'Đã gói hàng', statuses: ['PACKED', 'PROCESSING'] },
   { id: 'SHIPPED', label: 'Đang giao', statuses: ['SHIPPED'] },
   { id: 'DELIVERED', label: 'Giao hàng thành công', statuses: ['DELIVERED'] },
   { id: 'CANCELLED', label: 'Đã hủy / Thất bại', statuses: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] },
@@ -205,6 +204,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeTab, setActiveTab] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
+  const [ordersLoadFailed, setOrdersLoadFailed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const isOrdersPollingRef = useRef(false);
   const router = useRouter();
@@ -307,8 +307,10 @@ export default function OrdersPage() {
     try {
       const res = await usersApi.getOrders();
       setOrders(res.data || []);
+      setOrdersLoadFailed(false);
     } catch (err) {
       console.error('Failed to load orders', err);
+      setOrdersLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -446,7 +448,14 @@ export default function OrdersPage() {
     }
   };
 
+  /**
+   * Xử lý mở modal đổi địa chỉ giao hàng cho đơn hàng PENDING (chặn đơn hàng đã thanh toán qua QR)
+   */
   const handleAddressEditClick = async (order: Order) => {
+    if (order.payment?.method === 'QR' && order.payment?.status === 'PAID') {
+      toast.error('Đơn hàng đã thanh toán bằng mã QR không thể thay đổi địa chỉ giao hàng.');
+      return;
+    }
     setEditOrder(order);
     try {
       const res = await usersApi.getAddresses();
@@ -488,6 +497,8 @@ export default function OrdersPage() {
         shippingAddress: addressStr,
         districtId: data.districtId,
         wardCode: data.wardCode,
+        shippingLatitude: data.lat,
+        shippingLongitude: data.lng,
       });
       toast.success('Đã cập nhật địa chỉ giao hàng và tính lại phí ship mới thành công!');
       setEditOrder(null);
@@ -714,6 +725,10 @@ export default function OrdersPage() {
           <div className="flex justify-center items-center py-12">
             <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
           </div>
+        ) : ordersLoadFailed ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-10 text-center text-sm font-bold text-red-700">
+            Không thể tải lịch sử đơn hàng. Vui lòng kiểm tra kết nối và thử lại.
+          </div>
         ) : orders.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-16 text-center shadow-sm">
             <div className="mx-auto mb-6 flex size-20 items-center justify-center rounded-full bg-amber-50 text-amber-600">
@@ -782,8 +797,9 @@ export default function OrdersPage() {
                     {(order.status === 'CANCELLED' || order.status === 'EXPIRED' || order.status === 'PAYMENT_ERROR') && getStatusBadge(order)}
                     {getPaymentStatusBadge(order)}
 
-                    {/* Action buttons for PENDING / PAYMENT_ERROR / EXPIRED orders */}
-                    {(order.status === 'PENDING' || order.status === 'PAYMENT_ERROR' || order.status === 'EXPIRED') && (
+                    {/* Thanh toán lại, sửa địa chỉ hoặc hủy khi đơn còn cho phép thao tác. */}
+                    {(((order.status === 'PAYMENT_ERROR' || order.status === 'EXPIRED') && order.payment?.method === 'QR' && order.payment.status !== 'PAID') ||
+                      (order.status === 'PENDING' && order.payment?.status !== 'PAID')) && (
                       <div className="flex flex-wrap items-center gap-2">
                         {order.payment?.method === 'QR' && (
                           <>
@@ -844,26 +860,42 @@ export default function OrdersPage() {
                             )}
                           </>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleAddressEditClick(order)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] bg-white px-2.5 py-1 text-xs font-bold hover:text-primary transition shadow-sm hover:bg-gray-50 cursor-pointer"
-                        >
-                          <Edit2 className="size-3" />
-                          Sửa địa chỉ
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCancelOrderId(order.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 text-red-600 px-2.5 py-1 text-xs font-bold hover:bg-red-100 transition shadow-sm cursor-pointer"
-                        >
-                          <XCircle className="size-3" />
-                          Hủy đơn
-                        </button>
+                        {order.status === 'PENDING' && (
+                          <>
+                            {(order.payment?.status as string) === 'PAID' ? (
+                              <button
+                                type="button"
+                                disabled
+                                title="Đơn hàng đã thanh toán bằng mã QR không thể sửa địa chỉ giao hàng"
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-400 cursor-not-allowed opacity-60"
+                              >
+                                <Edit2 className="size-3" />
+                                Sửa địa chỉ
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleAddressEditClick(order)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] bg-white px-2.5 py-1 text-xs font-bold hover:text-primary transition shadow-sm hover:bg-gray-50 cursor-pointer"
+                              >
+                                <Edit2 className="size-3" />
+                                Sửa địa chỉ
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setCancelOrderId(order.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 text-red-600 px-2.5 py-1 text-xs font-bold hover:bg-red-100 transition shadow-sm cursor-pointer"
+                            >
+                              <XCircle className="size-3" />
+                              Hủy đơn
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
 
-                    {(order.status === 'PROCESSING' || order.status === 'CANCELLED') && order.refundStatus !== 'REFUNDED' && (
+                    {(order.status === 'PROCESSING' || order.status === 'CANCELLED') && order.payment?.status === 'PAID' && order.refundStatus !== 'REFUNDED' && (
                       <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                         <button
                           type="button"
@@ -1061,7 +1093,6 @@ export default function OrdersPage() {
           savedAddresses={savedAddresses}
           itemsSubtotal={editOrder.items.reduce((sum, item) => sum + item.price * item.quantity, 0)}
           onSubmit={handleAddressFormSubmit}
-          showSaveOptions={false}
           showShippingFee={true}
           submitButtonText="Xác nhận đổi địa chỉ"
           title={`Sửa địa chỉ giao hàng - Đơn hàng #${editOrder.id}`}

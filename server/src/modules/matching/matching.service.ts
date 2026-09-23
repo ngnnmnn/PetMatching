@@ -255,9 +255,13 @@ export class MatchingService {
         .filter((id) => id !== femalePet.id),
     );
 
-    const latestByMalePetId = new Map(
-      history.map((item) => [item.malePetId, item]),
-    );
+    // Nhóm lịch sử theo malePetId và chỉ giữ bản ghi mới nhất (vì history đã được sắp xếp createdAt: 'desc')
+    const latestByMalePetId = new Map<string, (typeof history)[number]>();
+    for (const item of history) {
+      if (!latestByMalePetId.has(item.malePetId)) {
+        latestByMalePetId.set(item.malePetId, item);
+      }
+    }
 
     // Filter candidates và tính compatibility score (async)
     const eligibleCandidates = candidates.filter((candidate) => {
@@ -358,6 +362,7 @@ export class MatchingService {
         breedInfo: compatibility.breedInfo,
         distanceKm,
         isRoadDistance: false,
+        isSameWard: Boolean(isSameWard),
         _candCoords:
           candLat != null && candLng != null
             ? { lat: candLat, lng: candLng }
@@ -401,13 +406,21 @@ export class MatchingService {
       data = data.filter((item) => item.distanceKm <= maxDist);
     }
 
-    // Sắp xếp theo điểm giảm dần
-    data.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
-
     // Xóa trường tạm _candCoords trước khi trả về kết quả
     const cleanedData = data.map(({ _candCoords, ...item }) => item);
 
-    return { data: cleanedData };
+    // Đếm số lượng hồ sơ đã từng bị bấm Bỏ qua (Pass) của bé cái này để phục vụ hiển thị nút xem lại
+    const passedCount = Array.from(latestByMalePetId.values()).filter(
+      (item) => item.status === MatchingRequestStatus.PASSED,
+    ).length;
+
+    return {
+      data: cleanedData,
+      meta: {
+        total: cleanedData.length,
+        passedCount,
+      },
+    };
   }
 
   async passPet(userId: string, dto: PassPetDto) {
@@ -428,6 +441,37 @@ export class MatchingService {
     });
 
     return { success: true, request };
+  }
+
+  /**
+   * Khôi phục toàn bộ danh sách các ứng viên đã từng bấm Bỏ qua (Pass) của thú cưng cái
+   * Giúp người dùng có thể xem lại các ứng viên khi đã lướt hết danh sách
+   */
+  async resetPassedPets(userId: string, femalePetId: string) {
+    const pet = await this.prisma.pet.findUnique({ where: { id: femalePetId } });
+    if (!pet) {
+      throw new NotFoundException('Female pet not found.');
+    }
+    if (pet.ownerId !== userId) {
+      throw new ForbiddenException('You do not own this pet.');
+    }
+
+    const result = await this.prisma.matchingRequest.deleteMany({
+      where: {
+        requesterId: userId,
+        femalePetId: pet.id,
+        status: MatchingRequestStatus.PASSED,
+      },
+    });
+
+    return {
+      success: true,
+      count: result.count,
+      message:
+        result.count > 0
+          ? `Đã khôi phục ${result.count} hồ sơ đã bỏ qua`
+          : 'Không có hồ sơ nào từng bị bỏ qua',
+    };
   }
 
   async createRequest(userId: string, dto: CreateMatchingRequestDto) {
@@ -476,7 +520,7 @@ export class MatchingService {
           eventType: NotificationEventType.MATCH_REQUEST_CREATED,
           title: 'Yêu cầu ghép đôi mới',
           content: `${femalePet.name} đã gửi yêu cầu ghép đôi với ${malePet.name}.`,
-          targetUrl: '/requests',
+          targetUrl: '/messages',
           entityType: 'MATCHING_REQUEST',
           entityId: createdRequest.id,
         },
@@ -603,8 +647,16 @@ export class MatchingService {
           matchReasons: compatibility.reasons,
         },
         include: {
-          pet1: true,
-          pet2: true,
+          pet1: {
+            include: {
+              owner: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          },
+          pet2: {
+            include: {
+              owner: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          },
         },
       });
 
@@ -669,7 +721,7 @@ export class MatchingService {
           eventType: NotificationEventType.MATCH_REQUEST_REJECTED,
           title: 'Yêu cầu ghép đôi bị từ chối',
           content: `Yêu cầu ghép đôi ${pendingRequest.femalePet.name} với ${pendingRequest.malePet.name} đã bị từ chối.`,
-          targetUrl: '/requests',
+          targetUrl: '/messages',
           entityType: 'MATCHING_REQUEST',
           entityId: requestId,
         },
@@ -679,6 +731,40 @@ export class MatchingService {
     });
 
     return { success: true, request };
+  }
+
+  /**
+   * Hủy yêu cầu ghép đôi do chính mình gửi đi (chỉ người gửi mới có quyền hủy khi request đang PENDING)
+   */
+  async cancelRequest(userId: string, requestId: string) {
+    const request = await this.prisma.matchingRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        femalePet: true,
+        malePet: true,
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Không tìm thấy yêu cầu ghép đôi.');
+    }
+    if (request.requesterId !== userId && request.femalePet.ownerId !== userId) {
+      throw new ForbiddenException('Bạn không có quyền hủy yêu cầu ghép đôi này.');
+    }
+    if (request.status !== MatchingRequestStatus.PENDING) {
+      throw new BadRequestException('Chỉ có thể hủy yêu cầu đang ở trạng thái chờ phản hồi.');
+    }
+
+    const cancelledRequest = await this.prisma.matchingRequest.update({
+      where: { id: requestId },
+      data: {
+        status: MatchingRequestStatus.CANCELLED,
+        respondedAt: new Date(),
+      },
+      include: this.requestInclude(),
+    });
+
+    return { success: true, request: cancelledRequest };
   }
 
   async getMatches(userId: string) {
@@ -1713,6 +1799,7 @@ export class MatchingService {
       personality: pet.personality,
       breedingOption: pet.breedingOption,
       breedingPrice: pet.breedingFee,
+      breedingFee: pet.breedingFee,
       location: pet.location,
       district: pet.district,
       ward: pet.ward,

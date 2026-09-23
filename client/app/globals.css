@@ -48,16 +48,12 @@
   --sidebar-ring: oklch(0.65 0.18 45);
 
   --primary-glow: oklch(0.78 0.16 60);
-  --gradient-hero: linear-gradient(
-          135deg,
-          oklch(0.96 0.04 75),
-          oklch(0.92 0.08 60)
-  );
-  --gradient-match: linear-gradient(
-          120deg,
-          oklch(0.68 0.18 45),
-          oklch(0.55 0.12 195)
-  );
+  --gradient-hero: linear-gradient(135deg,
+      oklch(0.96 0.04 75),
+      oklch(0.92 0.08 60));
+  --gradient-match: linear-gradient(120deg,
+      oklch(0.68 0.18 45),
+      oklch(0.55 0.12 195));
   --shadow-soft: 0 10px 30px -12px color-mix(in oklab, oklch(0.4 0.1 45) 25%, transparent);
   --shadow-card: 0 4px 14px -6px color-mix(in oklab, oklch(0.3 0.05 45) 18%, transparent);
 }
@@ -142,6 +138,7 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -152,6 +149,7 @@
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
+
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
@@ -220,5 +218,3 @@
   right: 18px !important;
   z-index: 50 !important;
 }
-
-

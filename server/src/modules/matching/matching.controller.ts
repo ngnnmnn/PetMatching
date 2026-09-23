@@ -59,6 +59,21 @@ export class MatchingController {
     return this.matchingService.passPet(request.user.id, dto);
   }
 
+  /**
+   * Khôi phục (reset) toàn bộ các ứng viên đã từng bấm Bỏ qua (Pass) của thú cưng cái
+   * Giúp danh sách ứng viên hiển thị trở lại khi người dùng lướt hết thẻ
+   */
+  @Delete('pass/:femalePetId')
+  resetPassedPets(
+    @Req() request: AuthenticatedRequest,
+    @Param('femalePetId') femalePetId: string,
+  ) {
+    return this.matchingService.resetPassedPets(
+      request.user.id,
+      femalePetId,
+    );
+  }
+
   @Post('requests')
   createRequest(
     @Req() request: AuthenticatedRequest,
@@ -85,6 +100,14 @@ export class MatchingController {
   @Post('requests/:id/reject')
   rejectRequest(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.matchingService.rejectRequest(request.user.id, id);
+  }
+
+  /**
+   * Hủy yêu cầu ghép đôi do chính mình gửi đi (chỉ thực hiện khi yêu cầu đang ở trạng thái PENDING)
+   */
+  @Post('requests/:id/cancel')
+  cancelRequest(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.matchingService.cancelRequest(request.user.id, id);
   }
 
   @Get('matches')

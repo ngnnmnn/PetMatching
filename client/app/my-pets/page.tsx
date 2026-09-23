@@ -17,8 +17,10 @@ import {
   Syringe,
   X,
   Loader2,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import AppHeader from "@/components/layout/AppHeader";
 import { useCart } from "@/context/CartContext";
@@ -28,7 +30,10 @@ import { PetProfileDialog } from "@/components/pets/PetProfileDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { isValidProductForRecommendation } from "@/components/home/ProductCard";
+import {
+  isValidProductForRecommendation,
+  getSuitableVariantsForPet,
+} from "@/components/home/ProductCard";
 import { toast } from "sonner";
 import type { Product, ProductVariant } from "@/types";
 import {
@@ -70,6 +75,7 @@ function getPetBreedingStatus(pet: Pet) {
 }
 
 export default function MyPetsPage() {
+  const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSetupPet, setSelectedSetupPet] = useState<Pet | null>(null);
@@ -204,57 +210,23 @@ export default function MyPetsPage() {
         return target === "ALL" || target === pet.species;
       });
 
-      const recommendations: RecommendedProduct[] = matched.map((p) => {
-        let bestVariants: ProductVariant[] = [];
-        if (p.variants && p.variants.length > 0) {
-          bestVariants = p.variants.filter((v) => {
-            const nameLower = v.name.toLowerCase();
-            const w = pet.weight;
+      const recommendations: RecommendedProduct[] = matched
+        .map((p) => {
+          // Đồng bộ 100% thuật toán gợi ý phân loại (variant) còn hàng cho pet giữa popup my-pets và trang shop
+          const bestVariants: ProductVariant[] = getSuitableVariantsForPet(p, pet);
 
-            if (w < 5) {
-              return (
-                nameLower.includes("size s") ||
-                nameLower.includes("500g") ||
-                nameLower.includes("200g") ||
-                nameLower.includes("1kg") ||
-                (!nameLower.includes("size m") &&
-                  !nameLower.includes("size l") &&
-                  !nameLower.includes("3kg") &&
-                  !nameLower.includes("5kg"))
-              );
-            } else if (w >= 5 && w <= 12) {
-              return (
-                nameLower.includes("size m") ||
-                nameLower.includes("1.5kg") ||
-                nameLower.includes("2kg") ||
-                (!nameLower.includes("size s") && !nameLower.includes("size l"))
-              );
-            } else {
-              return (
-                nameLower.includes("size l") ||
-                nameLower.includes("3kg") ||
-                nameLower.includes("4kg") ||
-                nameLower.includes("5kg") ||
-                nameLower.includes("10kg") ||
-                nameLower.includes("lớn") ||
-                (!nameLower.includes("size s") &&
-                  !nameLower.includes("size m") &&
-                  !nameLower.includes("500g"))
-              );
-            }
-          });
-
-          if (bestVariants.length === 0) {
-            bestVariants = [p.variants[0]];
+          return {
+            ...p,
+            matchedVariants: bestVariants,
+            selectedVariant: bestVariants[0] || null,
+          };
+        })
+        .filter((p) => {
+          if (p.variants && p.variants.length > 0) {
+            return p.matchedVariants.length > 0;
           }
-        }
-
-        return {
-          ...p,
-          matchedVariants: bestVariants,
-          selectedVariant: bestVariants[0] || null,
-        };
-      });
+          return Number(p.stock || 0) > 0;
+        });
 
       const breedLower = pet.breed.toLowerCase();
       recommendations.sort((a, b) => {
@@ -298,6 +270,15 @@ export default function MyPetsPage() {
         return p;
       }),
     );
+  };
+
+  const handleNavigateToProduct = (p: RecommendedProduct, variant: ProductVariant | null) => {
+    if (selectedRecommendPet) {
+      localStorage.setItem("petmatch_shop_selected_pet", JSON.stringify(selectedRecommendPet));
+    }
+    const vParam = variant?.id ? `&variantId=${variant.id}` : "";
+    const petParam = selectedRecommendPet?.id ? `&petId=${selectedRecommendPet.id}` : "";
+    router.push(`/product/${p.id}?${petParam}${vParam}`);
   };
 
   const selectedDetailPet = selectedDetailPetId
@@ -1058,10 +1039,10 @@ export default function MyPetsPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-card p-6 shadow-2xl space-y-6 relative"
+              className="max-h-[88vh] h-[85vh] w-full max-w-4xl rounded-3xl bg-card shadow-2xl flex flex-col relative overflow-hidden border border-border/80"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between border-b pb-4">
+              {/* Fixed Header */}
+              <div className="shrink-0 p-6 border-b flex items-center justify-between flex-wrap gap-3 bg-card z-10">
                 <div className="flex items-center gap-3">
                   <div className="rounded-2xl bg-primary/10 p-2.5 text-primary">
                     <Sparkles className="size-6 fill-primary/10 animate-pulse" />
@@ -1080,137 +1061,212 @@ export default function MyPetsPage() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full hover:bg-slate-100"
-                  onClick={() => setSelectedRecommendPet(null)}
-                >
-                  <X className="size-5" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full hover:bg-slate-100"
+                    onClick={() => setSelectedRecommendPet(null)}
+                  >
+                    <X className="size-5" />
+                  </Button>
+                </div>
               </div>
 
-              {/* Loader or Content */}
-              {loadingRecommendations ? (
-                <div className="py-20 text-center flex flex-col items-center justify-center gap-3">
-                  <Loader2 className="size-8 animate-spin text-primary" />
-                  <p className="text-sm font-bold text-muted-foreground">
-                    Đang nghiên cứu và đối khớp sản phẩm phù hợp...
-                  </p>
-                </div>
-              ) : recommendedProducts.length === 0 ? (
-                <div className="py-20 text-center text-muted-foreground text-sm font-medium">
-                  Chưa có sản phẩm nào phù hợp được tìm thấy cho bé thú cưng
-                  này.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {recommendedProducts.map((p) => {
-                    const variant = p.selectedVariant;
-                    const price = variant
-                      ? (variant.salePrice ?? variant.sellingPrice)
-                      : (p.salePrice ?? p.sellingPrice);
-                    const originalPrice = variant
-                      ? variant.sellingPrice
-                      : p.sellingPrice;
-                    const isDiscounted = variant
-                      ? !!variant.salePrice &&
-                        variant.salePrice < variant.sellingPrice
-                      : !!p.salePrice && p.salePrice < p.sellingPrice;
-                    const imageUrl =
-                      variant?.imageUrl || p.imageUrl || "/placeholder.svg";
+              {/* Inner Scrollable Body */}
+              {/* Thêm custom scrollbar gọn gàng bên trong popup */}
+              <div className="flex-1 overflow-y-auto p-6 pr-4 space-y-6 custom-scrollbar">
+                {/* Loader or Content */}
+                {loadingRecommendations ? (
+                  <div className="py-20 text-center flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="size-8 animate-spin text-primary" />
+                    <p className="text-sm font-bold text-muted-foreground">
+                      Đang nghiên cứu và đối khớp sản phẩm phù hợp...
+                    </p>
+                  </div>
+                ) : recommendedProducts.length === 0 ? (
+                  <div className="py-20 text-center text-muted-foreground text-sm font-medium">
+                    Chưa có sản phẩm nào phù hợp được tìm thấy cho bé thú cưng
+                    này.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {recommendedProducts.map((p) => {
+                      const variant = p.selectedVariant;
+                      const price = variant
+                        ? (variant.salePrice ?? variant.sellingPrice)
+                        : (p.salePrice ?? p.sellingPrice);
+                      const originalPrice = variant
+                        ? variant.sellingPrice
+                        : p.sellingPrice;
+                      const isDiscounted = variant
+                        ? !!variant.salePrice &&
+                          variant.salePrice < variant.sellingPrice
+                        : !!p.salePrice && p.salePrice < p.sellingPrice;
+                      const imageUrl =
+                        variant?.imageUrl || p.imageUrl || "/placeholder.svg";
 
-                    return (
-                      <div
-                        key={p.id}
-                        className="group rounded-2xl border bg-card p-3 shadow-sm hover:shadow-md transition duration-300 flex flex-col justify-between space-y-3 relative"
-                      >
-                        {/* Discount Tag */}
-                        {isDiscounted && (
-                          <span className="absolute left-2.5 top-2.5 z-10 rounded-lg bg-red-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
-                            KM
-                          </span>
-                        )}
+                      // Danh sách phân loại được đề xuất phù hợp với bé thú cưng
+                      const displayVariants =
+                        p.matchedVariants && p.matchedVariants.length > 0
+                          ? p.matchedVariants
+                          : p.variants || [];
 
-                        {/* Image */}
-                        <div className="aspect-square rounded-xl overflow-hidden bg-muted relative">
-                          <img
-                            src={imageUrl}
-                            alt={p.name}
-                            className="size-full object-cover group-hover:scale-105 transition duration-500"
-                          />
-                        </div>
-
-                        {/* Text Details */}
-                        <div className="space-y-1">
-                          <span className="text-[9px] bg-slate-100 text-slate-600 font-extrabold uppercase px-1.5 py-0.5 rounded">
-                            {p.brand || "PetMatch"}
-                          </span>
-                          <h4
-                            className="text-xs font-bold text-foreground line-clamp-2 mt-1 leading-snug group-hover:text-primary transition"
-                            title={p.name}
-                          >
-                            {p.name}
-                          </h4>
-
-                          {/* Price */}
-                          <div className="flex items-baseline gap-1.5 pt-1">
-                            <span className="text-sm font-black text-primary">
-                              {price.toLocaleString("vi-VN")}đ
-                            </span>
-                            {isDiscounted && (
-                              <span className="text-[10px] text-muted-foreground line-through font-medium">
-                                {originalPrice.toLocaleString("vi-VN")}đ
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Variant Selector Dropdown */}
-                        {p.variants && p.variants.length > 0 && (
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-muted-foreground uppercase">
-                              Kích cỡ / Phân loại:
-                            </label>
-                            <select
-                              value={variant?.id || ""}
-                              onChange={(e) =>
-                                handleVariantChange(p.id, e.target.value)
-                              }
-                              className="w-full rounded-lg border bg-background p-1.5 text-[11px] font-bold outline-none cursor-pointer focus:border-primary"
-                            >
-                              {p.variants.map((v) => (
-                                <option key={v.id} value={v.id}>
-                                  {v.name} (
-                                  {v.sellingPrice.toLocaleString("vi-VN")}đ)
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        {/* Action Add To Cart */}
-                        <Button
-                          size="sm"
-                          disabled={
-                            variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0
-                          }
-                          className="w-full rounded-xl font-bold text-xs"
-                          onClick={() => {
-                            const vId = variant?.id || undefined;
-                            addToCart(p, 1, false, vId);
-                            toast.success(
-                              `Đã thêm sản phẩm "${p.name}${variant ? ` (${variant.name})` : ""}" vào giỏ hàng!`,
-                            );
-                          }}
+                      return (
+                        <div
+                          key={p.id}
+                          className="group rounded-2xl border bg-card p-3 shadow-sm hover:shadow-md transition duration-300 flex flex-col justify-between space-y-3 relative"
                         >
-                          {(variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0)
-                            ? "Hết hàng"
-                            : "Thêm vào giỏ"}
-                        </Button>
-                      </div>
-                    );
-                  })}
+                          {/* Discount Tag */}
+                          {isDiscounted && (
+                            <span className="absolute left-2.5 top-2.5 z-10 rounded-lg bg-red-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
+                              KM
+                            </span>
+                          )}
+
+                          {/* Image - Click sang trang product[id] kèm context gợi ý cho pet */}
+                          <div
+                            onClick={() => handleNavigateToProduct(p, variant)}
+                            className="aspect-square rounded-xl overflow-hidden bg-muted relative cursor-pointer group-hover:opacity-95 transition"
+                            title="Xem chi tiết & gợi ý sản phẩm"
+                          >
+                            <img
+                              src={imageUrl}
+                              alt={p.name}
+                              className="size-full object-cover group-hover:scale-105 transition duration-500"
+                            />
+                          </div>
+
+                          {/* Text Details */}
+                          <div className="space-y-1">
+                            <span className="text-[9px] bg-slate-100 text-slate-600 font-extrabold uppercase px-1.5 py-0.5 rounded">
+                              {p.brand || "PetMatch"}
+                            </span>
+                            <h4
+                              onClick={() => handleNavigateToProduct(p, variant)}
+                              className="text-xs font-bold text-foreground line-clamp-2 mt-1 leading-snug group-hover:text-primary transition cursor-pointer"
+                              title={`Xem chi tiết: ${p.name}`}
+                            >
+                              {p.name}
+                            </h4>
+
+                            {/* Price */}
+                            <div className="flex items-baseline gap-1.5 pt-1">
+                              <span className="text-sm font-black text-primary">
+                                {price.toLocaleString("vi-VN")}đ
+                              </span>
+                              {isDiscounted && (
+                                <span className="text-[10px] text-muted-foreground line-through font-medium">
+                                  {originalPrice.toLocaleString("vi-VN")}đ
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Variant Selector Dropdown - CHỈ hiển thị các phân loại được đề xuất */}
+                          {displayVariants.length > 0 && (
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-muted-foreground uppercase flex items-center justify-between">
+                                <span>Phân loại đề xuất:</span>
+                                <span className="text-[8px] text-primary font-black uppercase">
+                                  🐾 Đề xuất
+                                </span>
+                              </label>
+                              <select
+                                value={variant?.id || ""}
+                                onChange={(e) =>
+                                  handleVariantChange(p.id, e.target.value)
+                                }
+                                className="w-full rounded-lg border bg-background p-1.5 text-[11px] font-bold outline-none cursor-pointer focus:border-primary border-amber-300/80 bg-amber-50/30 text-amber-950"
+                              >
+                                {displayVariants.map((v) => (
+                                  <option key={v.id} value={v.id}>
+                                    {v.name} (
+                                    {v.sellingPrice.toLocaleString("vi-VN")}đ)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Action Buttons: Thêm vào giỏ & Mua hàng (2 nút cùng 1 hàng) */}
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={
+                                variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0
+                              }
+                              className="flex-1 rounded-xl font-bold text-[11px] px-1.5 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
+                              onClick={() => {
+                                const vId = variant?.id || undefined;
+                                addToCart(p, 1, false, vId);
+                                toast.success(
+                                  `Đã thêm "${p.name}${variant ? ` (${variant.name})` : ""}" vào giỏ hàng!`,
+                                );
+                              }}
+                            >
+                              {(variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0)
+                                ? "Hết hàng"
+                                : "Thêm vào giỏ"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={
+                                variant ? variant.stock <= 0 : (p.stock ?? 0) <= 0
+                              }
+                              className="flex-1 rounded-xl font-bold text-[11px] px-1.5 bg-primary hover:bg-[var(--primary-color)] text-white shadow-xs"
+                              onClick={() => {
+                                if (selectedRecommendPet) {
+                                  localStorage.setItem(
+                                    "petmatch_shop_selected_pet",
+                                    JSON.stringify(selectedRecommendPet),
+                                  );
+                                }
+                                const vId = variant?.id || undefined;
+                                addToCart(p, 1, false, vId);
+                                router.push("/cart");
+                              }}
+                            >
+                              <Zap className="size-3 fill-white mr-0.5 shrink-0" />{" "}
+                              Mua hàng
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Fixed Footer CTA to view all shop products for this pet */}
+              {selectedRecommendPet && (
+                <div className="shrink-0 px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 bg-amber-50/90 border-amber-200/80 z-10">
+                  <div className="flex items-center gap-2.5 text-base sm:text-lg font-extrabold text-stone-800 leading-snug">
+                    <span className="text-xl shrink-0">🐾</span>
+                    <span>
+                      Muốn khám phá thêm hàng trăm sản phẩm khác dành riêng cho bé{" "}
+                      <strong className="font-black text-primary">
+                        {selectedRecommendPet.name}
+                      </strong>
+                      ?
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full sm:w-auto h-11 px-5 rounded-xl font-black text-sm bg-primary hover:bg-[var(--primary-color)] text-white shadow-md cursor-pointer shrink-0"
+                    onClick={() => {
+                      if (selectedRecommendPet) {
+                        localStorage.setItem(
+                          "petmatch_shop_selected_pet",
+                          JSON.stringify(selectedRecommendPet),
+                        );
+                        router.push(`/shop?petId=${selectedRecommendPet.id}`);
+                      }
+                    }}
+                  >
+                    Xem toàn bộ sản phẩm tại Shop ➔
+                  </Button>
                 </div>
               )}
             </motion.div>

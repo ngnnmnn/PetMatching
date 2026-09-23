@@ -4,7 +4,7 @@ import { PaymentService } from '../payment/payment.service';
 import { SpaService } from './spa.service';
 
 describe('SpaService manager dashboard revenue', () => {
-  it('uses completed non-refunded bookings in the manager branches', async () => {
+  it('uses completed paid bookings in the manager branches', async () => {
     const bookings = [
       {
         id: 'completed-unpaid',
@@ -12,6 +12,7 @@ describe('SpaService manager dashboard revenue', () => {
         payment: { status: PaymentStatus.PENDING },
         totalPrice: 100_000,
         priceSnapshot: 80_000,
+        createdAt: new Date('2026-08-01T08:00:00Z'),
         scheduledAt: new Date('2026-08-01T08:00:00Z'),
         serviceId: null,
         mainServiceId: null,
@@ -25,6 +26,7 @@ describe('SpaService manager dashboard revenue', () => {
         payment: { status: PaymentStatus.PAID },
         totalPrice: 0,
         priceSnapshot: 50_000,
+        createdAt: new Date('2026-08-01T09:00:00Z'),
         scheduledAt: new Date('2026-08-01T09:00:00Z'),
         serviceId: null,
         mainServiceId: null,
@@ -38,6 +40,7 @@ describe('SpaService manager dashboard revenue', () => {
         payment: { status: PaymentStatus.REFUNDED },
         totalPrice: 200_000,
         priceSnapshot: 200_000,
+        createdAt: new Date('2026-08-01T10:00:00Z'),
         scheduledAt: new Date('2026-08-01T10:00:00Z'),
         serviceId: null,
         mainServiceId: null,
@@ -51,6 +54,7 @@ describe('SpaService manager dashboard revenue', () => {
         payment: { status: PaymentStatus.PAID },
         totalPrice: 300_000,
         priceSnapshot: 300_000,
+        createdAt: new Date('2026-08-01T11:00:00Z'),
         scheduledAt: new Date('2026-08-01T11:00:00Z'),
         serviceId: null,
         mainServiceId: null,
@@ -89,9 +93,12 @@ describe('SpaService manager dashboard revenue', () => {
       value: jest.fn(),
     });
 
-    const result = await service.getManagerDashboardStats('manager-1', 'ALL');
+    const result = await service.getManagerDashboardStats('manager-1', 'ALL', {
+      range: 'all',
+    });
 
-    expect(result.totalRevenue).toBe(150_000);
+    expect(result.totalRevenue).toBe(50_000);
+    expect(result.allTimeCompletedBookingsCount).toBe(3);
     expect(prisma.spaBooking.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { addressSpaId: { in: ['spa-1'] } },

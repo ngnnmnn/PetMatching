@@ -36,6 +36,7 @@ import {
 import { toast } from 'sonner';
 import {
   managerApi,
+  ManagerActivitySnapshot,
   ManagerCustomer,
   ManagerDashboardStats,
   ManagerOrder,
@@ -45,6 +46,11 @@ import {
   ManagerProductVariantInput,
 } from '@/lib/api/manager';
 import { shippingApi } from '@/lib/api/shipping';
+import type { AdminDashboardParams } from '@/lib/api/admin';
+import {
+  DashboardTimeControls,
+  RevenueGrowthBadge,
+} from '@/components/admin/dashboard/dashboard-time-controls';
 
 /**
  * Định dạng số thành chuỗi phân cách hàng nghìn bằng dấu chấm chuẩn tiền Việt (ví dụ: 3000 -> "3.000")
@@ -197,49 +203,33 @@ function getProductEffectivePrice(p: ManagerProduct): number {
 /**
  * Phát âm thanh chuông thông báo cho Store Manager sử dụng Web Audio API tích hợp
  */
-function playStoreNotificationChime(type: 'order' | 'warning' = 'order') {
+function playStoreNotificationChime() {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(523.25, now);
+    gain1.gain.setValueAtTime(0.3, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.3);
 
-    if (type === 'order') {
-      const now = ctx.currentTime;
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(523.25, now);
-      gain1.gain.setValueAtTime(0.3, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.3);
-
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(659.25, now + 0.15);
-      gain2.gain.setValueAtTime(0.35, now + 0.15);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now + 0.15);
-      osc2.stop(now + 0.55);
-    } else {
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, now);
-      osc.frequency.exponentialRampToValueAtTime(330, now + 0.35);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.35);
-    }
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(659.25, now + 0.15);
+    gain2.gain.setValueAtTime(0.35, now + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.55);
   } catch {
     // Audio context có thể bị trình duyệt tạm khóa nếu người dùng chưa tương tác với trang
   }
@@ -539,34 +529,6 @@ function parseShippingAddress(addressStr: string) {
 export default function ManagerDashboard() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'dashboard';
-  const router = useRouter();
-  const [role, setRole] = useState<string>('');
-
-  useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      try {
-        const u = JSON.parse(stored);
-        if (u.role === 'SPA_MANAGER') {
-          router.replace('/managerSpa');
-          return;
-        }
-        setRole(u.role || '');
-      } catch {
-        setRole('');
-      }
-    }
-  }, [router]);
-
-  if (!role) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-[var(--primary-color)]" />
-        <span className="ml-2 text-sm font-bold text-[var(--text-muted)]">Đang tải...</span>
-      </div>
-    );
-  }
-
   return <StoreManagerConsole currentTab={currentTab} />;
 }
 
@@ -574,6 +536,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<ManagerDashboardStats | null>(null);
+  const [dashboardTimeRange, setDashboardTimeRange] =
+    useState<AdminDashboardParams>({ range: '30d' });
+  const [refreshingStats, setRefreshingStats] = useState(false);
   const [products, setProducts] = useState<ManagerProduct[]>([]);
   const [orders, setOrders] = useState<ManagerOrder[]>([]);
   const [customers, setCustomers] = useState<ManagerCustomer[]>([]);
@@ -723,21 +688,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
   // Realtime Polling Refs
   const previousOrderIdsRef = React.useRef<Set<string> | null>(null);
-  const warnedProductIdsRef = React.useRef<Set<string>>(new Set());
+  const ordersVersionRef = React.useRef<string | null>(null);
+  const inventoryVersionRef = React.useRef<string | null>(null);
   const isPollingRef = React.useRef(false);
   const banksRequestedRef = React.useRef(false);
 
-  const applyLatestOrders = useCallback((latestOrders: ManagerOrder[], notifyNewOrders = false) => {
-    if (notifyNewOrders && previousOrderIdsRef.current !== null) {
-      const newOrders = latestOrders.filter((order) => !previousOrderIdsRef.current!.has(order.id));
-      if (newOrders.length > 0) {
-        playStoreNotificationChime('order');
-        toast.success(`Có ${newOrders.length} đơn hàng mới vừa được đặt!`, {
-          description: `Mã đơn: #${newOrders[0].id.slice(-6).toUpperCase()}`,
-        });
-      }
-    }
-
+  const applyLatestOrders = useCallback((latestOrders: ManagerOrder[]) => {
     previousOrderIdsRef.current = new Set(latestOrders.map((order) => order.id));
     setOrders(latestOrders);
     setSelectedOrderDetails((current) => {
@@ -746,55 +702,81 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
     });
   }, []);
 
-  const fetchTabData = useCallback(async (tab: string, showLoading = true) => {
+  const applyActivitySnapshot = useCallback((
+    snapshot: ManagerActivitySnapshot,
+    notifyNewOrders: boolean,
+  ) => {
+    if (notifyNewOrders && previousOrderIdsRef.current !== null) {
+      const newOrderIds = snapshot.orderIds.filter(
+        (orderId) => !previousOrderIdsRef.current!.has(orderId),
+      );
+      if (newOrderIds.length > 0) {
+        playStoreNotificationChime();
+        toast.success(`Có ${newOrderIds.length} đơn hàng mới vừa được đặt!`, {
+          description: `Mã đơn: #${newOrderIds[0].slice(-6).toUpperCase()}`,
+        });
+      }
+    }
+
+    previousOrderIdsRef.current = new Set(snapshot.orderIds);
+  }, []);
+
+  const fetchTabData = useCallback(async (
+    tab: string,
+    showLoading = true,
+    signal?: AbortSignal,
+  ) => {
     if (showLoading) setLoading(true);
     try {
       if (tab === 'products') {
-        const [productsRes, categoriesRes, ordersRes] = await Promise.allSettled([
-          managerApi.getProducts(),
+        const [productsRes, categoriesRes] = await Promise.allSettled([
+          managerApi.getProducts(signal),
           productsApi.getCategories(),
-          managerApi.getOrders(),
         ]);
+        if (signal?.aborted) return;
         if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
         if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
-        if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
         return;
       }
 
       if (tab === 'orders') {
-        const ordersRes = await managerApi.getOrders();
+        const ordersRes = await managerApi.getOrders(signal);
+        if (signal?.aborted) return;
         applyLatestOrders(ordersRes.data);
         return;
       }
 
       if (tab === 'customers') {
-        const [customersRes, ordersRes] = await Promise.allSettled([
-          managerApi.getCustomers(),
-          managerApi.getOrders(),
-        ]);
-        if (customersRes.status === 'fulfilled') setCustomers(customersRes.value.data);
-        if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
+        const customersRes = await managerApi.getCustomers(signal);
+        if (signal?.aborted) return;
+        setCustomers(customersRes.data);
         return;
       }
 
-      const [statsRes, productsRes, ordersRes, categoriesRes] = await Promise.allSettled([
-        managerApi.getDashboardStats(),
-        managerApi.getProducts(),
-        managerApi.getOrders(),
-        productsApi.getCategories(),
-      ]);
-
-      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
-      if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data);
-      if (ordersRes.status === 'fulfilled') applyLatestOrders(ordersRes.value.data);
-      if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data);
+      const statsRes = await managerApi.getDashboardStats(
+        dashboardTimeRange,
+        signal,
+      );
+      if (signal?.aborted) return;
+      setStats(statsRes.data);
+      setCategories(statsRes.data.categories);
     } catch (error) {
+      if (signal?.aborted) return;
       console.error('Failed to fetch manager dashboard data', error);
       toast.error('Lỗi khi tải dữ liệu từ máy chủ.');
     } finally {
-      if (showLoading) setLoading(false);
+      if (showLoading && !signal?.aborted) setLoading(false);
     }
-  }, [applyLatestOrders]);
+  }, [applyLatestOrders, dashboardTimeRange]);
+
+  const refreshDashboard = useCallback(async () => {
+    setRefreshingStats(true);
+    try {
+      await fetchTabData('dashboard', false);
+    } finally {
+      setRefreshingStats(false);
+    }
+  }, [fetchTabData]);
 
   const refreshOrders = async () => {
     const response = await managerApi.getOrders();
@@ -809,8 +791,15 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   };
 
   useEffect(() => {
-    const loadTimer = window.setTimeout(() => void fetchTabData(currentTab), 0);
-    return () => window.clearTimeout(loadTimer);
+    const controller = new AbortController();
+    const loadTimer = window.setTimeout(
+      () => void fetchTabData(currentTab, true, controller.signal),
+      0,
+    );
+    return () => {
+      controller.abort();
+      window.clearTimeout(loadTimer);
+    };
   }, [currentTab, fetchTabData]);
 
   // Chỉ tải danh sách ngân hàng khi Manager mở tab đơn hàng.
@@ -829,43 +818,46 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       });
   }, [currentTab]);
 
-  // Một vòng polling duy nhất cho dữ liệu realtime của Store Manager.
+  // Poll snapshot nhẹ, chỉ tải lại payload đầy đủ khi dữ liệu của tab hiện tại thay đổi.
   useEffect(() => {
-    const pollManagerData = async () => {
-      if (document.visibilityState !== 'visible' || isPollingRef.current) return;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const pollManagerData = async (notify = true) => {
+      if (
+        cancelled ||
+        document.visibilityState !== 'visible' ||
+        isPollingRef.current
+      ) return;
 
       isPollingRef.current = true;
       try {
-        if (currentTab === 'orders') {
+        if (notify && currentTab === 'orders') {
           await shippingApi.syncActiveAhamoveOrders().catch(() => undefined);
         }
 
-        const [ordersRes, productsRes, statsRes] = await Promise.allSettled([
-          managerApi.getOrders(),
-          managerApi.getProducts(),
-          ...(currentTab === 'dashboard' ? [managerApi.getDashboardStats()] : []),
-        ]);
+        const snapshotResponse = await managerApi.getActivitySnapshot(
+          controller.signal,
+        );
+        if (cancelled) return;
 
-        if (ordersRes.status === 'fulfilled') {
-          applyLatestOrders(ordersRes.value.data, true);
-        }
+        const snapshot = snapshotResponse.data;
+        const ordersChanged =
+          ordersVersionRef.current !== null &&
+          ordersVersionRef.current !== snapshot.ordersVersion;
+        const inventoryChanged =
+          inventoryVersionRef.current !== null &&
+          inventoryVersionRef.current !== snapshot.inventoryVersion;
 
-        if (productsRes.status === 'fulfilled') {
-          const latestProducts = productsRes.value.data;
-          setProducts(latestProducts);
+        applyActivitySnapshot(snapshot, notify);
+        ordersVersionRef.current = snapshot.ordersVersion;
+        inventoryVersionRef.current = snapshot.inventoryVersion;
 
-          // Cảnh báo âm thanh nếu có sản phẩm có biến thể sắp hết hoặc hết hàng
-          latestProducts.forEach((p) => {
-            if (hasLowStockWarning(p) && !warnedProductIdsRef.current.has(p.id)) {
-              warnedProductIdsRef.current.add(p.id);
-              playStoreNotificationChime('warning');
-              toast.warning(`Sản phẩm "${p.name}" có phân loại sắp hết hàng (tồn kho < 5)!`);
-            }
-          });
-        }
-
-        if (statsRes?.status === 'fulfilled') {
-          setStats(statsRes.value.data);
+        const shouldRefresh = currentTab === 'orders' || currentTab === 'customers'
+          ? ordersChanged
+          : ordersChanged || inventoryChanged;
+        if (notify && shouldRefresh) {
+          await fetchTabData(currentTab, false, controller.signal);
         }
       } catch {
         // silent polling
@@ -876,11 +868,25 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
     const interval = window.setInterval(
       () => void pollManagerData(),
-      currentTab === 'orders' ? 4000 : 5000,
+      currentTab === 'orders' ? 8000 : 15000,
     );
 
-    return () => window.clearInterval(interval);
-  }, [applyLatestOrders, currentTab]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void pollManagerData();
+      }
+    };
+
+    void pollManagerData(false);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [applyActivitySnapshot, currentTab, fetchTabData]);
 
   // Filtered lists based on search and status filters
   const filteredProducts = useMemo(() => {
@@ -935,13 +941,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
     return result;
   }, [products, searchQuery, filterStatus, filterCategory, filterActiveStatus, sortBy]);
-
-  const topSellingProducts = useMemo(() => {
-    return [...products]
-      .filter((p) => (p.sales ?? 0) > 0)
-      .sort((a, b) => (b.sales ?? 0) - (a.sales ?? 0))
-      .slice(0, 5);
-  }, [products]);
 
   const filteredOrders = useMemo(() => {
     const list = orders.filter((order) => {
@@ -1942,10 +1941,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       toast.error('Vui lòng thêm ít nhất 1 phân loại cho sản phẩm.');
       return;
     }
-
-    const hasVariants = editingProduct
-      ? (variants && variants.length > 0)
-      : (localVariants && localVariants.length > 0);
 
     if (!productForm.name.trim()) {
       errors.name = 'Vui lòng điền vào trường này.';
@@ -3394,7 +3389,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                                 await managerApi.updateCategory(cat.id, { name: editingCategoryName });
                                                 toast.success('Cập nhật danh mục thành công!');
                                                 setEditingCategoryId(null);
-                                                const catRes = await productsApi.getCategories();
+                                                const catRes = await productsApi.getCategories({ force: true });
                                                 setCategories(catRes.data);
                                               } catch (err: any) {
                                                 console.error(err);
@@ -3447,7 +3442,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                               try {
                                                 await managerApi.deleteCategory(cat.id);
                                                 toast.success('Xóa danh mục thành công!');
-                                                const catRes = await productsApi.getCategories();
+                                                const catRes = await productsApi.getCategories({ force: true });
                                                 setCategories(catRes.data);
                                               } catch (err: any) {
                                                 console.error(err);
@@ -3494,7 +3489,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 await managerApi.createCategory({ name: newCategoryName });
                                 toast.success('Thêm danh mục mới thành công!');
                                 setNewCategoryName('');
-                                const catRes = await productsApi.getCategories();
+                                const catRes = await productsApi.getCategories({ force: true });
                                 setCategories(catRes.data);
                               } catch (error: any) {
                                 console.error(error);
@@ -3663,9 +3658,16 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                       <h5 className="text-xs font-black text-[var(--text-main)]">
                                         {item.user?.name || 'Khách hàng PetMatching'}
                                       </h5>
-                                      <div className="flex items-center text-orange-400 text-[10px] mt-0.5">
-                                        {"★".repeat(item.rating)}
-                                        {"☆".repeat(5 - item.rating)}
+                                      <div className="flex items-center gap-2 flex-wrap text-orange-400 text-[10px] mt-0.5">
+                                        <span>
+                                          {"★".repeat(item.rating)}
+                                          {"☆".repeat(5 - item.rating)}
+                                        </span>
+                                        {(item.variantName || item.variant?.name) && (
+                                          <span className="text-gray-700 bg-gray-100 border border-gray-200/80 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                                            Phân loại: {item.variantName || item.variant?.name}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -3680,6 +3682,18 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     <span className="italic text-gray-400">Khách hàng không viết nhận xét bằng văn bản.</span>
                                   )}
                                 </p>
+                                {(item.images?.length ?? 0) > 0 && (
+                                  <div className="flex flex-wrap gap-2 pl-12 pt-1">
+                                    {item.images.map((imgUrl: string, imgIdx: number) => (
+                                      <img
+                                        key={imgIdx}
+                                        src={imgUrl}
+                                        alt={`Review photo ${imgIdx + 1}`}
+                                        className="size-14 rounded-lg object-cover border border-gray-200 shadow-2xs hover:scale-105 transition cursor-pointer"
+                                      />
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -5571,6 +5585,23 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             </div>
           </section>
 
+          <section className="flex flex-col gap-3 rounded-2xl border border-[#EFEAE2] bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase text-[#8A8980]">
+                Khoảng thống kê
+              </p>
+              <p className="mt-1 text-sm font-bold text-gray-900">
+                {stats?.range?.label ?? '30 ngày qua'}
+              </p>
+            </div>
+            <DashboardTimeControls
+              value={dashboardTimeRange}
+              onChange={setDashboardTimeRange}
+              onRefresh={() => void refreshDashboard()}
+              refreshing={refreshingStats}
+            />
+          </section>
+
           {/* Metrics & Biểu đồ phân bổ trạng thái đơn hàng */}
           <section className="grid gap-4 lg:grid-cols-12">
             {/* 3 Thẻ Chỉ số chính */}
@@ -5579,12 +5610,27 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase text-[#8A8980]">Tổng doanh thu</span>
+                    <span className="text-xs font-black uppercase text-[#8A8980]">Doanh thu trong kỳ</span>
                     <span className="p-2 rounded-lg bg-[rgba(228,93,28,0.1)] text-[var(--primary-color)]">
                       <TrendingUp className="size-4" />
                     </span>
                   </div>
                   <p className="mt-3 text-2xl font-black text-gray-900">{currency.format(stats?.totalRevenue ?? 0)}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-[#8A8980]">
+                      Tổng tích lũy {currency.format(stats?.allTimeRevenue ?? 0)}
+                    </span>
+                    <RevenueGrowthBadge
+                      comparison={{
+                        range: stats?.range,
+                        revenue: {
+                          current: stats?.totalRevenue ?? 0,
+                          previous: stats?.previousRevenue ?? 0,
+                          changePercent: stats?.revenueChangePercent ?? 0,
+                        },
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -5607,7 +5653,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 </div>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-xs font-bold text-[#8A8980]">
-                    {orders.filter((o) => o.status === 'PENDING').length} đơn chờ xử lý
+                    {stats?.pendingOrders ?? 0} đơn chờ xử lý
                   </span>
                   <span className="text-xs font-black text-[var(--primary-color)] flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
                     Xem &rarr;
@@ -5625,6 +5671,9 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     </span>
                   </div>
                   <p className="mt-3 text-2xl font-black text-gray-900">{stats?.totalProductsSold ?? 0} món</p>
+                  <p className="mt-2 text-[10px] font-bold text-[#8A8980]">
+                    Tổng tích lũy {stats?.allTimeProductsSold ?? 0} món
+                  </p>
                 </div>
               </div>
             </div>
@@ -5634,7 +5683,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <PieChart className="size-4 text-[var(--primary-color)]" />
-                  <h3 className="text-xs font-black uppercase text-[#8A8980] tracking-wider">Trạng thái đơn hàng</h3>
+                  <h3 className="text-xs font-black uppercase text-[#8A8980] tracking-wider">Trạng thái đơn hàng · toàn thời gian</h3>
                 </div>
               </div>
               <OrderStatusDonutChart
@@ -5654,7 +5703,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
               <div className="mt-4 divide-y divide-[#EFEAE2]">
                 {(() => {
                   // Lọc các sản phẩm có phân loại tồn kho < 5 hoặc cha tồn kho < 5 (đồng bộ hoàn toàn với Quản lý sản phẩm)
-                  const lowStockProducts = products.filter((p) => hasLowStockWarning(p));
+                  const lowStockProducts = stats?.lowStockProducts ?? [];
                   if (lowStockProducts.length === 0) {
                     return <p className="text-xs text-gray-400 py-4">Kho hàng dồi dào, không có sản phẩm nào sắp hết hàng.</p>;
                   }
@@ -5718,10 +5767,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
 
             {/* Best Sellers */}
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
-              <h3 className="text-base font-black">Sản phẩm bán chạy nhất</h3>
+              <h3 className="text-base font-black">Sản phẩm bán chạy · {stats?.range?.label ?? '30 ngày qua'}</h3>
               <div className="mt-4 divide-y divide-[#EFEAE2]">
-                {topSellingProducts.length > 0 ? (
-                  topSellingProducts.map((p) => (
+                {(stats?.topSellingProducts?.length ?? 0) > 0 ? (
+                  stats!.topSellingProducts.map((p) => (
                     <div key={p.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                       <div>
                         <p className="text-sm font-bold text-[var(--text-main)]">{p.name}</p>
@@ -5744,13 +5793,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
             <div className="rounded-2xl border border-[#EFEAE2] bg-white p-5 shadow-sm">
               <h3 className="text-base font-black">Đơn đặt hàng gần đây nhất</h3>
               <div className="mt-4 divide-y divide-[#EFEAE2]">
-                {orders.length > 0 ? (
-                  orders.slice(0, 5).map((o) => {
+                {(stats?.recentOrders?.length ?? 0) > 0 ? (
+                  stats!.recentOrders.map((o) => {
                     const itemsStr = o.items.map((i) => `${i.quantity}x ${i.product.name}`).join(', ');
                     return (
                       <div key={o.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                         <div className="max-w-[70%]">
-                          <p className="text-sm font-bold text-[var(--text-main)]">{o.user?.name || 'Khách vãng lai'}</p>
+                          <p className="text-sm font-bold text-[var(--text-main)]">{o.userName}</p>
                           <p className="text-xs font-semibold text-[#8A8980] truncate" title={itemsStr}>
                             {itemsStr}
                           </p>

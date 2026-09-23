@@ -35,8 +35,17 @@ export class ManagerController {
   constructor(private readonly managerService: ManagerService) {}
 
   @Get('dashboard-stats')
-  getDashboardStats() {
-    return this.managerService.getDashboardStats();
+  getDashboardStats(
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.managerService.getDashboardStats({ range, from, to });
+  }
+
+  @Get('activity-snapshot')
+  getActivitySnapshot() {
+    return this.managerService.getActivitySnapshot();
   }
 
   @Get('products')

@@ -9,7 +9,6 @@ import {
   LogOut,
   Scissors,
   Users,
-  Clock,
   FolderKanban,
   Star,
 } from 'lucide-react';

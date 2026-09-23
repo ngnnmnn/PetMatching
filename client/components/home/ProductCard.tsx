@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { PackageCheck, Star } from 'lucide-react';
 import { Product } from '@/types';
 import { cn } from '@/lib/utils';
@@ -149,11 +150,20 @@ export function computePetMatchScore(product: any, pet: any): number {
 }
 
 /**
- * Kiểm tra xem sản phẩm có phải là sản phẩm chuẩn hợp lệ hay không.
+ * Kiểm tra xem sản phẩm có phải là sản phẩm chuẩn hợp lệ và còn hàng hay không.
+ * Hết hàng (stock <= 0) thì không đề xuất.
  */
 export function isValidProductForRecommendation(product: any, pet?: any): boolean {
   if (!product || !product.name) return false;
   if (product.isActive === false) return false;
+
+  // Kiểm tra tồn kho: Hết hàng thì không đề xuất cho thú cưng
+  if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+    const inStockVariants = product.variants.filter((v: any) => v.isActive !== false && Number(v.stock || 0) > 0);
+    if (inStockVariants.length === 0) return false;
+  } else if (Number(product.stock || 0) <= 0) {
+    return false;
+  }
 
   if (pet) {
     const score = computePetMatchScore(product, pet);
@@ -167,33 +177,35 @@ export function isValidProductForRecommendation(product: any, pet?: any): boolea
 }
 
 /**
- * Lấy danh sách tất cả các phân loại (Variants) phù hợp với thể trạng thú cưng.
+ * Lấy danh sách tất cả các phân loại (Variants) còn hàng phù hợp với thể trạng thú cưng.
+ * - Loại bỏ các phân loại đã hết hàng (stock <= 0).
  * - Nếu sản phẩm chia kích thước/trọng lượng cụ thể (Size S/M/L, kg, gram), lọc các phân loại khớp với thể trạng pet.
- * - Nếu các phân loại chỉ khác nhau về màu sắc/mẫu mã (không ảnh hưởng kích thước), tất cả phân loại đều phù hợp tốt.
+ * - Nếu các phân loại chỉ khác nhau về màu sắc/mẫu mã (không ảnh hưởng kích thước), tất cả phân loại còn hàng đều phù hợp tốt.
  */
 export function getSuitableVariantsForPet(product: any, pet: any): any[] {
   if (!product || !product.variants || !Array.isArray(product.variants) || product.variants.length === 0) {
     return [];
   }
-  const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
-  if (activeVariants.length === 0) return [];
-  if (!pet || pet.weight === undefined || pet.weight === null) return activeVariants;
+  // Chỉ lọc các phân loại đang hoạt động VÀ CÒN HÀNG (stock > 0)
+  const activeInStockVariants = product.variants.filter((v: any) => v.isActive !== false && Number(v.stock || 0) > 0);
+  if (activeInStockVariants.length === 0) return [];
+  if (!pet || pet.weight === undefined || pet.weight === null) return activeInStockVariants;
 
   const w = Number(pet.weight);
 
   // Kiểm tra xem sản phẩm có chứa từ khóa phân chia kích thước cụ thể không
-  const hasSizeKeywords = activeVariants.some((v: any) => {
+  const hasSizeKeywords = activeInStockVariants.some((v: any) => {
     const n = (v.name || '').toLowerCase();
     return /\b(size|s|m|l|xl|xxl|kg|gram|g|nhỏ|vừa|lớn)\b/i.test(n);
   });
 
-  // Nếu sản phẩm không phân chia kích thước (chỉ khác màu sắc, vị...), tất cả variant đều phù hợp
+  // Nếu sản phẩm không phân chia kích thước (chỉ khác màu sắc, vị...), tất cả variant còn hàng đều phù hợp
   if (!hasSizeKeywords) {
-    return activeVariants;
+    return activeInStockVariants;
   }
 
-  // Lọc các variant có thông số kích thước phù hợp với thể trạng pet
-  const matches = activeVariants.filter((v: any) => {
+  // Lọc các variant còn hàng có thông số kích thước phù hợp với thể trạng pet
+  const matches = activeInStockVariants.filter((v: any) => {
     const n = (v.name || '').toLowerCase();
     if (w < 5) {
       return (
@@ -225,7 +237,7 @@ export function getSuitableVariantsForPet(product: any, pet: any): any[] {
     }
   });
 
-  return matches.length > 0 ? matches : activeVariants;
+  return matches.length > 0 ? matches : activeInStockVariants;
 }
 
 /**
@@ -246,11 +258,9 @@ export function findRecommendedVariantForPet(product: any, pet: any): any | null
 export default function ProductCard({
   product,
   selectedPet,
-  selectedPrices,
 }: {
   product: Product;
   selectedPet?: any;
-  selectedPrices?: string[];
 }) {
   const hasVariants = Boolean(product.variants && product.variants.length > 0);
 
@@ -274,7 +284,6 @@ export default function ProductCard({
     ? Math.round(((originalSellingPrice - lowestPrice) / originalSellingPrice) * 100)
     : (getDiscountPercent(product) || 0);
 
-  const discount = discountPercent > 0 ? discountPercent : getDiscountPercent(product);
   const speciesLabel = product.targetSpecies === 'DOG' ? 'Cho chó' : product.targetSpecies === 'CAT' ? 'Cho mèo' : 'Mọi thú cưng';
 
   const activeVariants = hasVariants ? product.variants!.filter((v: any) => v.isActive !== false) : [];
@@ -298,12 +307,14 @@ export default function ProductCard({
       <Link href={productDetailUrl} className="flex flex-col h-full justify-between">
         <div>
           <div className="relative aspect-square overflow-hidden bg-[#F3F0EA]">
-            <img
+            <Image
               src={productImage}
               alt={product.name}
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
               loading="lazy"
               className={cn(
-                "h-full w-full object-cover transition duration-300 group-hover:scale-105",
+                "object-cover transition duration-300 group-hover:scale-105",
                 (isOutOfStock || isProductInactive) && "grayscale opacity-60"
               )}
             />

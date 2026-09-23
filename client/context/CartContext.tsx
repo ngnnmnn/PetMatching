@@ -21,14 +21,13 @@ export interface CartItem {
 
 interface CartContextType {
   cartItems: CartItem[];
-  addToCart: (product: Product, quantity?: number, showToast?: boolean, variantId?: string | null) => Promise<void>;
+  addToCart: (product: Product, quantity?: number, showToast?: boolean, variantId?: string | null) => Promise<boolean>;
   removeFromCart: (cartItemId: string) => Promise<void>;
   removeMultipleFromCart: (cartItemIds: string[]) => Promise<void>;
   updateQuantity: (cartItemId: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
   refreshCart: () => Promise<void>;
   cartCount: number;
-  cartTotal: number;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -85,6 +84,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [isCartEnabled, setIsCartEnabled] = useState(false);
   const [isAuthenticatedCart, setIsAuthenticatedCart] = useState(false);
   const isCartPollingRef = useRef(false);
+  const previousCartPageRef = useRef(isCartPage);
 
   /**
    * Tải lại giỏ hàng từ server hoặc cập nhật trạng thái tồn kho / mở bán mới nhất của sản phẩm
@@ -231,12 +231,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Khi người dùng chuyển vào trang /cart, tải dữ liệu giỏ hàng mới nhất ngay lập tức
   useEffect(() => {
-    if (isCartEnabled && isCartPage) {
+    const enteredCart = isCartPage && !previousCartPageRef.current;
+    previousCartPageRef.current = isCartPage;
+    if (isCartEnabled && enteredCart) {
       void loadCart();
     }
   }, [isCartEnabled, isCartPage, loadCart]);
 
-  // Poll giỏ hàng realtime liên tục (4 giây/lần) CHỈ KHI người dùng đang ở màn hình giỏ hàng (/cart).
+  // Poll giỏ hàng mỗi 10 giây CHỈ KHI người dùng đang ở màn hình giỏ hàng (/cart).
   // Khi người dùng chuyển sang các màn hình khác, lập tức dừng polling để tránh lãng phí request mạng và CPU server.
   useEffect(() => {
     if (!isCartEnabled) return;
@@ -252,7 +254,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           void loadCart().finally(() => {
             isCartPollingRef.current = false;
           });
-        }, 4000)
+        }, 10000)
       : null;
 
     const handleFocus = () => {
@@ -290,7 +292,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [cartItems, isCartEnabled]);
 
   const addToCart = async (product: Product, quantity = 1, showToast = true, variantId?: string | null) => {
-    if (!canCurrentUserUseCart()) return;
+    if (!canCurrentUserUseCart()) return false;
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     
@@ -313,7 +315,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     if (stock !== undefined && stock !== null && targetQty > stock) {
       toast.warning(`Chỉ có thể thêm tối đa ${stock} sản phẩm này vào giỏ hàng (Hiện tại trong giỏ: ${currentQtyInCart})`);
-      return;
+      return false;
     }
 
     if (token) {
@@ -323,8 +325,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           toast.success(`Đã thêm ${quantity} sản phẩm "${product.name}${variant ? ` (${variant.name})` : ''}" vào giỏ hàng!`);
         }
         await loadCart();
+        return true;
       } catch (e: unknown) {
         toast.error(getApiErrorMessage(e, 'Không thể thêm sản phẩm vào giỏ hàng'));
+        return false;
       }
     } else {
       if (showToast) {
@@ -349,6 +353,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           updatedAt: now,
         }, ...prev];
       });
+      return true;
     }
   };
 
@@ -456,13 +461,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
-  const cartTotal = cartItems.reduce((acc, item) => {
-    const price = item.variant
-      ? (item.variant.salePrice ?? item.variant.sellingPrice)
-      : (item.product.salePrice ?? item.product.sellingPrice);
-    return acc + price * item.quantity;
-  }, 0);
-
   return (
     <CartContext.Provider
       value={{
@@ -474,7 +472,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         clearCart,
         refreshCart: loadCart,
         cartCount,
-        cartTotal,
       }}
     >
       {children}

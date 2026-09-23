@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Patch, Param, Query, Delete } from '@nestjs/common';
 import { SpaService } from './spa.service';
-import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerCancelBookingDto, RescheduleBookingDto, ManagerUpdateServicesDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto, ManagerConfirmBookingDto } from './dto/create-booking.dto';
+import { CreateBookingDto, AddSubServicesDto, ManagerReassignDto, ManagerRescheduleDto, ManagerCancelBookingDto, RescheduleBookingDto, CreateStaffDto, CreateSpaFeedbackDto, CompleteSpaPaymentDto, ManagerConfirmBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { SpaManagerGuard } from '../../common/auth/spa-manager.guard';
 import type { AuthenticatedRequest } from '../../common/auth/authenticated-request';
@@ -209,8 +209,8 @@ export class SpaController {
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)
   @Get('manager/services')
-  getManagerServices(@Req() req: AuthenticatedRequest) {
-    return this.spaService.getManagerServices(req.user.id);
+  getManagerServices() {
+    return this.spaService.getManagerServices();
   }
 
   @UseGuards(JwtAuthGuard, SpaManagerGuard)

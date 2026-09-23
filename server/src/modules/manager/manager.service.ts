@@ -10,9 +10,21 @@ import {
   writeWorkbook,
 } from '../../common/excel.utils';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MemoryCacheService } from '../../common/cache/memory-cache.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
-import { recognizedStoreRevenueWhere } from '../../common/revenue.utils';
-import { findConfiguredStoreId } from '../../common/store.utils';
+import {
+  fulfilledStoreOrderWhere,
+  recognizedStoreRevenueWhere,
+} from '../../common/revenue.utils';
+import {
+  findConfiguredStoreId,
+  lowStockProductWhere,
+} from '../../common/store.utils';
+import {
+  calculateRevenueGrowth,
+  resolveDashboardRange,
+  serializeDashboardRange,
+} from '../admin/shared/dashboard-range.utils';
 import {
   NotificationCategory,
   NotificationEventType,
@@ -33,7 +45,13 @@ export class ManagerService {
     private prisma: PrismaService,
     private cloudinaryService: CloudinaryService,
     private readonly notifications: NotificationsService,
+    private readonly cache: MemoryCacheService = new MemoryCacheService(),
   ) {}
+
+  /** Xóa cache sản phẩm công khai sau mọi thao tác quản lý làm đổi dữ liệu nguồn. */
+  private invalidatePublicProductCache(): void {
+    this.cache.deleteByPrefix('products:');
+  }
 
   private async getConfiguredStoreId() {
     const storeId = await findConfiguredStoreId(this.prisma);
@@ -41,6 +59,55 @@ export class ManagerService {
       throw new BadRequestException('Cửa hàng chưa được cấu hình.');
     }
     return storeId;
+  }
+
+  async getActivitySnapshot() {
+    const storeId = await this.getConfiguredStoreId();
+    const [
+      recentOrders,
+      orderState,
+      paymentState,
+      productState,
+      variantState,
+    ] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          storeId,
+          NOT: {
+            payment: { is: { method: 'QR', status: 'PENDING' } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: { id: true },
+      }),
+      this.prisma.order.aggregate({
+        where: { storeId },
+        _count: { _all: true },
+        _max: { updatedAt: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { order: { storeId } },
+        _count: { _all: true },
+        _max: { updatedAt: true },
+      }),
+      this.prisma.product.aggregate({
+        where: { storeId },
+        _count: { _all: true },
+        _max: { updatedAt: true },
+      }),
+      this.prisma.productVariant.aggregate({
+        where: { product: { storeId } },
+        _count: { _all: true },
+        _max: { updatedAt: true },
+      }),
+    ]);
+
+    return {
+      orderIds: recentOrders.map(({ id }) => id),
+      ordersVersion: `${orderState._count._all}:${orderState._max.updatedAt?.getTime() ?? 0}:${paymentState._count._all}:${paymentState._max.updatedAt?.getTime() ?? 0}`,
+      inventoryVersion: `${productState._count._all}:${productState._max.updatedAt?.getTime() ?? 0}:${variantState._count._all}:${variantState._max.updatedAt?.getTime() ?? 0}`,
+    };
   }
 
   /**
@@ -58,20 +125,22 @@ export class ManagerService {
 
     if (variants.length === 0) return;
 
-    const totalStock = variants.reduce((sum, variant) => sum + variant.stock, 0);
+    const totalStock = variants.reduce(
+      (sum, variant) => sum + variant.stock,
+      0,
+    );
 
     let minVariant = variants[0];
     let minEffectivePrice =
       minVariant.salePrice !== null &&
       minVariant.salePrice < minVariant.sellingPrice
-      ? minVariant.salePrice
-      : minVariant.sellingPrice;
+        ? minVariant.salePrice
+        : minVariant.sellingPrice;
 
     for (let i = 1; i < variants.length; i++) {
       const variant = variants[i];
       const effectivePrice =
-        variant.salePrice !== null &&
-        variant.salePrice < variant.sellingPrice
+        variant.salePrice !== null && variant.salePrice < variant.sellingPrice
           ? variant.salePrice
           : variant.sellingPrice;
       if (effectivePrice < minEffectivePrice) {
@@ -128,85 +197,178 @@ export class ManagerService {
     );
   }
 
-  async getDashboardStats() {
+  async getDashboardStats(
+    query: { range?: string; from?: string; to?: string } = {},
+  ) {
     const storeId = await this.getConfiguredStoreId();
-    const revenueOrderWhere = recognizedStoreRevenueWhere(storeId);
+    const period = resolveDashboardRange(query);
     const storeOrderWhere: Prisma.OrderWhereInput = { storeId };
+    const fulfilledOrderWhere = fulfilledStoreOrderWhere(storeId);
 
     const [
-      revenueSum,
-      totalOrders,
-      cancelledOrders,
+      periodRevenueOrders,
+      allTimeRevenueSum,
+      ordersByStatus,
       itemsSold,
-      totalCustomers,
-      orderItems,
+      allTimeItemsSold,
+      lowStockProducts,
+      topProductSales,
+      recentOrders,
+      categories,
     ] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          ...recognizedStoreRevenueWhere(storeId),
+          createdAt: { gte: period.previousFrom, lt: period.toExclusive },
+        },
+        select: { createdAt: true, totalAmount: true },
+      }),
       this.prisma.order.aggregate({
-        where: revenueOrderWhere,
+        where: recognizedStoreRevenueWhere(storeId),
         _sum: { totalAmount: true },
       }),
-      this.prisma.order.count({ where: storeOrderWhere }),
-      this.prisma.order.count({
-        where: { ...storeOrderWhere, status: 'CANCELLED' },
+      this.prisma.order.groupBy({
+        by: ['status'],
+        where: storeOrderWhere,
+        _count: { _all: true },
       }),
       this.prisma.orderItem.aggregate({
-        where: { order: { storeId, payment: { status: 'PAID' } } },
+        where: {
+          order: {
+            ...fulfilledOrderWhere,
+            createdAt: { gte: period.from, lt: period.toExclusive },
+          },
+        },
         _sum: { quantity: true },
       }),
-      this.prisma.user.count({
-        where: { role: 'USER' },
+      this.prisma.orderItem.aggregate({
+        where: { order: fulfilledOrderWhere },
+        _sum: { quantity: true },
       }),
-      this.prisma.orderItem.findMany({
-        where: { order: revenueOrderWhere },
+      this.prisma.product.findMany({
+        where: lowStockProductWhere(storeId),
+        orderBy: { createdAt: 'desc' },
+        take: 6,
         select: {
-          quantity: true,
-          price: true,
-          product: { select: { importPrice: true } },
+          id: true,
+          name: true,
+          category: true,
+          imageUrl: true,
+          stock: true,
+          variants: {
+            select: { id: true, name: true, stock: true },
+          },
         },
       }),
+      this.prisma.orderItem.groupBy({
+        by: ['productId'],
+        where: {
+          order: {
+            ...fulfilledOrderWhere,
+            createdAt: { gte: period.from, lt: period.toExclusive },
+          },
+        },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take: 5,
+      }),
+      this.prisma.order.findMany({
+        where: {
+          storeId,
+          NOT: {
+            payment: { is: { method: 'QR', status: 'PENDING' } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          totalAmount: true,
+          createdAt: true,
+          customerNameSnapshot: true,
+          user: { select: { name: true } },
+          items: {
+            select: {
+              quantity: true,
+              product: { select: { name: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.category.findMany({ orderBy: { name: 'asc' } }),
     ]);
 
-    const totalRevenue = revenueSum._sum.totalAmount ?? 0;
-    const cancellationRate =
-      totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
+    const orderCounts = Object.fromEntries(
+      ordersByStatus.map(({ status, _count }) => [status, _count._all]),
+    );
+    const countOrders = (...statuses: string[]) =>
+      statuses.reduce((total, status) => total + (orderCounts[status] ?? 0), 0);
+    const totalOrders = Object.values(orderCounts).reduce(
+      (total, count) => total + count,
+      0,
+    );
+    const currentRevenueOrders = periodRevenueOrders.filter(
+      (order) => order.createdAt >= period.from,
+    );
+    const previousRevenueOrders = periodRevenueOrders.filter(
+      (order) => order.createdAt < period.from,
+    );
+    const sumRevenue = (orders: typeof periodRevenueOrders) =>
+      orders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const totalRevenue = sumRevenue(currentRevenueOrders);
+    const previousRevenue = sumRevenue(previousRevenueOrders);
+    const revenueChangePercent = calculateRevenueGrowth(
+      totalRevenue,
+      previousRevenue,
+    );
     const totalProductsSold = itemsSold._sum.quantity ?? 0;
-
-    let totalProfit = 0;
-    for (const item of orderItems) {
-      const soldPrice = item.price;
-      const importPrice = item.product?.importPrice ?? soldPrice * 0.5;
-      totalProfit += (soldPrice - importPrice) * item.quantity;
-    }
-
-    const profitMargin =
-      totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-
-    // Thống kê phân bổ đơn hàng của cửa hàng theo 5 trạng thái chuẩn.
-    const [pendingCount, confirmedCount, shippedCount, deliveredCount, cancelledCount] = await Promise.all([
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'PENDING' } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CONFIRMED', 'PROCESSING', 'PACKED'] } } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'SHIPPED' } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: 'DELIVERED' } }),
-      this.prisma.order.count({ where: { ...storeOrderWhere, status: { in: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] } } }),
-    ]);
+    const allTimeProductsSold = allTimeItemsSold._sum.quantity ?? 0;
 
     const statusDistribution = {
-      PENDING: pendingCount,
-      CONFIRMED: confirmedCount,
-      SHIPPED: shippedCount,
-      DELIVERED: deliveredCount,
-      CANCELLED: cancelledCount,
+      PENDING: countOrders('PENDING'),
+      CONFIRMED: countOrders('CONFIRMED', 'PROCESSING', 'PACKED'),
+      SHIPPED: countOrders('SHIPPED'),
+      DELIVERED: countOrders('DELIVERED'),
+      CANCELLED: countOrders('CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'),
     };
+
+    const topProductIds = topProductSales.map(({ productId }) => productId);
+    const topProducts = topProductIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: topProductIds }, storeId },
+          select: { id: true, name: true, category: true },
+        })
+      : [];
+    const topProductMap = new Map(
+      topProducts.map((product) => [product.id, product]),
+    );
+    const topSellingProducts = topProductSales.flatMap((sale) => {
+      const product = topProductMap.get(sale.productId);
+      return product ? [{ ...product, sales: sale._sum.quantity ?? 0 }] : [];
+    });
 
     return {
       totalRevenue,
+      allTimeRevenue: allTimeRevenueSum._sum.totalAmount ?? 0,
+      previousRevenue,
+      revenueChangePercent,
+      range: serializeDashboardRange(period),
       totalOrders,
       totalProductsSold,
-      totalCustomers,
-      cancellationRate,
-      totalProfit,
-      profitMargin,
+      allTimeProductsSold,
       statusDistribution,
+      pendingOrders: countOrders('PENDING'),
+      lowStockProducts,
+      topSellingProducts,
+      recentOrders: recentOrders.map((order) => ({
+        id: order.id,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        userName:
+          order.user?.name || order.customerNameSnapshot || 'Khách vãng lai',
+        items: order.items,
+      })),
+      categories,
     };
   }
 
@@ -219,109 +381,46 @@ export class ManagerService {
       where: { storeId },
       orderBy: { createdAt: 'desc' },
       include: {
-        orderItems: {
-          where: { order: { status: { not: 'CANCELLED' } } },
-          select: { quantity: true, variantId: true },
-        },
-        variants: {
-          include: {
-            orderItems: {
-              where: { order: { status: { not: 'CANCELLED' } } },
-              select: { quantity: true },
-            },
-          },
-        },
-        reviews: {
-          select: { id: true },
-        },
+        variants: true,
+        _count: { select: { reviews: true } },
       },
     });
 
-    return Promise.all(
-      products.map(async (p) => {
-        const sales = p.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-        const mappedVariants = p.variants.map((v) => {
-          const vSales = v.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-          const { orderItems, ...vRest } = v;
-          return {
-            ...vRest,
-            sales: vSales,
-          };
-        });
-        const { orderItems, ...rest } = p;
-
-        // Nếu sản phẩm có phân loại và TOÀN BỘ phân loại đều bị tắt (v.isActive === false), 
-        // thì sản phẩm cha bắt buộc phải ở trạng thái ngưng bán (isActive = false).
-        const hasVariants = mappedVariants.length > 0;
-        const hasActiveVariant = hasVariants
-          ? mappedVariants.some((v) => v.isActive !== false)
-          : true;
-        
-        let effectiveIsActive = rest.isActive !== false;
-        if (hasVariants && !hasActiveVariant) {
-          effectiveIsActive = false;
-          // Đồng bộ lại DB nếu DB vẫn đang ghi nhận isActive = true
-          if (rest.isActive !== false) {
-            await this.prisma.product.update({
-              where: { id: p.id },
-              data: { isActive: false },
-            }).catch(() => {});
-          }
-        }
-
-        return {
-          ...rest,
-          isActive: effectiveIsActive,
-          variants: mappedVariants,
-          sales,
-          reviewCount: p.reviews?.length || 0,
-        };
-      }),
-    );
-  }
-
-  private validateProductPrices(
-    sellingPrice: number,
-    importPrice?: number | null,
-    salePrice?: number | null,
-    stock?: number,
-  ) {
-    if (isNaN(sellingPrice) || sellingPrice <= 0) {
-      throw new BadRequestException('Giá bán phải là số lớn hơn 0.');
-    }
-    if (
-      importPrice !== undefined &&
-      importPrice !== null &&
-      (isNaN(importPrice) || importPrice <= 0)
-    ) {
-      throw new BadRequestException('Giá nhập phải là số lớn hơn 0.');
-    }
-    if (
-      salePrice !== undefined &&
-      salePrice !== null &&
-      (isNaN(salePrice) || salePrice <= 0)
-    ) {
-      throw new BadRequestException('Giá khuyến mãi phải là số lớn hơn 0.');
-    }
-    if (
-      importPrice !== undefined &&
-      importPrice !== null &&
-      importPrice > sellingPrice
-    ) {
-      throw new BadRequestException('Giá nhập không được lớn hơn giá bán.');
-    }
-    if (
-      salePrice !== undefined &&
-      salePrice !== null &&
-      salePrice > sellingPrice
-    ) {
-      throw new BadRequestException(
-        'Giá khuyến mãi không được lớn hơn giá bán.',
+    const salesRows = products.length
+      ? await this.prisma.orderItem.groupBy({
+          by: ['productId', 'variantId'],
+          where: {
+            productId: { in: products.map(({ id }) => id) },
+            order: fulfilledStoreOrderWhere(storeId),
+          },
+          _sum: { quantity: true },
+        })
+      : [];
+    const productSales = new Map<string, number>();
+    const variantSales = new Map<string, number>();
+    for (const { productId, variantId, _sum } of salesRows) {
+      const quantity = _sum.quantity ?? 0;
+      productSales.set(
+        productId,
+        (productSales.get(productId) ?? 0) + quantity,
       );
+      if (variantId) variantSales.set(variantId, quantity);
     }
-    if (stock !== undefined && stock !== null && (isNaN(stock) || stock < 0)) {
-      throw new BadRequestException('Số lượng tồn kho phải là số không âm.');
-    }
+
+    return products.map(({ _count, ...product }) => ({
+      ...product,
+      isActive:
+        product.variants.length > 0 &&
+        product.variants.every(({ isActive }) => isActive === false)
+          ? false
+          : product.isActive,
+      variants: product.variants.map((variant) => ({
+        ...variant,
+        sales: variantSales.get(variant.id) ?? 0,
+      })),
+      sales: productSales.get(product.id) ?? 0,
+      reviewCount: _count.reviews,
+    }));
   }
 
   /**
@@ -373,9 +472,7 @@ export class ManagerService {
         vSellingPrice = vImportPrice;
       }
       const vSalePrice =
-        v.salePrice !== undefined &&
-        v.salePrice !== null &&
-        v.salePrice !== ''
+        v.salePrice !== undefined && v.salePrice !== null && v.salePrice !== ''
           ? Number(v.salePrice)
           : null;
       const vStock =
@@ -400,12 +497,18 @@ export class ManagerService {
     });
 
     // Tổng hợp tồn kho và khoảng giá từ các phân loại con
-    const finalStock = processedVariants.reduce((sum: number, v: any) => sum + v.stock, 0);
-    const sellingPrice = Math.min(...processedVariants.map((v: any) => v.sellingPrice));
+    const finalStock = processedVariants.reduce(
+      (sum: number, v: any) => sum + v.stock,
+      0,
+    );
+    const sellingPrice = Math.min(
+      ...processedVariants.map((v: any) => v.sellingPrice),
+    );
     const importPrices = processedVariants
       .map((v: any) => v.importPrice)
       .filter((ip: any): ip is number => ip !== null);
-    const importPrice = importPrices.length > 0 ? Math.min(...importPrices) : null;
+    const importPrice =
+      importPrices.length > 0 ? Math.min(...importPrices) : null;
     const salePrices = processedVariants
       .map((v: any) => v.salePrice)
       .filter((sp: any): sp is number => sp !== null);
@@ -438,6 +541,7 @@ export class ManagerService {
     });
 
     await this.syncProductWithVariants(created.id);
+    this.invalidatePublicProductCache();
     return created;
   }
 
@@ -509,7 +613,10 @@ export class ManagerService {
       } else if (dto.discountType === 'PERCENT' && dto.discountValue) {
         const pct = Math.min(100, Math.max(0, Number(dto.discountValue)));
         for (const v of variants) {
-          const discounted = Math.max(1, Math.round((v.sellingPrice * (100 - pct)) / 100));
+          const discounted = Math.max(
+            1,
+            Math.round((v.sellingPrice * (100 - pct)) / 100),
+          );
           await this.prisma.productVariant.update({
             where: { id: v.id },
             data: { salePrice: discounted },
@@ -544,7 +651,9 @@ export class ManagerService {
         brand: dto.brand,
         stock: finalStock,
         weightKg:
-          dto.weightKg !== undefined && dto.weightKg !== null && dto.weightKg !== ''
+          dto.weightKg !== undefined &&
+          dto.weightKg !== null &&
+          dto.weightKg !== ''
             ? Number(dto.weightKg)
             : undefined,
         isActive: dto.isActive,
@@ -553,6 +662,7 @@ export class ManagerService {
     });
 
     await this.syncProductWithVariants(id);
+    this.invalidatePublicProductCache();
     return updated;
   }
 
@@ -573,9 +683,11 @@ export class ManagerService {
         where: { productId: id },
       });
 
-      return await this.prisma.product.delete({
+      const deleted = await this.prisma.product.delete({
         where: { id },
       });
+      this.invalidatePublicProductCache();
+      return deleted;
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -672,7 +784,7 @@ export class ManagerService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id },
         include: { items: true, payment: true },
@@ -772,7 +884,11 @@ export class ManagerService {
               );
             }
 
-            if (product && product.stock !== null && product.stock !== undefined) {
+            if (
+              product &&
+              product.stock !== null &&
+              product.stock !== undefined
+            ) {
               await tx.product.update({
                 where: { id: item.productId },
                 data: {
@@ -806,10 +922,7 @@ export class ManagerService {
             where: { id: order.payment.id },
             data: { status: 'PAID', paidAt: new Date() },
           });
-        } else if (
-          status === 'CANCELLED' &&
-          order.payment.status !== 'PAID'
-        ) {
+        } else if (status === 'CANCELLED' && order.payment.status !== 'PAID') {
           await tx.payment.update({
             where: { id: order.payment.id },
             data: { status: 'CANCELLED' },
@@ -841,6 +954,8 @@ export class ManagerService {
 
       return updatedOrder;
     });
+    this.invalidatePublicProductCache();
+    return updatedOrder;
   }
 
   /**
@@ -854,13 +969,27 @@ export class ManagerService {
           some: {},
         },
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        phone: true,
         orders: {
-          include: {
-            payment: true,
+          select: {
+            id: true,
+            status: true,
+            totalAmount: true,
+            createdAt: true,
+            payment: {
+              select: { status: true },
+            },
             items: {
-              include: {
-                product: true,
+              select: {
+                id: true,
+                quantity: true,
+                price: true,
+                product: {
+                  select: { name: true },
+                },
               },
             },
           },
@@ -938,12 +1067,14 @@ export class ManagerService {
       throw new BadRequestException('Danh mục này đã tồn tại.');
     }
 
-    return this.prisma.category.create({
+    const createdCategory = await this.prisma.category.create({
       data: {
         name,
         slug,
       },
     });
+    this.invalidatePublicProductCache();
+    return createdCategory;
   }
 
   async updateCategory(id: string, dto: { name: string }) {
@@ -984,7 +1115,7 @@ export class ManagerService {
 
     const oldSlug = category.slug;
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedCategory = await this.prisma.$transaction(async (tx) => {
       // 1. Update the category itself
       const updatedCategory = await tx.category.update({
         where: { id },
@@ -1001,6 +1132,8 @@ export class ManagerService {
 
       return updatedCategory;
     });
+    this.invalidatePublicProductCache();
+    return updatedCategory;
   }
 
   async deleteCategory(id: string) {
@@ -1021,9 +1154,11 @@ export class ManagerService {
       );
     }
 
-    return this.prisma.category.delete({
+    const deletedCategory = await this.prisma.category.delete({
       where: { id },
     });
+    this.invalidatePublicProductCache();
+    return deletedCategory;
   }
 
   async approveRefund(orderId: string, refundProofUrl?: string) {
@@ -1184,7 +1319,9 @@ export class ManagerService {
       const row = rawRows[i] as any;
       const rowNum = i + 2; // Dòng thứ i+2 trong Excel do có dòng tiêu đề
 
-      const name = (row['Tên sản phẩm'] ?? row['Tên SP'] ?? row['name'] ?? '').toString().trim();
+      const name = (row['Tên sản phẩm'] ?? row['Tên SP'] ?? row['name'] ?? '')
+        .toString()
+        .trim();
       const variantNameExplicit = (
         row['Phân loại'] ??
         row['Tên phân loại'] ??
@@ -1195,7 +1332,9 @@ export class ManagerService {
         row['variant'] ??
         row['variantName'] ??
         ''
-      ).toString().trim();
+      )
+        .toString()
+        .trim();
       const categoryStr = (row['Danh mục'] ?? row['category'] ?? '')
         .toString()
         .trim();
@@ -1335,7 +1474,9 @@ export class ManagerService {
 
       const cleanIdForImage = id ? id.toString().trim() : '';
       const cleanSlugForImage = generatedSlug.toLowerCase();
-      const cleanVariantName = variantName ? variantName.trim().toLowerCase() : '';
+      const cleanVariantName = variantName
+        ? variantName.trim().toLowerCase()
+        : '';
       const cleanVariantSlug = variantName
         ? variantName
             .toLowerCase()
@@ -1352,7 +1493,8 @@ export class ManagerService {
           const pathLower = img.originalname.toLowerCase().replace(/\\/g, '/');
           const fileNameNoExt = pathLower.split('/').pop()?.split('.')[0] || '';
           const folderParts = pathLower.split('/');
-          const folderName = folderParts.length > 1 ? folderParts[folderParts.length - 2] : '';
+          const folderName =
+            folderParts.length > 1 ? folderParts[folderParts.length - 2] : '';
 
           const cleanFolder = folderName.trim().toLowerCase();
           const cleanId = cleanIdForImage.toLowerCase();
@@ -1404,21 +1546,29 @@ export class ManagerService {
       const matchedImages = imageFiles.filter((img) => {
         const pathLower = img.originalname.toLowerCase().replace(/\\/g, '/');
         const folderParts = pathLower.split('/');
-        const folderName = folderParts.length > 1 ? folderParts[folderParts.length - 2] : '';
+        const folderName =
+          folderParts.length > 1 ? folderParts[folderParts.length - 2] : '';
 
         const cleanId = cleanIdForImage.toLowerCase();
         const cleanFolder = folderName.trim().toLowerCase();
 
         // Exclude variant folder files
         if (cleanFolder.includes('-') || cleanFolder.includes('_')) {
-          if (cleanId && (cleanFolder.startsWith(`${cleanId}-`) || cleanFolder.startsWith(`${cleanId}_`))) {
+          if (
+            cleanId &&
+            (cleanFolder.startsWith(`${cleanId}-`) ||
+              cleanFolder.startsWith(`${cleanId}_`))
+          ) {
             return false;
           }
         }
 
         const isProductFolder = cleanId && cleanFolder === cleanId;
         const isProductFile =
-          (cleanId && (pathLower.includes(`/${cleanId}_`) || pathLower.includes(`/${cleanId}-`) || pathLower.includes(`/${cleanId}.`))) ||
+          (cleanId &&
+            (pathLower.includes(`/${cleanId}_`) ||
+              pathLower.includes(`/${cleanId}-`) ||
+              pathLower.includes(`/${cleanId}.`))) ||
           pathLower.includes(cleanSlugForImage);
 
         return isProductFolder || isProductFile;
@@ -1463,7 +1613,8 @@ export class ManagerService {
               sellingPrice,
               salePrice: salePrice || null,
               stock: quantity,
-              imageUrl: variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : null),
+              imageUrl:
+                variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : null),
               isActive: true,
             },
           });
@@ -1478,7 +1629,8 @@ export class ManagerService {
               salePrice: salePrice || null,
               stock: currentVariantStock + quantity,
               imageUrl:
-                variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : matchedVariant.imageUrl),
+                variantImageUrl ||
+                (imageUrls.length > 0 ? imageUrls[0] : matchedVariant.imageUrl),
             },
           });
         } else if (product.variants.length > 0) {
@@ -1576,7 +1728,9 @@ export class ManagerService {
                 sellingPrice,
                 salePrice: salePrice || null,
                 stock: quantity,
-                imageUrl: variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : null),
+                imageUrl:
+                  variantImageUrl ||
+                  (imageUrls.length > 0 ? imageUrls[0] : null),
                 isActive: true,
               },
             });
@@ -1586,6 +1740,7 @@ export class ManagerService {
       }
     }
 
+    this.invalidatePublicProductCache();
     return {
       success: true,
       updatedCount,
@@ -1684,7 +1839,11 @@ export class ManagerService {
         'Khách hàng': name,
         SĐT: phone,
         'Địa chỉ giao hàng': address,
-        'Ngày đặt': new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        'Ngày đặt': new Date(o.createdAt).toLocaleDateString('vi-VN', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        }),
         'Sản phẩm': itemsList,
         'Tổng thanh toán': o.totalAmount,
         'Trạng thái': statusLabels[o.status] || o.status,
@@ -1695,7 +1854,11 @@ export class ManagerService {
           : '',
         'Chủ tài khoản Nhận hoàn tiền': o.refundAccountName || '',
         'Ngày hoàn tiền': o.refundedAt
-          ? new Date(o.refundedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          ? new Date(o.refundedAt).toLocaleDateString('vi-VN', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
           : '',
       };
     });
@@ -1711,8 +1874,6 @@ export class ManagerService {
       orderBy: { createdAt: 'asc' },
     });
   }
-
-
 
   async createProductVariant(
     productId: string,
@@ -1771,6 +1932,7 @@ export class ManagerService {
     });
 
     await this.syncProductWithVariants(productId);
+    this.invalidatePublicProductCache();
     return variant;
   }
 
@@ -1852,6 +2014,7 @@ export class ManagerService {
     });
 
     await this.syncProductWithVariants(existing.productId);
+    this.invalidatePublicProductCache();
     return variant;
   }
 
@@ -1869,6 +2032,7 @@ export class ManagerService {
       });
 
       await this.syncProductWithVariants(existing.productId);
+      this.invalidatePublicProductCache();
       return deleted;
     } catch (error) {
       console.error(`Lỗi khi xóa biến thể ${variantId}:`, error);

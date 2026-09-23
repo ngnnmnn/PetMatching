@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -71,8 +70,6 @@ function cleanItemNameForPayOS(name?: string | null): string {
 
 @Injectable()
 export class UsersService {
-  private readonly logger = new Logger(UsersService.name);
-
   constructor(
     private prisma: PrismaService,
     private paymentService: PaymentService,
@@ -661,37 +658,30 @@ export class UsersService {
    * @param userId ID người dùng
    */
   async getOrders(userId: string) {
-    try {
-      const orders = await this.prisma.order.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          payment: true,
-          items: {
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  imageUrl: true,
-                },
+    return this.prisma.order.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        payment: true,
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
               },
-              variant: {
-                select: {
-                  id: true,
-                  name: true,
-                },
+            },
+            variant: {
+              select: {
+                id: true,
+                name: true,
               },
             },
           },
         },
-      });
-
-      return orders || [];
-    } catch (error: any) {
-      this.logger.error(`[getOrders Error] Lỗi khi lấy danh sách đơn hàng của user ${userId}: ${error.message}`, error.stack);
-      return [];
-    }
+      },
+    });
   }
 
   /**
@@ -1128,6 +1118,11 @@ export class UsersService {
           'Chỉ có thể hủy đơn hàng ở trạng thái chờ xác nhận.',
         );
       }
+      if (order.payment?.status === 'PAID') {
+        throw new BadRequestException(
+          'Đơn hàng đã thanh toán không thể hủy trực tiếp. Vui lòng liên hệ cửa hàng để được hoàn tiền.',
+        );
+      }
 
       // Restore stock
       for (const item of order.items) {
@@ -1259,13 +1254,23 @@ export class UsersService {
     });
   }
 
+  /**
+   * Cập nhật địa chỉ giao hàng và tính lại phí vận chuyển của đơn hàng (chỉ dành cho đơn PENDING chưa thanh toán QR)
+   */
   async updateOrderShipping(
     userId: string,
     orderId: string,
-    data: { shippingAddress: string; districtId?: number; wardCode?: string },
+    data: {
+      shippingAddress: string;
+      districtId?: number;
+      wardCode?: string;
+      shippingLatitude: number;
+      shippingLongitude: number;
+    },
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
+      include: { items: true, payment: true },
     });
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
@@ -1275,27 +1280,67 @@ export class UsersService {
         'Chỉ có thể thay đổi thông tin đơn hàng ở trạng thái chờ xác nhận.',
       );
     }
+    if (order.payment?.status === 'PAID') {
+      throw new BadRequestException(
+        'Không thể đổi địa chỉ sau khi đơn hàng đã thanh toán.',
+      );
+    }
+    if (order.payment?.method === 'QR') {
+      throw new BadRequestException(
+        'Đơn hàng QR đã có liên kết thanh toán. Vui lòng hủy đơn và đặt lại nếu cần đổi địa chỉ.',
+      );
+    }
 
-    let newShippingFee = 30000;
-
-    const oldShippingFee = Number(order.shippingFee || 0);
+    const shippingEstimation = await this.shippingService.estimateAhamoveShippingFee(
+      data.shippingLatitude,
+      data.shippingLongitude,
+      data.shippingAddress,
+      order.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+      })),
+    );
+    const itemsSubtotal = order.items.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0,
+    );
+    const newShippingFee =
+      itemsSubtotal > 500000 ? 0 : Math.max(0, shippingEstimation.feeVnd);
+    const voucher = order.voucherCode
+      ? await this.prisma.voucher.findUnique({
+          where: { code: order.voucherCode },
+        })
+      : null;
+    const newDiscountAmount =
+      voucher?.type === 'FREE_SHIP'
+        ? Math.min(
+            voucher.value === 100 || voucher.value === 0
+              ? newShippingFee
+              : Math.min(newShippingFee, voucher.value),
+            voucher.maxDiscountAmount || Infinity,
+          )
+        : Number(order.discountAmount || 0);
     const newTotalAmount = Math.max(
       0,
-      Number(order.totalAmount) - oldShippingFee + newShippingFee,
+      itemsSubtotal + newShippingFee - newDiscountAmount,
     );
 
     return this.prisma.$transaction(async (tx) => {
       await tx.payment.updateMany({
-        where: { orderId, status: { not: 'PAID' } },
+        where: { orderId },
         data: { amount: newTotalAmount },
       });
       return tx.order.update({
         where: { id: orderId },
         data: {
           shippingAddress: data.shippingAddress,
-          districtId: data.districtId ? Number(data.districtId) : order.districtId,
-          wardCode: data.wardCode ? String(data.wardCode) : order.wardCode,
+          districtId: data.districtId ?? order.districtId,
+          wardCode: data.wardCode ?? order.wardCode,
+          shippingLatitude: data.shippingLatitude,
+          shippingLongitude: data.shippingLongitude,
           shippingFee: newShippingFee,
+          discountAmount: newDiscountAmount,
           totalAmount: newTotalAmount,
         },
         include: { payment: true },
@@ -1335,6 +1380,9 @@ export class UsersService {
       throw new BadRequestException(
         'Phương thức thanh toán của đơn hàng không phải là chuyển khoản QR.',
       );
+    }
+    if (order.payment.status === 'PAID') {
+      throw new BadRequestException('Đơn hàng đã được thanh toán.');
     }
 
     // Sinh orderCode mới để tránh bị trùng lặp trên PayOS nếu orderCode cũ bị lỗi hoặc hết hạn
@@ -1435,9 +1483,21 @@ export class UsersService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
 
+    // Chỉ những đơn hàng đã thanh toán tiền thực tế (payment.status = 'PAID') mới được phép yêu cầu hoàn tiền
+    if (order.payment?.status !== 'PAID') {
+      throw new BadRequestException(
+        'Chỉ các đơn hàng đã được thanh toán thành công mới có thể gửi yêu cầu hoàn tiền.',
+      );
+    }
+
     if (order.status !== 'PROCESSING' && order.status !== 'CANCELLED') {
       throw new BadRequestException(
         'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đang xử lý hoặc đã hủy.',
+      );
+    }
+    if (order.payment?.status !== 'PAID') {
+      throw new BadRequestException(
+        'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đã thanh toán.',
       );
     }
 
