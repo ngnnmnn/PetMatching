@@ -606,21 +606,23 @@ function SpaBookingWizard() {
                     </div>
                   </div>
 
-                  {/* DYNAMIC CALCULATED PRICE NOTICE BANNER */}
-                  <div className="p-4 bg-gradient-to-r from-purple-50 via-amber-50 to-orange-50 border border-purple-200 rounded-2xl space-y-2 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-black text-purple-950 flex items-center gap-1.5">
-                        <Sparkles className="size-4 text-purple-600 animate-pulse" />
-                        Giá gói chính tự động tính theo bé {activePet ? `"${activePet.name}"` : 'của bạn'}:
+                  {/* Chỉ hiển thị thông báo mốc giá và cân nặng khi người dùng đã chọn thú cưng */}
+                  {activePet && (
+                    <div className="p-4 bg-gradient-to-r from-purple-50 via-amber-50 to-orange-50 border border-purple-200 rounded-2xl space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                          <Sparkles className="size-4 text-purple-600 animate-pulse" />
+                          Giá gói chính tự động tính theo bé "{activePet.name}":
+                        </p>
+                        <span className="text-xs font-black text-purple-800 bg-white px-2.5 py-1 rounded-full border border-purple-200 shadow-2xs">
+                          {activeSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {activeWeight} kg
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 font-medium leading-relaxed">
+                        Dựa trên cân nặng <strong className="text-purple-900 font-black">{activeWeight}kg</strong> của bé, hệ thống đã khớp mốc giá chính xác cho các gói bên dưới:
                       </p>
-                      <span className="text-xs font-black text-purple-800 bg-white px-2.5 py-1 rounded-full border border-purple-200 shadow-2xs">
-                        {activeSpecies === 'CAT' ? '🐱 Mèo' : '🐶 Chó'} • {activeWeight} kg
-                      </span>
                     </div>
-                    <p className="text-[11px] text-gray-600 font-medium leading-relaxed">
-                      Dựa trên cân nặng <strong className="text-purple-900 font-black">{activeWeight}kg</strong> của bé, hệ thống đã khớp mốc giá chính xác cho các gói bên dưới:
-                    </p>
-                  </div>
+                  )}
 
                   {/* MAIN SERVICE SELECTION (RATING EXACTLY 1 MAIN SERVICE OR OPTIONAL FOR SUB SERVICES ONLY) */}
                   <div className="space-y-3 pt-2">
@@ -642,15 +644,19 @@ function SpaBookingWizard() {
                             ✕ Bỏ chọn gói chính (Chỉ chọn dịch vụ lẻ)
                           </button>
                         )}
-                        <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
-                          {activeSpecies === 'CAT' ? 'Dành cho Mèo' : 'Dành cho Chó'} • {activeWeight}kg
-                        </span>
+                        {activePet && (
+                          <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+                            {activeSpecies === 'CAT' ? 'Dành cho Mèo' : 'Dành cho Chó'} • {activeWeight}kg
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     {mainServices.length === 0 ? (
                       <p className="text-xs text-gray-500 italic p-4 bg-gray-50 rounded-xl">
-                        Không tìm thấy gói dịch vụ chính phù hợp với cân nặng {activeWeight}kg.
+                        {activePet
+                          ? `Không tìm thấy gói dịch vụ chính phù hợp với cân nặng ${activeWeight}kg.`
+                          : 'Không tìm thấy gói dịch vụ chính phù hợp.'}
                       </p>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
