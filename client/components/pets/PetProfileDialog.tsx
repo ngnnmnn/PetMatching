@@ -338,6 +338,12 @@ export function PetProfileDialog({
     if (!form.avatarUrl && (!form.gallery || form.gallery.length === 0)) {
       return "Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.";
     }
+    if (form.isVaccinated && form.vaccineDocumentUrls.length === 0) {
+      return "Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh.";
+    }
+    if (form.hasPedigree && form.pedigreeDocumentUrls.length === 0) {
+      return "Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh.";
+    }
     if (form.personality.length > 500) return "Tính cách tối đa 500 ký tự.";
     return null;
   };
