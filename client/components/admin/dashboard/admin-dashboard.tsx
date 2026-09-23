@@ -272,7 +272,7 @@ export default function AdminDashboardPage() {
           href="/admin/spa-overview"
         />
         <MetricCard
-          label="Tổng số ghép đôi"
+          label="Ghép đôi đang hoạt động"
           value={data.stats.matching.totalMatches.toLocaleString("vi-VN")}
           detail={`${data.stats.pets.total.toLocaleString("vi-VN")} thú cưng · ${data.stats.matching.pendingReports.toLocaleString("vi-VN")} báo cáo đang mở`}
           icon={HeartHandshake}
