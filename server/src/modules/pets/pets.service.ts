@@ -347,11 +347,12 @@ export class PetsService {
         pedigreeNumber: dto.pedigreeNumber,
         breedingOption: dto.breedingOption,
         breedingFee: dto.breedingFee,
+        shareLitterCount: dto.shareLitterCount,
         verificationBadge: documents.length
           ? VerificationBadge.PENDING
           : VerificationBadge.NONE,
         status: PetStatus.ACTIVE,
-        isAvailableForMatching: false,
+        isAvailableForMatching: dto.isAvailableForMatching ?? false,
         documents: documents.length ? { create: documents } : undefined,
       },
       include: { documents: true },

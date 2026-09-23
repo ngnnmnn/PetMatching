@@ -21,9 +21,11 @@ import {
   hasApprovedPetDocument,
   normalizeAdminRows as normalizeRows,
   petMatchesVerificationFilter,
+  petMatchesSpeciesFilter,
   renderAdminValue as renderValue,
   type AdminRow as Row,
   type PetVerificationFilter,
+  type PetSpeciesFilter,
 } from "@/components/admin/shared/admin-section-utils";
 
 /**
@@ -117,6 +119,11 @@ export default function AdminSectionScreen({
         ? "PENDING"
         : "ALL",
     );
+  // Bộ lọc loài thú cưng (Tất cả / Chó / Mèo) dành cho màn hình quản trị thú cưng
+  const initialSpecies = searchParams.get("species")?.toUpperCase();
+  const [petSpeciesFilter, setPetSpeciesFilter] = useState<PetSpeciesFilter>(
+    initialSpecies === "DOG" || initialSpecies === "CAT" ? initialSpecies : "ALL",
+  );
   const [spaManagerRoleFlow, setSpaManagerRoleFlow] =
     useState<SpaManagerRoleFlow | null>(null);
   const [petModerationFlow, setPetModerationFlow] =
@@ -164,8 +171,10 @@ export default function AdminSectionScreen({
   const visibleRows = useMemo(() => {
     if (section === "pets") {
       return [...rows]
-        .filter((row) =>
-          petMatchesVerificationFilter(row, petVerificationFilter),
+        .filter(
+          (row) =>
+            petMatchesVerificationFilter(row, petVerificationFilter) &&
+            petMatchesSpeciesFilter(row, petSpeciesFilter),
         )
         .sort(
           (left, right) =>
@@ -198,6 +207,7 @@ export default function AdminSectionScreen({
   }, [
     complaintStatus,
     complaintTarget,
+    petSpeciesFilter,
     petVerificationFilter,
     reportSearch,
     rows,
@@ -453,17 +463,39 @@ export default function AdminSectionScreen({
             allPets={rows}
             pets={paginatedRows}
             filter={petVerificationFilter}
+            speciesFilter={petSpeciesFilter}
             currentPage={activePage}
             totalItems={visibleRows.length}
             onFilterChange={(value) => {
               setPetVerificationFilter(value);
               setCurrentPage(1);
+              const params = new URLSearchParams(window.location.search);
+              if (value === "PENDING") {
+                params.set("verification", "pending");
+              } else {
+                params.delete("verification");
+              }
+              const queryString = params.toString();
               window.history.replaceState(
                 null,
                 "",
-                value === "PENDING"
-                  ? "/admin/pets?verification=pending"
-                  : "/admin/pets",
+                queryString ? `/admin/pets?${queryString}` : "/admin/pets",
+              );
+            }}
+            onSpeciesFilterChange={(value) => {
+              setPetSpeciesFilter(value);
+              setCurrentPage(1);
+              const params = new URLSearchParams(window.location.search);
+              if (value !== "ALL") {
+                params.set("species", value.toLowerCase());
+              } else {
+                params.delete("species");
+              }
+              const queryString = params.toString();
+              window.history.replaceState(
+                null,
+                "",
+                queryString ? `/admin/pets?${queryString}` : "/admin/pets",
               );
             }}
             onPageChange={setCurrentPage}

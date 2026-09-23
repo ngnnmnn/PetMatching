@@ -844,9 +844,9 @@ export default function MessagesPage() {
                             'size-2 rounded-full',
                             chatReadOnly ? 'bg-muted-foreground' : 'bg-emerald-500 animate-pulse',
                           )} />
-                          {selectedMatch.status === 'ACTIVE' && !chatModerated && 'Ghép đôi thành công · Phối giống Active'}
+                          {selectedMatch.status === 'ACTIVE' && !chatModerated && 'Ghép đôi thành công'}
                           {selectedMatch.status === 'ACTIVE' && chatModerated && 'Phòng chat tạm khóa · Chỉ đọc'}
-                          {selectedMatch.status === 'CANCELLED' && 'Match đã kết thúc · Chỉ đọc'}
+                          {selectedMatch.status === 'CANCELLED' && 'Ghép đôi đã kết thúc · Chỉ đọc'}
                         </span>
                       </div>
                     </div>
@@ -899,7 +899,7 @@ export default function MessagesPage() {
                     <div className="shrink-0 border-b bg-muted px-4 py-3 text-xs font-semibold text-muted-foreground">
                       {selectedMatch.blockedByMe
                         ? 'Bạn đã chặn người dùng này. Phòng chat hiện ở chế độ chỉ đọc.'
-                        : 'Match đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.'}
+                        : 'Ghép đôi đã kết thúc. Phòng chat hiện ở chế độ chỉ đọc.'}
                       {deletedParticipant ? (
                         <span className="ml-1">{deletedHistoryMessage}</span>
                       ) : selectedMatch.endReason ? (
@@ -1263,7 +1263,7 @@ export default function MessagesPage() {
       <Dialog open={endDialogOpen} onOpenChange={setEndDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Kết thúc match</DialogTitle>
+            <DialogTitle>Kết thúc ghép đôi</DialogTitle>
             <DialogDescription>
               Phòng chat sẽ chuyển sang chế độ chỉ đọc. Lịch sử tin nhắn vẫn được giữ lại.
             </DialogDescription>
@@ -1275,7 +1275,7 @@ export default function MessagesPage() {
               maxLength={1000}
               value={endReason}
               onChange={(event) => setEndReason(event.target.value)}
-              placeholder="Nhập lý do kết thúc match..."
+              placeholder="Nhập lý do kết thúc ghép đôi..."
             />
           </div>
           <DialogFooter>
@@ -1283,7 +1283,7 @@ export default function MessagesPage() {
               Hủy
             </Button>
             <Button type="button" variant="destructive" onClick={handleEndMatch} disabled={matchAction === 'END'}>
-              {matchAction === 'END' ? 'Đang kết thúc...' : 'Kết thúc match'}
+              {matchAction === 'END' ? 'Đang kết thúc...' : 'Kết thúc ghép đôi'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1294,7 +1294,7 @@ export default function MessagesPage() {
           <DialogHeader>
             <DialogTitle>Gửi báo cáo</DialogTitle>
             <DialogDescription>
-              Chọn người dùng hoặc thú cưng cần báo cáo. Lịch sử chat của match sẽ được gửi tới quản trị viên để xem xét.
+              Chọn người dùng hoặc thú cưng cần báo cáo. Lịch sử cuộc trò chuyện sẽ được gửi tới quản trị viên để xem xét.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1407,7 +1407,7 @@ export default function MessagesPage() {
         onCancel={() => setBlockDialogOpen(false)}
         onConfirm={handleBlockUser}
         title="Chặn người dùng"
-        description="Các yêu cầu ghép đôi đang chờ và match giữa hai bạn sẽ bị đóng. Lịch sử chat vẫn được giữ ở chế độ chỉ đọc."
+        description="Các yêu cầu ghép đôi đang chờ và kết nối giữa hai bạn sẽ bị đóng. Lịch sử chat vẫn được giữ ở chế độ chỉ đọc."
         confirmText="Chặn"
         loading={matchAction === 'BLOCK'}
       />

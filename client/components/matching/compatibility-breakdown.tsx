@@ -60,17 +60,52 @@ export function CompatibilityBreakdown({
   candidatePet,
   defaultExpanded = false,
 }: CompatibilityBreakdownProps) {
+  // State quản lý đóng mở chi tiết phân tích tương thích
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
-  const score = candidatePet.compatibilityScore ?? 75
 
-  // Scoring factors breakdown
+  // Tính toán chi tiết từng tiêu chí chấm điểm tương thích
+  // 1. Giống loài: Cùng giống (+25), lai tạo tương thích (+20), khác giống chưa có quy tắc (-10)
   const isSameBreed = myPet.breed.toLowerCase() === candidatePet.breed.toLowerCase()
   const isBreedCompatible = candidatePet.breedInfo?.isCompatible === true
-  const isBreedIncompatible = candidatePet.breedInfo?.isCompatible === false || (!isSameBreed && !isBreedCompatible)
+  const isBreedIncompatible = !isSameBreed && !isBreedCompatible
+  const breedScoreDelta = isSameBreed ? 25 : isBreedCompatible ? 20 : -10
+
+  // 2. Vị trí & Khoảng cách: Cùng khu vực / khoảng cách gần <= 15km (+15), ngược lại (+0)
+  const isLocationNearby =
+    candidatePet.matchReasons?.includes("same_location") ??
+    (candidatePet.distanceKm != null ? candidatePet.distanceKm <= 15 : true)
+  const locationScoreDelta = isLocationNearby ? 15 : 0
+
+  // 3. Thể trạng cân nặng: Chênh lệch <= 5kg (+10), ngược lại (+0)
   const isSimilarWeight = Math.abs(myPet.weight - candidatePet.weight) <= 5
+  const weightScoreDelta = isSimilarWeight ? 10 : 0
+
+  // 4. Giấy chứng nhận phả hệ: Cả 2 được duyệt (+20), cả 2 có khai báo (+10), ngược lại (+0)
   const bothPedigree = myPet.hasPedigree && candidatePet.hasPedigree
   const bothPedigreeVerified = myPet.pedigreeVerified && candidatePet.pedigreeVerified
+  const pedigreeScoreDelta = bothPedigreeVerified ? 20 : bothPedigree ? 10 : 0
+
+  // 5. Kiểm định tiêm chủng: Cả 2 có xác minh tiêm chủng (+5), ngược lại (+0)
   const bothVaccineVerified = myPet.vaccineVerified && candidatePet.vaccineVerified
+  const vaccineScoreDelta = bothVaccineVerified ? 5 : 0
+
+  // 6. Điểm nền tảng điều kiện sinh sản (30)
+  const baseScore = 30
+
+  // Tổng điểm tính toán thực tế (đảm bảo tổng các mục chi tiết luôn bằng chính xác điểm hiển thị)
+  const calculatedTotal = Math.min(
+    Math.max(
+      baseScore +
+        breedScoreDelta +
+        locationScoreDelta +
+        weightScoreDelta +
+        pedigreeScoreDelta +
+        vaccineScoreDelta,
+      0,
+    ),
+    100,
+  )
+  const score = candidatePet.compatibilityScore ?? calculatedTotal
 
   const getScoreColor = (value: number) => {
     if (value >= 85) return "text-emerald-600 dark:text-emerald-400"
@@ -168,9 +203,15 @@ export function CompatibilityBreakdown({
               </span>
             )}
 
-            <span className="inline-flex items-center gap-1 rounded-lg bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 px-2 py-0.5 text-[11px] font-bold border border-teal-200/60">
-              <MapPin className="size-3" /> {candidatePet.distanceKm != null ? `Cách ~${candidatePet.distanceKm} km${candidatePet.isRoadDistance ? ' đường bộ' : ''}` : candidatePet.ward || candidatePet.location} (+15%)
-            </span>
+            {isLocationNearby ? (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 px-2 py-0.5 text-[11px] font-bold border border-teal-200/60">
+                <MapPin className="size-3" /> {candidatePet.distanceKm != null ? `Cách ~${candidatePet.distanceKm} km` : candidatePet.ward || candidatePet.location} (+15%)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-muted text-muted-foreground px-2 py-0.5 text-[11px] font-bold border">
+                <MapPin className="size-3" /> {candidatePet.distanceKm != null ? `Cách ~${candidatePet.distanceKm} km` : candidatePet.ward || candidatePet.location} (+0%)
+              </span>
+            )}
 
             {isSimilarWeight ? (
               <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 px-2 py-0.5 text-[11px] font-bold border border-blue-200/60">
@@ -289,25 +330,40 @@ export function CompatibilityBreakdown({
                 </div>
 
                 {/* 3. Location & Proximity */}
-                <div className="flex items-center justify-between rounded-xl border bg-teal-50/40 dark:bg-teal-950/20 border-teal-100 dark:border-teal-900/60 p-3 shadow-2xs">
+                <div className={cn(
+                  "flex items-center justify-between rounded-xl border p-3 shadow-2xs",
+                  isLocationNearby
+                    ? "bg-teal-50/40 dark:bg-teal-950/20 border-teal-100 dark:border-teal-900/60"
+                    : "bg-card",
+                )}>
                   <div className="flex items-center gap-3">
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300">
+                    <div className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-lg",
+                      isLocationNearby
+                        ? "bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300"
+                        : "bg-muted text-muted-foreground",
+                    )}>
                       <MapPin className="size-3.5" />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-foreground">
-                        Khu vực & Khoảng cách {candidatePet.isRoadDistance ? 'đường bộ thực tế' : ''} ({candidatePet.ward || candidatePet.location})
+                        Khu vực & Khoảng cách ({candidatePet.ward || candidatePet.location})
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         {candidatePet.distanceKm != null && candidatePet.distanceKm <= 1
                           ? "Cùng khu vực rất gần (< 1 km), thuận tiện gặp gỡ"
-                          : candidatePet.isRoadDistance
-                          ? `Khoảng cách đường bộ thực tế ~${candidatePet.distanceKm} km (OSRM), dễ dàng sắp xếp lịch phối`
-                          : `Khoảng cách ước tính ~${candidatePet.distanceKm ?? 3.5} km, dễ dàng sắp xếp lịch phối`}
+                          : isLocationNearby
+                          ? `Khoảng cách ước tính ~${candidatePet.distanceKm ?? 3.5} km, dễ dàng sắp xếp lịch phối`
+                          : `Khoảng cách khá xa (~${candidatePet.distanceKm} km), cần sắp xếp di chuyển khi phối`}
                       </p>
                     </div>
                   </div>
-                  <span className="font-mono text-xs font-black text-teal-600 shrink-0">+15%</span>
+                  <span className={cn(
+                    "font-mono text-xs font-black shrink-0",
+                    isLocationNearby ? "text-teal-600" : "text-muted-foreground",
+                  )}>
+                    {isLocationNearby ? "+15%" : "+0%"}
+                  </span>
                 </div>
 
                 {/* 4. Weight Similarity */}

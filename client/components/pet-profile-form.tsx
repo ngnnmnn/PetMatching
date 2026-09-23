@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Award, Camera, Cat, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Lock, Minus, Plus, Scale, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
+import { AlertCircle, Award, Camera, Cat, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dog, ImagePlus, Info, Lock, Minus, Plus, Scale, Sparkles, Syringe, X, Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -41,8 +41,10 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     hasPedigree: false,
     pedigreeNumber: "",
     personality: "",
-    breedingOption: "",
+    breedingOption: "cash",
     breedingPrice: "",
+    shareLitterCount: "1",
+    isAvailableForMatching: true,
     location: "",
     district: "",
   })
@@ -79,6 +81,31 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
   const breeds = dbBreeds
   const selectedBreedInfo = dbBreeds.find((b) => b.name === formData.breed)
   const isPedigreeAllowed = selectedBreedInfo ? selectedBreedInfo.allowPedigree : true
+
+  /**
+   * Tạo thông báo lỗi xác thực giấy tờ nếu người dùng bật toggle nhưng chưa tải ảnh.
+   * Hỗ trợ thông báo đồng thời cả sổ tiêm phòng và giấy tờ phả hệ nếu thiếu cả hai.
+   */
+  const getDocumentValidationError = (
+    isVaccinated: boolean,
+    vaccineCount: number,
+    hasPedigree: boolean,
+    pedigreeCount: number,
+  ) => {
+    const missingVaccine = isVaccinated && vaccineCount === 0
+    const missingPedigree = hasPedigree && pedigreeCount === 0
+
+    if (missingVaccine && missingPedigree) {
+      return "Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng và 1 ảnh giấy tờ phả hệ để gửi xác minh."
+    }
+    if (missingVaccine) {
+      return "Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh."
+    }
+    if (missingPedigree) {
+      return "Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh."
+    }
+    return ""
+  }
 
   const handleImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -137,7 +164,17 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     try {
       const remainingSlots = Math.max(0, maxCount - currentCount)
       const uploaded = await uploadImages(files.slice(0, remainingSlots), purpose)
+      const nextUploadedCount = Math.min(maxCount, currentCount + uploaded.length)
       setPhotos((current) => [...current, ...uploaded.map((image) => image.url)].slice(0, maxCount))
+      // Tự động cập nhật hoặc xóa thông báo lỗi nếu đang hiển thị lỗi thiếu giấy tờ
+      setSubmitError((prev) => {
+        if (prev.includes("tiêm phòng") || prev.includes("phả hệ")) {
+          const nextVaccineCount = purpose === "vaccine-document" ? nextUploadedCount : vaccinePhotos.length
+          const nextPedigreeCount = purpose === "pedigree-document" ? nextUploadedCount : pedigreePhotos.length
+          return getDocumentValidationError(formData.isVaccinated, nextVaccineCount, formData.hasPedigree, nextPedigreeCount)
+        }
+        return prev
+      })
     } catch {
       setSubmitError("Không tải được ảnh giấy tờ. Vui lòng thử lại (ảnh tối đa 5MB).")
     } finally {
@@ -260,6 +297,9 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     setFormData((prev) => ({ ...prev, weight: String(next) }))
   }
 
+  /**
+   * Kiểm tra điều kiện có thể tiếp tục sang bước kế tiếp.
+   */
   const canProceed = () => {
     if (step === 1) {
       // Kiểm tra đã chọn giống từ danh sách có sẵn
@@ -269,9 +309,80 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       const isBirthdayValid = formData.birthday
         ? new Date(formData.birthday) <= new Date() && (new Date().getTime() - new Date(formData.birthday).getTime()) / (1000 * 60 * 60 * 24 * 365) <= 30
         : false;
-      return isBirthdayValid && profileWeightIsValid && !!selectedWard
+      const isVaccineValid = !formData.isVaccinated || vaccinePhotos.length > 0
+      const isPedigreeValid = !formData.hasPedigree || pedigreePhotos.length > 0
+      return isBirthdayValid && profileWeightIsValid && !!selectedWard && isVaccineValid && isPedigreeValid
     }
     return true
+  }
+
+  /**
+   * Xử lý chuyển bước trong form tạo hồ sơ thú cưng.
+   * Validate dữ liệu ngay tại màn hình hiện tại trước khi cho phép sang bước tiếp theo.
+   * Nếu người dùng bật toggle giấy tờ (sổ tiêm phòng, phả hệ) mà chưa upload ảnh,
+   * sẽ hiển thị thông báo lỗi ngay tại bước đó và chặn không cho chuyển bước.
+   */
+  const handleNextStep = () => {
+    setSubmitError("")
+
+    if (step === 1) {
+      if (!avatar) {
+        setSubmitError("Vui lòng tải lên ít nhất 1 ảnh đại diện của bé.")
+        return
+      }
+      if (!formData.name.trim()) {
+        setSubmitError("Vui lòng nhập tên của bé.")
+        return
+      }
+      if (!formData.species) {
+        setSubmitError("Vui lòng chọn loài thú cưng (chó hoặc mèo).")
+        return
+      }
+      if (!formData.breed) {
+        setSubmitError("Vui lòng chọn giống thú cưng.")
+        return
+      }
+      if (!formData.gender) {
+        setSubmitError("Vui lòng chọn giới tính của bé.")
+        return
+      }
+      setStep(2)
+      return
+    }
+
+    if (step === 2) {
+      const isBirthdayValid = formData.birthday
+        ? new Date(formData.birthday) <= new Date() && (new Date().getTime() - new Date(formData.birthday).getTime()) / (1000 * 60 * 60 * 24 * 365) <= 30
+        : false;
+      if (!formData.birthday || !isBirthdayValid) {
+        setSubmitError("Vui lòng chọn ngày sinh hợp lệ của bé (không quá 30 năm và không ở tương lai).")
+        return
+      }
+      if (!profileWeightIsValid) {
+        setSubmitError(
+          weightLimits
+            ? `Cân nặng của bé phải từ ${weightLimits.profileMin}-${weightLimits.profileMax} kg để lưu hồ sơ.`
+            : "Cân nặng của bé không hợp lệ."
+        )
+        return
+      }
+      if (!selectedWard) {
+        setSubmitError("Vui lòng chọn khu vực / địa chỉ của bé tại Hà Nội.")
+        return
+      }
+      const docError = getDocumentValidationError(
+        formData.isVaccinated,
+        vaccinePhotos.length,
+        formData.hasPedigree,
+        pedigreePhotos.length,
+      )
+      if (docError) {
+        setSubmitError(docError)
+        return
+      }
+      setStep(3)
+      return
+    }
   }
 
   const handleSubmit = async () => {
@@ -283,13 +394,14 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
       return
     }
 
-    if (formData.isVaccinated && vaccinePhotos.length === 0) {
-      setSubmitError("Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh.")
-      setStep(2)
-      return
-    }
-    if (formData.hasPedigree && pedigreePhotos.length === 0) {
-      setSubmitError("Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh.")
+    const docError = getDocumentValidationError(
+      formData.isVaccinated,
+      vaccinePhotos.length,
+      formData.hasPedigree,
+      pedigreePhotos.length,
+    )
+    if (docError) {
+      setSubmitError(docError)
       setStep(2)
       return
     }
@@ -314,7 +426,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
     const longitude = selectedWard?.lng ?? 105.8542
 
     try {
-      await api.post("/pets", {
+      const res = await api.post("/pets", {
         name: formData.name.trim(),
         species,
         breed: finalBreed,
@@ -337,8 +449,37 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
         pedigreeDocumentUrls: pedigreePhotos.length > 0 ? pedigreePhotos : undefined,
         pedigreeNote: formData.pedigreeNumber.trim() || "Giấy tờ phả hệ VKA/TICA",
         breedingOption: gender === "MALE" ? breedingOptionMap[formData.breedingOption] || undefined : undefined,
-        breedingFee: gender === "MALE" && formData.breedingPrice ? Number(formData.breedingPrice) : undefined,
+        breedingFee:
+          gender === "MALE" && formData.breedingOption === "cash" && formData.breedingPrice
+            ? Number(formData.breedingPrice.replace(/\D/g, ""))
+            : undefined,
+        shareLitterCount:
+          gender === "MALE" && formData.breedingOption === "share"
+            ? Number(formData.shareLitterCount || 1)
+            : undefined,
+        isAvailableForMatching: gender === "MALE" ? formData.isAvailableForMatching : false,
       })
+
+      const createdPet = res.data
+      if (gender === "MALE" && formData.isAvailableForMatching && createdPet?.id) {
+        try {
+          await api.patch(`/pets/${createdPet.id}/availability`, {
+            isAvailableForMatching: true,
+            breedingOption: breedingOptionMap[formData.breedingOption] || "NEGOTIATE",
+            breedingFee:
+              formData.breedingOption === "cash" && formData.breedingPrice
+                ? Number(formData.breedingPrice.replace(/\D/g, ""))
+                : undefined,
+            shareLitterCount:
+              formData.breedingOption === "share"
+                ? Number(formData.shareLitterCount || 1)
+                : undefined,
+          })
+        } catch {
+          // Bỏ qua lỗi cập nhật nếu có, hồ sơ pet vẫn đã tạo thành công
+        }
+      }
+
       // Xóa cache danh sách pet để các màn hình khác nhận dữ liệu mới ngay lập tức
       invalidateMyPetsCache()
       onComplete?.()
@@ -908,7 +1049,15 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                     checked={formData.isVaccinated}
                     onCheckedChange={(checked) => {
                       setFormData({ ...formData, isVaccinated: checked })
-                      if (!checked) setVaccinePhotos([])
+                      if (!checked) {
+                        setVaccinePhotos([])
+                        setSubmitError((prev) => {
+                          if (prev.includes("tiêm phòng") || prev.includes("phả hệ")) {
+                            return getDocumentValidationError(false, 0, formData.hasPedigree, pedigreePhotos.length)
+                          }
+                          return prev
+                        })
+                      }
                     }}
                   />
                 </div>
@@ -984,6 +1133,12 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                       if (!checked) {
                         setPedigreePhotos([])
                         setFormData((prev) => ({ ...prev, hasPedigree: false, pedigreeNumber: "" }))
+                        setSubmitError((prev) => {
+                          if (prev.includes("tiêm phòng") || prev.includes("phả hệ")) {
+                            return getDocumentValidationError(formData.isVaccinated, vaccinePhotos.length, false, 0)
+                          }
+                          return prev
+                        })
                       }
                     }}
                   />
@@ -1100,45 +1255,219 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
                   <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/40 dark:bg-blue-950/20 space-y-1.5">
                     <div className="flex items-center gap-2 text-xs font-black text-blue-800 dark:text-blue-300">
                       <Sparkles className="size-4 text-blue-600" />
-                      <span>Cấu hình Phối giống Tự động (Tạm hoãn do bé còn nhỏ)</span>
+                      <span>Cấu hình Phối giống (Tạm hoãn do bé còn nhỏ)</span>
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       Bé hiện tại đang <strong>{calculateAge()}</strong> (dưới {minBreedingAgeMonths} tháng tuổi), bạn chưa cần cài đặt chi phí phối giống. Khi bé đủ tuổi (dự kiến Tháng <strong>{getEligibleDate()}</strong>), bạn có thể cập nhật yêu cầu phối giống bất kỳ lúc nào.
                     </p>
                   </div>
                 ) : (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="breedingOption">Hình thức phối giống mong muốn</Label>
-                      <Select value={formData.breedingOption} onValueChange={(value) => setFormData({ ...formData, breedingOption: value })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Chọn hình thức" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {breedingOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <Sparkles className="size-4" />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-black uppercase tracking-wider text-primary">
+                          Hình thức phối giống mong muốn
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Chọn điều kiện nhận phối khi có người gửi lời mời ghép đôi
+                        </p>
+                      </div>
                     </div>
 
+                    {/* 3 Thẻ lựa chọn trực quan */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, breedingOption: "cash" })}
+                        className={cn(
+                          "flex flex-col items-start p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer",
+                          formData.breedingOption === "cash"
+                            ? "border-primary bg-card shadow-xs ring-2 ring-primary/20"
+                            : "border-border bg-card/60 hover:border-primary/40 hover:bg-card"
+                        )}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xl select-none">💵</span>
+                          <span className={cn(
+                            "size-4 rounded-full border flex items-center justify-center",
+                            formData.breedingOption === "cash" ? "border-primary bg-primary text-white" : "border-muted-foreground/30"
+                          )}>
+                            {formData.breedingOption === "cash" && <span className="size-1.5 rounded-full bg-white" />}
+                          </span>
+                        </div>
+                        <span className="mt-2 text-xs font-black text-foreground">Thu tiền mặt</span>
+                        <span className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                          Nhận chi phí phối từ chủ bé cái
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, breedingOption: "share" })}
+                        className={cn(
+                          "flex flex-col items-start p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer",
+                          formData.breedingOption === "share"
+                            ? "border-primary bg-card shadow-xs ring-2 ring-primary/20"
+                            : "border-border bg-card/60 hover:border-primary/40 hover:bg-card"
+                        )}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xl select-none">🐶</span>
+                          <span className={cn(
+                            "size-4 rounded-full border flex items-center justify-center",
+                            formData.breedingOption === "share" ? "border-primary bg-primary text-white" : "border-muted-foreground/30"
+                          )}>
+                            {formData.breedingOption === "share" && <span className="size-1.5 rounded-full bg-white" />}
+                          </span>
+                        </div>
+                        <span className="mt-2 text-xs font-black text-foreground">Chia con non</span>
+                        <span className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                          Nhận con non sau khi sinh nở
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, breedingOption: "negotiate" })}
+                        className={cn(
+                          "flex flex-col items-start p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer",
+                          formData.breedingOption === "negotiate"
+                            ? "border-primary bg-card shadow-xs ring-2 ring-primary/20"
+                            : "border-border bg-card/60 hover:border-primary/40 hover:bg-card"
+                        )}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xl select-none">🤝</span>
+                          <span className={cn(
+                            "size-4 rounded-full border flex items-center justify-center",
+                            formData.breedingOption === "negotiate" ? "border-primary bg-primary text-white" : "border-muted-foreground/30"
+                          )}>
+                            {formData.breedingOption === "negotiate" && <span className="size-1.5 rounded-full bg-white" />}
+                          </span>
+                        </div>
+                        <span className="mt-2 text-xs font-black text-foreground">Thỏa thuận sau</span>
+                        <span className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                          Trao đổi khi có đối tác phù hợp
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Chi tiết theo từng hình thức */}
                     {formData.breedingOption === "cash" && (
-                      <div className="space-y-2">
-                        <Label htmlFor="breedingPrice">Số tiền (VNĐ)</Label>
-                        <Input
-                          id="breedingPrice"
-                          type="number"
-                          min="0"
-                          step="100000"
-                          placeholder="Ví dụ: 5000000"
-                          value={formData.breedingPrice}
-                          onChange={(event) => setFormData({ ...formData, breedingPrice: event.target.value })}
-                        />
+                      <div className="rounded-xl border bg-card p-3.5 space-y-3 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="breedingPrice" className="text-xs font-bold text-foreground">
+                            Số tiền phối giống mong muốn (VNĐ)
+                          </Label>
+                          {formData.breedingPrice && Number(formData.breedingPrice) > 0 && (
+                            <span className="font-mono text-xs font-black text-primary">
+                              {Number(formData.breedingPrice).toLocaleString("vi-VN")} VNĐ
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <Input
+                            id="breedingPrice"
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="Ví dụ: 2.000.000"
+                            value={
+                              formData.breedingPrice
+                                ? Number(formData.breedingPrice.replace(/\D/g, "")).toLocaleString("vi-VN")
+                                : ""
+                            }
+                            onChange={(event) => {
+                              const raw = event.target.value.replace(/\D/g, "")
+                              setFormData({ ...formData, breedingPrice: raw })
+                            }}
+                            className="pr-12 font-bold"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground pointer-events-none">
+                            VNĐ
+                          </span>
+                        </div>
+
+                        {/* Nút gợi ý mức phí nhanh */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[11px] font-bold text-muted-foreground mr-1">Gợi ý nhanh:</span>
+                          {[500000, 1000000, 2000000, 3000000, 5000000].map((price) => (
+                            <button
+                              key={price}
+                              type="button"
+                              onClick={() => setFormData({ ...formData, breedingPrice: String(price) })}
+                              className={cn(
+                                "px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer",
+                                formData.breedingPrice === String(price)
+                                  ? "bg-primary text-white border-primary"
+                                  : "bg-muted/40 hover:bg-muted text-foreground border-border/80"
+                              )}
+                            >
+                              {price >= 1000000 ? `${price / 1000000} triệu` : `${price / 1000}k`}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
-                  </>
+
+                    {formData.breedingOption === "share" && (
+                      <div className="rounded-xl border bg-card p-3.5 space-y-2 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="text-xs font-bold text-foreground">
+                              Số lượng con non muốn nhận
+                            </Label>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Thường là 1 hoặc 2 bé con chọn trước khi đẻ
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {[1, 2, 3].map((count) => (
+                              <button
+                                key={count}
+                                type="button"
+                                onClick={() => setFormData({ ...formData, shareLitterCount: String(count) })}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer",
+                                  (formData.shareLitterCount || "1") === String(count)
+                                    ? "bg-primary text-white border-primary shadow-xs"
+                                    : "bg-muted/40 hover:bg-muted text-foreground border-border"
+                                )}
+                              >
+                                {count} con
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {formData.breedingOption === "negotiate" && (
+                      <div className="rounded-xl border border-dashed bg-card/50 p-3 text-xs text-muted-foreground leading-relaxed">
+                        💡 Chi phí và điều kiện chi tiết sẽ được hai bên chủ nuôi tự do trao đổi và thống nhất trực tiếp qua tin nhắn khi ghép đôi.
+                      </div>
+                    )}
+
+                    {/* Công tắc bật ghép đôi ngay */}
+                    <div className="flex items-center justify-between pt-3 border-t border-primary/10">
+                      <div className="space-y-0.5 pr-2">
+                        <Label htmlFor="availableToggle" className="text-xs font-black text-foreground cursor-pointer">
+                          Bật tìm bạn đời ngay sau khi tạo
+                        </Label>
+                        <p className="text-[11px] text-muted-foreground">
+                          Hồ sơ của bé sẽ hiển thị trên trang Khám phá bạn đời để các chủ nuôi khác có thể tìm thấy.
+                        </p>
+                      </div>
+                      <Switch
+                        id="availableToggle"
+                        checked={formData.isAvailableForMatching}
+                        onCheckedChange={(checked) => setFormData({ ...formData, isAvailableForMatching: checked })}
+                      />
+                    </div>
+                  </div>
                 )
               )}
             </div>
@@ -1156,7 +1485,7 @@ export function PetProfileForm({ onComplete }: PetProfileFormProps) {
               Quay lại
             </Button>
             {step < 3 ? (
-              <Button type="button" onClick={() => setStep(step + 1)} disabled={!canProceed() || isUploading} className="gap-2">
+              <Button type="button" onClick={handleNextStep} disabled={isUploading} className="gap-2">
                 Tiếp tục
                 <ChevronRight className="size-4" />
               </Button>

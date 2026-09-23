@@ -13,6 +13,11 @@ export type PetVerificationFilter =
   | "REJECTED"
   | "NONE";
 
+/**
+ * Kiểu bộ lọc loài thú cưng (Tất cả / Chó / Mèo) dành cho quản trị viên
+ */
+export type PetSpeciesFilter = "ALL" | "DOG" | "CAT";
+
 export const ADMIN_PAGE_SIZE = 10;
 export const ADMIN_ROLE_OPTIONS: AdminRole[] = ["USER", "STORE_MANAGER", "SPA_MANAGER", "SPA_STAFF"];
 export const ADMIN_ACCOUNT_STATUS_OPTIONS: AccountStatus[] = ["ACTIVE", "SUSPENDED"];
@@ -247,6 +252,14 @@ export function petMatchesVerificationFilter(pet: AdminRow, filter: PetVerificat
   }
   if (filter === "REJECTED") return hasRejectedPetDocument(pet);
   return !pet.documents?.length;
+}
+
+/**
+ * Kiểm tra thú cưng có phù hợp với bộ lọc loài (Tất cả / Chó / Mèo) hay không
+ */
+export function petMatchesSpeciesFilter(pet: AdminRow, filter: PetSpeciesFilter) {
+  if (filter === "ALL") return true;
+  return String(pet.species ?? "").toUpperCase() === filter;
 }
 
 /**
