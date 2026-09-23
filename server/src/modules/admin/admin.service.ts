@@ -11,6 +11,7 @@ import {
   ComplaintStatus,
   DocumentStatus,
   DocumentType,
+  MatchStatus,
   NotificationCategory,
   NotificationEventType,
   OrderStatus,
@@ -141,7 +142,9 @@ export class AdminService {
       this.prisma.petDocument.count({
         where: { status: { in: ACTIONABLE_DOCUMENT_STATUSES } },
       }),
-      this.prisma.match.count(),
+      this.prisma.match.count({
+        where: { status: MatchStatus.ACTIVE },
+      }),
       this.prisma.petReport.count({
         where: { status: { in: OPEN_MATCHING_REPORT_STATUSES } },
       }),
