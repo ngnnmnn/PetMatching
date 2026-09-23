@@ -80,14 +80,27 @@ export function CompatibilityBreakdown({
   const isSimilarWeight = Math.abs(myPet.weight - candidatePet.weight) <= 5
   const weightScoreDelta = isSimilarWeight ? 10 : 0
 
-  // 4. Giấy chứng nhận phả hệ: Cả 2 được duyệt (+20), cả 2 có khai báo (+10), ngược lại (+0)
-  const bothPedigree = myPet.hasPedigree && candidatePet.hasPedigree
-  const bothPedigreeVerified = myPet.pedigreeVerified && candidatePet.pedigreeVerified
-  const pedigreeScoreDelta = bothPedigreeVerified ? 20 : bothPedigree ? 10 : 0
+  // Xác định rõ bé đực và bé cái theo góc nhìn nhân giống sinh sản
+  const malePet = myPet.gender === "MALE" ? myPet : candidatePet
+  const femalePet = myPet.gender === "FEMALE" ? myPet : candidatePet
 
-  // 5. Kiểm định tiêm chủng: Cả 2 có xác minh tiêm chủng (+5), ngược lại (+0)
-  const bothVaccineVerified = myPet.vaccineVerified && candidatePet.vaccineVerified
-  const vaccineScoreDelta = bothVaccineVerified ? 5 : 0
+  // 4. Giấy chứng nhận phả hệ VKA: Cả 2 được duyệt (+20), chỉ bé đực được duyệt (+10), ngược lại (+0)
+  const isBothPedigreeVerified = candidatePet.matchReasons
+    ? candidatePet.matchReasons.includes("both_pedigree_verified")
+    : Boolean(femalePet.pedigreeVerified && malePet.pedigreeVerified)
+  const isMalePedigreeVerified = candidatePet.matchReasons
+    ? candidatePet.matchReasons.includes("male_pedigree_verified")
+    : Boolean(malePet.pedigreeVerified && !femalePet.pedigreeVerified)
+  const pedigreeScoreDelta = isBothPedigreeVerified ? 20 : isMalePedigreeVerified ? 10 : 0
+
+  // 5. Kiểm định tiêm chủng: Cả 2 có xác minh tiêm chủng (+5), chỉ bé đực có xác minh (+3), ngược lại (+0)
+  const isBothVaccineVerified = candidatePet.matchReasons
+    ? candidatePet.matchReasons.includes("both_vaccine_verified")
+    : Boolean(femalePet.vaccineVerified && malePet.vaccineVerified)
+  const isMaleVaccineVerified = candidatePet.matchReasons
+    ? candidatePet.matchReasons.includes("male_vaccine_verified")
+    : Boolean(malePet.vaccineVerified && !femalePet.vaccineVerified)
+  const vaccineScoreDelta = isBothVaccineVerified ? 5 : isMaleVaccineVerified ? 3 : 0
 
   // 6. Điểm nền tảng điều kiện sinh sản (30)
   const baseScore = 30
@@ -223,11 +236,25 @@ export function CompatibilityBreakdown({
               </span>
             )}
 
-            {bothPedigree && (
+            {isBothPedigreeVerified ? (
               <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 text-[11px] font-bold border border-amber-200/60">
-                <Award className="size-3" /> Có phả hệ (+10%)
+                <Award className="size-3" /> Cả 2 có phả hệ VKA (+20%)
               </span>
-            )}
+            ) : isMalePedigreeVerified ? (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 text-[11px] font-bold border border-amber-200/60">
+                <Award className="size-3" /> Đực có phả hệ VKA (+10%)
+              </span>
+            ) : null}
+
+            {isBothVaccineVerified ? (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 px-2 py-0.5 text-[11px] font-bold border border-emerald-200/60">
+                <Syringe className="size-3" /> Cả 2 đã tiêm chủng (+5%)
+              </span>
+            ) : isMaleVaccineVerified ? (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 px-2 py-0.5 text-[11px] font-bold border border-emerald-200/60">
+                <Syringe className="size-3" /> Đực đã tiêm chủng (+3%)
+              </span>
+            ) : null}
           </div>
         )}
       </button>
@@ -395,44 +422,88 @@ export function CompatibilityBreakdown({
                 </div>
 
                 {/* 5. Pedigree Certification */}
-                <div className={cn("flex items-center justify-between rounded-xl border p-3 shadow-2xs", bothPedigree ? "bg-amber-50/40 dark:bg-amber-950/20 border-amber-200" : "bg-card")}>
+                <div
+                  className={cn(
+                    "flex items-center justify-between rounded-xl border p-3 shadow-2xs",
+                    pedigreeScoreDelta > 0
+                      ? "bg-amber-50/40 dark:bg-amber-950/20 border-amber-200"
+                      : "bg-card",
+                  )}
+                >
                   <div className="flex items-center gap-3">
-                    <div className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", bothPedigree ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300" : "bg-muted text-muted-foreground")}>
+                    <div
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded-lg",
+                        pedigreeScoreDelta > 0
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
                       <Award className="size-3.5" />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-foreground">Giấy chứng nhận Phả hệ VKA</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {bothPedigreeVerified
-                          ? "Cả 2 bé đều đã được kiểm định phả hệ VKA chính thức (+20%)"
-                          : bothPedigree
-                          ? "Cả 2 bé đều có khai báo phả hệ (+10%)"
-                          : "Chưa cung cấp đủ giấy tờ phả hệ 2 bên"}
+                        {isBothPedigreeVerified
+                          ? "Cả 2 bé đều đã được xác thực phả hệ VKA chính thức (+20%)"
+                          : isMalePedigreeVerified
+                          ? `Bé đực (${malePet.name}) có phả hệ VKA đã kiểm duyệt, đảm bảo nguồn gen tốt (+10%)`
+                          : (malePet.hasPedigree || femalePet.hasPedigree)
+                          ? "Giấy tờ phả hệ đang chờ kiểm duyệt hoặc chưa được xác thực (+0%)"
+                          : "Chưa có giấy chứng nhận phả hệ VKA (+0%)"}
                       </p>
                     </div>
                   </div>
-                  <span className={cn("font-mono text-xs font-black shrink-0", bothPedigreeVerified ? "text-amber-600" : bothPedigree ? "text-amber-600" : "text-muted-foreground")}>
-                    {bothPedigreeVerified ? "+20%" : bothPedigree ? "+10%" : "+0%"}
+                  <span
+                    className={cn(
+                      "font-mono text-xs font-black shrink-0",
+                      pedigreeScoreDelta > 0 ? "text-amber-600" : "text-muted-foreground",
+                    )}
+                  >
+                    {pedigreeScoreDelta > 0 ? `+${pedigreeScoreDelta}%` : "+0%"}
                   </span>
                 </div>
 
                 {/* 6. Health & Vaccination */}
-                <div className={cn("flex items-center justify-between rounded-xl border p-3 shadow-2xs", bothVaccineVerified ? "bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200" : "bg-card")}>
+                <div
+                  className={cn(
+                    "flex items-center justify-between rounded-xl border p-3 shadow-2xs",
+                    vaccineScoreDelta > 0
+                      ? "bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200"
+                      : "bg-card",
+                  )}
+                >
                   <div className="flex items-center gap-3">
-                    <div className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", bothVaccineVerified ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
+                    <div
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded-lg",
+                        vaccineScoreDelta > 0
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
                       <Syringe className="size-3.5" />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-foreground">Kiểm định tiêm chủng y tế</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {bothVaccineVerified
-                          ? "Đã xác thực sổ tiêm ngừa đầy đủ, bảo đảm an toàn sức khỏe"
-                          : "Chưa xác minh đủ hồ sơ tiêm chủng 2 bên"}
+                        {isBothVaccineVerified
+                          ? "Cả 2 bé đều đã xác thực sổ tiêm chủng y tế, an toàn tuyệt đối khi phối (+5%)"
+                          : isMaleVaccineVerified
+                          ? `Bé đực (${malePet.name}) đã xác thực sổ tiêm phòng, ngừa lây nhiễm khi phối giống (+3%)`
+                          : (malePet.isVaccinated || femalePet.isVaccinated)
+                          ? "Sổ tiêm chủng đang chờ kiểm duyệt hoặc chưa được xác minh (+0%)"
+                          : "Chưa có hồ sơ kiểm định tiêm chủng y tế (+0%)"}
                       </p>
                     </div>
                   </div>
-                  <span className={cn("font-mono text-xs font-black shrink-0", bothVaccineVerified ? "text-emerald-600" : "text-muted-foreground")}>
-                    {bothVaccineVerified ? "+5%" : "+0%"}
+                  <span
+                    className={cn(
+                      "font-mono text-xs font-black shrink-0",
+                      vaccineScoreDelta > 0 ? "text-emerald-600" : "text-muted-foreground",
+                    )}
+                  >
+                    {vaccineScoreDelta > 0 ? `+${vaccineScoreDelta}%` : "+0%"}
                   </span>
                 </div>
               </div>

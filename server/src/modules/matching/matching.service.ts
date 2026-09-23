@@ -1715,22 +1715,28 @@ export class MatchingService {
       reasons.push('same_location');
     }
 
-    // Cả hai có phả hệ (tự khai) (+10)
-    if (femalePet.hasPedigree && malePet.hasPedigree) {
+    // Giấy chứng nhận phả hệ VKA (Tối đa +20%):
+    // - Cả 2 đã xác minh phả hệ VKA (+20)
+    // - Chỉ bé đực có phả hệ VKA đã kiểm duyệt (+10) (bảo đảm nguồn gen thuần chuẩn cho đàn con)
+    // - Tự khai chưa qua kiểm duyệt hoặc không có (+0)
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 20;
+      reasons.push('both_pedigree_verified');
+    } else if (malePet.pedigreeVerified) {
       score += 10;
-      reasons.push('both_pedigree');
+      reasons.push('male_pedigree_verified');
     }
 
-    // Cả hai vaccine đã xác minh bởi moderator (+5)
+    // Kiểm định tiêm chủng y tế (Tối đa +5%):
+    // - Cả 2 đã xác minh tiêm chủng (+5)
+    // - Chỉ bé đực đã xác minh tiêm chủng (+3) (phòng ngừa lây nhiễm an toàn khi phối)
+    // - Chưa xác minh tiêm chủng (+0)
     if (femalePet.vaccineVerified && malePet.vaccineVerified) {
       score += 5;
       reasons.push('both_vaccine_verified');
-    }
-
-    // Cả hai phả hệ đã xác minh bởi moderator (+10)
-    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
-      score += 10;
-      reasons.push('both_pedigree_verified');
+    } else if (malePet.vaccineVerified) {
+      score += 3;
+      reasons.push('male_vaccine_verified');
     }
 
     // Cân nặng gần nhau ≤5kg (+10)
@@ -1766,18 +1772,25 @@ export class MatchingService {
       score += 15;
       reasons.push('same_location');
     }
-    if (femalePet.hasPedigree && malePet.hasPedigree) {
+
+    // Giấy chứng nhận phả hệ VKA (Tối đa +20%):
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 20;
+      reasons.push('both_pedigree_verified');
+    } else if (malePet.pedigreeVerified) {
       score += 10;
-      reasons.push('both_pedigree');
+      reasons.push('male_pedigree_verified');
     }
+
+    // Kiểm định tiêm chủng y tế (Tối đa +5%):
     if (femalePet.vaccineVerified && malePet.vaccineVerified) {
       score += 5;
       reasons.push('both_vaccine_verified');
+    } else if (malePet.vaccineVerified) {
+      score += 3;
+      reasons.push('male_vaccine_verified');
     }
-    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
-      score += 10;
-      reasons.push('both_pedigree_verified');
-    }
+
     if (Math.abs(femalePet.weight - malePet.weight) <= 5) {
       score += 10;
       reasons.push('similar_weight');
