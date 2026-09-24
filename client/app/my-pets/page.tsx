@@ -62,7 +62,9 @@ function getPetBreedingStatus(pet: Pet) {
   const isEligible = !isUnderage && isWeightEligible;
   const eligibleDate = new Date(birthday);
   eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
-  const eligibleDateStr = eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" });
+  const mm = String(eligibleDate.getMonth() + 1).padStart(2, "0");
+  const yyyy = eligibleDate.getFullYear();
+  const eligibleDateStr = `${mm}/${yyyy}`;
   return {
     isUnderage,
     isWeightEligible,
@@ -471,7 +473,7 @@ export default function MyPetsPage() {
                     </span>
                   ) : isUnderage ? (
                     <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1 rounded-full bg-blue-600/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
-                      🌱 Đang lớn ({ageMonths} th)
+                      🌱 Đang lớn ({ageMonths} tháng)
                     </span>
                   ) : !isWeightEligible ? (
                     <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1 rounded-full bg-amber-600/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
@@ -584,7 +586,7 @@ export default function MyPetsPage() {
                         )}
                       >
                         <BadgeCheck className="size-3" />
-                        Phả hệ VKA/TICA
+                        {pet.species === "CAT" ? "Phả hệ TICA/WCF" : "Phả hệ VKA"}
                       </span>
                     )}
                   </div>
@@ -631,7 +633,7 @@ export default function MyPetsPage() {
                             ? `Tính cách: "${pet.personality}"`
                             : isEligible
                             ? `Tìm giống ${pet.breed} đực đạt chuẩn phối`
-                            : `Dự kiến đủ tuổi ghép đôi từ T${eligibleDateStr}`}
+                            : `Dự kiến đủ tuổi ghép đôi từ Tháng ${eligibleDateStr}`}
                         </p>
                       </div>
                     )}
@@ -649,7 +651,7 @@ export default function MyPetsPage() {
                             title="Bé chưa đủ điều kiện phối giống"
                           >
                             {isUnderage
-                              ? `🌱 Đang lớn (T${eligibleDateStr})`
+                              ? `🌱 Đang lớn (Tháng ${eligibleDateStr})`
                               : "⚖️ Chưa đủ cân phối giống"}
                           </Button>
                         ) : (
@@ -675,13 +677,25 @@ export default function MyPetsPage() {
                           Không thể ghép đôi
                         </Button>
                       ) : !isEligible ? (
-                        <Button
-                          className="h-10 flex-1 gap-1.5 rounded-xl border-amber-200 bg-amber-50/60 text-xs font-bold text-amber-700 shadow-xs dark:bg-amber-950/40 dark:text-amber-300"
-                          onClick={() => setSelectedDetailPetId(pet.id)}
-                        >
-                          <Heart className="size-4" />
-                          {isUnderage ? "Chưa đủ tuổi" : "Chưa đủ cân phối giống"}
-                        </Button>
+                        isUnderage ? (
+                          <Button
+                            className="h-10 flex-1 gap-1.5 rounded-xl border-blue-200 bg-blue-50/80 text-xs font-bold text-blue-700 shadow-xs hover:bg-blue-100 hover:text-blue-800 dark:border-blue-900/40 dark:bg-blue-950/40 dark:text-blue-300 transition-colors"
+                            asChild
+                          >
+                            <Link href="/explore">
+                              <Eye className="size-4" />
+                              Xem trước ghép đôi
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            className="h-10 flex-1 gap-1.5 rounded-xl border-amber-200 bg-amber-50/60 text-xs font-bold text-amber-700 shadow-xs dark:bg-amber-950/40 dark:text-amber-300"
+                            onClick={() => setSelectedDetailPetId(pet.id)}
+                          >
+                            <Heart className="size-4" />
+                            Chưa đủ cân phối giống
+                          </Button>
+                        )
                       ) : (
                         <Button
                           className="h-10 flex-1 gap-1.5 rounded-xl font-bold shadow-md shadow-primary/20 text-xs"
