@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import AppPagination from '@/components/ui/app-pagination';
 import { spaApi } from '@/lib/api/spa';
 import { SpaBookingType, SpaServiceType } from '@/types';
+import { resolveServicePriceAndDuration } from '@/lib/spa-bracket.utils';
 
 export default function SpaHistory() {
   const router = useRouter();
@@ -77,6 +78,70 @@ export default function SpaHistory() {
         .filter((s): s is SpaServiceType => Boolean(s));
     }
     return [];
+  };
+
+  /**
+   * Lấy giá tiền chính xác của dịch vụ phụ / dịch vụ lẻ
+   * Ưu tiên giá số đã chốt trong snapshot, nếu là mảng mốc giá thì tính theo cân nặng và loài thú cưng
+   */
+  const getSubServicePrice = (sub: any, booking?: SpaBookingType | null): number => {
+    if (typeof sub?.price === 'number' && !isNaN(sub.price)) {
+      return sub.price;
+    }
+    if (booking) {
+      const petSpecies = booking.petSpecies || booking.pet?.species || 'DOG';
+      const petWeight = booking.petWeight || booking.pet?.weight || 0;
+      const resolved = resolveServicePriceAndDuration(sub, petSpecies, petWeight);
+      return resolved.price;
+    }
+    return 0;
+  };
+
+  /**
+   * Lấy giá tiền chính xác của dịch vụ chính trong lịch hẹn
+   * Bảo toàn giá chốt tại thời điểm đặt (priceSnapshot), hoặc tính chuẩn xác theo phân khúc cân nặng
+   */
+  const getMainServicePrice = (booking: SpaBookingType): number => {
+    const hasMain = Boolean(booking.service || booking.serviceId || (booking as any).mainServiceId);
+    if (!hasMain) {
+      return 0;
+    }
+
+    if (typeof booking.priceSnapshot === 'number' && !isNaN(booking.priceSnapshot) && booking.priceSnapshot > 0) {
+      return booking.priceSnapshot;
+    }
+
+    if (typeof (booking as any).mainServiceResolved?.resolvedPrice === 'number') {
+      return (booking as any).mainServiceResolved.resolvedPrice;
+    }
+
+    const mainSvc = (booking.service as any) || (booking as any).mainServiceResolved;
+    if (mainSvc) {
+      if (typeof mainSvc.price === 'number' && !isNaN(mainSvc.price)) {
+        return mainSvc.price;
+      }
+      const petSpecies = booking.petSpecies || booking.pet?.species || 'DOG';
+      const petWeight = booking.petWeight || booking.pet?.weight || 0;
+      const resolved = resolveServicePriceAndDuration(mainSvc, petSpecies, petWeight);
+      return resolved.price;
+    }
+
+    return typeof booking.priceSnapshot === 'number' ? booking.priceSnapshot : 0;
+  };
+
+  /**
+   * Tính tổng tiền thanh toán chính xác của lịch hẹn
+   */
+  const getBookingTotalPrice = (booking: SpaBookingType): number => {
+    if (typeof booking.totalPrice === 'number' && booking.totalPrice > 0) {
+      return booking.totalPrice;
+    }
+    const mainPrice = getMainServicePrice(booking);
+    const subList = getBookingSubServices(booking);
+    const subTotal = subList.reduce((sum, sub) => sum + getSubServicePrice(sub, booking), 0);
+    const calculated = mainPrice + subTotal;
+    if (calculated > 0) return calculated;
+    return typeof booking.priceSnapshot === 'number' ? booking.priceSnapshot : 0;
   };
 
   /**
@@ -504,7 +569,7 @@ export default function SpaHistory() {
                       <div className="text-right">
                         <span className="text-xs text-[var(--text-muted)] block sm:inline mr-1">Tổng cộng:</span>
                         <span className="text-lg font-black text-primary">
-                          {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                          {getBookingTotalPrice(booking).toLocaleString('vi-VN')}đ
                         </span>
                       </div>
                       <Button
@@ -695,55 +760,65 @@ export default function SpaHistory() {
 
                 <div className="space-y-2.5">
                   {/* MAIN SERVICE (ALWAYS ON TOP) */}
-                  <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-purple-800 bg-purple-200/80 px-2 py-0.5 rounded uppercase tracking-wider">
-                        <Sparkles className="size-3 text-purple-700" /> Dịch vụ chính
-                      </span>
-                      <span className="text-sm font-black text-purple-900">
-                        {(selectedBooking.service?.price || selectedBooking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-                    <p className="text-sm font-extrabold text-gray-900 pt-1">
-                      {selectedBooking.service?.name || 'Gói Spa Chăm Sóc'}
-                    </p>
-                    {selectedBooking.service?.description && (
-                      <p className="text-xs text-gray-600 leading-relaxed pt-0.5">
-                        {selectedBooking.service.description}
+                  {Boolean(selectedBooking.service || selectedBooking.serviceId || (selectedBooking as any).mainServiceId) && (
+                    <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-purple-800 bg-purple-200/80 px-2 py-0.5 rounded uppercase tracking-wider">
+                          <Sparkles className="size-3 text-purple-700" /> Dịch vụ chính
+                        </span>
+                        <span className="text-sm font-black text-purple-900">
+                          {getMainServicePrice(selectedBooking).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                      <p className="text-sm font-extrabold text-gray-900 pt-1">
+                        {selectedBooking.service?.name || (selectedBooking as any).mainServiceResolved?.name || 'Gói Spa Chăm Sóc'}
                       </p>
-                    )}
-                  </div>
+                      {(selectedBooking.service?.description || (selectedBooking as any).mainServiceResolved?.description) && (
+                        <p className="text-xs text-gray-600 leading-relaxed pt-0.5">
+                          {selectedBooking.service?.description || (selectedBooking as any).mainServiceResolved?.description}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* SUB SERVICES (BELOW IF ANY) */}
                   {(() => {
                     const modalSubList = getBookingSubServices(selectedBooking);
+                    const hasMain = Boolean(selectedBooking.service || selectedBooking.serviceId || (selectedBooking as any).mainServiceId);
                     if (modalSubList.length === 0) {
-                      return <p className="text-xs text-gray-400 italic px-1">Không có dịch vụ phụ đi kèm.</p>;
+                      return !hasMain ? (
+                        <p className="text-xs text-gray-400 italic px-1">Chưa có dịch vụ nào.</p>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic px-1">Không có dịch vụ phụ đi kèm.</p>
+                      );
                     }
                     return (
                       <div className="space-y-2 pt-1">
                         <span className="text-xs font-extrabold text-gray-700 block px-1">
                           Dịch vụ phụ chọn thêm ({modalSubList.length}):
                         </span>
-                        {modalSubList.map((sub, idx) => (
-                          <div
-                            key={sub.id || idx}
-                            className="flex items-center justify-between p-3.5 bg-green-50/60 border border-green-200 rounded-xl transition"
-                          >
-                            <div className="space-y-0.5 pr-2">
-                              <p className="text-xs font-extrabold text-gray-900 flex items-center gap-1.5">
-                                <span className="size-2 rounded-full bg-green-600 shrink-0" />
-                                {sub.name}
-                              </p>
-                              {sub.description && (
-                                <p className="text-[11px] text-gray-600 line-clamp-1 pl-3.5">{sub.description}</p>
-                              )}
+                        {modalSubList.map((sub, idx) => {
+                          const subPrice = getSubServicePrice(sub, selectedBooking);
+                          return (
+                            <div
+                              key={sub.id || idx}
+                              className="flex items-center justify-between p-3.5 bg-green-50/60 border border-green-200 rounded-xl transition"
+                            >
+                              <div className="space-y-0.5 pr-2">
+                                <p className="text-xs font-extrabold text-gray-900 flex items-center gap-1.5">
+                                  <span className="size-2 rounded-full bg-green-600 shrink-0" />
+                                  {sub.name}
+                                </p>
+                                {sub.description && (
+                                  <p className="text-[11px] text-gray-600 line-clamp-1 pl-3.5">{sub.description}</p>
+                                )}
+                              </div>
+                              <span className="text-xs font-black text-green-700 bg-white px-2.5 py-1 rounded-lg border border-green-200 shrink-0">
+                                + {subPrice.toLocaleString('vi-VN')}đ
+                              </span>
                             </div>
-                            <span className="text-xs font-black text-green-700 bg-white px-2.5 py-1 rounded-lg border border-green-200 shrink-0">
-                              + {(sub.price || 0).toLocaleString('vi-VN')}đ
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   })()}
@@ -931,7 +1006,7 @@ export default function SpaHistory() {
                 </div>
                 <div className="text-right">
                   <span className="text-2xl font-black text-white">
-                    {(selectedBooking.totalPrice || selectedBooking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                    {getBookingTotalPrice(selectedBooking).toLocaleString('vi-VN')}đ
                   </span>
                 </div>
               </div>

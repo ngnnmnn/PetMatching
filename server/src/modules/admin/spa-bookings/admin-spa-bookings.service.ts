@@ -3,6 +3,10 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 export class AdminSpaBookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Lấy danh sách lịch hẹn Spa cho trang quản trị Admin
+   * Gắn dịch vụ chính (mainServiceResolved) và danh sách dịch vụ phụ (ưu tiên snapshot đã chốt giá)
+   */
   async getBookings() {
     const bookings = await this.prisma.spaBooking.findMany({
       orderBy: { scheduledAt: 'desc' },
@@ -86,15 +90,28 @@ export class AdminSpaBookingsService {
       relatedServices.map((service) => [service.id, service]),
     );
 
-    return bookings.map((booking) => ({
-      ...booking,
-      mainServiceResolved:
+    return bookings.map((booking) => {
+      const resolvedMain =
         (booking.mainServiceId
           ? serviceById.get(booking.mainServiceId)
-          : undefined) ?? booking.service,
-      subServices: booking.subServiceIds
+          : undefined) ?? booking.service;
+
+      const subServicesFromIds = booking.subServiceIds
         .map((id) => serviceById.get(id))
-        .filter((service) => service !== undefined),
-    }));
+        .filter((service) => service !== undefined);
+
+      const subServices =
+        Array.isArray(booking.subServicesSnapshot) &&
+        booking.subServicesSnapshot.length > 0
+          ? (booking.subServicesSnapshot as any[])
+          : subServicesFromIds;
+
+      return {
+        ...booking,
+        mainServiceResolved: resolvedMain,
+        subServices,
+      };
+    });
   }
 }
+
