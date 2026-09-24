@@ -67,8 +67,51 @@ export function getProductLowestPrice(product: any): number {
 export const MIN_PET_MATCH_SCORE = 30;
 
 /**
+ * Trích xuất giới tính mục tiêu từ tên phân loại (Variant), mô tả hoặc thông số sản phẩm (Specifications).
+ * Trả về: 'MALE' | 'FEMALE' | 'ALL'
+ */
+export function extractGenderTarget(text: string, specs?: any): 'MALE' | 'FEMALE' | 'ALL' {
+  const normText = (text || '').toLowerCase();
+
+  // 1. Kiểm tra từ object thông số kỹ thuật (specifications) nếu có
+  if (specs && typeof specs === 'object') {
+    const specVal = String(
+      specs.gender || specs['Giới tính'] || specs['giới tính'] || specs['Giới tính phù hợp'] || specs['phù hợp cho'] || ''
+    ).toLowerCase();
+    if (specVal.includes('đực') || specVal.includes('trai') || specVal === 'male') return 'MALE';
+    if (specVal.includes('cái') || specVal.includes('gái') || specVal === 'female') return 'FEMALE';
+  }
+
+  // 2. Phân tích từ khóa giới tính Đực / Trai
+  const isMale =
+    /\b(bé đực|cho đực|dành cho đực|cho bé đực|giới tính đực|cho chó đực|cho mèo đực|bé trai|cho bé trai)\b/i.test(normText) ||
+    (/\b(đực|trai)\b/i.test(normText) && !/\b(được|đặc|trại)\b/i.test(normText));
+
+  // 3. Phân tích từ khóa giới tính Cái / Gái (tránh nhầm từ 'cái' trong số đếm '1 cái', '2 cái' hoặc 'cái/hộp')
+  const isFemale =
+    /\b(bé cái|cho cái|dành cho cái|cho bé cái|giới tính cái|cho chó cái|cho mèo cái|bé gái|cho bé gái)\b/i.test(normText) ||
+    (/\b(cái|gái)\b/i.test(normText) && !/\d+\s*cái\b/i.test(normText) && !/\bcái\s*[\/:]/i.test(normText) && !/\b(cái gì|cái nào)\b/i.test(normText));
+
+  if (isMale && !isFemale) return 'MALE';
+  if (isFemale && !isMale) return 'FEMALE';
+  return 'ALL';
+}
+
+/**
+ * Kiểm tra tính tương thích giới tính giữa Giới tính mục tiêu của Sản phẩm/Phân loại và Giới tính của Thú cưng.
+ */
+export function isGenderCompatible(targetGender: 'MALE' | 'FEMALE' | 'ALL', petGender?: string | null): boolean {
+  if (!petGender || targetGender === 'ALL') return true;
+  const normalizedPetGender =
+    String(petGender).toUpperCase() === 'FEMALE' || String(petGender).toLowerCase() === 'female' || String(petGender) === 'cái'
+      ? 'FEMALE'
+      : 'MALE';
+  return targetGender === normalizedPetGender;
+}
+
+/**
  * Thuật toán tính điểm độ tương thích (Relevancy Match Score) giữa Sản phẩm và Thú cưng được chọn.
- * Loại bỏ 100% các sản phẩm rác, thiếu thông tin (như 'net', '1', '123', không mô tả/thông số).
+ * Bao gồm kiểm tra Loài, Giống loài, Cân nặng/Kích cỡ và Giới tính (Đực/Cái).
  */
 export function computePetMatchScore(product: any, pet: any): number {
   if (!product || !product.name || !pet) return 0;
@@ -134,7 +177,44 @@ export function computePetMatchScore(product: any, pet: any): number {
     }
   }
 
-  // 4. Đánh giá chất lượng dữ liệu sản phẩm (Chặn sản phẩm không mô tả/tên vô nghĩa)
+  // 4. Kiểm tra Giới tính Thú cưng (Gender Compatibility & Disqualification)
+  const petGender = pet.gender ? (String(pet.gender).toUpperCase() === 'FEMALE' || String(pet.gender) === 'cái' ? 'FEMALE' : 'MALE') : null;
+  if (petGender) {
+    // Kiểm tra giới tính chỉ định cấp Sản phẩm
+    const productGender = extractGenderTarget(fullText, product.specifications);
+    if (productGender !== 'ALL' && productGender !== petGender) {
+      // Sản phẩm ghi rõ dành riêng cho giới tính ngược lại với pet -> Loại (0 điểm)
+      return 0;
+    }
+    if (productGender === petGender) {
+      score += 40; // Đúng giới tính -> Cộng 40 điểm thưởng
+    }
+
+    // Kiểm tra các phân loại (Variants)
+    if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+      const activeVariants = product.variants.filter((v: any) => v.isActive !== false);
+      const compatibleVariants = activeVariants.filter((v: any) => {
+        const vGender = extractGenderTarget(v.name || '', v.specifications);
+        return isGenderCompatible(vGender, petGender);
+      });
+
+      // Nếu tất cả variant đang mở bán đều dành cho giới tính ngược lại -> Loại (0 điểm)
+      if (activeVariants.length > 0 && compatibleVariants.length === 0) {
+        return 0;
+      }
+
+      // Đơn cử sản phẩm có ít nhất 1 variant ghi rõ đúng giới tính của pet
+      const hasSpecificGenderMatch = activeVariants.some((v: any) => {
+        const vGender = extractGenderTarget(v.name || '', v.specifications);
+        return vGender === petGender;
+      });
+      if (hasSpecificGenderMatch) {
+        score += 25;
+      }
+    }
+  }
+
+  // 5. Đánh giá chất lượng dữ liệu sản phẩm (Chặn sản phẩm không mô tả/tên vô nghĩa)
   if (trimmedName.length < 3 || /^\d+$/.test(trimmedName)) {
     return 0; // Tên quá ngắn hoặc toàn số -> 0 điểm
   }
@@ -151,7 +231,7 @@ export function computePetMatchScore(product: any, pet: any): number {
 
 /**
  * Kiểm tra xem sản phẩm có phải là sản phẩm chuẩn hợp lệ và còn hàng hay không.
- * Hết hàng (stock <= 0) thì không đề xuất.
+ * Hết hàng (stock <= 0) hoặc không khớp giới tính thì không đề xuất.
  */
 export function isValidProductForRecommendation(product: any, pet?: any): boolean {
   if (!product || !product.name) return false;
@@ -177,10 +257,10 @@ export function isValidProductForRecommendation(product: any, pet?: any): boolea
 }
 
 /**
- * Lấy danh sách tất cả các phân loại (Variants) còn hàng phù hợp với thể trạng thú cưng.
+ * Lấy danh sách tất cả các phân loại (Variants) còn hàng phù hợp với thể trạng và giới tính của thú cưng.
  * - Loại bỏ các phân loại đã hết hàng (stock <= 0).
+ * - Loại bỏ các phân loại dành riêng cho giới tính đối lập (Đực vs Cái).
  * - Nếu sản phẩm chia kích thước/trọng lượng cụ thể (Size S/M/L, kg, gram), lọc các phân loại khớp với thể trạng pet.
- * - Nếu các phân loại chỉ khác nhau về màu sắc/mẫu mã (không ảnh hưởng kích thước), tất cả phân loại còn hàng đều phù hợp tốt.
  */
 export function getSuitableVariantsForPet(product: any, pet: any): any[] {
   if (!product || !product.variants || !Array.isArray(product.variants) || product.variants.length === 0) {
@@ -189,23 +269,40 @@ export function getSuitableVariantsForPet(product: any, pet: any): any[] {
   // Chỉ lọc các phân loại đang hoạt động VÀ CÒN HÀNG (stock > 0)
   const activeInStockVariants = product.variants.filter((v: any) => v.isActive !== false && Number(v.stock || 0) > 0);
   if (activeInStockVariants.length === 0) return [];
-  if (!pet || pet.weight === undefined || pet.weight === null) return activeInStockVariants;
+  if (!pet) return activeInStockVariants;
+
+  // Lớp 1: Lọc theo Giới tính Thú cưng (Gender Matching)
+  let genderFilteredVariants = activeInStockVariants;
+  if (pet.gender) {
+    const petGender = String(pet.gender).toUpperCase() === 'FEMALE' || String(pet.gender) === 'cái' ? 'FEMALE' : 'MALE';
+    const matchesGender = activeInStockVariants.filter((v: any) => {
+      const vGender = extractGenderTarget(v.name || '', v.specifications);
+      return isGenderCompatible(vGender, petGender);
+    });
+    if (matchesGender.length > 0) {
+      genderFilteredVariants = matchesGender;
+    }
+  }
+
+  if (pet.weight === undefined || pet.weight === null) {
+    return genderFilteredVariants;
+  }
 
   const w = Number(pet.weight);
 
-  // Kiểm tra xem sản phẩm có chứa từ khóa phân chia kích thước cụ thể không
-  const hasSizeKeywords = activeInStockVariants.some((v: any) => {
+  // Lớp 2: Lọc theo Kích thước / Cân nặng (Size & Weight Matching)
+  const hasSizeKeywords = genderFilteredVariants.some((v: any) => {
     const n = (v.name || '').toLowerCase();
     return /\b(size|s|m|l|xl|xxl|kg|gram|g|nhỏ|vừa|lớn)\b/i.test(n);
   });
 
-  // Nếu sản phẩm không phân chia kích thước (chỉ khác màu sắc, vị...), tất cả variant còn hàng đều phù hợp
+  // Nếu sản phẩm không phân chia kích thước, trả về danh sách variant đã lọc theo giới tính
   if (!hasSizeKeywords) {
-    return activeInStockVariants;
+    return genderFilteredVariants;
   }
 
   // Lọc các variant còn hàng có thông số kích thước phù hợp với thể trạng pet
-  const matches = activeInStockVariants.filter((v: any) => {
+  const matches = genderFilteredVariants.filter((v: any) => {
     const n = (v.name || '').toLowerCase();
     if (w < 5) {
       return (
@@ -237,7 +334,7 @@ export function getSuitableVariantsForPet(product: any, pet: any): any[] {
     }
   });
 
-  return matches.length > 0 ? matches : activeInStockVariants;
+  return matches.length > 0 ? matches : genderFilteredVariants;
 }
 
 /**

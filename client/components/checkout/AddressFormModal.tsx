@@ -42,8 +42,8 @@ export interface AddressFormData {
   wardCode?: string;
   saveAddressToDb: boolean;
   setAsDefault: boolean;
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
 }
 
 interface AddressFormModalProps {
@@ -70,6 +70,10 @@ interface AddressFormModalProps {
   showSaveOptions?: boolean;
   showShippingFee?: boolean;
   itemsSubtotal?: number;
+  discountAmount?: number;
+  voucherType?: 'PERCENTAGE' | 'FIXED' | 'FREE_SHIP' | null;
+  voucherValue?: number | null;
+  maxDiscountAmount?: number | null;
 }
 
 const HANOI_PROVINCE_ID = 1;
@@ -86,6 +90,10 @@ export default function AddressFormModal({
   showSaveOptions = false,
   showShippingFee = false,
   itemsSubtotal,
+  discountAmount = 0,
+  voucherType,
+  voucherValue,
+  maxDiscountAmount,
 }: AddressFormModalProps) {
   const actionButtonText =
     submitButtonText ||
@@ -111,10 +119,37 @@ export default function AddressFormModal({
 
   // Cước phí giao hỏa tốc AhaMove tính toán thời gian thực (nếu chưa có địa chỉ thì để null)
   const [dynamicShippingFee, setDynamicShippingFee] = useState<number | null>(null);
+  
+  // 1. Phí ship cơ bản theo địa chỉ mới (Freeship nếu tổng giá trị tiền hàng > 500k)
+  const isFreeshipByOrderValue = itemsSubtotal !== undefined && itemsSubtotal > 500000;
+  const rawShippingFee = isFreeshipByOrderValue ? 0 : (dynamicShippingFee ?? 0);
+
+  // 2. Tính toán lại giảm giá và phí ship thực tế theo loại Voucher (nếu có)
+  let effectiveDiscount = discountAmount || 0;
+  let effectiveShippingFee = rawShippingFee;
+
+  if (voucherType === 'FREE_SHIP') {
+    const val = voucherValue ?? 0;
+    const max = maxDiscountAmount || Infinity;
+    let freeShipDiscount = (val === 100 || val === 0 || !val) ? rawShippingFee : Math.min(rawShippingFee, val);
+    freeShipDiscount = Math.min(freeShipDiscount, max);
+
+    effectiveDiscount = freeShipDiscount;
+    effectiveShippingFee = Math.max(0, rawShippingFee - freeShipDiscount);
+  } else if (voucherType === 'PERCENTAGE' || voucherType === 'FIXED') {
+    effectiveShippingFee = rawShippingFee;
+  }
+
   const calculatedShippingFee = showShippingFee
-    ? itemsSubtotal !== undefined && itemsSubtotal > 500000
+    ? isFreeshipByOrderValue
       ? 0
       : dynamicShippingFee
+    : null;
+
+  const productSubtotal = itemsSubtotal ?? 0;
+  const productDiscount = voucherType === 'FREE_SHIP' ? 0 : effectiveDiscount;
+  const newExpectedTotal = itemsSubtotal !== undefined && dynamicShippingFee !== null
+    ? Math.max(0, productSubtotal - productDiscount + effectiveShippingFee)
     : null;
   // Ref ghi nhớ trạng thái đã khởi tạo form để chỉ chạy 1 lần khi mở Modal, tránh tự động reset tab khi re-render hoặc auto-polling
   const hasInitializedRef = useRef(false);
@@ -274,21 +309,16 @@ export default function AddressFormModal({
       return;
     }
 
-    let finalLat = selectedLat;
-    let finalLng = selectedLng;
-
-    // Tự động sử dụng tọa độ mặc định nếu chọn địa chỉ đã lưu trong quá khứ chưa có GPS
-    if (finalLat == null || finalLng == null) {
-      finalLat = 21.0285;
-      finalLng = 105.8542;
-    }
-
     const phoneRegex = /^(0[3|5|7|8|9])[0-9]{8}$/;
     if (!phoneRegex.test(receiverPhone.trim())) {
       toast.error('Số điện thoại không hợp lệ! Vui lòng nhập số điện thoại gồm 10 chữ số.');
       return;
     }
 
+    /**
+     * Giữ nguyên selectedLat / selectedLng (có thể undefined nếu địa chỉ chưa chọn GPS).
+     * Backend sẽ tự động geocode từ chuỗi địa chỉ nếu lat/lng bị khuyết, đảm bảo trùng khớp với kết quả ước tính phí ship.
+     */
     onSubmit({
       receiverName: receiverName.trim(),
       receiverPhone: receiverPhone.trim(),
@@ -301,8 +331,8 @@ export default function AddressFormModal({
       wardCode: finalWardCode || '10101',
       saveAddressToDb,
       setAsDefault,
-      lat: finalLat,
-      lng: finalLng,
+      lat: selectedLat,
+      lng: selectedLng,
     });
   };
 
@@ -530,19 +560,43 @@ export default function AddressFormModal({
             </>
           )}
 
-          {/* Hiển thị cước phí vận chuyển mới khi đổi địa chỉ. Tổng tiền chính thức do backend tính. */}
+          {/* Hiển thị bảng kê chi tiết: Giá sản phẩm + Phí vận chuyển mới - Giảm giá = Tổng tiền mới dự kiến */}
           {showShippingFee && (
-            <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-3.5 text-xs space-y-1.5 animate-fadeIn">
+            <div className="rounded-2xl bg-emerald-50/80 border border-emerald-200 p-4 text-xs space-y-2 animate-fadeIn shadow-2xs">
+              {itemsSubtotal !== undefined && (
+                <div className="flex justify-between items-center text-gray-600 font-semibold">
+                  <span>Tạm tính (tiền hàng):</span>
+                  <span className="font-bold text-gray-900">{formatCurrency(itemsSubtotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center font-extrabold text-emerald-900">
                 <span>Phí vận chuyển mới:</span>
                 <span className="text-sm font-black text-[#0F766E]">
                   {calculatedShippingFee !== null ? (
-                    formatCurrency(calculatedShippingFee)
+                    effectiveShippingFee === 0 ? (
+                      <span className="text-emerald-600 font-extrabold">Miễn phí</span>
+                    ) : (
+                      formatCurrency(effectiveShippingFee)
+                    )
                   ) : (
                     <span className="text-xs text-amber-700 font-medium font-sans">Chưa chọn địa chỉ</span>
                   )}
                 </span>
               </div>
+              {effectiveDiscount > 0 && (
+                <div className="flex justify-between items-center text-rose-700 font-semibold">
+                  <span>Giảm giá (Voucher):</span>
+                  <span className="font-bold">- {formatCurrency(effectiveDiscount)}</span>
+                </div>
+              )}
+              {itemsSubtotal !== undefined && calculatedShippingFee !== null && (
+                <div className="flex justify-between items-center border-t border-emerald-200/80 pt-2 font-black text-emerald-950">
+                  <span>Tổng tiền mới dự kiến:</span>
+                  <span className="text-base text-[var(--primary-color)]">
+                    {formatCurrency(newExpectedTotal!)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

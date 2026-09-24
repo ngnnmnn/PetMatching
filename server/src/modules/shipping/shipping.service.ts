@@ -319,14 +319,15 @@ export class ShippingService {
       ahamoveOrderCode = `AHAMOVE-STG-${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    // Cập nhật trạng thái đơn hàng trong Database: khi vừa đẩy đơn sang AhaMove -> chuyển sang SHIPPED (Đã gửi vận chuyển)
+    // Cập nhật trạng thái đơn hàng trong Database: khi vừa đẩy đơn sang AhaMove -> lưu shippingStatus: ASSIGNING, giữ nguyên status order cho đến khi tài xế nhận đơn
+    const initialOrderStatus = order.status === 'PENDING' ? 'CONFIRMED' : order.status;
     const updatedOrder = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         ahamoveOrderCode,
         shippingStatus: 'ASSIGNING',
-        status: 'SHIPPED',
-        shippingNote: isRealAhamoveCreated ? 'Đã phát đơn thành công lên Dashboard AhaMove Staging (business-stg.ahamove.com)' : 'Đã tạo vận đơn hỏa tốc AhaMove Sandbox (Tự động giả lập tiến trình)',
+        status: initialOrderStatus,
+        shippingNote: isRealAhamoveCreated ? 'Đã phát đơn thành công lên Dashboard AhaMove Staging (business-stg.ahamove.com), đang quét tìm tài xế' : 'Đã tạo vận đơn hỏa tốc AhaMove Sandbox (Tự động giả lập tiến trình)',
       },
     });
 
@@ -345,7 +346,7 @@ export class ShippingService {
 
   /**
    * Đón và xử lý Webhook tự động cập nhật trạng thái từ AhaMove Staging Portal
-   * Cập nhật trạng thái hiển thị: SHIPPED (Đang giao) -> DELIVERED (Giao hàng thành công)
+   * Chỉ chuyển trạng thái đơn hàng sang SHIPPED (Đang giao) khi tài xế đã chấp nhận đơn (ACCEPTED) hoặc đang giao hàng.
    * Khi trạng thái chuyển sang DELIVERED, tự động cập nhật hóa đơn thanh toán COD sang PAID
    * @param payload Dữ liệu webhook gửi từ AhaMove Sandbox
    */
@@ -374,13 +375,19 @@ export class ShippingService {
       return { success: false, message: 'Không tìm thấy đơn hàng tương ứng' };
     }
 
-    let targetStatus: 'SHIPPED' | 'DELIVERED' | 'CANCELLED' = 'SHIPPED';
+    let targetStatus: any = order.status;
     let note = 'Cập nhật từ AhaMove Sandbox';
 
     switch (status) {
-      case 'ACCEPTED':
       case 'ASSIGNING':
+      case 'CREATED':
+        // Chưa có tài xế nhận -> Giữ nguyên trạng thái đơn (CONFIRMED/PACKED), ghi nhận shippingStatus ASSIGNING
+        targetStatus = order.status;
+        note = 'Đã đẩy đơn sang AhaMove, đang tìm tài xế xe máy gần nhất';
+        break;
+      case 'ACCEPTED':
       case 'CONFIRMED':
+        // Tài xế đã nhận đơn -> Chuyển sang SHIPPED (Đang giao)
         targetStatus = 'SHIPPED';
         note = 'Tài xế AhaMove đã nhận đơn hàng và đang di chuyển tới Shop (Đang giao)';
         break;
@@ -390,6 +397,7 @@ export class ShippingService {
       case 'ON_TRIP':
       case 'TRIP_START':
       case 'PICKED':
+        // Tài xế đã lấy hàng và đang đi giao -> SHIPPED (Đang giao)
         targetStatus = 'SHIPPED';
         note = 'Tài xế AhaMove đã lấy hàng thành công và đang trên đường giao (Đang giao)';
         break;
@@ -687,13 +695,14 @@ export class ShippingService {
 
               // Tự động cập nhật Database nếu trạng thái trên AhaMove Portal có thay đổi
               let targetOrderStatus: any = order.status;
-              const activeStatuses = ['ACCEPTED', 'IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'ASSIGNING', 'CONFIRMED', 'PICKED'];
+              // Chỉ khi tài xế đã chấp nhận đơn (ACCEPTED) hoặc đang di chuyển giao hàng mới chuyển sang SHIPPED (Đang giao)
+              const driverAcceptedStatuses = ['ACCEPTED', 'IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'CONFIRMED', 'PICKED'];
               const completedStatuses = ['COMPLETED', 'DELIVERED', 'SUCCESSFUL', 'FINISHED'];
               const cancelledStatuses = ['CANCELLED', 'FAILED', 'REJECTED'];
 
               if (completedStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'DELIVERED';
-              } else if (activeStatuses.includes(ahaStatus)) {
+              } else if (driverAcceptedStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'SHIPPED';
               } else if (cancelledStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'CANCELLED';

@@ -58,6 +58,12 @@ interface Order {
   id: string;
   status: 'PENDING' | 'CONFIRMED' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
+  shippingFee?: number;
+  discountAmount?: number;
+  voucherCode?: string | null;
+  voucherType?: 'PERCENTAGE' | 'FIXED' | 'FREE_SHIP' | null;
+  voucherValue?: number | null;
+  maxDiscountAmount?: number | null;
   shippingAddress: string;
   shippingLatitude?: number | null;
   shippingLongitude?: number | null;
@@ -166,17 +172,28 @@ function parseAddressString(addrStr: string) {
   };
 }
 
-// Formats shippingAddress db string into a beautiful line
+/**
+ * Định dạng chuỗi địa chỉ giao hàng để hiển thị gọn gàng trên giao diện, tự động loại bỏ các đoạn trùng lặp.
+ */
 function formatAddressForDisplay(addrStr: string) {
   const parsed = parseAddressString(addrStr);
   if (parsed.receiverName || parsed.receiverPhone) {
     const contact = [parsed.receiverName, parsed.receiverPhone].filter(Boolean).join(' - ');
-    const addressParts = [parsed.detail, parsed.ward, parsed.district, parsed.province]
-      .map((p) => p?.trim())
+    const rawParts = [parsed.detail, parsed.ward, parsed.district, parsed.province]
+      .flatMap((p) => (p ? p.split(',') : []))
+      .map((p) => p.trim())
       .filter(Boolean);
+
+    const uniqueParts: string[] = [];
+    for (const p of rawParts) {
+      if (!uniqueParts.some((u) => u.toLowerCase() === p.toLowerCase())) {
+        uniqueParts.push(p);
+      }
+    }
+
     let base = contact;
-    if (addressParts.length > 0) {
-      base += ` | ${addressParts.join(', ')}`;
+    if (uniqueParts.length > 0) {
+      base += ` | ${uniqueParts.join(', ')}`;
     }
     if (parsed.note) {
       base += ` (Ghi chú: ${parsed.note})`;
@@ -195,11 +212,11 @@ const removeAccentsAndUpperCase = (str: string) => {
     .toUpperCase();
 };
 
-// Danh sách tab lọc trạng thái đơn hàng dành cho Khách hàng (theo quy trình 6 bước AhaMove)
+// Danh sách tab lọc trạng thái đơn hàng dành cho Khách hàng
 const ORDER_STATUS_TABS = [
   { id: 'ALL', label: 'Tất cả' },
-  { id: 'PENDING', label: 'Xác nhận / Đã thanh toán', statuses: ['PENDING', 'CONFIRMED'] },
-  { id: 'PACKED', label: 'Đã gói hàng', statuses: ['PACKED', 'PROCESSING'] },
+  { id: 'PENDING', label: 'Chờ xác nhận / Đã thanh toán', statuses: ['PENDING'] },
+  { id: 'CONFIRMED', label: 'Xác nhận', statuses: ['CONFIRMED', 'PACKED', 'PROCESSING'] },
   { id: 'SHIPPED', label: 'Đang giao', statuses: ['SHIPPED'] },
   { id: 'DELIVERED', label: 'Giao hàng thành công', statuses: ['DELIVERED'] },
   { id: 'CANCELLED', label: 'Đã hủy / Thất bại', statuses: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] },
@@ -515,12 +532,11 @@ export default function OrdersPage() {
   };
 
   /**
-   * Hiển thị badge trạng thái cho khách hàng (chuẩn AhaMove 6 bước)
-   * - Đơn COD mới tạo: "Xác nhận"
-   * - Đơn QR đã thanh toán thành công: "Đã thanh toán"
-   * - Đã đóng gói: "Đã gói hàng"
-   * - Đang vận chuyển: "Đang giao" / "Đã gửi vận chuyển"
-   * - Hoàn thành: "Giao hàng thành công"
+   * Hiển thị badge trạng thái cho khách hàng ở màn /orders
+   * - Trạng thái 1: "Chờ xác nhận" (Đơn COD mới hoặc chưa thanh toán), giữ "Đã thanh toán" nếu thanh toán thành công qua PayOS
+   * - Trạng thái 2: "Xác nhận" (Sau khi Manager ấn xác nhận đơn hàng)
+   * - Trạng thái 3: "Đang giao" / "Đã gửi vận chuyển" (SHIPPED)
+   * - Trạng thái 4: "Giao hàng thành công" (DELIVERED)
    */
   const getStatusBadge = (order: Order) => {
     switch (order.status) {
@@ -531,19 +547,28 @@ export default function OrdersPage() {
             Giao hàng thành công
           </span>
         );
+      case 'CONFIRMED':
       case 'PACKED':
       case 'PROCESSING':
+        if (order.shippingStatus === 'ASSIGNING') {
+          return (
+            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700 border border-blue-200">
+              <Truck className="size-3.5" />
+              Đã gửi VC
+            </span>
+          );
+        }
         return (
-          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-700">
-            <Package className="size-3.5" />
-            Đã gói hàng
+          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700 border border-blue-200">
+            <CheckCircle className="size-3.5" />
+            Xác nhận
           </span>
         );
       case 'SHIPPED':
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700">
             <Truck className="size-3.5" />
-            {order.shippingStatus === 'ACCEPTED' || order.shippingStatus === 'IN_PROCESS' ? 'Đang giao' : 'Đã gửi vận chuyển'}
+            Đang giao
           </span>
         );
       case 'CANCELLED':
@@ -580,7 +605,7 @@ export default function OrdersPage() {
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-800">
             <Clock className="size-3.5" />
-            Xác nhận
+            Chờ xác nhận
           </span>
         );
     }
@@ -988,10 +1013,10 @@ export default function OrdersPage() {
                             } else {
                               currentIdx = 2; // Đã gửi VC (Đã tạo đơn AhaMove, đang tìm/gán tài xế)
                             }
-                          } else if (order.status === 'PACKED') {
-                            currentIdx = 1; // Đã gói hàng
+                          } else if (['CONFIRMED', 'PACKED', 'PROCESSING'].includes(order.status)) {
+                            currentIdx = 1; // Xác nhận (Sau khi Manager ấn xác nhận đơn)
                           } else {
-                            currentIdx = 0; // Xác nhận / Đã thanh toán
+                            currentIdx = 0; // Chờ xác nhận / Đã thanh toán
                           }
 
                           const steps = [
@@ -999,10 +1024,10 @@ export default function OrdersPage() {
                               label:
                                 order.payment?.method === 'QR' && order.payment?.status === 'PAID'
                                   ? 'Đã thanh toán'
-                                  : 'Xác nhận',
+                                  : 'Chờ xác nhận',
                               icon: '1',
                             },
-                            { label: 'Đã gói hàng', icon: '2' },
+                            { label: 'Xác nhận', icon: '2' },
                             { label: 'Đã gửi VC', icon: '3' },
                             { label: 'Đang giao', icon: '4' },
                             { label: 'Thành công', icon: '5' },
@@ -1097,6 +1122,10 @@ export default function OrdersPage() {
           }}
           savedAddresses={savedAddresses}
           itemsSubtotal={editOrder.items.reduce((sum, item) => sum + item.price * item.quantity, 0)}
+          discountAmount={editOrder.discountAmount || 0}
+          voucherType={editOrder.voucherType}
+          voucherValue={editOrder.voucherValue}
+          maxDiscountAmount={editOrder.maxDiscountAmount}
           onSubmit={handleAddressFormSubmit}
           showShippingFee={true}
           submitButtonText="Xác nhận đổi địa chỉ"

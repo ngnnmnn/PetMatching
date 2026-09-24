@@ -1362,6 +1362,16 @@ export class ManagerService {
         .toUpperCase();
       const id = row['Mã sản phẩm'] ?? row['Mã SP'] ?? row['id'] ?? null;
       const specsRaw = row['Thông số kỹ thuật'] ?? row['specifications'] ?? '';
+      const weightKgRaw =
+        row['Trọng lượng (kg)'] ??
+        row['Trọng lượng'] ??
+        row['Cân nặng (kg)'] ??
+        row['Cân nặng'] ??
+        row['weight'] ??
+        row['weightKg'];
+      const parsedWeight = Number(weightKgRaw);
+      const weightKg =
+        !isNaN(parsedWeight) && parsedWeight > 0 ? parsedWeight : 0.5;
 
       if (!name) {
         errors.push(`Dòng ${rowNum}: Tên sản phẩm không được để trống.`);
@@ -1611,8 +1621,11 @@ export class ManagerService {
               productId: product.id,
               name: variantName,
               sellingPrice,
+              importPrice,
               salePrice: salePrice || null,
               stock: quantity,
+              weightKg,
+              attributes: { variant: variantName },
               imageUrl:
                 variantImageUrl || (imageUrls.length > 0 ? imageUrls[0] : null),
               isActive: true,
@@ -1626,8 +1639,10 @@ export class ManagerService {
             where: { id: matchedVariant.id },
             data: {
               sellingPrice,
+              importPrice,
               salePrice: salePrice || null,
               stock: currentVariantStock + quantity,
+              weightKg,
               imageUrl:
                 variantImageUrl ||
                 (imageUrls.length > 0 ? imageUrls[0] : matchedVariant.imageUrl),
@@ -1640,7 +1655,9 @@ export class ManagerService {
           await this.prisma.productVariant.update({
             where: { id: firstVariant.id },
             data: {
+              importPrice,
               stock: currentVariantStock + quantity,
+              weightKg,
               imageUrl: variantImageUrl || firstVariant.imageUrl,
             },
           });
@@ -1662,6 +1679,7 @@ export class ManagerService {
             importPrice,
             salePrice: salePrice || null,
             stock: totalVariantStock,
+            weightKg,
             brand: brand || product.brand,
             description: description || product.description,
             category: categorySlug,
@@ -1683,6 +1701,7 @@ export class ManagerService {
               importPrice,
               salePrice: salePrice || null,
               stock: currentStock + quantity,
+              weightKg,
               brand: brand || product.brand,
               description: description || product.description,
               category: categorySlug,
@@ -1709,6 +1728,7 @@ export class ManagerService {
               importPrice,
               salePrice: salePrice || null,
               stock: quantity,
+              weightKg,
               brand: brand || '',
               description: description || '',
               isActive: true,
@@ -1726,8 +1746,11 @@ export class ManagerService {
                 productId: newProduct.id,
                 name: variantName,
                 sellingPrice,
+                importPrice,
                 salePrice: salePrice || null,
                 stock: quantity,
+                weightKg,
+                attributes: { variant: variantName },
                 imageUrl:
                   variantImageUrl ||
                   (imageUrls.length > 0 ? imageUrls[0] : null),
@@ -1824,11 +1847,12 @@ export class ManagerService {
         .map((i) => `${i.product?.name || 'Sản phẩm'} (x${i.quantity})`)
         .join(', ');
 
-      // Nhãn tiếng Việt tương ứng cho báo cáo đơn hàng (chuẩn AhaMove mới)
+      // Nhãn tiếng Việt tương ứng cho báo cáo đơn hàng (Chờ xác nhận -> Xác nhận -> Đã gửi VC -> Giao hàng thành công)
       const statusLabels: Record<string, string> = {
-        PENDING: 'Xác nhận',
-        PACKED: 'Đã gói hàng',
-        PROCESSING: 'Đã gói hàng',
+        PENDING: 'Chờ xác nhận',
+        CONFIRMED: 'Xác nhận',
+        PACKED: 'Xác nhận',
+        PROCESSING: 'Xác nhận',
         SHIPPED: 'Đã gửi VC',
         DELIVERED: 'Giao hàng thành công',
         CANCELLED: 'Đã hủy',

@@ -72,12 +72,35 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return Array.isArray(message) ? message.join(', ') : message || fallback;
 }
 
+/**
+ * Định dạng số tiền VND.
+ */
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
     currency: 'VND',
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+/**
+ * Tạo chuỗi địa chỉ giao hàng hoàn chỉnh từ các thành phần (chi tiết, phường, quận, tỉnh)
+ * và tự động loại bỏ các đoạn địa chỉ bị lặp lại dư thừa.
+ */
+function buildCleanAddressString(detail: string, ward?: string, district?: string, province?: string): string {
+  const parts = [detail, ward, district, province]
+    .filter(Boolean)
+    .flatMap((str) => String(str).split(','))
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const uniqueParts: string[] = [];
+  for (const part of parts) {
+    if (!uniqueParts.some((u) => u.toLowerCase() === part.toLowerCase())) {
+      uniqueParts.push(part);
+    }
+  }
+  return uniqueParts.join(', ');
 }
 
 function CheckoutPageContent() {
@@ -661,7 +684,8 @@ function CheckoutPageContent() {
 
         name = receiverName.trim();
         phoneStr = receiverPhone.trim();
-        finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${detail.trim()}, ${selectedWardName}, ${selectedDistrictName}, ${selectedProvinceName}`;
+        const cleanAddr = buildCleanAddressString(detail.trim(), selectedWardName, selectedDistrictName, selectedProvinceName);
+        finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${cleanAddr}`;
         targetDistrictId = selectedDistrictId;
         targetWardCode = selectedWardCode;
         targetShippingLat = selectedLat;
@@ -676,7 +700,8 @@ function CheckoutPageContent() {
         }
         name = addr.receiverName;
         phoneStr = addr.receiverPhone;
-        finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${addr.detail}, ${addr.ward}, ${addr.district}, ${addr.province}`;
+        const cleanSavedAddr = buildCleanAddressString(addr.detail, addr.ward, addr.district, addr.province);
+        finalAddress = `Tên: ${name} | SĐT: ${phoneStr} | Địa chỉ: ${cleanSavedAddr}`;
         targetDistrictId = addr.districtId ?? undefined;
         targetWardCode = addr.wardCode ?? undefined;
         targetShippingLat = addr.latitude ?? undefined;

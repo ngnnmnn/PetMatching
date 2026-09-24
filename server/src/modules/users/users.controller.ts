@@ -173,6 +173,9 @@ export class UsersController {
     return this.usersService.deleteOrder(req.user.id, id);
   }
 
+  /**
+   * Endpoint cập nhật địa chỉ giao hàng và tính lại phí ship cho đơn hàng PENDING của người dùng.
+   */
   @Put('orders/:id/shipping')
   updateOrderShipping(
     @Req() req: AuthenticatedRequest,
@@ -182,8 +185,8 @@ export class UsersController {
       shippingAddress: string;
       districtId?: number;
       wardCode?: string;
-      shippingLatitude: number;
-      shippingLongitude: number;
+      shippingLatitude?: number;
+      shippingLongitude?: number;
     },
   ) {
     return this.usersService.updateOrderShipping(req.user.id, id, body);

@@ -659,7 +659,7 @@ export class UsersService {
    * @param userId ID người dùng
    */
   async getOrders(userId: string) {
-    const orders = await this.prisma.order.findMany({
+    let orders = await this.prisma.order.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -725,9 +725,8 @@ export class UsersService {
         }
       }
 
-      // Nếu có đơn được cập nhật trạng thái mới -> Re-fetch lại danh sách đơn hàng để hiển thị đúng ngay cho người dùng
       if (statusUpdated) {
-        return this.prisma.order.findMany({
+        orders = await this.prisma.order.findMany({
           where: { userId },
           orderBy: { createdAt: 'desc' },
           include: {
@@ -754,7 +753,34 @@ export class UsersService {
       }
     }
 
-    return orders;
+    return this.enrichOrdersWithVouchers(orders);
+  }
+
+  /**
+   * Bổ sung thông tin chi tiết của Voucher (loại voucher, giá trị, giảm tối đa) vào danh sách đơn hàng.
+   */
+  private async enrichOrdersWithVouchers(orders: any[]) {
+    if (!orders || orders.length === 0) return orders;
+
+    const voucherCodes = Array.from(
+      new Set(orders.map((o) => o.voucherCode).filter(Boolean) as string[]),
+    );
+    if (voucherCodes.length === 0) return orders;
+
+    const vouchers = await this.prisma.voucher.findMany({
+      where: { code: { in: voucherCodes } },
+    });
+    const voucherMap = new Map(vouchers.map((v) => [v.code, v]));
+
+    return orders.map((o) => {
+      const v = o.voucherCode ? voucherMap.get(o.voucherCode) : null;
+      return {
+        ...o,
+        voucherType: v?.type || null,
+        voucherValue: v?.value || null,
+        maxDiscountAmount: v?.maxDiscountAmount || null,
+      };
+    });
   }
 
   /**
@@ -1328,7 +1354,8 @@ export class UsersService {
   }
 
   /**
-   * Cập nhật địa chỉ giao hàng và tính lại phí vận chuyển của đơn hàng (chỉ dành cho đơn PENDING chưa thanh toán QR)
+   * Cập nhật địa chỉ giao hàng và tính lại phí vận chuyển của đơn hàng (chỉ dành cho đơn PENDING chưa thanh toán QR).
+   * Phí vận chuyển mới được tính toán dựa trên tổng giá trị hàng (itemsSubtotal), khoảng cách AhaMove và voucher đã áp dụng.
    */
   async updateOrderShipping(
     userId: string,
@@ -1337,8 +1364,8 @@ export class UsersService {
       shippingAddress: string;
       districtId?: number;
       wardCode?: string;
-      shippingLatitude: number;
-      shippingLongitude: number;
+      shippingLatitude?: number;
+      shippingLongitude?: number;
     },
   ) {
     const order = await this.prisma.order.findFirst({
@@ -1399,7 +1426,7 @@ export class UsersService {
       itemsSubtotal + newShippingFee - newDiscountAmount,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
       await tx.payment.updateMany({
         where: { orderId },
         data: { amount: newTotalAmount },
@@ -1410,15 +1437,30 @@ export class UsersService {
           shippingAddress: data.shippingAddress,
           districtId: data.districtId ?? order.districtId,
           wardCode: data.wardCode ?? order.wardCode,
-          shippingLatitude: data.shippingLatitude,
-          shippingLongitude: data.shippingLongitude,
+          shippingLatitude: data.shippingLatitude ?? order.shippingLatitude,
+          shippingLongitude: data.shippingLongitude ?? order.shippingLongitude,
           shippingFee: newShippingFee,
           discountAmount: newDiscountAmount,
           totalAmount: newTotalAmount,
         },
-        include: { payment: true },
+        include: {
+          payment: true,
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, imageUrl: true },
+              },
+              variant: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
       });
     });
+
+    const enriched = await this.enrichOrdersWithVouchers([updatedOrder]);
+    return enriched[0];
   }
 
   async retryPayment(userId: string, orderId: string) {
