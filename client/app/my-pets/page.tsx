@@ -74,6 +74,29 @@ function getPetBreedingStatus(pet: Pet) {
   };
 }
 
+/**
+ * Định dạng tuổi thú cưng ngắn gọn, tự nhiên
+ */
+function formatPetAge(months: number) {
+  if (months === 0) return "Sơ sinh";
+  if (months < 12) return `${months} tháng`;
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  return rem > 0 ? `${years} tuổi ${rem} th` : `${years} tuổi`;
+}
+
+/**
+ * Rút gọn địa chỉ thú cưng để hiển thị sạch đẹp trên thẻ
+ */
+function formatPetLocation(location: string) {
+  if (!location) return "Hà Nội";
+  const parts = location.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
+  }
+  return location;
+}
+
 export default function MyPetsPage() {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
@@ -318,6 +341,57 @@ export default function MyPetsPage() {
 
       {/* Main List */}
       <section className="container mx-auto px-4 py-8">
+        {/* Quick Stats Summary */}
+        {!loading && pets.length > 0 && (
+          <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="flex items-center gap-3 rounded-2xl border bg-card/80 p-3.5 shadow-2xs backdrop-blur-sm">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold">
+                <PawPrint className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground truncate">Tổng thú cưng</p>
+                <p className="text-xl font-black text-foreground">{pets.length} <span className="text-xs font-semibold text-muted-foreground">bé</span></p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-2xl border bg-card/80 p-3.5 shadow-2xs backdrop-blur-sm">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 font-bold">
+                <Heart className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground truncate">Đủ tuổi ghép đôi</p>
+                <p className="text-xl font-black text-foreground">
+                  {pets.filter((p) => getPetBreedingStatus(p).isEligible).length} <span className="text-xs font-semibold text-muted-foreground">bé</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-2xl border bg-card/80 p-3.5 shadow-2xs backdrop-blur-sm">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 font-bold">
+                <Syringe className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground truncate">Đã tiêm phòng</p>
+                <p className="text-xl font-black text-foreground">
+                  {pets.filter((p) => p.isVaccinated).length} <span className="text-xs font-semibold text-muted-foreground">bé</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-2xl border bg-card/80 p-3.5 shadow-2xs backdrop-blur-sm">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 font-bold">
+                <BadgeCheck className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground truncate">Có phả hệ</p>
+                <p className="text-xl font-black text-foreground">
+                  {pets.filter((p) => p.hasPedigree).length} <span className="text-xs font-semibold text-muted-foreground">bé</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="py-20 text-center text-muted-foreground">
             Đang tải danh sách hồ sơ...
@@ -354,18 +428,18 @@ export default function MyPetsPage() {
               <article
                 key={pet.id}
                 className={cn(
-                  "group relative flex h-full min-h-[455px] flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+                  "group relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/80 bg-card shadow-xs transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-xl",
                   pet.status === "HIDDEN" &&
-                    "opacity-70 bg-muted/40 border-rose-300 dark:border-rose-900",
+                    "opacity-75 bg-muted/40 border-rose-300 dark:border-rose-900",
                 )}
               >
-                {/* Image */}
+                {/* Image Section */}
                 <button
                   type="button"
                   onClick={() => setSelectedDetailPetId(pet.id)}
                   aria-label={`Xem chi tiết hồ sơ của ${pet.name}`}
-                  title="Xem chi tiết hồ sơ"
-                  className="relative aspect-video w-full cursor-pointer overflow-hidden bg-muted text-left outline-none focus-visible:ring-4 focus-visible:ring-primary/50 focus-visible:ring-inset"
+                  title="Bấm để xem chi tiết hồ sơ"
+                  className="relative aspect-[16/10] w-full cursor-pointer overflow-hidden bg-muted text-left outline-none"
                 >
                   <img
                     src={
@@ -374,13 +448,13 @@ export default function MyPetsPage() {
                     alt={pet.name}
                     className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-black/10" />
 
                   {/* Gender badge */}
                   <span
                     className={cn(
-                      "absolute left-3 top-3 rounded-lg px-2.5 py-1 text-xs font-black text-white shadow-md",
-                      pet.gender === "MALE" ? "bg-blue-600" : "bg-pink-600",
+                      "absolute left-3.5 top-3.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-black text-white shadow-md backdrop-blur-md",
+                      pet.gender === "MALE" ? "bg-blue-600/90" : "bg-pink-600/90",
                     )}
                   >
                     {pet.gender === "MALE" ? "♂ Đực" : "♀ Cái"}
@@ -388,27 +462,27 @@ export default function MyPetsPage() {
 
                   {/* Matching availability indicator / Status */}
                   {pet.status === "HIDDEN" ? (
-                    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
-                      🔒 Bị quản trị viên ẩn
+                    <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1.5 rounded-full bg-rose-600/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
+                      🔒 Bị ẩn
                     </span>
                   ) : pet.status === "INACTIVE" ? (
-                    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                    <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1.5 rounded-full bg-slate-700/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
                       Đã tự ẩn
                     </span>
                   ) : isUnderage ? (
-                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-blue-600/90 backdrop-blur-md px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                    <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1 rounded-full bg-blue-600/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
                       🌱 Đang lớn ({ageMonths} th)
                     </span>
                   ) : !isWeightEligible ? (
-                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-amber-600/90 px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
-                      ⚖️ Chưa đủ cân phối giống
+                    <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1 rounded-full bg-amber-600/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
+                      ⚖️ Chưa đủ cân
                     </span>
                   ) : pet.gender === "MALE" ? (
                     <span
                       className={cn(
-                        "absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md",
+                        "absolute right-3.5 top-3.5 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md",
                         pet.isAvailableForMatching
-                          ? "bg-emerald-500"
+                          ? "bg-emerald-600/95"
                           : "bg-black/60",
                       )}
                     >
@@ -425,86 +499,146 @@ export default function MyPetsPage() {
                         : "Tắt ghép đôi"}
                     </span>
                   ) : (
-                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-emerald-600/90 backdrop-blur-md px-2.5 py-1 text-xs font-bold text-white shadow-md">
+                    <span className="absolute right-3.5 top-3.5 inline-flex items-center gap-1 rounded-full bg-emerald-600/90 px-3 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
                       ✨ Đủ tuổi ghép đôi
                     </span>
                   )}
-
-                  {/* Bottom title */}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-                    <h2 className="text-xl font-black drop-shadow-sm">
-                      {pet.name}
-                    </h2>
-                    <p className="text-xs text-white/80 font-medium">
-                      {pet.breed} · {pet.location}
-                    </p>
-                  </div>
                 </button>
 
-                {/* Details */}
-                <div className="flex flex-1 flex-col p-4">
-                  {/* Badges */}
-                  <div className="flex min-h-6 flex-wrap content-start gap-1.5 text-xs">
-                    {isUnderage && (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300 px-2 py-0.5 font-bold">
-                        🌱 Đang phát triển ({ageMonths}/{minMonths} th)
-                      </span>
-                    )}
-                    {!isWeightEligible && (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                        ⚖️ Chưa đạt cân nặng matching
-                      </span>
-                    )}
-                    {pet.isVaccinated && (
+                {/* Card Body */}
+                <div className="flex flex-1 flex-col p-5">
+                  {/* Top: Name, Breed & Location */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2
+                        onClick={() => setSelectedDetailPetId(pet.id)}
+                        className="text-xl font-black tracking-tight text-foreground transition-colors group-hover:text-primary cursor-pointer truncate"
+                      >
+                        {pet.name}
+                      </h2>
+                      <p className="mt-0.5 text-xs font-medium text-muted-foreground truncate" title={pet.location}>
+                        <span className="font-semibold text-foreground/80">{pet.breed}</span> · {formatPetLocation(pet.location)}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openRecommendationsModal(pet)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100 shadow-2xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 cursor-pointer"
+                      title="Gợi ý sản phẩm phù hợp cho bé"
+                    >
+                      <Sparkles className="size-3.5 text-amber-600 fill-amber-500/20" />
+                      <span>Gợi ý sản phẩm</span>
+                    </button>
+                  </div>
+
+                  {/* Core Metrics: Age & Weight */}
+                  <div className="mt-3.5 grid grid-cols-2 gap-2 rounded-2xl border border-border/60 bg-muted/30 p-2.5 text-xs">
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-base select-none">🎂</span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tuổi</p>
+                        <p className="font-extrabold text-foreground truncate">{formatPetAge(ageMonths)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-border/60 pl-3">
+                      <span className="text-base select-none">⚖️</span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cân nặng</p>
+                        <p className="font-extrabold text-foreground truncate">{pet.weight} kg</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Health & Certificates badges */}
+                  <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+                    {pet.isVaccinated ? (
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
+                          "inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-bold",
                           pet.documents.some(
                             (document) => document.type === "VACCINE_RECORD" && document.status === "APPROVED",
                           )
-                            ? "border-blue-200 bg-blue-50 text-blue-700"
-                            : "border-gray-300 bg-white text-gray-600",
+                            ? "border-blue-200 bg-blue-50/80 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300"
+                            : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300",
                         )}
                       >
-                        <Syringe className="size-3.5" />
+                        <Syringe className="size-3" />
                         Đã tiêm chủng
                       </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-slate-50/50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900/40">
+                        Chưa tiêm phòng
+                      </span>
                     )}
+
                     {pet.hasPedigree && (
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold",
+                          "inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-bold",
                           pet.documents.some(
                             (document) => document.type === "PEDIGREE_CERT" && document.status === "APPROVED",
                           )
-                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-gray-300 bg-white text-gray-600",
+                            ? "border-amber-200 bg-amber-50/80 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+                            : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300",
                         )}
                       >
-                        <BadgeCheck className="size-3.5" />
-                        Phả hệ VKA
+                        <BadgeCheck className="size-3" />
+                        Phả hệ VKA/TICA
                       </span>
                     )}
                   </div>
 
-                  {/* Breeding option preview for male */}
-                  {pet.gender === "MALE" && pet.isAvailableForMatching && isEligible && (
-                    <div className="mt-3 min-h-[54px] rounded-xl border bg-primary/5 p-3 text-xs space-y-1">
-                      <span className="font-bold text-primary uppercase tracking-wider text-[10px]">
-                        Hình thức phối giống:
-                      </span>
-                      <p className="font-extrabold text-foreground">
-                        {pet.breedingOption === "CASH"
-                          ? `Thu tiền mặt: ${pet.breedingFee?.toLocaleString("vi-VN")} VNĐ`
-                          : pet.breedingOption === "SHARE_LITTER"
-                            ? `Chia con non (${pet.shareLitterCount || 1} con)`
-                            : "Thỏa thuận trực tiếp"}
-                      </p>
-                    </div>
-                  )}
+                  {/* Matching Information / Conditions Box */}
+                  <div className="mt-3.5">
+                    {pet.gender === "MALE" ? (
+                      pet.isAvailableForMatching && isEligible ? (
+                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                              Hình thức phối giống:
+                            </span>
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                              Đang mở phối
+                            </span>
+                          </div>
+                          <p className="mt-1 font-extrabold text-foreground">
+                            {pet.breedingOption === "CASH"
+                              ? `Thu tiền mặt: ${pet.breedingFee?.toLocaleString("vi-VN")} VNĐ`
+                              : pet.breedingOption === "SHARE_LITTER"
+                                ? `Chia con non (${pet.shareLitterCount || 1} con)`
+                                : "Thỏa thuận trực tiếp"}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between rounded-2xl border border-dashed border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                          <span className="font-medium">Chưa bật phối giống</span>
+                          <span className="text-[10px] font-bold">Tạm dừng</span>
+                        </div>
+                      )
+                    ) : (
+                      <div className="rounded-2xl border border-pink-200/70 bg-pink-50/50 p-3 text-xs dark:border-pink-900/40 dark:bg-pink-950/20">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-pink-700 dark:text-pink-300">
+                            Nhu cầu ghép đôi:
+                          </span>
+                          <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-2 py-0.5 text-[10px] font-bold text-pink-600 dark:text-pink-400">
+                            {isEligible ? "Sẵn sàng kết đôi" : "Đang chăm sóc"}
+                          </span>
+                        </div>
+                        <p className="mt-1 font-bold text-foreground line-clamp-1" title={pet.personality || undefined}>
+                          {pet.personality
+                            ? `Tính cách: "${pet.personality}"`
+                            : isEligible
+                            ? `Tìm giống ${pet.breed} đực đạt chuẩn phối`
+                            : `Dự kiến đủ tuổi ghép đôi từ T${eligibleDateStr}`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Action buttons */}
-                  <div className="mt-auto space-y-2 pt-4">
+                  <div className="mt-auto pt-4">
                     <div className="flex gap-2">
                       {pet.gender === "MALE" ? (
                         !isEligible ? (
@@ -570,16 +704,6 @@ export default function MyPetsPage() {
                         Xem chi tiết
                       </Button>
                     </div>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => openRecommendationsModal(pet)}
-                      className="h-10 w-full gap-2 rounded-xl font-bold border-[#EFEAE2] hover:bg-[#FAF9F6] text-xs shadow-sm cursor-pointer"
-                    >
-                      <Sparkles className="size-4 text-primary fill-primary/10" />
-                      Gợi ý mua sắm thông minh
-                    </Button>
                   </div>
                 </div>
               </article>
@@ -598,6 +722,10 @@ export default function MyPetsPage() {
           onClose={() => {
             setSelectedDetailPetId(null);
             setEditModePetId(null);
+          }}
+          onOpenSetupMatching={(pet) => {
+            setSelectedDetailPetId(null);
+            openSetupModal(pet);
           }}
           onPetUpdated={handlePetUpdated}
           onPetDeleted={(petId) => {

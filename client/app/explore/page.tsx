@@ -120,6 +120,19 @@ const initialFilters: FilterState = {
   sortBy: 'RECOMMENDED',
 };
 
+/**
+ * Hàm sắp xếp danh sách ứng viên ghép đôi theo thứ tự ưu tiên:
+ * 1. Điểm tương thích (compatibilityScore) cao nhất lên trước
+ * 2. Nếu bằng điểm thì ưu tiên khoảng cách gần hơn
+ */
+function sortCandidatesByScore(list: Pet[]): Pet[] {
+  return [...list].sort((a, b) => {
+    const scoreDiff = (b.compatibilityScore ?? 0) - (a.compatibilityScore ?? 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
+  });
+}
+
 // =============================================================
 // Main Unified Matching Hub Page
 // =============================================================
@@ -208,7 +221,7 @@ export default function UnifiedMatchingHubPage() {
               const candRes = await api.get<{ data: Pet[]; meta?: { passedCount?: number } }>('/matching/candidates', {
                 params: { femalePetId: firstPet.id },
               });
-              setCandidates(candRes.data?.data || []);
+              setCandidates(sortCandidatesByScore(candRes.data?.data || []));
               setPassedCount(candRes.data?.meta?.passedCount ?? 0);
             } catch {
               // silent catch
@@ -268,7 +281,7 @@ export default function UnifiedMatchingHubPage() {
               maxDistanceKm: activeFilters.distanceRadius > 0 ? String(activeFilters.distanceRadius) : undefined,
             },
           });
-          setCandidates(candRes.data?.data || []);
+          setCandidates(sortCandidatesByScore(candRes.data?.data || []));
           setPassedCount(candRes.data?.meta?.passedCount ?? 0);
         } catch {
           toast.error('Không tải được danh sách ứng viên đề xuất.');
@@ -1172,10 +1185,8 @@ export default function UnifiedMatchingHubPage() {
                         {selectedCandidateDetail.distanceKm != null && (
                           <span
                             className="text-muted-foreground font-medium"
-                            title={selectedCandidateDetail.isRoadDistance ? "Khoảng cách đường bộ thực tế (OSRM)" : "Khoảng cách ước tính"}
                           >
-                            ({selectedCandidateDetail.distanceKm <= 1 ? '< 1 km' : `cách ~${selectedCandidateDetail.distanceKm} km`}
-                            {selectedCandidateDetail.isRoadDistance ? ' 🛣️ đường bộ' : ''})
+                            ({selectedCandidateDetail.distanceKm <= 1 ? '< 1 km' : `cách ~${selectedCandidateDetail.distanceKm} km`})
                           </span>
                         )}
                       </span>
@@ -1580,9 +1591,9 @@ function SwipeCardContainer({
           </p>
 
           <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-            {/* Khoảng cách di chuyển đường bộ thực tế */}
+            {/* Khoảng cách di chuyển */}
             <span className="rounded-lg bg-black/60 backdrop-blur-md px-2.5 py-1 text-white shadow font-bold flex items-center gap-1">
-              {pet.isRoadDistance ? '🛣️' : '📍'} {pet.distanceKm != null && pet.distanceKm <= 1 ? '< 1 km' : `${pet.distanceKm ?? 5} km${pet.isRoadDistance ? ' đ.bộ' : ''}`}
+              📍 {pet.distanceKm != null && pet.distanceKm <= 1 ? '< 1 km' : `${pet.distanceKm ?? 5} km`}
             </span>
 
             {/* Cân nặng */}
@@ -1721,7 +1732,7 @@ function CandidateCardGrid({
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
           <span className="font-semibold text-foreground">
-            {pet.isRoadDistance ? '🛣️' : '📍'} {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km${pet.isRoadDistance ? ' đ.bộ' : ''}`})
+            📍 {pet.ward || pet.location} ({pet.distanceKm != null && pet.distanceKm <= 1 ? `< 1 km` : `${pet.distanceKm ?? 5} km`})
           </span>
           <span className={cn(
             "px-2 py-0.5 rounded-md font-bold text-xs",

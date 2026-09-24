@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
-import { CheckCircle2, Eye, EyeOff, Loader2, PawPrint, ShieldAlert, XCircle, ZoomIn } from "lucide-react";
+import { Cat, CheckCircle2, Dog, Eye, EyeOff, Loader2, PawPrint, ShieldAlert, XCircle, ZoomIn } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { AdminFilterSelect } from "@/components/admin/shared/admin-ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,8 +24,13 @@ import {
   hasActionablePetDocument,
   hasApprovedPetDocument,
   hasRejectedPetDocument,
+  petMatchesGenderFilter,
+  petMatchesSpeciesFilter,
+  petMatchesVerificationFilter,
   type AdminRow as Row,
   type PetVerificationFilter,
+  type PetSpeciesFilter,
+  type PetGenderFilter,
 } from "@/components/admin/shared/admin-section-utils";
 
 export type PetModerationFlow = {
@@ -357,35 +363,129 @@ export function PetModerationDialog({
   );
 }
 
+/**
+ * Bộ lọc hồ sơ thú cưng theo loài (Chó / Mèo), giới tính (Đực / Cái) và trạng thái giấy tờ xác minh
+ */
 function PetVerificationFilters({
   rows,
   value,
   onChange,
+  speciesValue = "ALL",
+  onSpeciesChange,
+  genderValue = "ALL",
+  onGenderChange,
 }: {
   rows: Row[];
   value: PetVerificationFilter;
   onChange: (value: PetVerificationFilter) => void;
+  speciesValue?: PetSpeciesFilter;
+  onSpeciesChange?: (value: PetSpeciesFilter) => void;
+  genderValue?: PetGenderFilter;
+  onGenderChange?: (value: PetGenderFilter) => void;
 }) {
-  const options: Array<{
+  // Tập hợp thú cưng tương ứng sau khi áp dụng lọc theo Giới tính & Trạng thái xác minh (dùng để tính số lượng cho nút Loài)
+  const scopedForSpecies = useMemo(() => {
+    return rows.filter(
+      (r) =>
+        petMatchesGenderFilter(r, genderValue) &&
+        petMatchesVerificationFilter(r, value),
+    );
+  }, [rows, genderValue, value]);
+
+  // Tập hợp thú cưng tương ứng sau khi áp dụng lọc theo Loài & Trạng thái xác minh (dùng để tính số lượng cho nút Giới tính)
+  const scopedForGender = useMemo(() => {
+    return rows.filter(
+      (r) =>
+        petMatchesSpeciesFilter(r, speciesValue) &&
+        petMatchesVerificationFilter(r, value),
+    );
+  }, [rows, speciesValue, value]);
+
+  // Tập hợp thú cưng tương ứng sau khi áp dụng lọc theo Loài & Giới tính (dùng để tính số lượng cho dropdown Xác minh)
+  const scopedForVerification = useMemo(() => {
+    return rows.filter(
+      (r) =>
+        petMatchesSpeciesFilter(r, speciesValue) &&
+        petMatchesGenderFilter(r, genderValue),
+    );
+  }, [rows, speciesValue, genderValue]);
+
+  const speciesOptions: Array<{
+    value: PetSpeciesFilter;
+    label: string;
+    icon: typeof PawPrint;
+    count: number;
+  }> = [
+    {
+      value: "ALL",
+      label: "Tất cả",
+      icon: PawPrint,
+      count: scopedForSpecies.length,
+    },
+    {
+      value: "DOG",
+      label: "Chó",
+      icon: Dog,
+      count: scopedForSpecies.filter(
+        (r) => String(r.species ?? "").toUpperCase() === "DOG",
+      ).length,
+    },
+    {
+      value: "CAT",
+      label: "Mèo",
+      icon: Cat,
+      count: scopedForSpecies.filter(
+        (r) => String(r.species ?? "").toUpperCase() === "CAT",
+      ).length,
+    },
+  ];
+
+  const genderOptions: Array<{
+    value: PetGenderFilter;
+    label: string;
+    count: number;
+  }> = [
+    {
+      value: "ALL",
+      label: "Tất cả",
+      count: scopedForGender.length,
+    },
+    {
+      value: "MALE",
+      label: "♂ Đực",
+      count: scopedForGender.filter(
+        (r) => String(r.gender ?? "").toUpperCase() === "MALE",
+      ).length,
+    },
+    {
+      value: "FEMALE",
+      label: "♀ Cái",
+      count: scopedForGender.filter(
+        (r) => String(r.gender ?? "").toUpperCase() === "FEMALE",
+      ).length,
+    },
+  ];
+
+  const verificationOptions: Array<{
     value: PetVerificationFilter;
     label: string;
     count: number;
   }> = [
-    { value: "ALL", label: "Tất cả", count: rows.length },
+    { value: "ALL", label: "Tất cả trạng thái", count: scopedForVerification.length },
     {
       value: "PENDING",
       label: "Chờ duyệt",
-      count: rows.filter(hasActionablePetDocument).length,
+      count: scopedForVerification.filter(hasActionablePetDocument).length,
     },
     {
       value: "VERIFIED",
       label: "Đã xác minh",
-      count: rows.filter(hasApprovedPetDocument).length,
+      count: scopedForVerification.filter(hasApprovedPetDocument).length,
     },
     {
       value: "NEED_MORE_INFO",
       label: "Cần bổ sung",
-      count: rows.filter((row) =>
+      count: scopedForVerification.filter((row) =>
         row.documents?.some(
           (document: Row) => document.status === "NEED_MORE_INFO",
         ),
@@ -394,54 +494,139 @@ function PetVerificationFilters({
     {
       value: "REJECTED",
       label: "Bị từ chối",
-      count: rows.filter(hasRejectedPetDocument).length,
+      count: scopedForVerification.filter(hasRejectedPetDocument).length,
     },
     {
       value: "NONE",
       label: "Chưa có giấy tờ",
-      count: rows.filter((row) => !row.documents?.length).length,
+      count: scopedForVerification.filter((row) => !row.documents?.length).length,
     },
   ];
 
   return (
     <div className="border-b bg-muted/20 px-5 py-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <p className="text-sm font-bold text-foreground">
-            Trạng thái xác minh
+            Bộ lọc danh sách thú cưng
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Lọc thú cưng theo tình trạng giấy tờ
+            Lọc thú cưng theo loài, giới tính và tình trạng giấy tờ xác minh
           </p>
         </div>
-        <AdminFilterSelect
-          ariaLabel="Lọc thú cưng theo trạng thái xác minh"
-          value={value}
-          onChange={(nextValue) => onChange(nextValue as PetVerificationFilter)}
-          options={options}
-          className="w-full sm:w-[260px]"
-        />
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Bộ điều khiển chuyển đổi nhanh theo loài: Tất cả / Chó / Mèo */}
+          {onSpeciesChange && (
+            <div className="inline-flex items-center rounded-xl border border-border bg-background p-1 shadow-2xs">
+              {speciesOptions.map((opt) => {
+                const Icon = opt.icon;
+                const isActive = speciesValue === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onSpeciesChange(opt.value)}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all cursor-pointer",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-2xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                    <span>{opt.label}</span>
+                    <span
+                      className={cn(
+                        "ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-bold",
+                        isActive
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {opt.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Bộ điều khiển chuyển đổi nhanh theo giới tính: Tất cả / Đực / Cái */}
+          {onGenderChange && (
+            <div className="inline-flex items-center rounded-xl border border-border bg-background p-1 shadow-2xs">
+              {genderOptions.map((opt) => {
+                const isActive = genderValue === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onGenderChange(opt.value)}
+                    className={cn(
+                      "flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all cursor-pointer",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-2xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <span>{opt.label}</span>
+                    <span
+                      className={cn(
+                        "ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-bold",
+                        isActive
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {opt.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Bộ lọc lựa chọn theo trạng thái xác minh */}
+          <AdminFilterSelect
+            ariaLabel="Lọc thú cưng theo trạng thái xác minh"
+            value={value}
+            onChange={(nextValue) => onChange(nextValue as PetVerificationFilter)}
+            options={verificationOptions}
+            className="w-full sm:w-[220px]"
+          />
+        </div>
       </div>
     </div>
   );
 }
 
+/**
+ * Bảng quản lý hồ sơ thú cưng của Quản trị viên
+ */
 export function PetManagementPanel({
   allPets,
   pets,
   filter,
+  speciesFilter = "ALL",
+  genderFilter = "ALL",
   currentPage,
   totalItems,
   onFilterChange,
+  onSpeciesFilterChange,
+  onGenderFilterChange,
   onPageChange,
   onInspect,
 }: {
   allPets: Row[];
   pets: Row[];
   filter: PetVerificationFilter;
+  speciesFilter?: PetSpeciesFilter;
+  genderFilter?: PetGenderFilter;
   currentPage: number;
   totalItems: number;
   onFilterChange: (value: PetVerificationFilter) => void;
+  onSpeciesFilterChange?: (value: PetSpeciesFilter) => void;
+  onGenderFilterChange?: (value: PetGenderFilter) => void;
   onPageChange: (page: number) => void;
   onInspect: (pet: Row) => void;
 }) {
@@ -451,6 +636,10 @@ export function PetManagementPanel({
         rows={allPets}
         value={filter}
         onChange={onFilterChange}
+        speciesValue={speciesFilter}
+        onSpeciesChange={onSpeciesFilterChange}
+        genderValue={genderFilter}
+        onGenderChange={onGenderFilterChange}
       />
       <Table className="w-full table-fixed">
         <TableHeader className="bg-muted/30">

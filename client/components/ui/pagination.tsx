@@ -65,35 +65,41 @@ function PaginationLink({
   )
 }
 
+/**
+ * Nút phân trang "Trang trước" (Trước)
+ */
 function PaginationPrevious({
   className,
   ...props
 }: React.ComponentProps<typeof PaginationLink>) {
   return (
     <PaginationLink
-      aria-label="Go to previous page"
+      aria-label="Trang trước"
       size="default"
       className={cn('gap-1 px-2.5 sm:pl-2.5', className)}
       {...props}
     >
       <ChevronLeftIcon />
-      <span className="hidden sm:block">Previous</span>
+      <span className="hidden sm:block">Trước</span>
     </PaginationLink>
   )
 }
 
+/**
+ * Nút phân trang "Trang sau" (Sau)
+ */
 function PaginationNext({
   className,
   ...props
 }: React.ComponentProps<typeof PaginationLink>) {
   return (
     <PaginationLink
-      aria-label="Go to next page"
+      aria-label="Trang sau"
       size="default"
       className={cn('gap-1 px-2.5 sm:pr-2.5', className)}
       {...props}
     >
-      <span className="hidden sm:block">Next</span>
+      <span className="hidden sm:block">Sau</span>
       <ChevronRightIcon />
     </PaginationLink>
   )

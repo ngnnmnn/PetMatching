@@ -310,12 +310,6 @@ export class MatchingService {
 
     // Tính compatibility scores & distanceKm đồng bộ trong bộ nhớ (Bước 1: Tính khoảng cách sơ bộ bằng Haversine)
     let data = eligibleCandidates.map((candidate) => {
-      const compatibility = this.calculateCompatibilityScoreSync(
-        femalePet,
-        candidate,
-        breedRules,
-      );
-
       let distanceKm = 10;
       let candLat = candidate.latitude;
       let candLng = candidate.longitude;
@@ -353,6 +347,13 @@ export class MatchingService {
       } else {
         distanceKm = 5.0;
       }
+
+      const compatibility = this.calculateCompatibilityScoreSync(
+        femalePet,
+        candidate,
+        breedRules,
+        distanceKm,
+      );
 
       return {
         ...this.toPetCard(candidate),
@@ -395,6 +396,17 @@ export class MatchingService {
             if (roadDist != null) {
               data[c.index].distanceKm = roadDist;
               data[c.index].isRoadDistance = true;
+
+              // Cập nhật lại điểm tương thích với khoảng cách đường bộ thực tế
+              const candidatePet = eligibleCandidates[c.index];
+              const updatedCompatibility = this.calculateCompatibilityScoreSync(
+                femalePet,
+                candidatePet,
+                breedRules,
+                roadDist,
+              );
+              data[c.index].compatibilityScore = updatedCompatibility.score;
+              data[c.index].matchReasons = updatedCompatibility.reasons;
             }
           });
         }
@@ -405,6 +417,13 @@ export class MatchingService {
     if (maxDist > 0) {
       data = data.filter((item) => item.distanceKm <= maxDist);
     }
+
+    // Sắp xếp ưu tiên: Điểm tương thích cao nhất lên đầu, nếu bằng điểm thì ưu tiên khoảng cách gần hơn
+    data.sort((a, b) => {
+      const scoreDiff = (b.compatibilityScore ?? 0) - (a.compatibilityScore ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
+    });
 
     // Xóa trường tạm _candCoords trước khi trả về kết quả
     const cleanedData = data.map(({ _candCoords, ...item }) => item);
@@ -1581,42 +1600,143 @@ export class MatchingService {
    * BreedRule compatible:        +20
    * BreedRule incompatible:      -10
    */
+  /**
+   * Tính toán khoảng cách ước tính giữa 2 thú cưng nếu chưa có toạ độ
+   */
+  private getDistanceBetweenPets(pet1: Pet, pet2: Pet): number | undefined {
+    let lat1 = pet1.latitude;
+    let lng1 = pet1.longitude;
+    let lat2 = pet2.latitude;
+    let lng2 = pet2.longitude;
+
+    if (lat1 == null || lng1 == null) {
+      const coords = getHanoiWardCoords(pet1.ward || pet1.location);
+      lat1 = coords.lat;
+      lng1 = coords.lng;
+    }
+    if (lat2 == null || lng2 == null) {
+      const coords = getHanoiWardCoords(pet2.ward || pet2.location);
+      lat2 = coords.lat;
+      lng2 = coords.lng;
+    }
+
+    if (
+      pet1.ward &&
+      pet2.ward &&
+      pet1.ward.trim().toLowerCase() === pet2.ward.trim().toLowerCase()
+    ) {
+      return 0.8;
+    }
+
+    if (lat1 != null && lng1 != null && lat2 != null && lng2 != null) {
+      return calculateHaversineDistance(lat1, lng1, lat2, lng2);
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Kiểm tra 2 thú cưng có ở cùng khu vực hoặc khoảng cách gần hợp lý để ghép đôi (<= 15km)
+   */
+  private isLocationCompatible(
+    pet1: Pet,
+    pet2: Pet,
+    distanceKm?: number,
+  ): boolean {
+    const dist = distanceKm ?? this.getDistanceBetweenPets(pet1, pet2);
+    if (dist != null && dist <= 15) {
+      return true;
+    }
+    // Cùng phường hoặc cùng quận
+    if (
+      pet1.ward &&
+      pet2.ward &&
+      pet1.ward.trim().toLowerCase() === pet2.ward.trim().toLowerCase()
+    ) {
+      return true;
+    }
+    if (
+      pet1.district &&
+      pet2.district &&
+      pet1.district.trim().toLowerCase() === pet2.district.trim().toLowerCase()
+    ) {
+      return true;
+    }
+    // Cùng tỉnh / thành phố hoặc chuỗi location trùng nhau
+    if (pet1.location && pet2.location) {
+      const loc1 = pet1.location.trim().toLowerCase();
+      const loc2 = pet2.location.trim().toLowerCase();
+      if (loc1 === loc2) return true;
+      if (loc1.includes('hà nội') && loc2.includes('hà nội')) return true;
+      if (
+        (loc1.includes('hồ chí minh') || loc1.includes('tp.hcm')) &&
+        (loc2.includes('hồ chí minh') || loc2.includes('tp.hcm'))
+      ) {
+        return true;
+      }
+      if (loc1.includes('đà nẵng') && loc2.includes('đà nẵng')) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Tính toán điểm tương thích giữa 2 thú cưng (0 - 100 điểm)
+   * Thuật toán:
+   * Điểm cơ bản:                 30
+   * Cùng giống:                  +25
+   * Khác giống (chưa có quy chuẩn): -10
+   * Cùng khu vực (<= 15km):      +15
+   * Cả hai có phả hệ:            +10
+   * Vaccine đã xác minh:          +5
+   * Phả hệ đã xác minh:         +10
+   * Cân nặng gần nhau (≤5kg):   +10
+   * BreedRule compatible:        +20
+   * BreedRule incompatible:      -10
+   */
   private async calculateCompatibilityScore(
     femalePet: Pet,
     malePet: Pet,
+    distanceKm?: number,
   ): Promise<CompatibilityResult> {
     let score = 30;
     const reasons: string[] = [];
     const warnings: string[] = [];
+    const isSameBreed = femalePet.breed === malePet.breed;
 
     // Cùng giống thuần chủng (+25)
-    if (femalePet.breed === malePet.breed) {
+    if (isSameBreed) {
       score += 25;
       reasons.push('same_breed');
     }
 
-    // Cùng location (+15)
-    if (femalePet.location === malePet.location) {
+    // Cùng khu vực / khoảng cách gần hợp lý (+15)
+    if (this.isLocationCompatible(femalePet, malePet, distanceKm)) {
       score += 15;
       reasons.push('same_location');
     }
 
-    // Cả hai có phả hệ (tự khai) (+10)
-    if (femalePet.hasPedigree && malePet.hasPedigree) {
+    // Giấy chứng nhận phả hệ VKA (Tối đa +20%):
+    // - Cả 2 đã xác minh phả hệ VKA (+20)
+    // - Chỉ bé đực có phả hệ VKA đã kiểm duyệt (+10) (bảo đảm nguồn gen thuần chuẩn cho đàn con)
+    // - Tự khai chưa qua kiểm duyệt hoặc không có (+0)
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 20;
+      reasons.push('both_pedigree_verified');
+    } else if (malePet.pedigreeVerified) {
       score += 10;
-      reasons.push('both_pedigree');
+      reasons.push('male_pedigree_verified');
     }
 
-    // Cả hai vaccine đã xác minh bởi moderator (+5)
+    // Kiểm định tiêm chủng y tế (Tối đa +5%):
+    // - Cả 2 đã xác minh tiêm chủng (+5)
+    // - Chỉ bé đực đã xác minh tiêm chủng (+3) (phòng ngừa lây nhiễm an toàn khi phối)
+    // - Chưa xác minh tiêm chủng (+0)
     if (femalePet.vaccineVerified && malePet.vaccineVerified) {
       score += 5;
       reasons.push('both_vaccine_verified');
-    }
-
-    // Cả hai phả hệ đã xác minh bởi moderator (+10)
-    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
-      score += 10;
-      reasons.push('both_pedigree_verified');
+    } else if (malePet.vaccineVerified) {
+      score += 3;
+      reasons.push('male_vaccine_verified');
     }
 
     // Cân nặng gần nhau ≤5kg (+10)
@@ -1630,38 +1750,47 @@ export class MatchingService {
       femalePet.breed,
       malePet.breed,
     );
-    return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
+    return this.applyBreedRuleScore(score, reasons, warnings, breedRule, isSameBreed);
   }
 
   private calculateCompatibilityScoreSync(
     femalePet: Pet,
     malePet: Pet,
     breedRules: BreedRule[],
+    distanceKm?: number,
   ): CompatibilityResult {
     let score = 30;
     const reasons: string[] = [];
     const warnings: string[] = [];
+    const isSameBreed = femalePet.breed === malePet.breed;
 
-    if (femalePet.breed === malePet.breed) {
+    if (isSameBreed) {
       score += 25;
       reasons.push('same_breed');
     }
-    if (femalePet.location === malePet.location) {
+    if (this.isLocationCompatible(femalePet, malePet, distanceKm)) {
       score += 15;
       reasons.push('same_location');
     }
-    if (femalePet.hasPedigree && malePet.hasPedigree) {
+
+    // Giấy chứng nhận phả hệ VKA (Tối đa +20%):
+    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
+      score += 20;
+      reasons.push('both_pedigree_verified');
+    } else if (malePet.pedigreeVerified) {
       score += 10;
-      reasons.push('both_pedigree');
+      reasons.push('male_pedigree_verified');
     }
+
+    // Kiểm định tiêm chủng y tế (Tối đa +5%):
     if (femalePet.vaccineVerified && malePet.vaccineVerified) {
       score += 5;
       reasons.push('both_vaccine_verified');
+    } else if (malePet.vaccineVerified) {
+      score += 3;
+      reasons.push('male_vaccine_verified');
     }
-    if (femalePet.pedigreeVerified && malePet.pedigreeVerified) {
-      score += 10;
-      reasons.push('both_pedigree_verified');
-    }
+
     if (Math.abs(femalePet.weight - malePet.weight) <= 5) {
       score += 10;
       reasons.push('similar_weight');
@@ -1674,7 +1803,7 @@ export class MatchingService {
           (r.breedA === malePet.breed && r.breedB === femalePet.breed),
       ) || null;
 
-    return this.applyBreedRuleScore(score, reasons, warnings, breedRule);
+    return this.applyBreedRuleScore(score, reasons, warnings, breedRule, isSameBreed);
   }
 
   private applyBreedRuleScore(
@@ -1682,6 +1811,7 @@ export class MatchingService {
     reasons: string[],
     warnings: string[],
     breedRule: BreedRule | null,
+    isSameBreed: boolean,
   ): CompatibilityResult {
     let breedInfo: CompatibilityResult['breedInfo'] = undefined;
 
@@ -1703,6 +1833,10 @@ export class MatchingService {
       if (breedRule.warningNote) {
         warnings.push(breedRule.warningNote);
       }
+    } else if (!isSameBreed) {
+      // Khác giống và chưa có quy chuẩn lai tạo tương thích trong danh mục -> Giảm 10 điểm
+      score -= 10;
+      reasons.push('breed_incompatible');
     }
 
     return {

@@ -107,4 +107,12 @@ export class CreatePetDto {
   @IsOptional()
   @IsNumber()
   breedingFee?: number;
+
+  @IsOptional()
+  @IsNumber()
+  shareLitterCount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isAvailableForMatching?: boolean;
 }

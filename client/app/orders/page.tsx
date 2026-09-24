@@ -51,11 +51,16 @@ interface OrderItem {
   } | null;
 }
 
+/**
+ * Interface biểu diễn đơn hàng của người dùng
+ */
 interface Order {
   id: string;
   status: 'PENDING' | 'CONFIRMED' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
   shippingAddress: string;
+  shippingLatitude?: number | null;
+  shippingLongitude?: number | null;
   payment?: {
     method: 'COD' | 'QR';
     status: 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR' | 'REFUNDED';
@@ -1096,7 +1101,11 @@ export default function OrdersPage() {
           showShippingFee={true}
           submitButtonText="Xác nhận đổi địa chỉ"
           title={`Sửa địa chỉ giao hàng - Đơn hàng #${editOrder.id}`}
-          initialData={parseAddressString(editOrder.shippingAddress)}
+          initialData={{
+            ...parseAddressString(editOrder.shippingAddress),
+            latitude: editOrder.shippingLatitude ?? undefined,
+            longitude: editOrder.shippingLongitude ?? undefined,
+          }}
         />
       )}
 

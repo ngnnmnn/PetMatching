@@ -347,11 +347,12 @@ export class PetsService {
         pedigreeNumber: dto.pedigreeNumber,
         breedingOption: dto.breedingOption,
         breedingFee: dto.breedingFee,
+        shareLitterCount: dto.shareLitterCount,
         verificationBadge: documents.length
           ? VerificationBadge.PENDING
           : VerificationBadge.NONE,
         status: PetStatus.ACTIVE,
-        isAvailableForMatching: false,
+        isAvailableForMatching: dto.isAvailableForMatching ?? false,
         documents: documents.length ? { create: documents } : undefined,
       },
       include: { documents: true },
@@ -440,6 +441,22 @@ export class PetsService {
 
         const nextIsVaccinated = dto.isVaccinated ?? pet.isVaccinated;
         const nextHasPedigree = dto.hasPedigree ?? pet.hasPedigree;
+        const nextVaccineDocumentUrls =
+          dto.vaccineDocumentUrls ??
+          vaccineDocuments.flatMap((document) => document.imageUrls);
+        const nextPedigreeDocumentUrls =
+          dto.pedigreeDocumentUrls ??
+          pedigreeDocuments.flatMap((document) => document.imageUrls);
+        if (nextIsVaccinated && nextVaccineDocumentUrls.length === 0) {
+          throw new BadRequestException(
+            'Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh.',
+          );
+        }
+        if (nextHasPedigree && nextPedigreeDocumentUrls.length === 0) {
+          throw new BadRequestException(
+            'Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh.',
+          );
+        }
         if (dto.vaccineDocumentUrls?.length && !nextIsVaccinated) {
           throw new BadRequestException(
             'Vaccine documents require the vaccinated declaration.',

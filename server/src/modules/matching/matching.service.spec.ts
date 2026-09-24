@@ -967,3 +967,86 @@ describe('MatchingService resetPassedPets', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('MatchingService compatibility scoring documents', () => {
+  const service = new MatchingService({} as any, {} as any, {} as any);
+
+  const baseFemale: any = {
+    id: 'f1',
+    species: Species.DOG,
+    breed: 'Poodle',
+    weight: 5,
+    hasPedigree: false,
+    pedigreeVerified: false,
+    vaccineVerified: false,
+    location: 'HCM',
+    ward: 'Phường 1',
+  };
+
+  const baseMale: any = {
+    id: 'm1',
+    species: Species.DOG,
+    breed: 'Poodle',
+    weight: 5,
+    hasPedigree: false,
+    pedigreeVerified: false,
+    vaccineVerified: false,
+    location: 'HCM',
+    ward: 'Phường 1',
+  };
+
+  it('does not give pedigree points for unverified self-declared pedigree', () => {
+    const female = { ...baseFemale, hasPedigree: true, pedigreeVerified: false };
+    const male = { ...baseMale, hasPedigree: true, pedigreeVerified: false };
+
+    const result = (service as any).calculateCompatibilityScoreSync(female, male, [], 5);
+    // Base(30) + SameBreed(25) + Location(15) + Weight(10) = 80
+    expect(result.score).toBe(80);
+    expect(result.reasons).not.toContain('both_pedigree');
+    expect(result.reasons).not.toContain('both_pedigree_verified');
+    expect(result.reasons).not.toContain('male_pedigree_verified');
+  });
+
+  it('awards +20 points when both pets have verified pedigree', () => {
+    const female = { ...baseFemale, hasPedigree: true, pedigreeVerified: true };
+    const male = { ...baseMale, hasPedigree: true, pedigreeVerified: true };
+
+    const result = (service as any).calculateCompatibilityScoreSync(female, male, [], 5);
+    // Base(30) + SameBreed(25) + Location(15) + Weight(10) + BothPedigreeVerified(20) = 100
+    expect(result.score).toBe(100);
+    expect(result.reasons).toContain('both_pedigree_verified');
+  });
+
+  it('awards +10 points when only male pet has verified pedigree', () => {
+    const female = { ...baseFemale, hasPedigree: false, pedigreeVerified: false };
+    const male = { ...baseMale, hasPedigree: true, pedigreeVerified: true };
+
+    const result = (service as any).calculateCompatibilityScoreSync(female, male, [], 5);
+    // Base(30) + SameBreed(25) + Location(15) + Weight(10) + MalePedigreeVerified(10) = 90
+    expect(result.score).toBe(90);
+    expect(result.reasons).toContain('male_pedigree_verified');
+    expect(result.reasons).not.toContain('both_pedigree_verified');
+  });
+
+  it('awards +5 points when both pets have verified vaccine', () => {
+    const female = { ...baseFemale, vaccineVerified: true };
+    const male = { ...baseMale, vaccineVerified: true };
+
+    const result = (service as any).calculateCompatibilityScoreSync(female, male, [], 5);
+    // Base(30) + SameBreed(25) + Location(15) + Weight(10) + BothVaccineVerified(5) = 85
+    expect(result.score).toBe(85);
+    expect(result.reasons).toContain('both_vaccine_verified');
+  });
+
+  it('awards +3 points when only male pet has verified vaccine', () => {
+    const female = { ...baseFemale, vaccineVerified: false };
+    const male = { ...baseMale, vaccineVerified: true };
+
+    const result = (service as any).calculateCompatibilityScoreSync(female, male, [], 5);
+    // Base(30) + SameBreed(25) + Location(15) + Weight(10) + MaleVaccineVerified(3) = 83
+    expect(result.score).toBe(83);
+    expect(result.reasons).toContain('male_vaccine_verified');
+    expect(result.reasons).not.toContain('both_vaccine_verified');
+  });
+});
+

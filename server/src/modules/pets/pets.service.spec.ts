@@ -341,6 +341,24 @@ describe('PetsService profile details and updates', () => {
     });
   });
 
+  it('rejects enabling the vaccinated declaration without a vaccine document', async () => {
+    await expect(
+      service.updatePet('owner-1', pet.id, { isVaccinated: true }),
+    ).rejects.toThrow(
+      'Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh.',
+    );
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects enabling the pedigree declaration without a pedigree document', async () => {
+    await expect(
+      service.updatePet('owner-1', pet.id, { hasPedigree: true }),
+    ).rejects.toThrow(
+      'Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh.',
+    );
+    expect(transactionPetUpdate).not.toHaveBeenCalled();
+  });
+
   it('deletes only replaced Cloudinary images after a successful update', async () => {
     transactionPetFindUnique.mockResolvedValue({
       ...pet,

@@ -471,19 +471,63 @@ export class ShippingService {
       const token = tokenData?.token;
 
       if (token) {
-        const estimateBody = {
+        let estimatedOrderValue = 0;
+        if (items && Array.isArray(items) && items.length > 0) {
+          for (const item of items) {
+            let price = 0;
+            if (item.variantId) {
+              const variant = await this.prisma.productVariant.findUnique({
+                where: { id: item.variantId },
+                select: { salePrice: true, sellingPrice: true },
+              });
+              price = variant?.salePrice ?? variant?.sellingPrice ?? 0;
+            } else if (item.productId) {
+              const product = await this.prisma.product.findUnique({
+                where: { id: item.productId },
+                select: { salePrice: true, sellingPrice: true },
+              });
+              price = product?.salePrice ?? product?.sellingPrice ?? 0;
+            }
+            estimatedOrderValue += (item.quantity || 1) * price;
+          }
+        }
+
+        const parsedAddr = this.parseShippingAddressHelper(addressStr || '');
+        const recipientName = parsedAddr.name || 'Khách hàng PetMatching';
+        const recipientPhone = parsedAddr.phone || '0988888888';
+
+        // Sử dụng endpoint POST /v3/orders kèm flag `idle: 1` để lấy báo giá cước chuẩn theo quãng đường giao thông thực tế của AhaMove (tránh 404 ở Staging)
+        const estimateBody: any = {
           service_id: 'HAN-BIKE',
-          path: [
-            { address: pickup.address, lat: pickup.lat, lng: pickup.lng },
+          payment_method: 'CASH',
+          idle: 1, // Flag idle = 1 thông báo cho AhaMove đây là truy vấn báo giá ước tính ngầm, không tự tạo đơn phát tới tài xế
+          items: [
             {
-              address: addressStr || 'Địa chỉ giao hàng',
+              name: 'Đơn hàng PetMatching',
+              number: 1,
+              price: Math.round(estimatedOrderValue),
+            },
+          ],
+          path: [
+            {
+              address: pickup.address,
+              name: pickup.name,
+              mobile: pickup.phone,
+              lat: pickup.lat,
+              lng: pickup.lng,
+            },
+            {
+              address: parsedAddr.address || addressStr || 'Địa chỉ giao hàng',
+              name: recipientName,
+              mobile: recipientPhone,
               lat: dropoff.lat,
               lng: dropoff.lng,
+              cod: 0, // Đặt COD = 0 ở chế độ ước tính để tránh lỗi INVALID_MAX_COD của môi trường Staging
             },
           ],
         };
 
-        const feeRes = await fetch(`${baseUrl}/v3/orders/estimated-fee`, {
+        const feeRes = await fetch(`${baseUrl}/v3/orders`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -494,7 +538,14 @@ export class ShippingService {
 
         if (feeRes.ok) {
           const feeData = await feeRes.json();
-          const ahaFee = feeData?.total_price || feeData?.total_fee || feeData?.fee || (Array.isArray(feeData) && (feeData[0]?.total_price || feeData[0]?.fee));
+          // AhaMove trả về cấu trúc { order: { total_fee: 33000 } } khi dùng idle = 1 trên /v3/orders
+          const ahaFee =
+            feeData?.order?.total_fee ||
+            feeData?.order?.total_price ||
+            feeData?.total_fee ||
+            feeData?.total_price ||
+            feeData?.fee ||
+            (Array.isArray(feeData) && (feeData[0]?.total_price || feeData[0]?.fee));
 
           if (ahaFee && typeof ahaFee === 'number' && ahaFee > 0) {
             estimatedFee = Math.round(ahaFee);

@@ -19,6 +19,7 @@ import {
   Edit3,
   Eye,
   EyeOff,
+  Heart,
   ImagePlus,
   Info,
   Loader2,
@@ -27,12 +28,14 @@ import {
   MoreVertical,
   PawPrint,
   Scale,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Syringe,
   Trash2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -98,6 +101,7 @@ type PetProfileDialogProps = {
   onClose: () => void;
   onPetUpdated: (pet: Pet) => void;
   onPetDeleted: (petId: string) => void;
+  onOpenSetupMatching?: (pet: Pet) => void;
 };
 
 type EditForm = {
@@ -161,6 +165,7 @@ export function PetProfileDialog({
   onClose,
   onPetUpdated,
   onPetDeleted,
+  onOpenSetupMatching,
 }: PetProfileDialogProps) {
   const [pet, setPet] = useState<Pet>(initialPet);
   const initialMode: DialogMode = startInEditMode ? "edit" : "view";
@@ -170,6 +175,20 @@ export function PetProfileDialog({
   const [initialForm, setInitialForm] = useState<EditForm>(() =>
     formFromPet(initialPet),
   );
+
+  // Tính toán điều kiện tuổi và cân nặng phục vụ ghép đôi
+  const minMonths = pet.species === "CAT" ? 8 : 12;
+  const birthday = new Date(pet.birthday);
+  const now = new Date();
+  let ageMonths = (now.getFullYear() - birthday.getFullYear()) * 12 + now.getMonth() - birthday.getMonth();
+  if (now.getDate() < birthday.getDate()) ageMonths -= 1;
+  ageMonths = Math.max(0, ageMonths);
+  const isUnderage = ageMonths < minMonths;
+  const isMatchingWeightEligible = isPetMatchingWeightEligible(
+    pet.species,
+    pet.weight,
+  );
+  const isEligible = !isUnderage && isMatchingWeightEligible;
   const [refreshing, setRefreshing] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -337,6 +356,12 @@ export function PetProfileDialog({
     if (!form.location.trim() && !form.ward.trim()) return "Vui lòng chọn Phường / Xã tại Hà Nội.";
     if (!form.avatarUrl && (!form.gallery || form.gallery.length === 0)) {
       return "Hồ sơ thú cưng phải có tối thiểu ít nhất 1 ảnh đại diện hoặc ảnh bộ sưu tập.";
+    }
+    if (form.isVaccinated && form.vaccineDocumentUrls.length === 0) {
+      return "Vui lòng tải ít nhất 1 ảnh sổ tiêm phòng để gửi xác minh.";
+    }
+    if (form.hasPedigree && form.pedigreeDocumentUrls.length === 0) {
+      return "Vui lòng tải ít nhất 1 ảnh giấy tờ phả hệ để gửi xác minh.";
     }
     if (form.personality.length > 500) return "Tính cách tối đa 500 ký tự.";
     return null;
@@ -536,7 +561,12 @@ export function PetProfileDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {mode === "view" ? (
-              <PetDetails pet={pet} onPreviewImage={setPreviewImage} />
+              <PetDetails
+                pet={pet}
+                onPreviewImage={setPreviewImage}
+                onOpenSetupMatching={onOpenSetupMatching}
+                onBeginEdit={beginEdit}
+              />
             ) : (
               <PetEditForm
                 pet={pet}
@@ -553,15 +583,36 @@ export function PetProfileDialog({
 
           <DialogFooter className="shrink-0 border-t bg-background px-5 py-4 sm:px-6">
             {mode === "view" ? (
-              <>
-                <Button variant="outline" onClick={requestClose}>
-                  Đóng
-                </Button>
-                <Button className="gap-2 font-bold" onClick={beginEdit}>
+              <div className="flex w-full items-center justify-end gap-2">
+                <Button variant="outline" className="gap-2 font-bold" onClick={beginEdit}>
                   <Edit3 className="size-4" />
                   Chỉnh sửa hồ sơ
                 </Button>
-              </>
+                {pet.status === "ACTIVE" && isEligible && (
+                  pet.gender === "FEMALE" ? (
+                    <Button
+                      className="gap-2 font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-md shadow-pink-500/20"
+                      asChild
+                    >
+                      <Link href="/explore">
+                        <Heart className="size-4 fill-white" />
+                        Tìm bạn đời
+                      </Link>
+                    </Button>
+                  ) : onOpenSetupMatching ? (
+                    <Button
+                      className="gap-2 font-bold shadow-md shadow-primary/20"
+                      onClick={() => {
+                        onClose();
+                        onOpenSetupMatching(pet);
+                      }}
+                    >
+                      <Settings2 className="size-4" />
+                      {pet.isAvailableForMatching ? "Cấu hình ghép đôi" : "Bật ghép đôi"}
+                    </Button>
+                  ) : null
+                )}
+              </div>
             ) : (
               <>
                 <Button
@@ -691,14 +742,16 @@ export function PetProfileDialog({
 function PetDetails({
   pet,
   onPreviewImage,
+  onOpenSetupMatching,
+  onBeginEdit,
 }: {
   pet: Pet;
   onPreviewImage: (url: string) => void;
+  onOpenSetupMatching?: (pet: Pet) => void;
+  onBeginEdit?: () => void;
 }) {
   const gallery = pet.gallery ?? [];
-  const address = [pet.ward, pet.district, pet.location]
-    .filter(Boolean)
-    .join(", ");
+  const address = formatDisplayAddress(pet);
   const vaccineDocument = petDocument(pet, "VACCINE_RECORD");
   const pedigreeDocument = petDocument(pet, "PEDIGREE_CERT");
 
@@ -714,6 +767,7 @@ function PetDetails({
     pet.species,
     pet.weight,
   );
+  const isEligible = !isUnderage && isMatchingWeightEligible;
   const eligibleDate = new Date(birthday);
   eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
   const eligibleDateStr = eligibleDate.toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric" });
@@ -785,9 +839,18 @@ function PetDetails({
               <span className="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/60 dark:text-amber-300">
                 ⚖️ Chưa đủ điều kiện cân nặng
               </span>
-            ) : (
+            ) : pet.gender === "FEMALE" ? (
               <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 px-2.5 py-1 text-xs font-black">
                 ✨ Đủ tuổi phối giống
+              </span>
+            ) : (
+              <span className={cn(
+                "rounded-full px-2.5 py-1 text-xs font-black border",
+                pet.isAvailableForMatching
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200"
+                  : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200"
+              )}>
+                {pet.isAvailableForMatching ? "✨ Đang mở phối" : "💤 Tắt phối giống"}
               </span>
             )}
           </div>
@@ -817,12 +880,7 @@ function PetDetails({
               </p>
             </div>
           </div>
-        ) : (
-          <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/60 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2 font-bold">
-            <Sparkles className="size-4 text-emerald-600 shrink-0" />
-            <span>Đủ điều kiện tham gia ghép đôi ({breedingSummary(pet)})</span>
-          </div>
-        )}
+        ) : null}
 
         <section className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2">
           <DetailItem
@@ -854,6 +912,7 @@ function PetDetails({
               declared={pet.isVaccinated}
               verified={vaccineDocument?.status === "APPROVED"}
               documentStatus={vaccineDocument?.status}
+              onAddDocument={onBeginEdit}
             />
             <HealthCard
               icon={BadgeCheck}
@@ -862,6 +921,7 @@ function PetDetails({
               verified={pedigreeDocument?.status === "APPROVED"}
               documentStatus={pedigreeDocument?.status}
               detail={pet.pedigreeNumber || undefined}
+              onAddDocument={onBeginEdit}
             />
           </div>
         </section>
@@ -875,28 +935,42 @@ function PetDetails({
           </p>
         </section>
 
-        <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-primary">
-                Cấu hình ghép đôi
-              </h3>
-              <p className="mt-1 text-sm font-bold">
-                {pet.gender === "FEMALE"
-                  ? "Tìm bạn đời trong khu vực khám phá"
-                  : pet.isAvailableForMatching
+        {/* Chỉ hiển thị khối Cấu hình phối giống đối với thú cưng đực (vì con cái không có gói phí hay cài đặt nhận phối riêng) */}
+        {pet.gender === "MALE" && (
+          <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-all">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="size-4 text-primary" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-primary">
+                    Cấu hình phối giống
+                  </h3>
+                </div>
+                <p className="mt-1.5 text-sm font-bold text-foreground">
+                  {pet.isAvailableForMatching
                     ? breedingSummary(pet)
-                    : "Đang tắt ghép đôi"}
-              </p>
-            </div>
-            <span
-              className={cn(
-                "size-3 shrink-0 rounded-full",
-                pet.isAvailableForMatching ? "bg-emerald-500" : "bg-slate-300",
+                    : isEligible
+                      ? "Chưa bật nhận ghép đôi (Cần cấu hình phí hoặc chia con)"
+                      : "Chưa đủ điều kiện phối giống"}
+                </p>
+              </div>
+
+              {isEligible && pet.status === "ACTIVE" && onOpenSetupMatching && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 rounded-xl font-bold border-primary/30 text-primary hover:bg-primary/10 text-xs shrink-0"
+                  onClick={() => {
+                    onOpenSetupMatching(pet);
+                  }}
+                >
+                  <Settings2 className="size-3.5" />
+                  Cài đặt điều kiện
+                </Button>
               )}
-            />
-          </div>
-        </section>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -1547,6 +1621,9 @@ function DetailItem({
   );
 }
 
+/**
+ * Thẻ hiển thị thông tin sức khỏe và xác minh (tiêm phòng, phả hệ)
+ */
 function HealthCard({
   icon: Icon,
   title,
@@ -1554,6 +1631,7 @@ function HealthCard({
   verified,
   documentStatus,
   detail,
+  onAddDocument,
 }: {
   icon: typeof PawPrint;
   title: string;
@@ -1561,40 +1639,65 @@ function HealthCard({
   verified: boolean;
   documentStatus?: PetDocument["status"];
   detail?: string;
+  onAddDocument?: () => void;
 }) {
   const needsReupload = documentStatus === "NEED_MORE_INFO";
   return (
-    <div className="rounded-xl border p-4">
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 text-primary" />
-        <span className="text-sm font-black">{title}</span>
+    <div className="rounded-2xl border bg-card p-4 transition-all shadow-2xs">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Icon className="size-4" />
+          </div>
+          <span className="text-sm font-black">{title}</span>
+        </div>
+        {declared ? (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black",
+              verified
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200"
+                : needsReupload
+                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200"
+                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200",
+            )}
+          >
+            {verified ? "✓ Đã xác minh" : needsReupload ? "⚠️ Cần tải lại" : "⏳ Đang duyệt"}
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            Chưa khai báo
+          </span>
+        )}
       </div>
-      <p className="mt-2 text-sm font-semibold">
-        {declared ? "Đã khai báo" : "Chưa khai báo"}
-      </p>
-      {(declared || needsReupload) && (
-        <p
-          className={cn(
-            "mt-1 text-xs font-bold",
-            verified
-              ? "text-emerald-600"
+
+      <div className="mt-2.5">
+        <p className="text-xs font-semibold text-foreground">
+          {declared
+            ? verified
+              ? "Đã nộp đầy đủ giấy tờ chứng nhận hợp lệ."
               : needsReupload
-                ? "text-slate-500"
-                : "text-amber-600",
-          )}
-        >
-          {verified
-            ? "Đã xác minh"
-            : needsReupload
-              ? "Cần tải lại giấy tờ"
-              : "Đang chờ xác minh"}
+                ? "Giấy tờ chưa đạt chuẩn, vui lòng tải ảnh rõ nét hơn."
+                : "Đang chờ quản trị viên duyệt giấy tờ."
+            : "Chưa có thông tin xác thực cho mục này."}
         </p>
-      )}
-      {detail && (
-        <p className="mt-1 truncate text-xs text-muted-foreground">
-          Mã: {detail}
-        </p>
-      )}
+
+        {detail && (
+          <p className="mt-1 font-mono text-xs font-bold text-primary truncate">
+            Mã: {detail}
+          </p>
+        )}
+
+        {!declared && onAddDocument && (
+          <button
+            type="button"
+            onClick={onAddDocument}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer"
+          >
+            + Chỉnh sửa để bổ sung giấy tờ
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1664,4 +1767,37 @@ function breedingSummary(pet: Pet) {
     return `Chia con non · ${pet.shareLitterCount ?? 1} con`;
   }
   return "Thỏa thuận trực tiếp";
+}
+
+/**
+ * Chuẩn hóa địa chỉ đầy đủ của thú cưng, loại bỏ các phân đoạn trùng lặp (ví dụ: Phường, Quận lặp lại trong chuỗi)
+ */
+function formatDisplayAddress(pet: Pet): string {
+  if (!pet.location && !pet.ward && !pet.district) {
+    return "Chưa cập nhật";
+  }
+
+  // Thu thập các phân đoạn địa chỉ thô
+  const rawParts = [
+    pet.location,
+    pet.ward,
+    pet.district,
+  ]
+    .filter(Boolean)
+    .flatMap((item) => (item ? item.split(",") : []))
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const cleanParts: string[] = [];
+
+  for (const part of rawParts) {
+    const normalized = part.toLowerCase();
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      cleanParts.push(part);
+    }
+  }
+
+  return cleanParts.join(", ") || pet.location || "Chưa cập nhật";
 }
