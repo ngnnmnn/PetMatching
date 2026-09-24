@@ -313,8 +313,9 @@ function ShopPageContent() {
   const handleSpeciesChange = useCallback(
     (targetSpecies: string) => {
       setFilters((previous) => ({ ...previous, targetSpecies: targetSpecies || undefined, page: 1 }));
-      // Clear pet filter if user manually changes targetSpecies sidebar filter
-      if (selectedPet && targetSpecies !== selectedPet.species) {
+      // Giữ nguyên selectedPet khi người dùng chọn 'Tất cả thú cưng' (targetSpecies rỗng)
+      // Chỉ bỏ chọn pet nếu người dùng chọn một loài khác loài của thú cưng hiện tại
+      if (selectedPet && targetSpecies && targetSpecies !== selectedPet.species) {
         setSelectedPet(null);
       }
     },
@@ -688,6 +689,7 @@ function ShopPageContent() {
                   onClearAllFilters={handleClearAllFilters}
                   hasActiveFilters={hasActiveFilters}
                   dynamicCategories={dynamicSidebarCategories}
+                  petSpecies={selectedPet?.species}
                 />
               </div>
 

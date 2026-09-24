@@ -550,7 +550,8 @@ export default function OrdersPage() {
       case 'CONFIRMED':
       case 'PACKED':
       case 'PROCESSING':
-        if (order.shippingStatus === 'ASSIGNING') {
+        // Khi Manager đã gửi đơn sang AhaMove (có mã ahamoveOrderCode hoặc shippingStatus là ASSIGNING), hiển thị "Đã gửi VC"
+        if (Boolean(order.ahamoveOrderCode) || (order.shippingStatus || '').toUpperCase() === 'ASSIGNING') {
           return (
             <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700 border border-blue-200">
               <Truck className="size-3.5" />
@@ -995,24 +996,22 @@ export default function OrdersPage() {
                           // Tính toán bước hiện tại theo quy trình AhaMove 5 bước mới dành cho Khách hàng
                           let currentIdx = 0;
                           const shipStatusUpper = (order.shippingStatus || '').toUpperCase();
-                          // Chỉ khi tài xế AhaMove chấp nhận đơn (ACCEPTED) hoặc đang di chuyển giao hàng mới chuyển sang bước "Đang giao"
-                          const isDriverAccepted = [
-                            'ACCEPTED',
+                          // Chỉ khi tài xế đã lấy hàng tại Shop và đang trên đường hỏa tốc giao tới khách mới chuyển sang bước "Đang giao"
+                          const isInDeliveringState = [
                             'IN_PROCESS',
                             'IN PROCESS',
                             'DELIVERING',
                             'ON_TRIP',
                             'TRIP_START',
+                            'PICKED',
                           ].includes(shipStatusUpper);
 
                           if (order.status === 'DELIVERED') {
                             currentIdx = 4; // Giao hàng thành công
-                          } else if (order.status === 'SHIPPED') {
-                            if (isDriverAccepted) {
-                              currentIdx = 3; // Đang giao (Tài xế đã nhận đơn & đang di chuyển)
-                            } else {
-                              currentIdx = 2; // Đã gửi VC (Đã tạo đơn AhaMove, đang tìm/gán tài xế)
-                            }
+                          } else if (order.status === 'SHIPPED' || isInDeliveringState) {
+                            currentIdx = 3; // Đang giao (Tài xế đã lấy hàng & đang hỏa tốc vận chuyển tới khách)
+                          } else if (Boolean(order.ahamoveOrderCode) || ['ASSIGNING', 'CREATED', 'ACCEPTED', 'CONFIRMED'].includes(shipStatusUpper)) {
+                            currentIdx = 2; // Đã gửi VC (Đã tạo đơn AhaMove, đang tìm tài xế hoặc tài xế vừa nhận đơn đang tới shop)
                           } else if (['CONFIRMED', 'PACKED', 'PROCESSING'].includes(order.status)) {
                             currentIdx = 1; // Xác nhận (Sau khi Manager ấn xác nhận đơn)
                           } else {

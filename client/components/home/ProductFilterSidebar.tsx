@@ -22,6 +22,7 @@ interface ProductFilterSidebarProps {
   onClearAllFilters?: () => void;
   hasActiveFilters?: boolean;
   dynamicCategories?: DynamicCategory[];
+  petSpecies?: string | null;
 }
 
 const DEFAULT_CATEGORIES: Array<{
@@ -94,6 +95,7 @@ export default function ProductFilterSidebar({
   onClearAllFilters,
   hasActiveFilters,
   dynamicCategories,
+  petSpecies,
 }: ProductFilterSidebarProps) {
   const [isExpandedCategories, setIsExpandedCategories] = useState(false);
   const [rawMin, setRawMin] = useState(customMinPrice ? customMinPrice.toLocaleString('vi-VN') : '');
@@ -172,13 +174,14 @@ export default function ProductFilterSidebar({
     }
   };
 
-  // Vô hiệu hóa lựa chọn loài nếu danh mục đã chọn bị giới hạn loài cụ thể
-  const isDogSpeciesDisabled = selectedCategories.some(
-    (cat) => CATEGORY_SPECIES[cat] === 'CAT'
-  );
-  const isCatSpeciesDisabled = selectedCategories.some(
-    (cat) => CATEGORY_SPECIES[cat] === 'DOG'
-  );
+  // Vô hiệu hóa lựa chọn loài nếu danh mục đã chọn bị giới hạn loài cụ thể HOẶC thú cưng được chọn thuộc loài khác
+  const isDogSpeciesDisabled =
+    selectedCategories.some((cat) => CATEGORY_SPECIES[cat] === 'CAT') ||
+    petSpecies === 'CAT';
+
+  const isCatSpeciesDisabled =
+    selectedCategories.some((cat) => CATEGORY_SPECIES[cat] === 'DOG') ||
+    petSpecies === 'DOG';
 
   /** Kiểm tra xem một danh mục có bị vô hiệu hóa bởi loài thú cưng đang chọn hay không */
   const isCategoryDisabled = (catValue: string) => {
@@ -260,16 +263,25 @@ export default function ProductFilterSidebar({
                   key={item.value}
                   type="button"
                   disabled={isSpeciesBtnDisabled}
-                  onClick={() => handleSpeciesToggle(item.value)}
+                  onClick={() => !isSpeciesBtnDisabled && handleSpeciesToggle(item.value)}
+                  title={
+                    isSpeciesBtnDisabled
+                      ? item.value === 'DOG' && petSpecies === 'CAT'
+                        ? 'Thú cưng đang chọn là Mèo, không phù hợp sản phẩm dành cho Chó'
+                        : item.value === 'CAT' && petSpecies === 'DOG'
+                          ? 'Thú cưng đang chọn là Chó, không phù hợp sản phẩm dành cho Mèo'
+                          : 'Loài này không phù hợp với danh mục đã chọn'
+                      : undefined
+                  }
                   className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-xs font-bold transition text-left ${isSpeciesBtnDisabled
-                      ? 'cursor-not-allowed border-transparent bg-gray-50 text-gray-400 opacity-50'
+                      ? 'cursor-not-allowed border-transparent bg-gray-100/70 text-gray-400 opacity-50'
                       : isSelected
                         ? 'cursor-pointer border-[#99D5CE] bg-[#EAF8F6] text-[#0F766E] shadow-xs'
                         : 'cursor-pointer border-transparent text-[var(--text-main)] hover:border-[#E7E3DC] hover:bg-[#FAF9F7]'
                     }`}
                 >
                   <span className="flex items-center gap-2">
-                    <Icon className="size-4 text-[#0F766E]" />
+                    <Icon className={isSpeciesBtnDisabled ? 'size-4 text-gray-400' : 'size-4 text-[#0F766E]'} />
                     {item.label}
                   </span>
                   {isSelected && !isSpeciesBtnDisabled && <Check className="size-3.5" />}

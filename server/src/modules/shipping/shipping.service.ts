@@ -387,9 +387,9 @@ export class ShippingService {
         break;
       case 'ACCEPTED':
       case 'CONFIRMED':
-        // Tài xế đã nhận đơn -> Chuyển sang SHIPPED (Đang giao)
-        targetStatus = 'SHIPPED';
-        note = 'Tài xế AhaMove đã nhận đơn hàng và đang di chuyển tới Shop (Đang giao)';
+        // Tài xế đã nhận đơn, đang di chuyển tới Shop lấy hàng -> Giữ nguyên trạng thái đơn CONFIRMED, cập nhật thông tin tài xế
+        targetStatus = order.status;
+        note = 'Tài xế AhaMove đã nhận đơn hàng và đang di chuyển tới Shop lấy hàng';
         break;
       case 'IN_PROCESS':
       case 'IN PROCESS':
@@ -397,9 +397,9 @@ export class ShippingService {
       case 'ON_TRIP':
       case 'TRIP_START':
       case 'PICKED':
-        // Tài xế đã lấy hàng và đang đi giao -> SHIPPED (Đang giao)
+        // Tài xế đã lấy hàng tại Shop và đang thực hiện di chuyển giao tới khách -> Chuyển sang SHIPPED (Đang giao)
         targetStatus = 'SHIPPED';
-        note = 'Tài xế AhaMove đã lấy hàng thành công và đang trên đường giao (Đang giao)';
+        note = 'Tài xế AhaMove đã lấy hàng thành công và đang hỏa tốc vận chuyển tới khách (Đang giao)';
         break;
       case 'COMPLETED':
       case 'DELIVERED':
@@ -695,14 +695,14 @@ export class ShippingService {
 
               // Tự động cập nhật Database nếu trạng thái trên AhaMove Portal có thay đổi
               let targetOrderStatus: any = order.status;
-              // Chỉ khi tài xế đã chấp nhận đơn (ACCEPTED) hoặc đang di chuyển giao hàng mới chuyển sang SHIPPED (Đang giao)
-              const driverAcceptedStatuses = ['ACCEPTED', 'IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'CONFIRMED', 'PICKED'];
+              // Chỉ khi tài xế đã lấy hàng và đang di chuyển giao (IN_PROCESS, DELIVERING, ON_TRIP, PICKED...) mới chuyển sang SHIPPED (Đang giao)
+              const inDeliveringStatuses = ['IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'PICKED'];
               const completedStatuses = ['COMPLETED', 'DELIVERED', 'SUCCESSFUL', 'FINISHED'];
               const cancelledStatuses = ['CANCELLED', 'FAILED', 'REJECTED'];
 
               if (completedStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'DELIVERED';
-              } else if (driverAcceptedStatuses.includes(ahaStatus)) {
+              } else if (inDeliveringStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'SHIPPED';
               } else if (cancelledStatuses.includes(ahaStatus)) {
                 targetOrderStatus = 'CANCELLED';

@@ -74,6 +74,7 @@ type StoreOrderRow = {
   voucherCode?: string | null;
   shippingAddress?: string | null;
   shippingStatus?: string | null;
+  ahamoveOrderCode?: string | null;
   shippingNote?: string | null;
   deliveryProofUrl?: string | null;
   customerNameSnapshot?: string | null;
@@ -150,15 +151,19 @@ const ORDER_STATUS_META: Record<string, { label: string; className: string }> =
       className: "border-amber-200 bg-amber-50 text-amber-700",
     },
     CONFIRMED: {
-      label: "Đã xác nhận",
+      label: "Xác nhận",
       className: "border-sky-200 bg-sky-50 text-sky-700",
     },
     PROCESSING: {
-      label: "Đang xử lý",
+      label: "Xác nhận",
       className: "border-cyan-200 bg-cyan-50 text-cyan-700",
     },
     PACKED: {
-      label: "Đã đóng gói",
+      label: "Xác nhận",
+      className: "border-blue-200 bg-blue-50 text-blue-700",
+    },
+    DISPATCHED: {
+      label: "Đã gửi VC",
       className: "border-blue-200 bg-blue-50 text-blue-700",
     },
     SHIPPED: {
@@ -501,7 +506,11 @@ export function StoreOrdersPanel({
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <OrderStatusBadge status={order.status} />
+                    <OrderStatusBadge
+                      status={order.status}
+                      shippingStatus={order.shippingStatus}
+                      ahamoveOrderCode={typeof order.ahamoveOrderCode === "string" ? order.ahamoveOrderCode : null}
+                    />
                   </td>
                   <td className="px-4 py-4">
                     <p className="text-xs font-bold text-foreground/75">
@@ -631,7 +640,11 @@ function StoreOrderDetailDialog({
               </p>
               <DialogTitle className="mt-2 flex flex-wrap items-center gap-3 text-2xl font-black text-foreground sm:text-3xl">
                 Đơn #{getOrderCode(order)}{" "}
-                <OrderStatusBadge status={order.status} />
+                <OrderStatusBadge
+                  status={order.status}
+                  shippingStatus={order.shippingStatus}
+                  ahamoveOrderCode={typeof order.ahamoveOrderCode === "string" ? order.ahamoveOrderCode : null}
+                />
               </DialogTitle>
               <DialogDescription className="mt-2 text-xs font-semibold sm:text-sm">
                 Đặt lúc {formatDateTime(order.createdAt)} · Cập nhật{" "}
@@ -703,27 +716,65 @@ function StoreOrderDetailDialog({
           </DetailSection>
 
           <DetailSection icon={Truck} title="Tiến trình đơn hàng" wide>
-            {currentStep >= 0 ? (
+            {order.status !== "CANCELLED" &&
+            order.status !== "EXPIRED" &&
+            order.status !== "PAYMENT_ERROR" ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {ORDER_STEPS.map((step, index) => {
-                  const done = index <= currentStep;
-                  const current = index === currentStep;
-                  return (
-                    <div
-                      key={step}
-                      className={`rounded-xl border p-3 text-center ${done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-400"} ${current ? "ring-2 ring-primary/30" : ""}`}
-                    >
-                      <span
-                        className={`mx-auto flex size-6 items-center justify-center rounded-full text-[10px] font-black ${done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"}`}
+                {(() => {
+                  let currentStep = 0;
+                  const shipStatusUpper = (order.shippingStatus || "").toUpperCase();
+                  const isInDeliveringState = [
+                    "IN_PROCESS",
+                    "IN PROCESS",
+                    "DELIVERING",
+                    "ON_TRIP",
+                    "TRIP_START",
+                    "PICKED",
+                  ].includes(shipStatusUpper);
+
+                  if (order.status === "DELIVERED") {
+                    currentStep = 4;
+                  } else if (order.status === "SHIPPED" || isInDeliveringState) {
+                    currentStep = 3;
+                  } else if (
+                    Boolean(order.ahamoveOrderCode) ||
+                    ["ASSIGNING", "CREATED", "ACCEPTED", "CONFIRMED"].includes(shipStatusUpper)
+                  ) {
+                    currentStep = 2;
+                  } else if (["CONFIRMED", "PACKED", "PROCESSING"].includes(order.status ?? "")) {
+                    currentStep = 1;
+                  } else {
+                    currentStep = 0;
+                  }
+
+                  const steps = [
+                    { label: getPaymentStatus(order) === "PAID" ? "Đã thanh toán" : "Chờ xác nhận" },
+                    { label: "Xác nhận" },
+                    { label: "Đã gửi VC" },
+                    { label: "Đang giao" },
+                    { label: "Thành công" },
+                  ];
+
+                  return steps.map((stepItem, index) => {
+                    const done = index <= currentStep;
+                    const current = index === currentStep;
+                    return (
+                      <div
+                        key={index}
+                        className={`rounded-xl border p-3 text-center ${done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-400"} ${current ? "ring-2 ring-primary/30" : ""}`}
                       >
-                        {done ? "✓" : index + 1}
-                      </span>
-                      <p className="mt-2 text-[10px] font-black uppercase">
-                        {ORDER_STATUS_META[step]?.label}
-                      </p>
-                    </div>
-                  );
-                })}
+                        <span
+                          className={`mx-auto flex size-6 items-center justify-center rounded-full text-[10px] font-black ${done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"}`}
+                        >
+                          {done ? "✓" : index + 1}
+                        </span>
+                        <p className="mt-2 text-[10px] font-black uppercase">
+                          {stepItem.label}
+                        </p>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             ) : (
               <p className="text-sm font-semibold text-muted-foreground">
@@ -1022,7 +1073,39 @@ function MoneyLine({
   );
 }
 
-function OrderStatusBadge({ status }: { status?: string | null }) {
+function OrderStatusBadge({
+  status,
+  shippingStatus,
+  ahamoveOrderCode,
+}: {
+  status?: string | null;
+  shippingStatus?: string | null;
+  ahamoveOrderCode?: string | null;
+}) {
+  const isDispatched =
+    Boolean(ahamoveOrderCode) ||
+    ["ASSIGNING", "CREATED", "ACCEPTED"].includes(
+      (shippingStatus || "").toUpperCase(),
+    );
+
+  if (
+    ["CONFIRMED", "PACKED", "PROCESSING"].includes(status || "") &&
+    isDispatched
+  ) {
+    return (
+      <AdminStatusBadge
+        status="DISPATCHED"
+        meta={{
+          ...ORDER_STATUS_META,
+          DISPATCHED: {
+            label: "Đã gửi VC",
+            className: "border-blue-200 bg-blue-50 text-blue-700",
+          },
+        }}
+      />
+    );
+  }
+
   return <AdminStatusBadge status={status} meta={ORDER_STATUS_META} />;
 }
 function PaymentBadge({ status }: { status: string }) {

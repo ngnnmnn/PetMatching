@@ -154,11 +154,11 @@ const CATEGORY_MAP: Record<string, string> = {
 
 // Mapping nhãn hiển thị trạng thái đơn hàng chuẩn hóa: PENDING -> CONFIRMED -> SHIPPED -> DELIVERED -> CANCELLED
 const ORDER_STATUS_MAP: Record<string, string> = {
-  PENDING: 'Chờ xử lý',
-  CONFIRMED: 'Đã xác nhận',
-  SHIPPED: 'Đang giao hàng',
+  PENDING: 'Chờ xác nhận',
+  CONFIRMED: 'Xác nhận',
+  SHIPPED: 'Đang giao',
   DELIVERED: 'Giao hàng thành công',
-  CANCELLED: 'Đã hủy',
+  CANCELLED: 'Đã hủy đơn',
 };
 
 
@@ -662,6 +662,10 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   // Excel Import & Export State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  // State bộ lọc thời gian đơn hàng (Hôm nay, 7 ngày qua, 1 tháng qua, hoặc Tùy chọn từ ngày - đến ngày)
+  const [orderDateFilter, setOrderDateFilter] = useState<'ALL' | 'TODAY' | '7_DAYS' | '30_DAYS' | 'CUSTOM'>('ALL');
+  const [orderCustomStartDate, setOrderCustomStartDate] = useState('');
+  const [orderCustomEndDate, setOrderCustomEndDate] = useState('');
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   const [exportOnlyRefunded, setExportOnlyRefunded] = useState(false);
@@ -958,24 +962,98 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   }, [products, searchQuery, filterStatus, filterCategory, filterActiveStatus, sortBy]);
 
   const filteredOrders = useMemo(() => {
-    const list = orders.filter((order) => {
-      const customerName = order.user?.name || '';
-      const matchesSearch =
-        customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.id.toLowerCase().includes(searchQuery.toLowerCase());
+    const query = searchQuery.trim().toLowerCase();
 
+    const list = orders.filter((order) => {
+      // 1. Tối ưu tìm kiếm mở rộng: Mã đơn, Mã AhaMove, Tên/SĐT/Email khách hàng, snapshot & Địa chỉ giao hàng
+      let matchesSearch = true;
+      if (query) {
+        const shippingInfo = parseShippingAddress(order.shippingAddress);
+        const searchHaystack = [
+          order.id,
+          order.ahamoveOrderCode || '',
+          order.user?.name || '',
+          order.user?.email || '',
+          order.user?.phone || '',
+          order.customerNameSnapshot || '',
+          order.customerPhoneSnapshot || '',
+          shippingInfo.name || '',
+          shippingInfo.phone || '',
+          shippingInfo.address || '',
+        ].join(' ').toLowerCase();
+
+        matchesSearch = searchHaystack.includes(query);
+      }
+
+      // 2. Lọc theo trạng thái đơn hàng (Trạng thái "CONFIRMED/Xác nhận" là các đơn CHƯA ấn nút 'Gửi AhaMove')
       let matchesStatus = false;
+      const shipStatusUpper = (order.shippingStatus || '').toUpperCase();
+      const hasAhamove = Boolean(order.ahamoveOrderCode) || ['ASSIGNING', 'CREATED', 'ACCEPTED'].includes(shipStatusUpper);
+      const isInDeliveringState = ['IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'PICKED'].includes(shipStatusUpper);
+
       if (filterStatus === 'ALL') {
         matchesStatus = true;
       } else if (filterStatus === 'REFUND_PENDING') {
         matchesStatus = order.refundStatus === 'PENDING';
       } else if (filterStatus === 'REFUND_APPROVED') {
         matchesStatus = order.refundStatus === 'REFUNDED';
+      } else if (filterStatus === 'CONFIRMED') {
+        // Trạng thái "Xác nhận": Các đơn hàng đã xác nhận nhưng CHƯA ấn nút 'Gửi AhaMove'
+        matchesStatus = order.status === 'CONFIRMED' && !hasAhamove;
+      } else if (filterStatus === 'DISPATCHED') {
+        // Trạng thái "Đã gửi VC": Các đơn đã tạo vận đơn AhaMove nhưng chưa giao (tài xế tìm đơn / đang tới shop)
+        matchesStatus = hasAhamove && order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && !isInDeliveringState;
+      } else if (filterStatus === 'SHIPPED') {
+        // Trạng thái "Đang giao": Đơn hàng đang được vận chuyển hỏa tốc tới khách
+        matchesStatus = order.status === 'SHIPPED' || isInDeliveringState;
       } else {
         matchesStatus = order.status === filterStatus;
       }
 
-      return matchesSearch && matchesStatus;
+      // 3. Lọc theo mốc thời gian đặt hàng (Hôm nay, 7 ngày qua, 1 tháng qua, Tùy chọn ngày)
+      const matchesDate = (() => {
+        if (orderDateFilter === 'ALL') return true;
+        const orderDate = new Date(order.createdAt);
+        if (Number.isNaN(orderDate.getTime())) return true;
+
+        const now = new Date();
+
+        if (orderDateFilter === 'TODAY') {
+          return orderDate.toDateString() === now.toDateString();
+        }
+
+        if (orderDateFilter === '7_DAYS') {
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          sevenDaysAgo.setHours(0, 0, 0, 0);
+          return orderDate >= sevenDaysAgo;
+        }
+
+        if (orderDateFilter === '30_DAYS') {
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(now.getDate() - 30);
+          thirtyDaysAgo.setHours(0, 0, 0, 0);
+          return orderDate >= thirtyDaysAgo;
+        }
+
+        if (orderDateFilter === 'CUSTOM') {
+          if (orderCustomStartDate) {
+            const start = new Date(orderCustomStartDate);
+            start.setHours(0, 0, 0, 0);
+            if (orderDate < start) return false;
+          }
+          if (orderCustomEndDate) {
+            const end = new Date(orderCustomEndDate);
+            end.setHours(23, 59, 59, 999);
+            if (orderDate > end) return false;
+          }
+          return true;
+        }
+
+        return true;
+      })();
+
+      return matchesSearch && matchesStatus && matchesDate;
     });
 
     // Sắp xếp danh sách đơn hàng hiển thị theo các đơn mới nhất (createdAt giảm dần)
@@ -984,7 +1062,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
       const timeB = new Date(b.createdAt).getTime() || 0;
       return timeB - timeA;
     });
-  }, [orders, searchQuery, filterStatus]);
+  }, [orders, searchQuery, filterStatus, orderDateFilter, orderCustomStartDate, orderCustomEndDate]);
 
   const filteredCustomers = useMemo(() => {
     // Chỉ hiển thị khách hàng đã từng mua hàng (totalOrders > 0)
@@ -1037,7 +1115,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
   useEffect(() => {
     setOrdersPage(1);
     setSelectedOrderIds([]);
-  }, [searchQuery, filterStatus]);
+  }, [searchQuery, filterStatus, orderDateFilter, orderCustomStartDate, orderCustomEndDate]);
 
   useEffect(() => {
     setSelectedOrderIds([]);
@@ -4387,12 +4465,12 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-col gap-3 rounded-2xl border border-[#EFEAE2] bg-white p-4 shadow-sm sm:flex-row sm:items-center">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-3 rounded-2xl border border-[#EFEAE2] bg-white p-4 shadow-sm sm:flex-row sm:items-center flex-wrap">
+            <div className="relative flex-1 min-w-[240px]">
               <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#B0B0B0]" />
               <input
                 type="text"
-                placeholder="Tìm theo khách hàng hoặc mã đơn..."
+                placeholder="Tìm theo mã đơn, mã AhaMove, tên/SĐT/email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-xl border border-[#EFEAE2] bg-[#F9F8F6] py-2.5 pl-10 pr-10 text-sm focus:border-[var(--primary-color)] focus:bg-white focus:outline-none"
@@ -4407,7 +4485,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {showBatchCheckboxes && selectedOrderIds.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 bg-teal-50 border border-teal-200 text-teal-900 px-3 py-1.5 rounded-xl text-xs font-bold animate-fadeIn">
                   <span>Đã chọn {selectedOrderIds.length} đơn</span>
@@ -4464,19 +4542,75 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   <span>🛵 Đơn đang giao được tự động cập nhật "Giao thành công" từ AhaMove Sandbox khi hoàn tất</span>
                 </div>
               )}
-              <Filter className="size-4 text-[#B0B0B0]" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="rounded-xl border border-[#EFEAE2] bg-white px-3 py-2.5 text-sm font-bold text-[var(--text-main)] focus:outline-none"
-              >
-                <option value="ALL">Tất cả trạng thái</option>
-                <option value="REFUND_PENDING">⏳ Yêu cầu hoàn tiền</option>
-                <option value="REFUND_APPROVED">✅ Đã duyệt hoàn tiền</option>
-                {Object.keys(ORDER_STATUS_MAP).map((status) => (
-                  <option key={status} value={status}>{ORDER_STATUS_MAP[status]}</option>
-                ))}
-              </select>
+
+              {/* Lọc theo trạng thái đơn hàng */}
+              <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
+                <Filter className="size-4 text-[#B0B0B0]" />
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">Tất cả trạng thái</option>
+                  <option value="PENDING">⏳ Chờ xác nhận</option>
+                  <option value="CONFIRMED">✓ Xác nhận (Chưa gửi VC)</option>
+                  <option value="DISPATCHED">🛵 Đã gửi VC</option>
+                  <option value="SHIPPED">🚚 Đang giao</option>
+                  <option value="DELIVERED">🎉 Giao hàng thành công</option>
+                  <option value="CANCELLED">❌ Đã hủy đơn</option>
+                  <option value="REFUND_PENDING">⏳ Yêu cầu hoàn tiền</option>
+                  <option value="REFUND_APPROVED">✅ Đã duyệt hoàn tiền</option>
+                </select>
+              </div>
+
+              {/* Lọc đơn hàng theo thời gian đặt hàng (Hôm nay, 7 ngày, 1 tháng, tùy chọn từ ngày - đến ngày) */}
+              <div className="flex items-center gap-1.5 rounded-xl border border-[#EFEAE2] bg-white px-3 py-2 text-sm font-bold text-[var(--text-main)]">
+                <Calendar className="size-4 text-[#B0B0B0]" />
+                <select
+                  value={orderDateFilter}
+                  onChange={(e) => setOrderDateFilter(e.target.value as any)}
+                  className="bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">Tất cả thời gian</option>
+                  <option value="TODAY">📅 Hôm nay</option>
+                  <option value="7_DAYS">📅 7 ngày qua</option>
+                  <option value="30_DAYS">📅 1 tháng qua</option>
+                  <option value="CUSTOM">📆 Tùy chọn ngày</option>
+                </select>
+              </div>
+
+              {orderDateFilter === 'CUSTOM' && (
+                <div className="flex items-center gap-1.5 bg-[#F9F8F6] p-1.5 rounded-xl border border-[#EFEAE2] text-xs font-bold animate-fadeIn">
+                  <input
+                    type="date"
+                    value={orderCustomStartDate}
+                    onChange={(e) => setOrderCustomStartDate(e.target.value)}
+                    className="rounded-lg border border-[#EFEAE2] bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
+                    placeholder="Từ ngày"
+                  />
+                  <span className="text-gray-400">➔</span>
+                  <input
+                    type="date"
+                    value={orderCustomEndDate}
+                    onChange={(e) => setOrderCustomEndDate(e.target.value)}
+                    className="rounded-lg border border-[#EFEAE2] bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
+                    placeholder="Đến ngày"
+                  />
+                  {(orderCustomStartDate || orderCustomEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOrderCustomStartDate('');
+                        setOrderCustomEndDate('');
+                      }}
+                      className="text-gray-400 hover:text-gray-600 transition p-1 cursor-pointer"
+                      title="Xóa khoảng ngày"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -4630,7 +4764,13 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                               // Đã gửi AhaMove thành công (có mã ahamoveOrderCode) -> Hiển thị mã AhaMove & Nút theo dõi
                               <div className="flex flex-col items-center gap-1.5">
                                 <span className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black bg-purple-50 border border-purple-200 text-purple-700 shadow-sm">
-                                  🛵 {o.shippingStatus === 'ACCEPTED' || o.shippingStatus === 'IN_PROCESS' ? 'Đang giao' : 'Đã gửi VC'}
+                                  {/* Cập nhật nhãn đồng bộ: ACCEPTED giữ "Đã gửi VC", chỉ khi tài xế lấy hàng thành công (IN_PROCESS, PICKED, DELIVERING...) hoặc status = SHIPPED mới hiển thị "Đang giao" */}
+                                  🛵 {
+                                    o.status === 'SHIPPED' ||
+                                    ['IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'PICKED'].includes((o.shippingStatus || '').toUpperCase())
+                                      ? 'Đang giao'
+                                      : 'Đã gửi VC'
+                                  }
                                 </span>
                                 {o.ahamoveOrderCode && (
                                   <button
@@ -4954,29 +5094,30 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                     <p className="font-black text-[#8A8980] uppercase tracking-wider text-[10px]">Tiến trình đơn hàng (AhaMove 5 bước)</p>
                     <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-extrabold">
                       {(() => {
-                        // Tính toán bước hiện tại của đơn hàng theo 5 bước AhaMove chuẩn mới (bỏ Đang xử lý)
+                        // Tính toán bước hiện tại của đơn hàng theo 5 bước AhaMove chuẩn mới dành cho Manager
                         let currentIdx = 0;
                         const shipStatusUpper = (selectedOrderDetails.shippingStatus || '').toUpperCase();
-                        // Chỉ khi tài xế AhaMove chấp nhận đơn (ACCEPTED) hoặc đang di chuyển giao hàng mới chuyển sang bước "Đang giao"
-                        const isDriverAccepted = [
-                          'ACCEPTED',
+                        // Chỉ khi tài xế đã lấy hàng tại Shop và đang trên đường hỏa tốc giao tới khách mới chuyển sang bước "Đang giao"
+                        const isInDeliveringState = [
                           'IN_PROCESS',
                           'IN PROCESS',
                           'DELIVERING',
                           'ON_TRIP',
                           'TRIP_START',
+                          'PICKED',
                         ].includes(shipStatusUpper);
 
                         if (selectedOrderDetails.status === 'DELIVERED') {
                           currentIdx = 4; // Giao hàng thành công
-                        } else if (selectedOrderDetails.status === 'SHIPPED') {
-                          if (isDriverAccepted) {
-                            currentIdx = 3; // Đang giao (Tài xế đã nhận đơn & đang di chuyển)
-                          } else {
-                            currentIdx = 2; // Đã gửi VC (Đã tạo đơn AhaMove, đang tìm/gán tài xế)
-                          }
-                        } else if (selectedOrderDetails.status === 'CONFIRMED') {
-                          currentIdx = 1; // Đã xác nhận
+                        } else if (selectedOrderDetails.status === 'SHIPPED' || isInDeliveringState) {
+                          currentIdx = 3; // Đang giao (Tài xế đã lấy hàng & đang hỏa tốc vận chuyển tới khách)
+                        } else if (
+                          Boolean(selectedOrderDetails.ahamoveOrderCode) ||
+                          ['ASSIGNING', 'CREATED', 'ACCEPTED', 'CONFIRMED'].includes(shipStatusUpper)
+                        ) {
+                          currentIdx = 2; // Đã gửi VC (Manager đã ấn gửi AhaMove, đang tìm tài xế hoặc tài xế vừa nhận đơn đang tới shop)
+                        } else if (['CONFIRMED', 'PACKED', 'PROCESSING'].includes(selectedOrderDetails.status)) {
+                          currentIdx = 1; // Xác nhận (Sau khi Manager ấn xác nhận đơn)
                         } else {
                           currentIdx = 0; // Chờ xác nhận
                         }
@@ -4989,7 +5130,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                 : 'Chờ xác nhận',
                             icon: '1',
                           },
-                          { label: 'Đã xác nhận', icon: '2' },
+                          { label: 'Xác nhận', icon: '2' },
                           { label: 'Đã gửi VC', icon: '3' },
                           { label: 'Đang giao', icon: '4' },
                           { label: 'Thành công', icon: '5' },
@@ -5023,16 +5164,34 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                 <div className="flex justify-between items-center pt-2 border-t text-xs font-semibold">
                   <div>
                     <span className="text-[#8A8980] block text-[10px] font-black uppercase tracking-wider">Trạng thái</span>
-                    <span className={cn(
-                      'inline-flex rounded-full px-2.5 py-0.5 text-xs font-black uppercase mt-1.5',
-                      selectedOrderDetails.status === 'DELIVERED' && 'bg-green-50 text-green-700',
-                      selectedOrderDetails.status === 'PENDING' && 'bg-yellow-50 text-yellow-700',
-                      selectedOrderDetails.status === 'CONFIRMED' && 'bg-blue-50 text-blue-700 border border-blue-200',
-                      selectedOrderDetails.status === 'SHIPPED' && 'bg-purple-50 text-purple-700',
-                      selectedOrderDetails.status === 'CANCELLED' && 'bg-red-50 text-red-700',
-                    )}>
-                      {ORDER_STATUS_MAP[selectedOrderDetails.status] || selectedOrderDetails.status}
-                    </span>
+                    {(() => {
+                      const isDispatched =
+                        Boolean(selectedOrderDetails.ahamoveOrderCode) ||
+                        ['ASSIGNING', 'CREATED', 'ACCEPTED'].includes((selectedOrderDetails.shippingStatus || '').toUpperCase());
+
+                      if (selectedOrderDetails.status === 'CONFIRMED' && isDispatched) {
+                        return (
+                          <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-black uppercase mt-1.5 bg-blue-50 text-blue-700 border border-blue-200">
+                            Đã gửi VC
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span
+                          className={cn(
+                            'inline-flex rounded-full px-2.5 py-0.5 text-xs font-black uppercase mt-1.5',
+                            selectedOrderDetails.status === 'DELIVERED' && 'bg-green-50 text-green-700',
+                            selectedOrderDetails.status === 'PENDING' && 'bg-yellow-50 text-yellow-700',
+                            selectedOrderDetails.status === 'CONFIRMED' && 'bg-blue-50 text-blue-700 border border-blue-200',
+                            selectedOrderDetails.status === 'SHIPPED' && 'bg-purple-50 text-purple-700',
+                            selectedOrderDetails.status === 'CANCELLED' && 'bg-red-50 text-red-700',
+                          )}
+                        >
+                          {ORDER_STATUS_MAP[selectedOrderDetails.status] || selectedOrderDetails.status}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="text-right">
                     <span className="text-[#8A8980] block text-[10px] font-black uppercase tracking-wider">Tổng cộng</span>
