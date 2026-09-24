@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { spaApi } from '@/lib/api/spa';
 import { petsApi } from '@/lib/api/pets';
 import { SpaServiceType, AddressSpaType } from '@/types';
+import { resolveServicePriceAndDuration, computeServiceDisplayRanges } from '@/lib/spa-bracket.utils';
 
 interface PetType {
   id: string;
@@ -387,13 +388,45 @@ function SpaBookingWizard() {
     setSelectedSubServiceIds((prev) => prev.filter((id) => validSubIds.includes(id)));
   }, [availableSubServices]);
 
+  // Helper lấy số tiền số học của dịch vụ theo loài và cân nặng hiện tại
+  const getServiceNumericPrice = (service: any): number => {
+    if (!service) return 0;
+    if (typeof service.price === 'number' && !isNaN(service.price)) {
+      return service.price;
+    }
+    if (activeSpecies && activeWeight !== undefined && activeWeight !== null) {
+      const resolved = resolveServicePriceAndDuration(service, activeSpecies, activeWeight);
+      if (resolved && typeof resolved.price === 'number') {
+        return resolved.price;
+      }
+    }
+    const ranges = computeServiceDisplayRanges(service);
+    return ranges.minPrice;
+  };
+
+  // Helper hiển thị giá dịch vụ: nếu đã chọn thú cưng thì hiển thị đúng giá, nếu chưa thì hiển thị khoảng giá (Min - Max)
+  const getServiceDisplayPrice = (service: any): string => {
+    if (!service) return '0đ';
+    if (typeof service.price === 'number' && !isNaN(service.price)) {
+      return `${service.price.toLocaleString('vi-VN')}đ`;
+    }
+    if (activeSpecies && activeWeight !== undefined && activeWeight !== null) {
+      const resolved = resolveServicePriceAndDuration(service, activeSpecies, activeWeight);
+      if (resolved && typeof resolved.price === 'number' && resolved.price > 0) {
+        return `${resolved.price.toLocaleString('vi-VN')}đ`;
+      }
+    }
+    const ranges = computeServiceDisplayRanges(service);
+    return ranges.priceStr;
+  };
+
   const calculatedTotalPrice = useMemo(() => {
-    const mainPrice = selectedMainService ? selectedMainService.price : 0;
+    const mainPrice = selectedMainService ? getServiceNumericPrice(selectedMainService) : 0;
     const subPriceTotal = availableSubServices
       .filter((s) => selectedSubServiceIds.includes(s.id))
-      .reduce((sum, s) => sum + s.price, 0);
+      .reduce((sum, s) => sum + getServiceNumericPrice(s), 0);
     return mainPrice + subPriceTotal;
-  }, [selectedMainService, selectedSubServiceIds, availableSubServices]);
+  }, [selectedMainService, selectedSubServiceIds, availableSubServices, activeSpecies, activeWeight]);
 
   const handleNextStep = () => {
     if (step === 1) {
@@ -472,8 +505,20 @@ function SpaBookingWizard() {
   const selectedSubServiceList = availableSubServices.filter((s) => selectedSubServiceIds.includes(s.id));
   const selectedAddress = addresses.find((a) => a.id === selectedAddressSpaId);
 
-  const formatPrice = (price?: number) => {
-    return price ? `${price.toLocaleString('vi-VN')}đ` : '0đ';
+  const formatPrice = (price?: any) => {
+    if (typeof price === 'number') {
+      return price > 0 ? `${price.toLocaleString('vi-VN')}đ` : '0đ';
+    }
+    if (Array.isArray(price)) {
+      const flat = price.flat(Infinity).map(Number).filter((p) => !isNaN(p) && p > 0);
+      if (flat.length === 0) return '0đ';
+      const min = Math.min(...flat);
+      const max = Math.max(...flat);
+      return min === max
+        ? `${min.toLocaleString('vi-VN')}đ`
+        : `${min.toLocaleString('vi-VN')}đ – ${max.toLocaleString('vi-VN')}đ`;
+    }
+    return '0đ';
   };
 
   // Helper format ngày thành dd/mm/yyyy chuẩn tiếng Việt
@@ -686,7 +731,7 @@ function SpaBookingWizard() {
                               </div>
                               <div className="flex items-center justify-between pt-2 border-t border-purple-100/60 text-xs">
                                 <span className="text-gray-400 font-semibold">⏱ {service.durationMin} - {service.durationMax || 40}p</span>
-                                <span className="font-black text-purple-800 text-sm">{formatPrice(service.price)}</span>
+                                <span className="font-black text-purple-800 text-sm">{getServiceDisplayPrice(service)}</span>
                               </div>
                             </div>
                           );
@@ -742,7 +787,7 @@ function SpaBookingWizard() {
                               </div>
                               <div className="text-right shrink-0 ml-3">
                                 <span className="font-black text-xs sm:text-sm text-green-700 bg-green-100/60 px-2.5 py-1 rounded-lg border border-green-200 block">
-                                  + {formatPrice(sub.price)}
+                                  + {getServiceDisplayPrice(sub)}
                                 </span>
                               </div>
                             </div>
@@ -947,7 +992,7 @@ function SpaBookingWizard() {
                           <div className="text-right">
                             {selectedSubServiceList.map((sub) => (
                               <span key={sub.id} className="block font-bold text-xs text-green-800">
-                                + {sub.name} ({formatPrice(sub.price)})
+                                + {sub.name} ({getServiceDisplayPrice(sub)})
                               </span>
                             ))}
                           </div>

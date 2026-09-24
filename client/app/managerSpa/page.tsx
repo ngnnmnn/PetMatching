@@ -678,7 +678,7 @@ function SpaManagerConsoleContent() {
                         </p>
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-xs font-black text-orange-600">
-                            {(nb.totalPrice || nb.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                            {(typeof nb.totalPrice === 'number' ? nb.totalPrice : (typeof nb.priceSnapshot === 'number' ? nb.priceSnapshot : 0)).toLocaleString('vi-VN')}đ
                           </span>
                           <span className="text-[10px] font-bold text-orange-600">
                             Chạm để xem chi tiết →
@@ -892,9 +892,13 @@ function SpaManagerConsoleContent() {
     fetchRescheduleSlots();
   }, [rescheduleBooking, rescheduleDate, rescheduleDurationMinutes, selectedBranchId]);
 
-  // Fetch available staff list whenever selectedBookingDetail opens
+  // Chỉ tải danh sách nhân viên rảnh khi mở chi tiết lịch hẹn ở trạng thái cần phân công/đổi nhân viên
   useEffect(() => {
-    if (selectedBookingDetail && selectedBookingDetail.id) {
+    if (
+      selectedBookingDetail &&
+      selectedBookingDetail.id &&
+      ['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(selectedBookingDetail.status)
+    ) {
       spaApi.getAvailableStaffForBooking(selectedBookingDetail.id)
         .then((res) => {
           setAvailableStaffsMap((prev) => ({ ...prev, [selectedBookingDetail.id]: res.data || [] }));
@@ -2933,7 +2937,7 @@ function SpaManagerConsoleContent() {
                                 <td className="px-6 py-4">
                                   <p className="font-bold text-gray-800 text-xs">{b.service?.name || (b.mainServiceResolved as any)?.name || 'Dịch vụ Spa'}</p>
                                   <p className="text-[11px] text-gray-500 font-semibold pt-0.5">
-                                    {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                    {(typeof b.totalPrice === 'number' ? b.totalPrice : (typeof b.priceSnapshot === 'number' ? b.priceSnapshot : 0)).toLocaleString('vi-VN')}đ
                                   </p>
                                   {(() => {
                                     const subList = getManagerBookingSubServices(b);
@@ -5344,7 +5348,13 @@ function SpaManagerConsoleContent() {
                     {selectedBookingDetail.service?.name || (selectedBookingDetail.mainServiceResolved as any)?.name || 'Dịch vụ chính'}
                   </p>
                   <p className="text-gray-500 font-semibold">
-                    Giá gốc: {(selectedBookingDetail.priceSnapshot || selectedBookingDetail.service?.price || 0).toLocaleString('vi-VN')}đ
+                    Giá gốc: {(
+                      typeof selectedBookingDetail.priceSnapshot === 'number'
+                        ? selectedBookingDetail.priceSnapshot
+                        : (typeof selectedBookingDetail.service?.price === 'number'
+                            ? selectedBookingDetail.service.price
+                            : (selectedBookingDetail.service?.minPrice || 0))
+                    ).toLocaleString('vi-VN')}đ
                   </p>
                 </div>
 
@@ -5361,7 +5371,11 @@ function SpaManagerConsoleContent() {
                             <span className="font-bold text-gray-800 truncate pr-2">
                               • {sub.name || 'Dịch vụ lẻ'}
                             </span>
-                            <span className="text-green-700 font-black">+ {(sub.price || 0).toLocaleString('vi-VN')}đ</span>
+                            <span className="text-green-700 font-black">+ {(
+                              typeof sub.price === 'number'
+                                ? sub.price
+                                : (typeof sub.minPrice === 'number' ? sub.minPrice : 0)
+                            ).toLocaleString('vi-VN')}đ</span>
                           </div>
                         ))}
                       </div>
@@ -5371,7 +5385,13 @@ function SpaManagerConsoleContent() {
 
                 <div className="pt-2 border-t border-gray-200 flex justify-between items-center font-black text-sm text-purple-950">
                   <span>Tổng thanh toán:</span>
-                  <span>{(selectedBookingDetail.totalPrice || selectedBookingDetail.priceSnapshot || 0).toLocaleString('vi-VN')}đ</span>
+                  <span>{(
+                    typeof selectedBookingDetail.totalPrice === 'number'
+                      ? selectedBookingDetail.totalPrice
+                      : (typeof selectedBookingDetail.priceSnapshot === 'number'
+                          ? selectedBookingDetail.priceSnapshot
+                          : 0)
+                  ).toLocaleString('vi-VN')}đ</span>
                 </div>
               </div>
             </div>

@@ -909,7 +909,7 @@ export default function SpaStaff() {
                                 </span>
                               </div>
                               <span className="text-xs font-black text-purple-800">
-                                {(b.totalPrice || b.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                                {(typeof b.totalPrice === 'number' ? b.totalPrice : (typeof b.priceSnapshot === 'number' ? b.priceSnapshot : 0)).toLocaleString('vi-VN')}đ
                               </span>
                             </div>
 
@@ -1121,7 +1121,7 @@ export default function SpaStaff() {
                                 {booking.service?.name || booking.mainServiceResolved?.name || 'Gói Chăm Sóc Spa'}
                               </span>
                               <span className="text-xs font-bold text-gray-700">
-                                {(booking.priceSnapshot || (booking as any).mainServiceResolved?.resolvedPrice || 0).toLocaleString('vi-VN')}đ
+                                {(typeof booking.priceSnapshot === 'number' ? booking.priceSnapshot : (typeof (booking as any).mainServiceResolved?.resolvedPrice === 'number' ? (booking as any).mainServiceResolved.resolvedPrice : 0)).toLocaleString('vi-VN')}đ
                               </span>
                             </div>
                           </div>
@@ -1156,7 +1156,7 @@ export default function SpaStaff() {
                           <div className="text-xs text-gray-900 font-black pt-2 border-t border-orange-200 flex items-center justify-between">
                             <span>Tổng chi phí đơn:</span>
                             <span className="text-base font-black text-purple-800">
-                              {(booking.totalPrice || booking.priceSnapshot || 0).toLocaleString('vi-VN')}đ
+                              {(typeof booking.totalPrice === 'number' ? booking.totalPrice : (typeof booking.priceSnapshot === 'number' ? booking.priceSnapshot : 0)).toLocaleString('vi-VN')}đ
                             </span>
                           </div>
                         </div>
@@ -1485,7 +1485,7 @@ export default function SpaStaff() {
                     <div className="flex justify-between items-center text-sm pt-2 border-t border-purple-100">
                       <span className="font-bold text-purple-950">Tổng tiền cần thanh toán:</span>
                       <span className="text-base font-black text-purple-700">
-                        {(completingBooking.totalPrice || completingBooking.priceSnapshot || 0).toLocaleString('vi-VN')} đ
+                        {(typeof completingBooking.totalPrice === 'number' ? completingBooking.totalPrice : (typeof completingBooking.priceSnapshot === 'number' ? completingBooking.priceSnapshot : 0)).toLocaleString('vi-VN')} đ
                       </span>
                     </div>
                   </div>
@@ -1540,7 +1540,7 @@ export default function SpaStaff() {
                   <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-6 text-center space-y-2">
                     <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Số tiền cần thanh toán</span>
                     <div className="text-3xl font-black text-emerald-700">
-                      {(completingBooking.totalPrice || completingBooking.priceSnapshot || 0).toLocaleString('vi-VN')} đ
+                      {(typeof completingBooking.totalPrice === 'number' ? completingBooking.totalPrice : (typeof completingBooking.priceSnapshot === 'number' ? completingBooking.priceSnapshot : 0)).toLocaleString('vi-VN')} đ
                     </div>
                     <p className="text-xs text-emerald-600 font-medium pt-1">
                       Nhân viên vui lòng kiểm tra và nhận đủ tiền mặt trước khi bấm xác nhận.

@@ -2518,22 +2518,62 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         .map((id) => servicesMap.get(id))
         .filter(Boolean) as any[];
 
-      // Use DB totalPrice (actual price paid), fall back to computed only if null
-      const mainPrice = b.priceSnapshot || mainServiceResolved?.price || 0;
-      const resolvedSubTotal = resolvedSubServices.reduce(
-        (sum, s) => sum + (s?.price || 0),
+      const petSpecies = b.petSpecies || b.pet?.species || 'DOG';
+      const petWeight = b.petWeight || b.pet?.weight || 0;
+
+      // 1. Tính giá chính xác cho dịch vụ chính (ưu tiên priceSnapshot đã lưu, fallback tính theo cân nặng)
+      let mainPrice = typeof b.priceSnapshot === 'number' ? b.priceSnapshot : 0;
+      if (mainPrice <= 0 && mainServiceResolved) {
+        try {
+          mainPrice = resolveServicePriceAndDuration(
+            mainServiceResolved,
+            petSpecies,
+            petWeight,
+          ).price;
+        } catch {
+          mainPrice = 0;
+        }
+      }
+
+      // 2. Trích xuất danh sách dịch vụ phụ chuẩn xác (ưu tiên snapshot đã chốt giá, fallback tính theo cân nặng)
+      let subServicesDisplay: any[] = [];
+      if (
+        Array.isArray(b.subServicesSnapshot) &&
+        b.subServicesSnapshot.length > 0
+      ) {
+        subServicesDisplay = b.subServicesSnapshot as any[];
+      } else {
+        const rawSubs = (b.subServiceIds || [])
+          .map((id) => servicesMap.get(id))
+          .filter(Boolean) as any[];
+        subServicesDisplay = rawSubs.map((s) => {
+          const resolved = resolveServicePriceAndDuration(
+            s,
+            petSpecies,
+            petWeight,
+          );
+          return {
+            id: s.id,
+            name: s.name,
+            price: resolved.price,
+            duration: resolved.duration,
+            isMain: false,
+          };
+        });
+      }
+
+      const subRevenue = subServicesDisplay.reduce(
+        (sum, s) => sum + (typeof s?.price === 'number' ? s.price : 0),
         0,
       );
       const totalPrice =
-        b.totalPrice ?? Math.max(0, mainPrice + resolvedSubTotal);
-      const subRevenue = Math.max(0, totalPrice - mainPrice);
+        typeof b.totalPrice === 'number'
+          ? b.totalPrice
+          : Math.max(0, mainPrice + subRevenue);
 
-      // Build sub-services display:
-      // - If IDs resolved → show real services
-      // - If not (old data) → create placeholder entries with distributed price
-      let subServicesDisplay: any[] = resolvedSubServices;
+      // Fallback nếu có subServiceIds nhưng không tìm thấy dịch vụ tương ứng
       const subIds = b.subServiceIds || [];
-      if (resolvedSubServices.length === 0 && subIds.length > 0) {
+      if (subServicesDisplay.length === 0 && subIds.length > 0) {
         const priceEach =
           subIds.length > 0 ? Math.round(subRevenue / subIds.length) : 0;
         subServicesDisplay = subIds.map((id, i) => ({
@@ -3396,10 +3436,9 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       SpaBookingStatus.CONFIRMED,
       SpaBookingStatus.CHECK_IN,
     ];
+    // Nếu lịch hẹn đã hoàn tất hoặc bị hủy thì không cần tìm nhân viên rảnh, trả về mảng rỗng để tránh lỗi 400
     if (!allowedAssignStatuses.includes(booking.status)) {
-      throw new BadRequestException(
-        'Chỉ có thể xem nhân viên rảnh khi lịch hẹn ở trạng thái chưa hoàn thành hoặc chưa bị hủy.',
-      );
+      return [];
     }
 
     const staffs = await this.prisma.spaStaff.findMany({

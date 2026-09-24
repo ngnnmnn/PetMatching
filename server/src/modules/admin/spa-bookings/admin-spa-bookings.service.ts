@@ -1,4 +1,5 @@
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { resolveServicePriceAndDuration } from '../../spa/spa-bracket.utils';
 
 export class AdminSpaBookingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -96,22 +97,41 @@ export class AdminSpaBookingsService {
           ? serviceById.get(booking.mainServiceId)
           : undefined) ?? booking.service;
 
+      const petSpecies = booking.petSpecies || booking.pet?.species || 'DOG';
+      const petWeight = booking.petWeight || booking.pet?.weight || 0;
+
       const subServicesFromIds = booking.subServiceIds
         .map((id) => serviceById.get(id))
-        .filter((service) => service !== undefined);
+        .filter((service): service is NonNullable<typeof service> => service !== undefined);
 
       const subServices =
         Array.isArray(booking.subServicesSnapshot) &&
         booking.subServicesSnapshot.length > 0
           ? (booking.subServicesSnapshot as any[])
-          : subServicesFromIds;
+          : subServicesFromIds.map((s) => {
+              const resolved = resolveServicePriceAndDuration(s, petSpecies, petWeight);
+              return {
+                ...s,
+                price: resolved.price,
+                duration: resolved.duration,
+              };
+            });
+
+      let mainServiceResolved = resolvedMain;
+      if (mainServiceResolved && typeof (mainServiceResolved as any).price !== 'number') {
+        const resolved = resolveServicePriceAndDuration(mainServiceResolved, petSpecies, petWeight);
+        mainServiceResolved = {
+          ...mainServiceResolved,
+          price: resolved.price,
+          duration: resolved.duration,
+        };
+      }
 
       return {
         ...booking,
-        mainServiceResolved: resolvedMain,
+        mainServiceResolved,
         subServices,
       };
     });
   }
 }
-
