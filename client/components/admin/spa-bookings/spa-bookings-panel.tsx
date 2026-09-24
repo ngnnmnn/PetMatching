@@ -420,8 +420,20 @@ function SpaBookingDetailDialog({ booking, onClose }: { booking: SpaBookingRow |
 
           <DetailSection icon={WalletCards} title="Dịch vụ và thanh toán" wide>
             <div className="space-y-3">
-              <ServiceLine name={mainService?.name ?? 'Gói Spa'} price={mainService?.price ?? booking.priceSnapshot} primary />
-              {(booking.subServices ?? []).map((service) => <ServiceLine key={service.id} name={service.name} price={service.price} />)}
+              {/* Hiển thị giá dịch vụ chính (ưu tiên giá số đã resolve hoặc priceSnapshot) */}
+              <ServiceLine
+                name={mainService?.name ?? 'Gói Spa'}
+                price={typeof mainService?.price === 'number' ? mainService.price : (typeof booking.priceSnapshot === 'number' ? booking.priceSnapshot : 0)}
+                primary
+              />
+              {/* Hiển thị giá các dịch vụ phụ */}
+              {(booking.subServices ?? []).map((service) => (
+                <ServiceLine
+                  key={service.id}
+                  name={service.name}
+                  price={typeof service.price === 'number' ? service.price : 0}
+                />
+              ))}
               {!booking.subServices?.length && <p className="text-sm font-semibold text-muted-foreground/70">Không có dịch vụ kèm theo.</p>}
               <div className="flex items-center justify-between border-t border-border pt-3">
                 <span className="text-sm font-black text-foreground">Tổng tiền</span>
@@ -595,8 +607,12 @@ function formatCompletionDiff(value?: number | null) {
   return 'Đúng giờ';
 }
 
-function formatMoney(value: number) {
-  return `${new Intl.NumberFormat('vi-VN').format(value)}đ`;
+/**
+ * Định dạng tiền tệ VND an toàn, tránh lỗi khi giá trị truyền vào không phải là số
+ */
+function formatMoney(value: unknown) {
+  const numeric = typeof value === 'number' && !isNaN(value) ? value : 0;
+  return `${new Intl.NumberFormat('vi-VN').format(numeric)}đ`;
 }
 
 /**

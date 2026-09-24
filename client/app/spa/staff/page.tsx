@@ -131,9 +131,14 @@ export default function SpaStaff() {
   const [savingPetInfo, setSavingPetInfo] = useState<boolean>(false);
 
   /**
-   * Mở modal chỉnh sửa cân nặng thú cưng cho ca làm việc được chỉ định
+   * Mở modal chỉnh sửa cân nặng thú cưng cho ca làm việc được chỉ định.
+   * Chỉ cho phép chỉnh sửa trước khi bắt đầu thực hiện dịch vụ (trước trạng thái IN_PROGRESS).
    */
   const handleOpenEditPet = (booking: SpaBookingType) => {
+    if (!['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(booking.status)) {
+      toast.error('Chỉ được phép chỉnh sửa cân nặng thú cưng trước khi thực hiện dịch vụ (trước trạng thái Đang thực hiện)!');
+      return;
+    }
     setEditingPetBooking(booking);
     setEditPetWeightInput(booking.petWeight?.toString() || booking.pet?.weight?.toString() || '');
   };
@@ -426,8 +431,18 @@ export default function SpaStaff() {
     }
   };
 
+  /**
+   * Thêm dịch vụ lẻ vào lịch hẹn.
+   * Chỉ cho phép bổ sung trước khi bắt đầu thực hiện dịch vụ (trước trạng thái IN_PROGRESS).
+   */
   const handleAddSubServices = async () => {
     if (!addingSubServicesForId || selectedAddonIds.length === 0) return;
+    const currentB = bookings.find((b) => b.id === addingSubServicesForId);
+    if (currentB && !['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(currentB.status)) {
+      toast.error('Chỉ được phép thêm dịch vụ cho thú cưng trước khi thực hiện dịch vụ (trước trạng thái Đang thực hiện)!');
+      setAddingSubServicesForId(null);
+      return;
+    }
     setActionLoading(addingSubServicesForId);
     try {
       const res = await spaApi.staffAddSubServices(addingSubServicesForId, selectedAddonIds);
@@ -1047,8 +1062,8 @@ export default function SpaStaff() {
                             </div>
                           </div>
 
-                          {/* Nút chỉnh sửa cân nặng thú cưng trong lịch hẹn (Chỉ cho phép khi đúng ngày hẹn) */}
-                          {!isFuture && booking.status !== 'COMPLETED' && booking.status !== 'CANCELLED' && (
+                          {/* Nút chỉnh sửa cân nặng thú cưng trong lịch hẹn (Chỉ cho phép trước khi thực hiện: PENDING, CONFIRMED, CHECK_IN) */}
+                          {!isFuture && ['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(booking.status) && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1084,7 +1099,7 @@ export default function SpaStaff() {
                         <div className="rounded-xl bg-orange-50/70 border border-orange-200 p-4 space-y-3">
                           <div className="flex items-center justify-between border-b border-orange-200/80 pb-2">
                             <span className="text-[10px] text-orange-700 block uppercase font-black tracking-wider">⚡ Chi Tiết Dịch Vụ</span>
-                            {!isFuture && (booking.status === 'CHECK_IN' || booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED') && (
+                            {!isFuture && ['PENDING', 'CONFIRMED', 'CHECK_IN'].includes(booking.status) && (
                               <Button
                                 variant="ghost"
                                 onClick={() => {

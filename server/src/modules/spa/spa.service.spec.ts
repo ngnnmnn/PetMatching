@@ -497,6 +497,62 @@ describe('SpaService updateStaffBooking', () => {
     expect(result.totalPrice).toBe(110_000);
     expect(result.petWeight).toBe(4.5);
   });
+
+  /**
+   * Kiểm tra chặn sửa cân nặng thú cưng khi đơn đã chuyển sang trạng thái IN_PROGRESS
+   */
+  it('chặn cập nhật cân nặng thú cưng khi ca làm việc đã ở trạng thái IN_PROGRESS', async () => {
+    const prisma = {
+      spaBooking: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'booking-in-progress',
+          status: SpaBookingStatus.IN_PROGRESS,
+          scheduledAt: new Date(),
+        }),
+      },
+    };
+
+    const service = new SpaService(
+      prisma as unknown as PrismaService,
+      {} as PaymentService,
+      {} as any,
+    );
+
+    await expect(
+      service.updateStaffBooking('staff-1', 'booking-in-progress', {
+        petWeight: 5.0,
+      }),
+    ).rejects.toThrow(
+      'Chỉ được phép chỉnh sửa cân nặng hoặc thông tin thú cưng trước khi bắt đầu thực hiện dịch vụ (trước trạng thái Đang thực hiện).',
+    );
+  });
+
+  /**
+   * Kiểm tra chặn thêm dịch vụ lẻ khi đơn đã chuyển sang trạng thái IN_PROGRESS
+   */
+  it('chặn thêm dịch vụ lẻ khi ca làm việc đã ở trạng thái IN_PROGRESS', async () => {
+    const prisma = {
+      spaBooking: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'booking-in-progress',
+          status: SpaBookingStatus.IN_PROGRESS,
+          scheduledAt: new Date(),
+        }),
+      },
+    };
+
+    const service = new SpaService(
+      prisma as unknown as PrismaService,
+      {} as PaymentService,
+      {} as any,
+    );
+
+    await expect(
+      service.staffAddSubServices('staff-1', 'booking-in-progress', ['sub-1']),
+    ).rejects.toThrow(
+      'Chỉ được phép thêm dịch vụ cho thú cưng trước khi bắt đầu thực hiện dịch vụ (trước trạng thái Đang thực hiện).',
+    );
+  });
 });
 
 describe('SpaService staff checkin date restriction & notify late', () => {

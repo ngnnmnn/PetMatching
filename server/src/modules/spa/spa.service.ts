@@ -737,8 +737,20 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      // Giữ nguyên giá chốt ban đầu, tính tổng chi phí chính xác
-      const mainPrice = b.priceSnapshot || 0;
+      // Giữ nguyên giá chốt ban đầu, nếu thiếu hoặc bằng 0 thì tính toán từ mốc dịch vụ và cân nặng thú cưng
+      let mainPrice = b.priceSnapshot;
+      if (mainPrice === null || mainPrice === undefined || (mainPrice === 0 && b.service)) {
+        if (b.service) {
+          mainPrice = resolveServicePriceAndDuration(
+            b.service,
+            b.petSpecies,
+            b.petWeight,
+          ).price;
+        } else {
+          mainPrice = 0;
+        }
+      }
+
       const subServicesTotal = subServicesDisplay.reduce(
         (sum, s) => sum + (Number(s?.price) || 0),
         0,
@@ -753,7 +765,16 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
         service: b.service
           ? {
               ...b.service,
+              price: mainPrice,
+              resolvedPrice: mainPrice,
               durationMin: this.getServiceDuration(b.service),
+            }
+          : null,
+        mainServiceResolved: b.service
+          ? {
+              ...b.service,
+              price: mainPrice,
+              resolvedPrice: mainPrice,
             }
           : null,
         rescheduleCount: Number((b as any).rescheduleCount) || 0,
@@ -1088,6 +1109,18 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    // Chỉ cho phép nhân viên thêm dịch vụ lẻ trước khi bắt đầu thực hiện (trước trạng thái IN_PROGRESS)
+    const allowedStatusesBeforeInProgress: SpaBookingStatus[] = [
+      SpaBookingStatus.PENDING,
+      SpaBookingStatus.CONFIRMED,
+      SpaBookingStatus.CHECK_IN,
+    ];
+    if (!allowedStatusesBeforeInProgress.includes(booking.status)) {
+      throw new BadRequestException(
+        'Chỉ được phép thêm dịch vụ cho thú cưng trước khi bắt đầu thực hiện dịch vụ (trước trạng thái Đang thực hiện).',
+      );
+    }
+
     // Giữ nguyên giá dịch vụ chính đã snapshot, KHÔNG tính lại theo giá mới của spaService!
     const mainPrice = booking.priceSnapshot ?? 0;
 
@@ -1217,6 +1250,19 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
     }
     if (dto.issueReported !== undefined) {
       updatedData.issueReported = dto.issueReported;
+    }
+    if (dto.petWeight !== undefined || dto.petName !== undefined) {
+      // Chỉ cho phép nhân viên chỉnh sửa cân nặng hoặc thông tin thú cưng trước khi bắt đầu thực hiện (trước trạng thái IN_PROGRESS)
+      const allowedStatusesBeforeInProgress: SpaBookingStatus[] = [
+        SpaBookingStatus.PENDING,
+        SpaBookingStatus.CONFIRMED,
+        SpaBookingStatus.CHECK_IN,
+      ];
+      if (!allowedStatusesBeforeInProgress.includes(booking.status)) {
+        throw new BadRequestException(
+          'Chỉ được phép chỉnh sửa cân nặng hoặc thông tin thú cưng trước khi bắt đầu thực hiện dịch vụ (trước trạng thái Đang thực hiện).',
+        );
+      }
     }
     if (dto.petWeight !== undefined) {
       const weightNum = Number(dto.petWeight);
