@@ -1847,11 +1847,12 @@ export class ManagerService {
         .map((i) => `${i.product?.name || 'Sản phẩm'} (x${i.quantity})`)
         .join(', ');
 
-      // Nhãn tiếng Việt tương ứng cho báo cáo đơn hàng (chuẩn AhaMove mới)
+      // Nhãn tiếng Việt tương ứng cho báo cáo đơn hàng (Chờ xác nhận -> Xác nhận -> Đã gửi VC -> Giao hàng thành công)
       const statusLabels: Record<string, string> = {
-        PENDING: 'Xác nhận',
-        PACKED: 'Đã gói hàng',
-        PROCESSING: 'Đã gói hàng',
+        PENDING: 'Chờ xác nhận',
+        CONFIRMED: 'Xác nhận',
+        PACKED: 'Xác nhận',
+        PROCESSING: 'Xác nhận',
         SHIPPED: 'Đã gửi VC',
         DELIVERED: 'Giao hàng thành công',
         CANCELLED: 'Đã hủy',
