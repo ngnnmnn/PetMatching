@@ -499,7 +499,10 @@ const FormErrorTooltip = ({
   );
 };
 
-// Parse shipping address helper
+/**
+ * Tách và làm sạch chuỗi địa chỉ giao hàng của đơn hàng (Tên, SĐT, Địa chỉ, Ghi chú),
+ * tự động loại bỏ các đoạn địa chỉ bị lặp lại nhiều lần (ví dụ: do OpenStreetMap gợi ý trùng lặp).
+ */
 function parseShippingAddress(addressStr: string) {
   const parts = addressStr ? addressStr.split(' | ') : [];
   let name = 'Chưa rõ';
@@ -521,6 +524,18 @@ function parseShippingAddress(addressStr: string) {
     const noteStart = address.indexOf(' (Ghi chú: ');
     note = address.slice(noteStart + 11, -1);
     address = address.slice(0, noteStart);
+  }
+
+  // Tự động lọc các từ/cụm từ địa chỉ bị lặp lại dư thừa
+  if (address && address !== 'Chưa rõ') {
+    const rawTokens = address.split(',').map((s) => s.trim()).filter(Boolean);
+    const uniqueTokens: string[] = [];
+    for (const token of rawTokens) {
+      if (!uniqueTokens.some((t) => t.toLowerCase() === token.toLowerCase())) {
+        uniqueTokens.push(token);
+      }
+    }
+    address = uniqueTokens.join(', ');
   }
 
   return { name, phone, address, note };
@@ -4449,18 +4464,6 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   <span>🛵 Đơn đang giao được tự động cập nhật "Giao thành công" từ AhaMove Sandbox khi hoàn tất</span>
                 </div>
               )}
-
-              {/* Nút bấm làm mới và đồng bộ trực tiếp trạng thái các vận đơn AhaMove */}
-              <button
-                type="button"
-                disabled={syncingAhamove}
-                onClick={() => void handleSyncAhamoveOrders()}
-                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                title="Đồng bộ ngay lập tức các trạng thái mới nhất từ AhaMove Portal"
-              >
-                <RefreshCw className={`size-3.5 text-rose-700 ${syncingAhamove ? 'animate-spin' : ''}`} />
-                <span>Đồng bộ AhaMove</span>
-              </button>
               <Filter className="size-4 text-[#B0B0B0]" />
               <select
                 value={filterStatus}

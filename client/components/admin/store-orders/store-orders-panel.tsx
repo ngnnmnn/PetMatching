@@ -1076,6 +1076,9 @@ function orderMatchesSearch(order: StoreOrderRow, search: string) {
   );
 }
 
+/**
+ * Hàm phân tích và khử trùng lặp các thành phần trong chuỗi địa chỉ giao hàng của cửa hàng
+ */
 function parseShippingAddress(value?: string | null) {
   const raw = value?.trim() ?? "";
   const parts = raw.split(" | ");
@@ -1096,6 +1099,19 @@ function parseShippingAddress(value?: string | null) {
     result.note = result.address.slice(noteIndex + noteMarker.length, -1);
     result.address = result.address.slice(0, noteIndex);
   }
+
+  // Khử trùng lặp chuỗi địa chỉ
+  if (result.address && result.address !== "Chưa có địa chỉ") {
+    const rawTokens = result.address.split(",").map((s) => s.trim()).filter(Boolean);
+    const uniqueTokens: string[] = [];
+    for (const token of rawTokens) {
+      if (!uniqueTokens.some((t) => t.toLowerCase() === token.toLowerCase())) {
+        uniqueTokens.push(token);
+      }
+    }
+    result.address = uniqueTokens.join(", ");
+  }
+
   return result;
 }
 

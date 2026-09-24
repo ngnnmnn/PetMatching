@@ -48,14 +48,18 @@ export const usersApi = {
   }) => api.post<any>('/users/orders', data),
   cancelOrder: (id: string) => api.patch<any>(`/users/orders/${id}/cancel`),
   deleteOrder: (id: string) => api.delete<any>(`/users/orders/${id}`),
+  /**
+   * Cập nhật địa chỉ giao hàng và tọa độ mới của đơn hàng PENDING.
+   * Tọa độ GPS (shippingLatitude, shippingLongitude) là tùy chọn để hỗ trợ địa chỉ không có tọa độ sẵn.
+   */
   updateOrderShipping: (
     id: string,
     data: {
       shippingAddress: string;
       districtId?: number;
       wardCode?: string;
-      shippingLatitude: number;
-      shippingLongitude: number;
+      shippingLatitude?: number;
+      shippingLongitude?: number;
     },
   ) => api.put<any>(`/users/orders/${id}/shipping`, data),
   retryPayment: (id: string) => api.post<any>(`/users/orders/${id}/retry-payment`),

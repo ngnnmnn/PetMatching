@@ -58,6 +58,12 @@ interface Order {
   id: string;
   status: 'PENDING' | 'CONFIRMED' | 'PACKED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXPIRED' | 'PAYMENT_ERROR';
   totalAmount: number;
+  shippingFee?: number;
+  discountAmount?: number;
+  voucherCode?: string | null;
+  voucherType?: 'PERCENTAGE' | 'FIXED' | 'FREE_SHIP' | null;
+  voucherValue?: number | null;
+  maxDiscountAmount?: number | null;
   shippingAddress: string;
   shippingLatitude?: number | null;
   shippingLongitude?: number | null;
@@ -166,17 +172,28 @@ function parseAddressString(addrStr: string) {
   };
 }
 
-// Formats shippingAddress db string into a beautiful line
+/**
+ * Định dạng chuỗi địa chỉ giao hàng để hiển thị gọn gàng trên giao diện, tự động loại bỏ các đoạn trùng lặp.
+ */
 function formatAddressForDisplay(addrStr: string) {
   const parsed = parseAddressString(addrStr);
   if (parsed.receiverName || parsed.receiverPhone) {
     const contact = [parsed.receiverName, parsed.receiverPhone].filter(Boolean).join(' - ');
-    const addressParts = [parsed.detail, parsed.ward, parsed.district, parsed.province]
-      .map((p) => p?.trim())
+    const rawParts = [parsed.detail, parsed.ward, parsed.district, parsed.province]
+      .flatMap((p) => (p ? p.split(',') : []))
+      .map((p) => p.trim())
       .filter(Boolean);
+
+    const uniqueParts: string[] = [];
+    for (const p of rawParts) {
+      if (!uniqueParts.some((u) => u.toLowerCase() === p.toLowerCase())) {
+        uniqueParts.push(p);
+      }
+    }
+
     let base = contact;
-    if (addressParts.length > 0) {
-      base += ` | ${addressParts.join(', ')}`;
+    if (uniqueParts.length > 0) {
+      base += ` | ${uniqueParts.join(', ')}`;
     }
     if (parsed.note) {
       base += ` (Ghi chú: ${parsed.note})`;
@@ -1097,6 +1114,10 @@ export default function OrdersPage() {
           }}
           savedAddresses={savedAddresses}
           itemsSubtotal={editOrder.items.reduce((sum, item) => sum + item.price * item.quantity, 0)}
+          discountAmount={editOrder.discountAmount || 0}
+          voucherType={editOrder.voucherType}
+          voucherValue={editOrder.voucherValue}
+          maxDiscountAmount={editOrder.maxDiscountAmount}
           onSubmit={handleAddressFormSubmit}
           showShippingFee={true}
           submitButtonText="Xác nhận đổi địa chỉ"
