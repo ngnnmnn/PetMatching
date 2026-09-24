@@ -353,50 +353,56 @@ export function PetPublicProfileDialog({
                       )}
                     </div>
 
-                    {/* Pedigree Card */}
-                    <div className="rounded-2xl border p-3.5 bg-card space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 text-xs font-extrabold">
-                          <BadgeCheck className="size-4 text-amber-600" /> Giấy phả hệ VKA
-                        </span>
-                        <span
-                          className={cn(
-                            "rounded-md px-2 py-0.5 text-[10px] font-black",
-                            pedigreeDoc?.status === "APPROVED"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : pet.hasPedigree
-                              ? "bg-amber-50 text-amber-800"
-                              : "bg-gray-100 text-gray-600",
-                          )}
-                        >
-                          {pedigreeDoc?.status === "APPROVED"
-                            ? "Đã kiểm định VKA"
-                            : pet.hasPedigree
-                            ? "Có giấy VKA"
-                            : "Không có giấy"}
-                        </span>
-                      </div>
-                      {pet.pedigreeNumber && (
-                        <p className="text-[11px] font-mono text-muted-foreground truncate">
-                          Mã số: {pet.pedigreeNumber}
-                        </p>
-                      )}
-                      {pedigreeDoc?.imageUrls && pedigreeDoc.imageUrls.length > 0 && (
-                        <div className="pt-1 flex items-center gap-2">
-                          {pedigreeDoc.imageUrls.map((url, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => setPreviewImage(url)}
-                              className="size-10 rounded-lg border overflow-hidden hover:opacity-80 transition cursor-pointer"
+                    {/* Thẻ hiển thị giấy tờ phả hệ: Phân biệt rõ tổ chức phả hệ TICA/WCF cho Mèo và VKA cho Chó */}
+                    {(() => {
+                      const isCat = pet.species === "CAT";
+                      const pedigreeOrg = isCat ? "TICA/WCF" : "VKA";
+                      return (
+                        <div className="rounded-2xl border p-3.5 bg-card space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 text-xs font-extrabold">
+                              <BadgeCheck className="size-4 text-amber-600" /> Giấy phả hệ {pedigreeOrg}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-md px-2 py-0.5 text-[10px] font-black",
+                                pedigreeDoc?.status === "APPROVED"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : pet.hasPedigree
+                                  ? "bg-amber-50 text-amber-800"
+                                  : "bg-gray-100 text-gray-600",
+                              )}
                             >
-                              <img src={url} alt="Phả hệ" className="size-full object-cover" />
-                            </button>
-                          ))}
-                          <span className="text-[11px] text-muted-foreground font-semibold">Xem giấy phả hệ</span>
+                              {pedigreeDoc?.status === "APPROVED"
+                                ? `Đã kiểm định ${pedigreeOrg}`
+                                : pet.hasPedigree
+                                ? `Có giấy ${pedigreeOrg}`
+                                : "Không có giấy"}
+                            </span>
+                          </div>
+                          {pet.pedigreeNumber && (
+                            <p className="text-[11px] font-mono text-muted-foreground truncate">
+                              Mã số: {pet.pedigreeNumber}
+                            </p>
+                          )}
+                          {pedigreeDoc?.imageUrls && pedigreeDoc.imageUrls.length > 0 && (
+                            <div className="pt-1 flex items-center gap-2">
+                              {pedigreeDoc.imageUrls.map((url, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => setPreviewImage(url)}
+                                  className="size-10 rounded-lg border overflow-hidden hover:opacity-80 transition cursor-pointer"
+                                >
+                                  <img src={url} alt="Phả hệ" className="size-full object-cover" />
+                                </button>
+                              ))}
+                              <span className="text-[11px] text-muted-foreground font-semibold">Xem giấy phả hệ</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      );
+                    })()}
                   </div>
                 </section>
 

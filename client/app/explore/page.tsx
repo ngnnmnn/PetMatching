@@ -196,13 +196,28 @@ export default function UnifiedMatchingHubPage() {
   }, [selectedPet]);
 
   const selectedPetEligibleDate = useMemo(() => {
-    if (!selectedPet) return '';
+    if (!selectedPet?.birthday) return '';
     const minMonths = selectedPet.species === 'CAT' ? 8 : 12;
     const birthday = new Date(selectedPet.birthday);
     const eligibleDate = new Date(birthday);
     eligibleDate.setMonth(eligibleDate.getMonth() + minMonths);
-    return eligibleDate.toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
+    const mm = String(eligibleDate.getMonth() + 1).padStart(2, '0');
+    const yyyy = eligibleDate.getFullYear();
+    return `${mm}/${yyyy}`;
   }, [selectedPet]);
+
+  const selectedPetAgeMonths = useMemo(() => {
+    return getPetAgeMonths(selectedPet?.birthday);
+  }, [selectedPet?.birthday]);
+
+  const selectedPetMinAgeMonths = useMemo(() => {
+    return selectedPet?.species === 'CAT' ? 8 : 12;
+  }, [selectedPet?.species]);
+
+  const selectedPetAgeProgress = useMemo(() => {
+    if (!isSelectedPetUnderage) return 100;
+    return Math.min(100, Math.max(5, Math.round((selectedPetAgeMonths / selectedPetMinAgeMonths) * 100)));
+  }, [isSelectedPetUnderage, selectedPetAgeMonths, selectedPetMinAgeMonths]);
 
   // Load My Pets & Prefetch initial candidates
   useEffect(() => {
@@ -264,6 +279,11 @@ export default function UnifiedMatchingHubPage() {
     async (targetPet: Pet, overrideFilters?: FilterState) => {
       const activeFilters = overrideFilters || filters;
       setSelectedPetId(targetPet.id);
+      // Xóa sạch ứng viên cũ ngay lập tức để tránh lưu vết dữ liệu của pet trước đó
+      setCandidates([]);
+      setPassedCount(0);
+      setSelectedCandidateDetail(null);
+
       if (targetPet.gender === 'FEMALE') {
         setLoadingCandidates(true);
         try {
@@ -284,6 +304,7 @@ export default function UnifiedMatchingHubPage() {
           setCandidates(sortCandidatesByScore(candRes.data?.data || []));
           setPassedCount(candRes.data?.meta?.passedCount ?? 0);
         } catch {
+          setCandidates([]);
           toast.error('Không tải được danh sách ứng viên đề xuất.');
         } finally {
           setLoadingCandidates(false);
@@ -293,6 +314,21 @@ export default function UnifiedMatchingHubPage() {
       }
     },
     [filters],
+  );
+
+  // Xử lý mở lời mời ghép đôi (chặn thân thiện kèm hướng dẫn khi thú cưng đang trong chế độ xem trước)
+  const handleOpenRequest = useCallback(
+    (candidate: Pet) => {
+      if (isSelectedPetUnderage) {
+        toast.info(
+          `Bé ${selectedPet?.name} đang trong giai đoạn phát triển (${selectedPetAgeMonths}/${selectedPetMinAgeMonths} tháng). Lời mời ghép đôi sẽ mở vào Tháng ${selectedPetEligibleDate} bạn nhé!`,
+          { icon: '🌱', duration: 4000 }
+        );
+        return;
+      }
+      setRequestingPet(candidate);
+    },
+    [isSelectedPetUnderage, selectedPet, selectedPetAgeMonths, selectedPetMinAgeMonths, selectedPetEligibleDate]
   );
 
   // Actions
@@ -583,20 +619,35 @@ export default function UnifiedMatchingHubPage() {
               {/* Underage Notice Banner for Selected Female Pet */}
               {selectedPet && isSelectedPetUnderage && (
                 <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30 flex items-start gap-3 shadow-xs">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-bold text-lg">
                     🌱
                   </div>
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
+                  <div className="space-y-2 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <h3 className="text-sm font-extrabold text-blue-900 dark:text-blue-100">
-                        Bé {selectedPet.name} đang trong giai đoạn phát triển ({getPetAgeMonths(selectedPet.birthday)} tháng tuổi)
+                        Bé {selectedPet.name} đang trong giai đoạn phát triển ({selectedPetAgeMonths} tháng tuổi)
                       </h3>
                       <span className="rounded-full bg-blue-200/80 dark:bg-blue-800 text-blue-900 dark:text-blue-100 px-2.5 py-0.5 text-[11px] font-black">
                         Dự kiến mở ghép đôi: Tháng {selectedPetEligibleDate}
                       </span>
                     </div>
+
+                    {/* Thanh tiến độ tuổi trưởng thành trực quan */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[11px] font-bold text-blue-700 dark:text-blue-300">
+                        <span>Tiến độ trưởng thành: {selectedPetAgeMonths}/{selectedPetMinAgeMonths} tháng tuổi</span>
+                        <span>{selectedPetAgeProgress}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200/70 dark:bg-blue-900/60">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500 shadow-xs"
+                          style={{ width: `${selectedPetAgeProgress}%` }}
+                        />
+                      </div>
+                    </div>
+
                     <p className="text-xs text-blue-700 dark:text-blue-300/90 leading-relaxed">
-                      Theo chuẩn thú y, {selectedPet.species === 'CAT' ? 'mèo' : 'chó'} cần tối thiểu {selectedPet.species === 'CAT' ? 8 : 12} tháng tuổi để đảm bảo an toàn sinh sản. Bạn hiện tại có thể xem trước danh sách các ứng viên phù hợp!
+                      Theo chuẩn thú y, {selectedPet.species === 'CAT' ? 'mèo' : 'chó'} cần tối thiểu {selectedPetMinAgeMonths} tháng tuổi để đảm bảo an toàn sinh sản. Bạn hiện tại có thể xem trước danh sách các ứng viên phù hợp!
                     </p>
                   </div>
                 </div>
@@ -619,13 +670,19 @@ export default function UnifiedMatchingHubPage() {
                       </span>
                     )}
                   </Button>
+                </div>
 
-            </div>
-
-            <p className="text-xs font-bold text-muted-foreground">
-              Tìm thấy <span className="text-foreground font-black">{candidates.length}</span> ứng viên phù hợp
-            </p>
-          </div>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-muted-foreground">
+                    Tìm thấy <span className="text-foreground font-black">{candidates.length}</span> ứng viên phù hợp
+                  </p>
+                  {isSelectedPetUnderage && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2 py-0.5 text-[10px] font-black">
+                      👀 Chế độ xem trước
+                    </span>
+                  )}
+                </div>
+              </div>
 
           {/* CANDIDATES LIST / SWIPE CARDS */}
           {loadingCandidates ? (
@@ -689,7 +746,7 @@ export default function UnifiedMatchingHubPage() {
                 femalePet={selectedPet}
                 getAge={getAge}
                 onPass={() => handlePass(currentSwipeCandidate.id)}
-                onRequestOpen={() => setRequestingPet(currentSwipeCandidate)}
+                onRequestOpen={() => handleOpenRequest(currentSwipeCandidate)}
                 onViewDetail={() => {
                   setAutoExpandCompatibility(false);
                   setSelectedCandidateDetail(currentSwipeCandidate);
@@ -710,7 +767,7 @@ export default function UnifiedMatchingHubPage() {
                   femalePet={selectedPet}
                   getAge={getAge}
                   onPass={() => handlePass(pet.id)}
-                  onRequestOpen={() => setRequestingPet(pet)}
+                  onRequestOpen={() => handleOpenRequest(pet)}
                   onViewDetail={() => {
                     setAutoExpandCompatibility(false);
                     setSelectedCandidateDetail(pet);
@@ -1120,7 +1177,7 @@ export default function UnifiedMatchingHubPage() {
                     )}
                     {selectedCandidateDetail.pedigreeVerified && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/95 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-md">
-                        🧬 Phả hệ VKA
+                        🧬 {selectedCandidateDetail.species === 'CAT' || selectedPet?.species === 'CAT' ? 'Phả hệ TICA/WCF' : 'Phả hệ VKA'}
                       </span>
                     )}
                     {selectedCandidateDetail.vaccineVerified && (
@@ -1264,7 +1321,9 @@ export default function UnifiedMatchingHubPage() {
                         : 'border-gray-200 bg-muted/40 dark:border-gray-800',
                     )}>
                       <span className="text-2xl">🧬</span>
-                      <span className={cn('text-[11px] font-bold uppercase', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>Phả hệ VKA</span>
+                      <span className={cn('text-[11px] font-bold uppercase', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>
+                        {selectedCandidateDetail.species === 'CAT' || selectedPet?.species === 'CAT' ? 'Phả hệ TICA/WCF' : 'Phả hệ VKA'}
+                      </span>
                       <span className={cn('text-sm font-black', selectedCandidateDetail.pedigreeVerified ? 'text-amber-700 dark:text-amber-300' : 'text-foreground')}>
                         {selectedCandidateDetail.hasPedigree ? (selectedCandidateDetail.pedigreeVerified ? 'Đã xác minh' : 'Chờ xác minh') : 'Chưa có'}
                       </span>
@@ -1339,13 +1398,26 @@ export default function UnifiedMatchingHubPage() {
                 </Button>
                 <Button
                   size="lg"
-                  className="flex-1 rounded-xl font-black text-base shadow-lg shadow-primary/25 h-13 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  className={cn(
+                    "flex-1 rounded-xl font-black text-base shadow-lg h-13",
+                    isSelectedPetUnderage
+                      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25"
+                      : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/25"
+                  )}
                   onClick={() => {
+                    if (isSelectedPetUnderage) {
+                      toast.info(
+                        `Bé ${selectedPet?.name} đang trong giai đoạn phát triển (${selectedPetAgeMonths}/${selectedPetMinAgeMonths} tháng tuổi). Lời mời ghép đôi sẽ mở vào Tháng ${selectedPetEligibleDate} bạn nhé!`,
+                        { icon: '🌱', duration: 4000 }
+                      );
+                      return;
+                    }
                     setRequestingPet(selectedCandidateDetail);
                     setSelectedCandidateDetail(null);
                   }}
                 >
-                  <Heart className="mr-2 size-5 fill-current" /> Gửi yêu cầu ghép đôi
+                  <Heart className="mr-2 size-5 fill-current" />
+                  {isSelectedPetUnderage ? `Xem trước (Mở Tháng ${selectedPetEligibleDate})` : 'Gửi yêu cầu ghép đôi'}
                 </Button>
               </div>
 
@@ -1539,28 +1611,31 @@ function SwipeCardContainer({
         )}
 
         {/* Top Badges - Huy hiệu xác minh & Điểm tương thích */}
-        <div className="absolute top-5 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
-          <div className="flex flex-wrap items-center gap-1.5 pointer-events-auto">
+        <div className={cn(
+          "absolute left-4 right-4 flex items-center justify-between pointer-events-none z-10 gap-2",
+          petImages.length > 1 ? "top-6.5" : "top-4.5"
+        )}>
+          <div className="flex flex-wrap items-center gap-1.5 pointer-events-auto min-w-0">
             {petImages.length > 1 && (
-              <span className="rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-black text-white backdrop-blur-md border border-white/10">
+              <span className="shrink-0 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur-md border border-white/10">
                 📷 {activePhotoIdx + 1}/{petImages.length}
               </span>
             )}
 
             {/* Chỉ hiển thị trực tiếp loại giấy tờ đã được duyệt */}
             {(pet.isSameWard || (pet.ward && femalePet?.ward && pet.ward.trim().toLowerCase() === femalePet.ward.trim().toLowerCase())) && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/95 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-emerald-300/40">
-                🏡 Cùng phường với bé
+              <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-500/95 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow border border-emerald-300/40">
+                🏡 Cùng phường
               </span>
             )}
             {pet.pedigreeVerified && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-amber-400/30">
-                🧬 Phả hệ VKA
+              <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-500/90 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow border border-amber-400/30">
+                🧬 {pet.species === 'CAT' || femalePet?.species === 'CAT' ? 'Phả hệ TICA/WCF' : 'Phả hệ VKA'}
               </span>
             )}
             {pet.vaccineVerified && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-600/90 text-white px-2.5 py-1 text-[11px] font-black backdrop-blur-md shadow border border-blue-400/30">
-                💉 Đã tiêm ngừa
+              <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-blue-600/90 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow border border-blue-400/30">
+                💉 Đã tiêm
               </span>
             )}
           </div>
@@ -1572,10 +1647,10 @@ function SwipeCardContainer({
               if (onViewScoreDetail) onViewScoreDetail();
               else onViewDetail();
             }}
-            className="pointer-events-auto flex items-center justify-center rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white px-3.5 py-1.5 shadow-lg shadow-orange-500/30 border border-white/25 hover:brightness-110 transition-all cursor-pointer group/score hover:scale-105"
+            className="pointer-events-auto shrink-0 whitespace-nowrap flex items-center justify-center rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white px-3 py-1.5 shadow-lg shadow-orange-500/30 border border-white/25 hover:brightness-110 transition-all cursor-pointer group/score hover:scale-105"
             title="Bấm để xem phân tích chi tiết độ phù hợp"
           >
-            <Sparkles className="mr-1.5 size-4 text-white fill-white/20 group-hover/score:rotate-12 transition-transform" />
+            <Sparkles className="mr-1 size-3.5 text-white fill-white/20 group-hover/score:rotate-12 transition-transform shrink-0" />
             <span className="text-xs font-black text-white tracking-wide">{pet.compatibilityScore ?? 95}% Phù hợp</span>
           </button>
         </div>
@@ -1703,7 +1778,7 @@ function CandidateCardGrid({
           )}
           {pet.pedigreeVerified && (
             <span className="rounded-md bg-amber-500/90 text-white px-2 py-0.5 text-[10px] font-black backdrop-blur-md shadow">
-              🧬 VKA
+              🧬 {pet.species === 'CAT' || femalePet?.species === 'CAT' ? 'TICA/WCF' : 'VKA'}
             </span>
           )}
           {pet.vaccineVerified && (

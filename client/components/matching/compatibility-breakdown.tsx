@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 interface CompatibilityBreakdownProps {
   myPet: {
     name: string
+    species?: string
     breed: string
     gender: "MALE" | "FEMALE"
     weight: number
@@ -30,6 +31,7 @@ interface CompatibilityBreakdownProps {
   }
   candidatePet: {
     name: string
+    species?: string
     breed: string
     gender: "MALE" | "FEMALE"
     weight: number
@@ -84,7 +86,11 @@ export function CompatibilityBreakdown({
   const malePet = myPet.gender === "MALE" ? myPet : candidatePet
   const femalePet = myPet.gender === "FEMALE" ? myPet : candidatePet
 
-  // 4. Giấy chứng nhận phả hệ VKA: Cả 2 được duyệt (+20), chỉ bé đực được duyệt (+10), ngược lại (+0)
+  // Xác định tên tổ chức cấp giấy phả hệ chính thức dựa trên loài: Mèo (TICA/WCF) và Chó (VKA)
+  const isCatSpecies = femalePet?.species === "CAT" || malePet?.species === "CAT";
+  const pedigreeOrgName = isCatSpecies ? "TICA/WCF" : "VKA";
+
+  // 4. Giấy chứng nhận phả hệ: Cả 2 được duyệt (+20), chỉ bé đực được duyệt (+10), ngược lại (+0)
   const isBothPedigreeVerified = candidatePet.matchReasons
     ? candidatePet.matchReasons.includes("both_pedigree_verified")
     : Boolean(femalePet.pedigreeVerified && malePet.pedigreeVerified)
@@ -238,11 +244,11 @@ export function CompatibilityBreakdown({
 
             {isBothPedigreeVerified ? (
               <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 text-[11px] font-bold border border-amber-200/60">
-                <Award className="size-3" /> Cả 2 có phả hệ VKA (+20%)
+                <Award className="size-3" /> Cả 2 có phả hệ {pedigreeOrgName} (+20%)
               </span>
             ) : isMalePedigreeVerified ? (
               <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 text-[11px] font-bold border border-amber-200/60">
-                <Award className="size-3" /> Đực có phả hệ VKA (+10%)
+                <Award className="size-3" /> Đực có phả hệ {pedigreeOrgName} (+10%)
               </span>
             ) : null}
 
@@ -442,15 +448,15 @@ export function CompatibilityBreakdown({
                       <Award className="size-3.5" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-foreground">Giấy chứng nhận Phả hệ VKA</p>
+                      <p className="text-xs font-bold text-foreground">Giấy chứng nhận Phả hệ {pedigreeOrgName}</p>
                       <p className="text-[11px] text-muted-foreground">
                         {isBothPedigreeVerified
-                          ? "Cả 2 bé đều đã được xác thực phả hệ VKA chính thức (+20%)"
+                          ? `Cả 2 bé đều đã được xác thực phả hệ ${pedigreeOrgName} chính thức (+20%)`
                           : isMalePedigreeVerified
-                          ? `Bé đực (${malePet.name}) có phả hệ VKA đã kiểm duyệt, đảm bảo nguồn gen tốt (+10%)`
+                          ? `Bé đực (${malePet.name}) có phả hệ ${pedigreeOrgName} đã kiểm duyệt, đảm bảo nguồn gen tốt (+10%)`
                           : (malePet.hasPedigree || femalePet.hasPedigree)
                           ? "Giấy tờ phả hệ đang chờ kiểm duyệt hoặc chưa được xác thực (+0%)"
-                          : "Chưa có giấy chứng nhận phả hệ VKA (+0%)"}
+                          : `Chưa có giấy chứng nhận phả hệ ${pedigreeOrgName} (+0%)`}
                       </p>
                     </div>
                   </div>

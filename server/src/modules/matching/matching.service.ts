@@ -116,7 +116,8 @@ export class MatchingService {
   ) {}
 
   async getCandidates(userId: string, dto: GetCandidatesDto) {
-    const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
+    // Cho phép xem trước danh sách ứng viên (Preview Mode) kể cả khi thú cưng cái chưa đủ tuổi
+    const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId, true);
     const blockedUserIds = await this.getBlockedUserIds(userId);
 
     // --- Hard constraint: tuổi tối thiểu cho query ---
@@ -443,7 +444,8 @@ export class MatchingService {
   }
 
   async passPet(userId: string, dto: PassPetDto) {
-    const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId);
+    // Cho phép bỏ qua (pass) ứng viên ngay cả trong chế độ xem trước
+    const femalePet = await this.getOwnedFemalePet(userId, dto.femalePetId, true);
     const malePet = await this.getMaleCandidate(dto.malePetId);
     this.ensureDifferentOwners(femalePet, malePet);
     const request = await this.prisma.$transaction(async (tx) => {
@@ -1477,7 +1479,16 @@ export class MatchingService {
   // PRIVATE — Hard constraints
   // =============================================================
 
-  private async getOwnedFemalePet(userId: string, petId: string) {
+  /**
+   * Lấy thông tin thú cưng cái thuộc sở hữu của người dùng.
+   * @param allowUnderage Nếu true, cho phép lấy thông tin thú cưng chưa đủ tuổi (dùng cho chế độ xem trước ứng viên Preview Mode).
+   * Mặc định false sẽ kiểm tra nghiêm ngặt tuổi và cân nặng sinh sản.
+   */
+  private async getOwnedFemalePet(
+    userId: string,
+    petId: string,
+    allowUnderage: boolean = false,
+  ) {
     const pet = await this.prisma.pet.findUnique({ where: { id: petId } });
     if (!pet) {
       throw new NotFoundException('Female pet not found.');
@@ -1494,9 +1505,11 @@ export class MatchingService {
       throw new BadRequestException('Only active pets can join matching.');
     }
 
-    // Hard constraint: tuổi tối thiểu
-    this.assertMinimumAge(pet);
-    this.assertMatchingWeight(pet);
+    // Ràng buộc cứng: tuổi tối thiểu và cân nặng chuẩn (chỉ kiểm tra khi không ở chế độ xem trước)
+    if (!allowUnderage) {
+      this.assertMinimumAge(pet);
+      this.assertMatchingWeight(pet);
+    }
 
     return pet;
   }
