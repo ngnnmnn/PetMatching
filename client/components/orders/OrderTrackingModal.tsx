@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isAxiosError } from 'axios';
-import { X, Truck, CheckCircle2, Clock, MapPin, Phone, Copy, Check, Loader2, RefreshCw } from 'lucide-react';
+import { X, Truck, CheckCircle2, Clock, MapPin, Phone, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { shippingApi, TrackingDetailResponse } from '@/lib/api/shipping';
 
@@ -14,7 +14,7 @@ interface OrderTrackingModalProps {
 }
 
 /**
- * Modal hiển thị chi tiết Lịch sử Tracking tự động của Vận đơn GHN / AhaMove Hỏa Tốc
+ * Modal hiển thị chi tiết Lịch sử Tracking tự động của đơn vị vận chuyển
  * Cho phép khách hàng & Manager xem chi tiết hành trình vận chuyển theo thời gian thực
  */
 export default function OrderTrackingModal({
@@ -25,7 +25,6 @@ export default function OrderTrackingModal({
 }: OrderTrackingModalProps) {
   const [data, setData] = useState<TrackingDetailResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
   const activeCodeRef = useRef<string | null>(null);
   const fetchingCodeRef = useRef<string | null>(null);
 
@@ -41,7 +40,7 @@ export default function OrderTrackingModal({
       console.error('Failed to fetch tracking detail', err);
       toast.error(
         (isAxiosError<{ message?: string }>(err) && err.response?.data?.message) ||
-          'Không thể lấy thông tin hành trình AhaMove',
+          'Không thể lấy thông tin hành trình vận chuyển',
       );
     } finally {
       if (activeCodeRef.current === code) setLoading(false);
@@ -79,13 +78,6 @@ export default function OrderTrackingModal({
 
   if (!isOpen || !code) return null;
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    toast.success(`Đã sao chép mã vận đơn ${carrier === 'AHAMOVE' ? 'AhaMove' : 'GHN'}!`);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
@@ -101,23 +93,14 @@ export default function OrderTrackingModal({
             <div className="flex size-10 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 border border-rose-200">
               <Truck className="size-5" />
             </div>
+            {/* Cập nhật tiêu đề tiến trình vận chuyển chung (Bỏ chữ AhaMove và hỏa tốc) */}
             <div>
               <h3 className="text-base font-black text-[#2C2B28] flex items-center gap-2">
-                {carrier === 'AHAMOVE' ? '⚡ Hành trình AhaMove Hỏa Tốc' : 'Hành trình vận chuyển GHN'}
+                ⚡ Tiến trình vận chuyển
               </h3>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-xs font-bold text-gray-500">
-                  {code}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyCode}
-                  className="p-1 rounded text-gray-400 hover:text-rose-600 transition cursor-pointer"
-                  title="Sao chép mã"
-                >
-                  {copied ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5" />}
-                </button>
-              </div>
+              <p className="text-xs font-medium text-gray-500 mt-0.5">
+                Cập nhật tự động theo thời gian thực
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -144,7 +127,7 @@ export default function OrderTrackingModal({
         {loading && !data ? (
           <div className="flex flex-col items-center justify-center py-12 space-y-3">
             <Loader2 className="size-8 animate-spin text-rose-500" />
-            <p className="text-xs font-bold text-gray-500">Đang đồng bộ dữ liệu tracking từ AhaMove...</p>
+            <p className="text-xs font-bold text-gray-500">Đang đồng bộ dữ liệu tracking từ đơn vị vận chuyển...</p>
           </div>
         ) : data ? (
           <div className="space-y-5">
@@ -152,7 +135,7 @@ export default function OrderTrackingModal({
             {data.shipperInfo && (
               <div className="rounded-2xl bg-rose-50/60 border border-rose-200/80 p-4 space-y-2">
                 <p className="text-[10px] font-black uppercase tracking-wider text-rose-800">
-                  Thông tin tài xế giao hàng (AhaMove Shipper)
+                  Thông tin tài xế giao hàng
                 </p>
                 <div className="flex items-center justify-between">
                   <div>
@@ -220,7 +203,7 @@ export default function OrderTrackingModal({
 
             {/* Note Footer */}
             <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-[11px] font-bold text-gray-500 leading-relaxed">
-              💡 <strong>Tự động hóa AhaMove:</strong> Tiến trình vận chuyển được tự động đồng bộ theo thời gian thực từ hệ thống AhaMove.
+              💡 <strong>Tự động hóa vận chuyển:</strong> Tiến trình vận chuyển được tự động đồng bộ theo thời gian thực từ đơn vị vận chuyển.
             </div>
           </div>
         ) : (

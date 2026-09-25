@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -212,15 +212,52 @@ const removeAccentsAndUpperCase = (str: string) => {
     .toUpperCase();
 };
 
-// Danh sách tab lọc trạng thái đơn hàng dành cho Khách hàng
+// Danh sách tab lọc trạng thái đơn hàng dành cho Khách hàng (Bao gồm tab Đã gửi VC)
 const ORDER_STATUS_TABS = [
   { id: 'ALL', label: 'Tất cả' },
-  { id: 'PENDING', label: 'Chờ xác nhận / Đã thanh toán', statuses: ['PENDING'] },
-  { id: 'CONFIRMED', label: 'Xác nhận', statuses: ['CONFIRMED', 'PACKED', 'PROCESSING'] },
-  { id: 'SHIPPED', label: 'Đang giao', statuses: ['SHIPPED'] },
-  { id: 'DELIVERED', label: 'Giao hàng thành công', statuses: ['DELIVERED'] },
-  { id: 'CANCELLED', label: 'Đã hủy / Thất bại', statuses: ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'] },
+  { id: 'PENDING', label: 'Chờ xác nhận / Đã thanh toán' },
+  { id: 'CONFIRMED', label: 'Xác nhận' },
+  { id: 'DISPATCHED', label: 'Đã gửi VC' },
+  { id: 'SHIPPED', label: 'Đang giao' },
+  { id: 'DELIVERED', label: 'Giao hàng thành công' },
+  { id: 'CANCELLED', label: 'Đã hủy / Thất bại' },
 ];
+
+/**
+ * Hàm hỗ trợ kiểm tra đơn hàng có khớp với tab lọc được chọn hay không.
+ * Phân loại chính xác các đơn "Xác nhận", "Đã gửi VC" (có mã AhaMove) và "Đang giao" (tài xế di chuyển)
+ */
+const isOrderMatchingTab = (order: Order, tabId: string): boolean => {
+  if (tabId === 'ALL') return true;
+
+  const shipStatusUpper = (order.shippingStatus || '').toUpperCase();
+  const hasAhamove = Boolean(order.ahamoveOrderCode) || ['ASSIGNING', 'CREATED', 'ACCEPTED'].includes(shipStatusUpper);
+  const isInDeliveringState = ['IN_PROCESS', 'IN PROCESS', 'DELIVERING', 'ON_TRIP', 'TRIP_START', 'PICKED'].includes(shipStatusUpper);
+
+  if (tabId === 'PENDING') {
+    return order.status === 'PENDING';
+  }
+  if (tabId === 'CONFIRMED') {
+    // Đơn đã xác nhận nhưng CHƯA tạo vận đơn AhaMove
+    return ['CONFIRMED', 'PACKED', 'PROCESSING'].includes(order.status) && !hasAhamove;
+  }
+  if (tabId === 'DISPATCHED') {
+    // Đã tạo vận đơn AhaMove thành công nhưng tài xế chưa bắt đầu chạy giao
+    return hasAhamove && order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && !isInDeliveringState;
+  }
+  if (tabId === 'SHIPPED') {
+    // Đơn đang được tài xế giao tới cho khách
+    return order.status === 'SHIPPED' || isInDeliveringState;
+  }
+  if (tabId === 'DELIVERED') {
+    return order.status === 'DELIVERED';
+  }
+  if (tabId === 'CANCELLED') {
+    return ['CANCELLED', 'EXPIRED', 'PAYMENT_ERROR'].includes(order.status);
+  }
+
+  return true;
+};
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -238,11 +275,9 @@ export default function OrdersPage() {
       order.status !== 'CANCELLED',
   );
 
-  const filteredOrders = orders.filter((order) => {
-    if (activeTab === 'ALL') return true;
-    const tabObj = ORDER_STATUS_TABS.find((t) => t.id === activeTab);
-    return tabObj?.statuses ? tabObj.statuses.includes(order.status) : true;
-  });
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => isOrderMatchingTab(order, activeTab));
+  }, [orders, activeTab]);
 
   // Modal & Actions State
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
@@ -716,10 +751,7 @@ export default function OrdersPage() {
         {!loading && orders.length > 0 && (
           <div className="flex items-center gap-2.5 overflow-x-auto pb-3 mb-6 scrollbar-none border-b border-gray-100">
             {ORDER_STATUS_TABS.map((tab) => {
-              const count = orders.filter((order) => {
-                if (tab.id === 'ALL') return true;
-                return tab.statuses?.includes(order.status);
-              }).length;
+              const count = orders.filter((order) => isOrderMatchingTab(order, tab.id)).length;
 
               const isActive = activeTab === tab.id;
 
@@ -810,15 +842,15 @@ export default function OrdersPage() {
                         <Calendar className="size-3.5" />
                         {formatDate(order.createdAt)}
                       </div>
-                      {/* Hiển thị nút tra cứu hành trình vận chuyển AhaMove hỏa tốc */}
-                      {order.ahamoveOrderCode && (
+                      {/* Hiển thị nút tra cứu tiến trình vận chuyển hỏa tốc */}
+                      {Boolean(order.ahamoveOrderCode) && (
                         <button
                           type="button"
                           onClick={() => setTrackingAhamoveCode(order.ahamoveOrderCode!)}
-                          className="inline-flex items-center gap-1 font-mono font-bold text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-800 px-2 py-0.5 rounded border border-rose-200 shadow-2xs transition cursor-pointer"
-                          title="Click xem chi tiết hành trình vận chuyển AhaMove"
+                          className="inline-flex items-center gap-1 font-bold text-xs bg-rose-50 hover:bg-rose-100 text-rose-800 px-3 py-1 rounded-xl border border-rose-200 shadow-2xs transition cursor-pointer"
+                          title="Click xem chi tiết tiến trình vận chuyển"
                         >
-                          ⚡ AhaMove: {order.ahamoveOrderCode}
+                          ⚡ Xem tiến trình
                         </button>
                       )}
                     </div>
@@ -926,7 +958,7 @@ export default function OrdersPage() {
                       </div>
                     )}
 
-                    {(order.status === 'PROCESSING' || order.status === 'CANCELLED') && order.payment?.status === 'PAID' && order.refundStatus !== 'REFUNDED' && (
+                    {((['PENDING', 'CANCELLED'].includes(order.status)) || Boolean(order.refundStatus)) && order.payment?.status === 'PAID' && order.refundStatus !== 'REFUNDED' && (
                       <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                         <button
                           type="button"

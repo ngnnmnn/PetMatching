@@ -183,13 +183,15 @@ export class PaymentService implements OnApplicationBootstrap {
             include: { order: true, spaBooking: true },
           });
 
+      // Cập nhật trạng thái thanh toán thành PAID, giữ nguyên order.status là PENDING (hoặc đưa về PENDING nếu trước đó bị PAYMENT_ERROR)
+      // Giúp giao diện hiển thị nhãn 'Đã thanh toán' và Manager chủ động nhấn nút 'Xác nhận đơn'
       if (
         payment.order &&
         ['PENDING', 'PAYMENT_ERROR'].includes(payment.order.status)
       ) {
         const updatedOrder = await tx.order.update({
           where: { id: payment.order.id },
-          data: { status: 'PROCESSING' },
+          data: { status: 'PENDING' },
         });
         if (payment.order.userId) {
           await this.notifications.create(
@@ -198,7 +200,7 @@ export class PaymentService implements OnApplicationBootstrap {
               category: NotificationCategory.ORDER,
               eventType: NotificationEventType.ORDER_STATUS_CHANGED,
               title: 'Thanh toán đơn hàng thành công',
-              content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đang được xử lý.`,
+              content: `Đơn hàng #${updatedOrder.id.slice(-8).toUpperCase()} đã được thanh toán thành công. Đang chờ cửa hàng xác nhận.`,
               targetUrl: `/orders?orderId=${updatedOrder.id}`,
               entityType: 'ORDER',
               entityId: updatedOrder.id,

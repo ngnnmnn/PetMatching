@@ -4779,7 +4779,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                     className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 shadow-2xs transition cursor-pointer"
                                     title="Click xem chi tiết hành trình AhaMove"
                                   >
-                                    ⚡ AhaMove: {o.ahamoveOrderCode}
+                                    ⚡ Xem tiến trình
                                   </button>
                                 )}
                               </div>
@@ -4801,7 +4801,7 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                                   ) : (
                                     '⚡'
                                   )}
-                                  <span>Gửi AhaMove</span>
+                                  <span>Gửi vận chuyển</span>
                                 </button>
                               </div>
                             ) : (
@@ -4913,21 +4913,18 @@ function StoreManagerConsole({ currentTab }: { currentTab: string }) {
                   Chi tiết đơn hàng: {selectedOrderDetails.id}
                 </h3>
 
-                {/* Hiển thị Mã vận đơn AhaMove Hỏa Tốc và nút tra cứu trong Modal chi tiết đơn */}
+                {/* Hiển thị nút tra cứu tiến trình vận chuyển trong Modal chi tiết đơn */}
                 {selectedOrderDetails.ahamoveOrderCode && (
                   <div className="flex items-center justify-between bg-rose-50/80 p-3 rounded-xl border border-rose-200 text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-rose-900">⚡ Mã vận đơn AhaMove Hỏa Tốc:</span>
-                      <span className="font-mono font-black text-rose-900 bg-white px-2 py-0.5 rounded border border-rose-200">
-                        {selectedOrderDetails.ahamoveOrderCode}
-                      </span>
+                      <span className="font-extrabold text-rose-900">⚡ Tiến trình vận chuyển hỏa tốc:</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setTrackingAhamoveCode(selectedOrderDetails.ahamoveOrderCode!)}
                       className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-xs transition shadow-xs cursor-pointer"
                     >
-                      Xem lịch sử tracking AhaMove ➔
+                      Xem tiến trình ➔
                     </button>
                   </div>
                 )}

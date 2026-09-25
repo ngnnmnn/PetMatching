@@ -1605,9 +1605,14 @@ export class UsersService {
       );
     }
 
-    if (order.status !== 'PROCESSING' && order.status !== 'CANCELLED') {
+    // Chỉ cho phép yêu cầu hoàn tiền cho đơn hàng chờ xác nhận (PENDING) hoặc đã hủy (CANCELLED) hoặc đơn đã gửi yêu cầu hoàn tiền trước đó.
+    // Khi đơn đã sang trạng thái xác nhận (CONFIRMED/PROCESSING/SHIPPED/DELIVERED), không cho phép tạo yêu cầu mới.
+    if (
+      !['PENDING', 'CANCELLED'].includes(order.status) &&
+      !order.refundStatus
+    ) {
       throw new BadRequestException(
-        'Chỉ có thể yêu cầu hoàn tiền cho đơn hàng đang xử lý hoặc đã hủy.',
+        'Đơn hàng đã được cửa hàng xác nhận và xử lý nên không thể gửi yêu cầu hoàn tiền.',
       );
     }
     if (order.payment?.status !== 'PAID') {
