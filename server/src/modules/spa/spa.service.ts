@@ -2451,6 +2451,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
 
     const bookings = await this.prisma.spaBooking.findMany({
       where: targetBranch ? { addressSpaId: targetBranch } : {},
+      orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
       include: {
         payment: true,
         service: {
@@ -2596,23 +2597,7 @@ export class SpaService implements OnModuleInit, OnModuleDestroy {
       };
     });
 
-    // Priority Sort: 1. PENDING (unconfirmed), 2. CONFIRMED without staff, 3. Reverse chronological by scheduledAt desc
-    return mappedBookings.sort((a, b) => {
-      const getPriority = (item: any) => {
-        if (item.status === SpaBookingStatus.PENDING) return 1;
-        if (item.status === SpaBookingStatus.CONFIRMED && !item.staffId)
-          return 2;
-        return 3;
-      };
-
-      const prioA = getPriority(a);
-      const prioB = getPriority(b);
-
-      if (prioA !== prioB) return prioA - prioB;
-      return (
-        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
-      );
-    });
+    return mappedBookings;
   }
 
   async managerReassignStaff(

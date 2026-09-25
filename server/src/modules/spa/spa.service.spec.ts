@@ -147,6 +147,11 @@ describe('SpaService completed booking history', () => {
     const [booking] = await service.getManagerBookings('manager-1', 'ALL');
 
     expect(autoUpdate).not.toHaveBeenCalled();
+    expect(prisma.spaBooking.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
+      }),
+    );
     expect(booking.user).toEqual({
       id: null,
       name: 'Nguyễn Văn A',
