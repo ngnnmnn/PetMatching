@@ -1,6 +1,6 @@
 # PetMatching - Kế hoạch Hành động & Lộ trình Phát triển (TODO)
 
-## 📌 Giai đoạn 1: Triển khai VPS & Tên miền (Đã hoàn thành 90%)
+## 📌 Giai đoạn 1: Triển khai VPS & Tên miền (Đã hoàn thành 100% 🎉)
 - [x] Khởi tạo máy chủ VPS Linux (Ubuntu 22.04 LTS tại FPT Hồ Chí Minh: `157.66.219.147`).
 - [x] Cấu hình 2GB Swap Memory trên ổ NVMe tối ưu bộ nhớ.
 - [x] Cài đặt Docker Engine 29.9.2 và Docker Compose v5.6.1.
@@ -10,8 +10,9 @@
   - [x] `nginx/nginx.conf` (Reverse proxy, Gzip, WebSockets, 25MB body size).
   - [x] `docker-compose.prod.yml` (Tự động khởi động lại `restart: always`).
 - [x] Cấu hình Firewall (UFW) mở các cổng 22, 80, 443.
-- [x] Deploy thành công và xác nhận HTTP 200 OK trên IP công khai `http://157.66.219.147/`.
-- [ ] Trỏ tên miền chính thức và cấu hình SSL HTTPS (Let's Encrypt Certbot) khi mua xong tên miền.
+- [x] Đăng ký và trỏ tên miền chính thức: **`petmatch.io.vn`**.
+- [x] Kích hoạt bảo mật **HTTPS (SSL Certificate)** thông qua OneShield Proxy.
+- [x] Xác nhận hệ thống Production hoạt động hoàn hảo tại: **https://petmatch.io.vn**.
 
 ---
 
