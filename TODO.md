@@ -1,17 +1,17 @@
 # PetMatching - Kế hoạch Hành động & Lộ trình Phát triển (TODO)
 
-## 📌 Giai đoạn 1: Triển khai VPS & Tên miền (Đang thực hiện)
-- [ ] Chọn và khởi tạo máy chủ VPS (Khuyên dùng: Oracle Cloud Always Free hoặc AWS EC2 Free Tier 12 tháng).
-- [ ] Đăng ký tên miền giá rẻ / miễn phí:
-  - Tùy chọn 1: Tên miền miễn phí quốc gia `.id.vn` (VNNIC hỗ trợ cho công dân 18-23 tuổi).
-  - Tùy chọn 2: Subdomain miễn phí `petmatching.duckdns.org` (không cần thẻ, có ngay trong 1 phút).
-  - Tùy chọn 3: Tên miền giá rẻ `.xyz` / `.site` (~25k - 50k/năm tại Porkbun / Namecheap).
-- [ ] Container hóa ứng dụng bằng Docker:
-  - [ ] Viết `server/Dockerfile` (Multi-stage build).
-  - [ ] Viết `client/Dockerfile` (Next.js standalone mode).
-  - [ ] Viết `nginx/nginx.conf` (Reverse proxy, Gzip, SSL).
-  - [ ] Viết `docker-compose.prod.yml`.
-- [ ] Thiết lập trên Linux VPS: Cài Docker, Clone source, cấu hình `.env`, mở Firewall port 80/443, cấp chứng chỉ SSL Let's Encrypt (Certbot).
+## 📌 Giai đoạn 1: Triển khai VPS & Tên miền (Đã hoàn thành 90%)
+- [x] Khởi tạo máy chủ VPS Linux (Ubuntu 22.04 LTS tại FPT Hồ Chí Minh: `157.66.219.147`).
+- [x] Cấu hình 2GB Swap Memory trên ổ NVMe tối ưu bộ nhớ.
+- [x] Cài đặt Docker Engine 29.9.2 và Docker Compose v5.6.1.
+- [x] Container hóa toàn bộ hệ thống bằng Docker đa tầng:
+  - [x] `server/Dockerfile` (NestJS + Prisma Alpine multi-stage).
+  - [x] `client/Dockerfile` (Next.js Standalone ~35MB RAM).
+  - [x] `nginx/nginx.conf` (Reverse proxy, Gzip, WebSockets, 25MB body size).
+  - [x] `docker-compose.prod.yml` (Tự động khởi động lại `restart: always`).
+- [x] Cấu hình Firewall (UFW) mở các cổng 22, 80, 443.
+- [x] Deploy thành công và xác nhận HTTP 200 OK trên IP công khai `http://157.66.219.147/`.
+- [ ] Trỏ tên miền chính thức và cấu hình SSL HTTPS (Let's Encrypt Certbot) khi mua xong tên miền.
 
 ---
 
