@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # Service Backend (NestJS + Prisma)
+  # ==========================================
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: petmatching_backend
+    restart: always
+    env_file:
+      - ./server/.env
+    networks:
+      - petmatching_network
+
+  # ==========================================
+  # Service Frontend (Next.js Standalone)
+  # ==========================================
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        # Đường dẫn API tương đối thông qua Nginx Reverse Proxy
+        NEXT_PUBLIC_API_URL: /api
+    container_name: petmatching_frontend
+    restart: always
+    depends_on:
+      - server
+    networks:
+      - petmatching_network
+
+  # ==========================================
+  # Service Nginx Reverse Proxy
+  # ==========================================
+  nginx:
+    image: nginx:alpine
+    container_name: petmatching_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - server
+      - client
+    networks:
+      - petmatching_network
+
+networks:
+  petmatching_network:
+    driver: bridge
+

@@ -3,6 +3,8 @@
  * Bỏ qua lỗi TypeScript khi build để đảm bảo quy trình build production hoạt động thông suốt
  */
 const nextConfig = {
+  // Chế độ standalone để đóng gói Docker container siêu nhẹ (~100MB) phục vụ triển khai VPS Linux
+  output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },
