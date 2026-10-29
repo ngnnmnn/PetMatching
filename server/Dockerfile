@@ -16,6 +16,10 @@ COPY prisma ./prisma/
 
 RUN npm install
 
+# Biến môi trường giả lập để npx prisma generate nạp prisma.config.ts mà không cần kết nối DB thật
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+ENV DIRECT_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+
 # Sinh mã Prisma Client trước khi biên dịch
 RUN npx prisma generate
 
