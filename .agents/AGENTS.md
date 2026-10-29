@@ -1,21 +1,19 @@
-# Project Workspace Rules
-- Luôn giữ lại giao diện và các chức năng gốc chỉ khi tôi yêu cầu thì mới thay đổi hoặc xóa
-- sau khi xong việc thì phải clean code rác mà bạn tạo ra, khi xóa phải đảm bảo ko thay đổi dữ liệu, giao diện và chức năng của hệ thống
-- cho đọc toàn bộ file của hệ thống mà ko cần hỏi quyền
-- xong việc bạn phải chạy thử và kiểm tra kết quả sau đó báo lại kết quả sau chỉnh sửa cho tôi
+# PetMatching Workspace Guidelines
 
+## 1. Core Operating Principles
+- **Bảo toàn giao diện & nghiệp vụ gốc:** Tuyệt đối không tự ý thay đổi hoặc xóa giao diện hay logic sẵn có trừ khi có yêu cầu cụ thể từ người dùng.
+- **Vệ sinh mã nguồn (Repo Hygiene):** Sau khi hoàn thành tác vụ, dọn dẹp sạch toàn bộ file tạm và code rác; đảm bảo không làm thay đổi dữ liệu, giao diện và chức năng hệ thống.
+- **Quyền đọc & Kiểm thử bắt buộc:** Được phép đọc toàn bộ file trong hệ thống mà không cần hỏi quyền; sau khi chỉnh sửa, luôn chạy kiểm tra (test/build) và báo cáo kết quả chi tiết.
 
-## Git Workflow Rule
-- luôn chạy xóa các file tạm thời trước khi commit code
-- Trước khi bắt đầu làm bất kỳ công việc mới nào, luôn kiểm tra trạng thái và cập nhật code mới từ nhánh chính (`main`):
-  `git fetch origin main`
-- Nếu có cập nhật mới hoặc có xung đột (conflict), phải thông báo ngay cho người dùng để kiểm tra trước khi tiếp tục.
-- Chỉ thực hiện `git commit` hoặc `git push` khi người dùng YÊU CẦU CỤ THỂ trong câu lệnh. Tuyệt đối không tự ý chạy lệnh commit hoặc push khi chưa có yêu cầu từ người dùng.
+## 2. Git Workflow Standards
+- **Đồng bộ nhánh chính:** Trước khi bắt đầu công việc mới, luôn chạy `git fetch origin main` kiểm tra trạng thái; báo ngay cho người dùng nếu phát hiện conflict hoặc cập nhật mới.
+- **Quy tắc Commit & Push:** Chỉ thực hiện `git commit` hoặc `git push` khi người dùng YÊU CẦU CỤ THỂ. Tuyệt đối không tự ý chạy lệnh commit/push.
+- **Chuẩn Commit Message:** Tuân thủ Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`) với thông điệp rõ ràng, chuyên nghiệp. Xóa sạch file tạm trước khi commit.
 
-## Database Migration Rule
+## 3. Database Migration Standards
 - Khi thay đổi cấu trúc Database (`schema.prisma`):
-  - Luôn tạo file migration SQL chuẩn trong `server/prisma/migrations/` với cú pháp an toàn tuyệt đối (`DROP TABLE IF EXISTS ... CASCADE`, `DROP COLUMN IF EXISTS ...`).
-## Code Commenting Rule
-- Khi sửa bất kỳ file nào (trừ file quá dài > 1000 dòng), luôn thêm comment tiếng Việt rõ ràng giải thích tác dụng của từng hàm/function được sửa hoặc thêm mới.
+  - Luôn tạo file migration SQL chuẩn trong `server/prisma/migrations/` với cú pháp an toàn (`DROP TABLE IF EXISTS ... CASCADE`, `DROP COLUMN IF EXISTS ...`).
 
-
+## 4. Code & Documentation Standards
+- **Comment giải thích rõ ràng:** Khi sửa bất kỳ file nào (trừ file > 1000 dòng), luôn thêm comment tiếng Việt ngắn gọn giải thích tác dụng của hàm/function được sửa hoặc thêm mới.
+- **Anti-Slop:** Không thêm banner phân cách trang trí (`====`), comment tường thuật hiển nhiên, hoặc code over-engineering thừa thãi.

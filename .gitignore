@@ -2,6 +2,7 @@
 .idea/
 .vscode/
 .DS_Store
+Thumbs.db
 
 # Node
 node_modules/
@@ -13,12 +14,20 @@ yarn-error.log*
 # Testing
 coverage/
 
-# Env
-# Temp and installers
-*.msi
-**/scratch/
+# Env & Secrets
 .env*
 db.env
+!*.env.example
+
+# Agent Skills & Local Cache
+skills-lock.json
+.agents/skills/
+
+# Temp and installers
+*.msi
+*.tmp
+*.bak
+**/scratch/
 
 # Build outputs
 dist/
