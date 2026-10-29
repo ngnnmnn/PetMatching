@@ -14,7 +14,7 @@ COPY package*.json ./
 COPY prisma.config.ts ./
 COPY prisma ./prisma/
 
-RUN npm ci
+RUN npm install
 
 # Sinh mã Prisma Client trước khi biên dịch
 RUN npx prisma generate
@@ -34,7 +34,7 @@ ENV NODE_ENV=production
 RUN apk add --no-cache openssl
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Sao chép các gói Prisma đã tạo và dist từ builder
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
@@ -46,4 +46,3 @@ COPY --from=builder /app/prisma.config.ts ./
 EXPOSE 5000
 
 CMD ["node", "dist/main.js"]
-
