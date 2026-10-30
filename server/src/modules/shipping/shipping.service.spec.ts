@@ -53,16 +53,22 @@ describe('ShippingService', () => {
 
     const estimateRequest = (global.fetch as jest.Mock).mock.calls[1][1];
     const body = JSON.parse(estimateRequest.body);
+    // Xác minh cấu trúc điểm đón (Store) và điểm giao hàng (Khách) gửi sang AhaMove
     expect(body.path).toEqual([
       {
         address: '123 Đường Store, Hà Nội',
         lat: 21.01,
         lng: 105.81,
+        mobile: '0900000000',
+        name: 'PetMatching',
       },
       {
         address: '456 Đường Khách, Hà Nội',
+        cod: 0,
         lat: 21.08,
         lng: 105.88,
+        mobile: '0988888888',
+        name: 'Khách hàng PetMatching',
       },
     ]);
     expect(result.feeVnd).toBe(42000);

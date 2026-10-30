@@ -492,7 +492,8 @@ describe('MatchingService pet eligibility', () => {
     });
   });
 
-  it('rejects an underweight female pet before querying candidates', async () => {
+  // Kiểm tra từ chối tạo yêu cầu ghép đôi khi thú cưng cái chưa đủ cân nặng tối thiểu
+  it('rejects an underweight female pet before creating matching request', async () => {
     const prisma = {
       pet: {
         findUnique: jest.fn().mockResolvedValue({
@@ -508,8 +509,9 @@ describe('MatchingService pet eligibility', () => {
     );
 
     await expect(
-      service.getCandidates(activeFemale.ownerId, {
+      service.createRequest(activeFemale.ownerId, {
         femalePetId: activeFemale.id,
+        malePetId: activeMale.id,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

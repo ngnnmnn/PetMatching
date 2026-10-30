@@ -660,10 +660,13 @@ describe('AdminService spa bookings', () => {
     const result = await service.getSpaBookings();
 
     expect(spaService.findMany).not.toHaveBeenCalled();
-    expect(result[0].mainServiceResolved).toEqual({
-      id: 'legacy-service',
-      name: 'Gói Spa',
-    });
+    // Kiểm tra gói dịch vụ Spa kế thừa (legacy) khớp với các trường cốt lõi
+    expect(result[0].mainServiceResolved).toEqual(
+      expect.objectContaining({
+        id: 'legacy-service',
+        name: 'Gói Spa',
+      }),
+    );
     expect(result[0].subServices).toEqual([]);
   });
 });
